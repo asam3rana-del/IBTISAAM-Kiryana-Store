@@ -6,6 +6,13 @@ import kotlinx.coroutines.flow.Flow
 
 data class DailySales(val day:String,val total:Double)
 data class TopProduct(val product:String,val totalQty:Int)
+data class PurchaseWithSupplier(val billNo:String,val supplierName:String,val total:Double,val createdAt:Long)
+data class SupplierPurchaseTotal(val supplierName:String,val total:Double)
+data class SaleWithCustomer(val invoice:String,val customerName:String,val total:Double,val paymentMethod:String,val createdAt:Long)
+data class CustomerSalesTotal(val customerName:String,val total:Double)
+
+@Entity(tableName="units")
+data class UnitType(@PrimaryKey val name:String)
 
 @Entity(tableName="products")
 data class Product(
@@ -19,7 +26,9 @@ data class Product(
     val expiry:String="",
     val unit:String="pcs",
     val unitSize:Int=1,
-    val unitNote:String=""
+    val unitNote:String="",
+    val secondaryUnit:String="",
+    val secondaryUnitQty:Double=0.0
 )
 
 @Entity(tableName="customers")
@@ -158,16 +167,25 @@ interface ProductDao {
     fun all():Flow<List<Product>>
 }
 
+@Dao interface UnitDao {
+    @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insert(u:UnitType)
+    @Query("SELECT * FROM units ORDER BY name") fun all():Flow<List<UnitType>>
+}
+
 @Dao interface CustomerDao {
     @Insert suspend fun insert(c:Customer):Long
     @Query("SELECT * FROM customers ORDER BY name") fun all():Flow<List<Customer>>
     @Query("UPDATE customers SET balance=balance+:amt WHERE id=:id")
     suspend fun addBalance(id:Long,amt:Double)
+    @Query("SELECT COALESCE(name,'Walk-in') as customerName, SUM(total) as total FROM sales LEFT JOIN customers ON sales.customerId=customers.id GROUP BY customerId ORDER BY total DESC")
+    suspend fun salesTotalsByCustomer():List<CustomerSalesTotal>
 }
 
 @Dao interface SupplierDao {
     @Insert suspend fun insert(s:Supplier):Long
     @Query("SELECT * FROM suppliers ORDER BY name") fun all():Flow<List<Supplier>>
+    @Query("SELECT COALESCE(name,'Cash Purchase') as supplierName, SUM(total) as total FROM purchases LEFT JOIN suppliers ON purchases.supplierId=suppliers.id GROUP BY supplierId ORDER BY total DESC")
+    suspend fun purchaseTotalsBySupplier():List<SupplierPurchaseTotal>
 }
 
 @Dao interface SaleDao {
@@ -183,6 +201,8 @@ interface ProductDao {
     suspend fun dailySales(start:Long,end:Long):List<DailySales>
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
     suspend fun topProducts(start:Long,end:Long):List<TopProduct>
+    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt FROM sales ORDER BY createdAt DESC LIMIT 100")
+    suspend fun allSales():List<SaleWithCustomer>
 }
 
 @Dao interface ExpenseDao {
@@ -199,7 +219,13 @@ interface ProductDao {
 }
 
 @Dao interface PaymentDao { @Insert suspend fun insert(p:Payment); @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double }
-@Dao interface PurchaseDao { @Insert suspend fun purchase(p:Purchase); @Insert suspend fun items(items:List<PurchaseItem>); @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double }
+@Dao interface PurchaseDao {
+    @Insert suspend fun purchase(p:Purchase)
+    @Insert suspend fun items(items:List<PurchaseItem>)
+    @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
+    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt FROM purchases ORDER BY createdAt DESC LIMIT 100")
+    suspend fun allPurchases():List<PurchaseWithSupplier>
+}
 @Dao interface ReturnDao { @Insert suspend fun insert(r:ReturnLine); @Query("SELECT COALESCE(SUM(amount),0) FROM returns") suspend fun total():Double }
 @Dao interface UserDao { @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(u:User); @Query("SELECT * FROM users WHERE username=:u AND active=1 LIMIT 1") suspend fun find(u:String):User? }
 @Dao interface AuditDao { @Insert suspend fun insert(a:Audit) }
@@ -207,8 +233,8 @@ interface ProductDao {
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
-        Expense::class,HeldBill::class],
-    version=11, exportSchema=false
+        Expense::class,HeldBill::class,UnitType::class],
+    version=12, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -222,6 +248,7 @@ abstract class PosDatabase:RoomDatabase(){
     abstract fun userDao():UserDao
     abstract fun auditDao():AuditDao
     abstract fun heldDao():HeldDao
+    abstract fun unitDao():UnitDao
     companion object{
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
