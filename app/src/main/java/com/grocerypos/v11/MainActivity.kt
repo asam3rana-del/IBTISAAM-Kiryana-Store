@@ -1,443 +1,470 @@
 package com.grocerypos.v11
 
-import android.app.DatePickerDialog
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.os.Bundle
-import android.view.Gravity
-import android.widget.*
-import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
-import androidx.room.withTransaction
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import java.util.Calendar
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import android.content.Context
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
 
-data class CartLine(val p:Product,val qty:Int,val rate:Double)
+// ==========================================
+// 1. DATA TRANSFER OBJECTS (DTOs / POJOs)
+// ==========================================
 
-class MainActivity:AppCompatActivity(){
-    internal lateinit var db:PosDatabase
-    private val cart=mutableListOf<CartLine>()
-    private var totalView:TextView?=null
-    private var listAdapter:ArrayAdapter<String>?=null
-    internal var posPickedProduct:Product?=null
-    private var posDateStr:String=SimpleDateFormat("dd-MM-yyyy",Locale.getDefault()).format(Date())
-    private var posPaymentType:String="Cash"
-    private var posCustomer:Customer?=null
+data class DailySales(
+    val day: String,
+    val total: Double
+)
 
-    internal data class PurchaseCartLine(val p:Product,val qty:Int,val unit:String,val rate:Double)
-    internal val purchaseCart=mutableListOf<PurchaseCartLine>()
-    internal var purSupplier:Supplier?=null
-    internal var purDateStr:String=SimpleDateFormat("dd-MM-yyyy",Locale.getDefault()).format(Date())
+data class TopProduct(
+    val product: String,
+    val totalQty: Int
+)
 
-    internal val COLOR_GREEN=Color.parseColor("#0F5C39")
-    internal val COLOR_GREEN_DARK=Color.parseColor("#0B3A26")
-    internal val COLOR_GOLD=Color.parseColor("#C9972F")
-    internal val COLOR_CREAM=Color.parseColor("#F6F4EE")
-    internal val COLOR_INK=Color.parseColor("#16241D")
-    internal val COLOR_INK_SOFT=Color.parseColor("#5B6B62")
-    internal val COLOR_CARD=Color.parseColor("#FFFFFF")
-    internal val COLOR_RED=Color.parseColor("#C23B2F")
-    internal val COLOR_BLUE=Color.parseColor("#2B5F8A")
+data class PurchaseWithSupplier(
+    val billNo: String,
+    val supplierName: String,
+    val total: Double,
+    val createdAt: Long
+)
 
-    override fun onCreate(b:Bundle?){
-        super.onCreate(b)
-        db=PosDatabase.get(this)
-        showDashboard()
-    }
+data class SupplierPurchaseTotal(
+    val supplierName: String,
+    val total: Double
+)
 
-    internal fun roundedBg(color:Int,radius:Float=24f):GradientDrawable{
-        return GradientDrawable().apply{ setColor(color); cornerRadius=radius }
-    }
+data class SaleWithCustomer(
+    val invoice: String,
+    val customerName: String,
+    val total: Double,
+    val paymentMethod: String,
+    val createdAt: Long
+)
 
-    internal fun styledButton(text:String,bg:Int=COLOR_GREEN,textColor:Int=Color.WHITE):Button{
-        return Button(this).apply{
-            this.text=text
-            setTextColor(textColor)
-            textSize=15f
-            background=roundedBg(bg)
-            setPadding(28,28,28,28)
-            isAllCaps=false
-            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0,10,0,10)
-            layoutParams=lp
-            elevation=3f
-        }
-    }
+data class CustomerSalesTotal(
+    val customerName: String,
+    val total: Double
+)
 
-    internal fun styledEditText(hintText:String):EditText{
-        return EditText(this).apply{
-            hint=hintText
-            setPadding(28,24,28,24)
-            background=roundedBg(Color.parseColor("#EFEDE4"),16f)
-            setTextColor(COLOR_INK)
-            setHintTextColor(COLOR_INK_SOFT)
-            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0,8,0,8)
-            layoutParams=lp
-        }
-    }
+// ==========================================
+// 2. ROOM ENTITIES
+// ==========================================
 
-    internal fun base(title:String):LinearLayout{
-        val scroll=ScrollView(this)
-        val outer=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            setBackgroundColor(COLOR_CREAM)
-        }
-        scroll.addView(outer)
-        val header=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            setBackgroundColor(COLOR_GREEN_DARK)
-            setPadding(30,60,30,36)
-        }
-        header.addView(TextView(this).apply{
-            text=title; textSize=22f; setTextColor(Color.WHITE)
-        })
-        outer.addView(header)
-        val body=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            setPadding(24,24,24,24)
-        }
-        outer.addView(body)
-        setContentView(scroll)
-        return body
-    }
+@Entity(tableName = "units")
+data class UnitType(
+    @PrimaryKey val name: String
+)
 
-    internal fun statCard(label:String,value:String,bg:Int):LinearLayout{
-        return LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            background=roundedBg(bg,20f)
-            setPadding(26,26,26,26)
-            val lp=LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
-            lp.setMargins(8,8,8,8)
-            layoutParams=lp
-            elevation=3f
-            addView(TextView(this@MainActivity).apply{
-                text=label;textSize=12f;setTextColor(Color.parseColor("#E7F2EC"))
-            })
-            addView(TextView(this@MainActivity).apply{
-                text=value;textSize=16f;setTextColor(Color.WHITE)
-                setPadding(0,10,0,0)
-                setTypeface(typeface,android.graphics.Typeface.BOLD)
-            })
-        }
-    }
+@Entity(tableName = "categories")
+data class Category(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val description: String = ""
+)
 
-    internal fun menuCard(icon:String,label:String,bg:Int,textColor:Int=Color.WHITE,onClick:()->Unit):LinearLayout{
-        return LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            gravity=Gravity.CENTER
-            background=roundedBg(bg,22f)
-            setPadding(20,36,20,28)
-            val lp=LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
-            lp.setMargins(8,8,8,8)
-            layoutParams=lp
-            elevation=3f
-            isClickable=true
-            isFocusable=true
-            addView(TextView(this@MainActivity).apply{
-                text=icon;textSize=28f;gravity=Gravity.CENTER
-            })
-            addView(TextView(this@MainActivity).apply{
-                text=label;textSize=12.5f;setTextColor(textColor);gravity=Gravity.CENTER
-                setPadding(0,14,0,0)
-                setTypeface(typeface,android.graphics.Typeface.BOLD)
-            })
-            setOnClickListener{onClick()}
-        }
-    }
+@Entity(tableName = "products")
+data class Product(
+    @PrimaryKey val barcode: String,
+    val name: String,
+    val categoryId: Long? = null,
+    val category: String = "",
+    val cost: Double = 0.0,
+    val salePrice: Double = 0.0,
+    val wholesalePrice: Double = 0.0,
+    val stock: Int = 0,
+    val reorderLevel: Int = 0,
+    val expiry: String = "",
+    val unit: String = "pcs",
+    val unitSize: Int = 1,
+    val unitNote: String = "",
+    val secondaryUnit: String = "",
+    val secondaryUnitQty: Double = 0.0,
+    val isTaxable: Boolean = false,
+    val isActive: Boolean = true
+)
 
-    internal fun row(vararg views:android.view.View):LinearLayout{
-        return LinearLayout(this).apply{
-            orientation=LinearLayout.HORIZONTAL
-            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-            layoutParams=lp
-            views.forEach{addView(it)}
-        }
-    }
+@Entity(tableName = "customers")
+data class Customer(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val phone: String = "",
+    val address: String = "",
+    val creditLimit: Double = 0.0,
+    val balance: Double = 0.0
+)
 
-    internal fun showDashboard(){
-        val root=base("🏪  IBTISAAM TRADERS POS")
+@Entity(tableName = "suppliers")
+data class Supplier(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val phone: String = "",
+    val company: String = "",
+    val balance: Double = 0.0
+)
 
-        val statsRow1=LinearLayout(this).apply{
-            orientation=LinearLayout.HORIZONTAL
-            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0,0,0,4)
-            layoutParams=lp
-        }
-        val statsRow2=LinearLayout(this).apply{
-            orientation=LinearLayout.HORIZONTAL
-            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0,0,0,20)
-            layoutParams=lp
-        }
-        val cardSales=statCard("TOTAL SALES","...",COLOR_GREEN)
-        val cardExpense=statCard("EXPENSES","...",COLOR_BLUE)
-        val cardProducts=statCard("PRODUCTS","...",COLOR_GOLD)
-        val cardLow=statCard("LOW STOCK","...",COLOR_RED)
-        statsRow1.addView(cardSales);statsRow1.addView(cardExpense)
-        statsRow2.addView(cardProducts);statsRow2.addView(cardLow)
-        root.addView(statsRow1)
-        root.addView(statsRow2)
+@Entity(tableName = "sales")
+data class Sale(
+    @PrimaryKey val invoice: String,
+    val customerId: Long? = null,
+    val subtotal: Double,
+    val discount: Double,
+    val tax: Double,
+    val total: Double,
+    val paid: Double,
+    val balanceDue: Double = 0.0,
+    val paymentMethod: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
 
-        lifecycleScope.launch{
-            val totalSales=db.saleDao().totalSales()
-            val totalExpenses=db.expenseDao().total()
-            val products=db.productDao().all().first()
-            val lowStock=products.count{it.stock<=it.reorderLevel}
-            (cardSales.getChildAt(1) as TextView).text="${totalSales.toInt()} PKR"
-            (cardExpense.getChildAt(1) as TextView).text="${totalExpenses.toInt()} PKR"
-            (cardProducts.getChildAt(1) as TextView).text="${products.size}"
-            (cardLow.getChildAt(1) as TextView).text="$lowStock"
-        }
+@Entity(tableName = "sale_items")
+data class SaleItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val invoice: String,
+    val barcode: String,
+    val product: String,
+    val qty: Int,
+    val unitPrice: Double,
+    val cost: Double,
+    val discount: Double = 0.0,
+    val tax: Double = 0.0,
+    val amount: Double
+)
 
-        root.addView(TextView(this).apply{
-            text="MENU";textSize=12f;setTextColor(COLOR_INK_SOFT)
-            setTypeface(typeface,android.graphics.Typeface.BOLD)
-            setPadding(4,0,0,10)
-        })
+@Entity(tableName = "payments")
+data class Payment(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val reference: String,
+    val partyType: String, // "CUSTOMER" or "SUPPLIER"
+    val partyId: Long?,
+    val amount: Double,
+    val method: String,
+    val note: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
 
-        val posCard=menuCard("🛒","POS / BILL",COLOR_GREEN){showPos()}
-        val productsCard=menuCard("📦","PRODUCTS",COLOR_GOLD,COLOR_INK){showProducts()}
-        val customersCard=menuCard("👤","CUSTOMERS",COLOR_BLUE){showCustomers()}
-        val suppliersCard=menuCard("🏢","SUPPLIERS",Color.parseColor("#8A6D3B")){showSuppliers()}
-        val reportsCard=menuCard("📊","REPORTS",COLOR_GREEN_DARK){showReports()}
-        val expenseCard=menuCard("💵","EXPENSE",COLOR_GOLD,COLOR_INK){showExpense()}
-        val purchaseCard=menuCard("🛍️","PURCHASE",COLOR_GREEN){showPurchase()}
-        val paymentsCard=menuCard("💳","PAYMENTS",COLOR_BLUE){showPayments()}
-        val returnsCard=menuCard("↩️","RETURNS",COLOR_RED){showReturns()}
-        val settingsCard=menuCard("⚙️","SETTINGS",Color.parseColor("#555555")){toast("Coming soon")}
+@Entity(tableName = "purchases")
+data class Purchase(
+    @PrimaryKey val billNo: String,
+    val supplierId: Long?,
+    val total: Double,
+    val paid: Double,
+    val createdAt: Long = System.currentTimeMillis()
+)
 
-        root.addView(row(posCard,productsCard))
-        root.addView(row(customersCard,suppliersCard))
-        root.addView(row(reportsCard,expenseCard))
-        root.addView(row(purchaseCard,paymentsCard))
-        root.addView(row(returnsCard,settingsCard))
-    }
+@Entity(tableName = "purchase_items")
+data class PurchaseItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val billNo: String,
+    val barcode: String,
+    val qty: Int,
+    val unitCost: Double,
+    val amount: Double
+)
 
-    internal fun showProductPicker(title:String,onPick:(Product)->Unit,onCancel:()->Unit){
-        val root=base(title)
-        val listBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        root.addView(listBox)
-        val back=styledButton("CANCEL",COLOR_RED)
-        root.addView(back)
-        back.setOnClickListener{onCancel()}
-        lifecycleScope.launch{
-            val products=db.productDao().all().first()
-            listBox.removeAllViews()
-            if(products.isEmpty()){
-                listBox.addView(TextView(this@MainActivity).apply{
-                    text="No products yet — add one first";setTextColor(COLOR_INK_SOFT)
-                })
+@Entity(tableName = "returns")
+data class ReturnLine(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val reference: String,
+    val type: String, // "SALE_RETURN" or "PURCHASE_RETURN"
+    val barcode: String,
+    val qty: Int,
+    val amount: Double,
+    val reason: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "stock_adjustments")
+data class StockAdjustment(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val barcode: String,
+    val adjustedQty: Int, // Positive for addition, negative for reduction
+    val reason: String, // e.g., "DAMAGE", "EXPIRED", "AUDIT"
+    val adjustedBy: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "users")
+data class User(
+    @PrimaryKey val username: String,
+    val displayName: String,
+    val role: String,
+    val passwordHash: String,
+    val active: Boolean = true
+)
+
+@Entity(tableName = "audit")
+data class Audit(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val username: String,
+    val action: String,
+    val reference: String = "",
+    val details: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "expenses")
+data class Expense(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val category: String,
+    val description: String,
+    val amount: Double,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "held_bills")
+data class HeldBill(
+    @PrimaryKey val holdId: String,
+    val payload: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+// ==========================================
+// 3. DATA ACCESS OBJECTS (DAOs)
+// ==========================================
+
+@Dao
+interface ProductDao {
+    @Query("SELECT * FROM products WHERE barcode = :code LIMIT 1")
+    suspend fun find(code: String): Product?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(p: Product)
+
+    @Query("UPDATE products SET stock = stock - :qty WHERE barcode = :code AND stock >= :qty")
+    suspend fun decrease(code: String, qty: Int): Int
+
+    @Query("UPDATE products SET stock = stock + :qty WHERE barcode = :code")
+    suspend fun increase(code: String, qty: Int)
+
+    @Query("UPDATE products SET unit = :unit WHERE barcode = :code")
+    suspend fun updateUnit(code: String, unit: String)
+
+    @Query("SELECT * FROM products WHERE stock <= reorderLevel AND isActive = 1 ORDER BY name")
+    fun lowStock(): Flow<List<Product>>
+
+    @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY name")
+    fun all(): Flow<List<Product>>
+
+    @Query("SELECT * FROM products WHERE name LIKE '%' || :query || '%' OR barcode LIKE '%' || :query || '%'")
+    suspend fun search(query: String): List<Product>
+}
+
+@Dao
+interface CategoryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(c: Category): Long
+
+    @Query("SELECT * FROM categories ORDER BY name")
+    fun all(): Flow<List<Category>>
+
+    @Delete
+    suspend fun delete(c: Category)
+}
+
+@Dao
+interface UnitDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(u: UnitType)
+
+    @Query("SELECT * FROM units ORDER BY name")
+    fun all(): Flow<List<UnitType>>
+}
+
+@Dao
+interface CustomerDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(c: Customer): Long
+
+    @Query("SELECT * FROM customers ORDER BY name")
+    fun all(): Flow<List<Customer>>
+
+    @Query("UPDATE customers SET balance = balance + :amt WHERE id = :id")
+    suspend fun addBalance(id: Long, amt: Double)
+
+    @Query("SELECT COALESCE(name, 'Walk-in') as customerName, SUM(total) as total FROM sales LEFT JOIN customers ON sales.customerId = customers.id GROUP BY customerId ORDER BY total DESC")
+    suspend fun salesTotalsByCustomer(): List<CustomerSalesTotal>
+}
+
+@Dao
+interface SupplierDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(s: Supplier): Long
+
+    @Query("SELECT * FROM suppliers ORDER BY name")
+    fun all(): Flow<List<Supplier>>
+
+    @Query("UPDATE suppliers SET balance = balance + :amt WHERE id = :id")
+    suspend fun addBalance(id: Long, amt: Double)
+
+    @Query("SELECT COALESCE(name, 'Cash Purchase') as supplierName, SUM(total) as total FROM purchases LEFT JOIN suppliers ON purchases.supplierId = suppliers.id GROUP BY supplierId ORDER BY total DESC")
+    suspend fun purchaseTotalsBySupplier(): List<SupplierPurchaseTotal>
+}
+
+@Dao
+interface SaleDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun sale(s: Sale)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun items(items: List<SaleItem>)
+
+    @Query("SELECT COUNT(*) FROM sales")
+    suspend fun count(): Int
+
+    @Query("SELECT COALESCE(SUM(total), 0) FROM sales")
+    suspend fun totalSales(): Double
+
+    @Query("SELECT COALESCE(SUM(total), 0) FROM sales WHERE createdAt BETWEEN :start AND :end")
+    suspend fun totalSalesBetween(start: Long, end: Long): Double
+
+    @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end")
+    suspend fun countBetween(start: Long, end: Long): Int
+
+    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
+    suspend fun dailySales(start: Long, end: Long): List<DailySales>
+
+    @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
+    suspend fun topProducts(start: Long, end: Long): List<TopProduct>
+
+    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id = sales.customerId), 'Walk-in') as customerName, total, paymentMethod, createdAt FROM sales ORDER BY createdAt DESC LIMIT 100")
+    suspend fun allSales(): List<SaleWithCustomer>
+
+    @Query("SELECT COALESCE(SUM((unitPrice - cost) * qty), 0) FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end)")
+    suspend fun totalProfitBetween(start: Long, end: Long): Double
+}
+
+@Dao
+interface ExpenseDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(e: Expense)
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM expenses")
+    suspend fun total(): Double
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE createdAt BETWEEN :start AND :end")
+    suspend fun totalBetween(start: Long, end: Long): Double
+
+    @Query("SELECT * FROM expenses ORDER BY createdAt DESC")
+    fun all(): Flow<List<Expense>>
+}
+
+@Dao
+interface HeldDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun hold(h: HeldBill)
+
+    @Query("SELECT * FROM held_bills ORDER BY createdAt DESC")
+    fun all(): Flow<List<HeldBill>>
+
+    @Delete
+    suspend fun delete(h: HeldBill)
+}
+
+@Dao
+interface PaymentDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(p: Payment)
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM payments")
+    suspend fun total(): Double
+}
+
+@Dao
+interface PurchaseDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun purchase(p: Purchase)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun items(items: List<PurchaseItem>)
+
+    @Query("SELECT COALESCE(SUM(total), 0) FROM purchases")
+    suspend fun total(): Double
+
+    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id = purchases.supplierId), 'Cash Purchase') as supplierName, total, createdAt FROM purchases ORDER BY createdAt DESC LIMIT 100")
+    suspend fun allPurchases(): List<PurchaseWithSupplier>
+}
+
+@Dao
+interface ReturnDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(r: ReturnLine)
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM returns")
+    suspend fun total(): Double
+}
+
+@Dao
+interface StockAdjustmentDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(adj: StockAdjustment)
+
+    @Query("SELECT * FROM stock_adjustments ORDER BY createdAt DESC")
+    fun all(): Flow<List<StockAdjustment>>
+}
+
+@Dao
+interface UserDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(u: User)
+
+    @Query("SELECT * FROM users WHERE username = :u AND active = 1 LIMIT 1")
+    suspend fun find(u: String): User?
+
+    @Query("SELECT * FROM users ORDER BY username")
+    fun all(): Flow<List<User>>
+}
+
+@Dao
+interface AuditDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(a: Audit)
+
+    @Query("SELECT * FROM audit ORDER BY createdAt DESC LIMIT 200")
+    fun recent(): Flow<List<Audit>>
+}
+
+// ==========================================
+// 4. ROOM DATABASE CLASS
+// ==========================================
+
+@Database(
+    entities = [
+        Product::class, Customer::class, Supplier::class, Sale::class,
+        SaleItem::class, Payment::class, Purchase::class, PurchaseItem::class,
+        ReturnLine::class, User::class, Audit::class, Expense::class,
+        HeldBill::class, UnitType::class, Category::class, StockAdjustment::class
+    ],
+    version = 13,
+    exportSchema = false
+)
+abstract class PosDatabase : RoomDatabase() {
+
+    abstract fun productDao(): ProductDao
+    abstract fun categoryDao(): CategoryDao
+    abstract fun customerDao(): CustomerDao
+    abstract fun supplierDao(): SupplierDao
+    abstract fun saleDao(): SaleDao
+    abstract fun expenseDao(): ExpenseDao
+    abstract fun paymentDao(): PaymentDao
+    abstract fun purchaseDao(): PurchaseDao
+    abstract fun returnDao(): ReturnDao
+    abstract fun stockAdjustmentDao(): StockAdjustmentDao
+    abstract fun userDao(): UserDao
+    abstract fun auditDao(): AuditDao
+    abstract fun heldDao(): HeldDao
+    abstract fun unitDao(): UnitDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: PosDatabase? = null
+
+        fun get(c: Context): PosDatabase =
+            INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
+                    c.applicationContext,
+                    PosDatabase::class.java,
+                    "grocery_pos_v11.db"
+                )
+                .fallbackToDestructiveMigration()
+                .build()
+                .also { INSTANCE = it }
             }
-            products.forEach{p->
-                listBox.addView(LinearLayout(this@MainActivity).apply{
-                    orientation=LinearLayout.VERTICAL
-                    background=roundedBg(COLOR_CARD,14f)
-                    setPadding(24,20,24,20)
-                    val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-                    lp.setMargins(0,0,0,8);layoutParams=lp;elevation=1f
-                    isClickable=true;isFocusable=true
-                    addView(TextView(this@MainActivity).apply{
-                        text=p.name;textSize=15f;setTextColor(COLOR_INK)
-                        setTypeface(typeface,android.graphics.Typeface.BOLD)
-                    })
-                    addView(TextView(this@MainActivity).apply{
-                        text="${p.salePrice.toInt()} PKR  •  Stock: ${p.stock} ${p.unit}"
-                        textSize=12.5f;setTextColor(COLOR_INK_SOFT)
-                    })
-                    setOnClickListener{onPick(p)}
-                })
-            }
-        }
     }
-
-    internal fun showSupplierPicker(onPick:(Supplier)->Unit,onCancel:()->Unit){
-        val root=base("Select Supplier")
-        val listBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        root.addView(listBox)
-        val back=styledButton("CANCEL",COLOR_RED)
-        root.addView(back)
-        back.setOnClickListener{onCancel()}
-        lifecycleScope.launch{
-            val suppliers=db.supplierDao().all().first()
-            listBox.removeAllViews()
-            if(suppliers.isEmpty()){
-                listBox.addView(TextView(this@MainActivity).apply{
-                    text="No suppliers yet — add one from Suppliers screen";setTextColor(COLOR_INK_SOFT)
-                })
-            }
-            suppliers.forEach{s->
-                listBox.addView(LinearLayout(this@MainActivity).apply{
-                    orientation=LinearLayout.VERTICAL
-                    background=roundedBg(COLOR_CARD,14f)
-                    setPadding(24,20,24,20)
-                    val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-                    lp.setMargins(0,0,0,8);layoutParams=lp;elevation=1f
-                    isClickable=true;isFocusable=true
-                    addView(TextView(this@MainActivity).apply{
-                        text=s.name;textSize=15f;setTextColor(COLOR_INK)
-                        setTypeface(typeface,android.graphics.Typeface.BOLD)
-                    })
-                    addView(TextView(this@MainActivity).apply{
-                        text=s.phone;textSize=12.5f;setTextColor(COLOR_INK_SOFT)
-                    })
-                    setOnClickListener{onPick(s)}
-                })
-            }
-        }
-    }
-
-    internal fun showCustomerPicker(onPick:(Customer)->Unit,onCancel:()->Unit){
-        val root=base("Select Customer")
-        val listBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        root.addView(listBox)
-        val back=styledButton("CANCEL",COLOR_RED)
-        root.addView(back)
-        back.setOnClickListener{onCancel()}
-        lifecycleScope.launch{
-            val customers=db.customerDao().all().first()
-            listBox.removeAllViews()
-            if(customers.isEmpty()){
-                listBox.addView(TextView(this@MainActivity).apply{
-                    text="No customers yet — add one from Customers screen";setTextColor(COLOR_INK_SOFT)
-                })
-            }
-            customers.forEach{c->
-                listBox.addView(LinearLayout(this@MainActivity).apply{
-                    orientation=LinearLayout.VERTICAL
-                    background=roundedBg(COLOR_CARD,14f)
-                    setPadding(24,20,24,20)
-                    val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-                    lp.setMargins(0,0,0,8);layoutParams=lp;elevation=1f
-                    isClickable=true;isFocusable=true
-                    addView(TextView(this@MainActivity).apply{
-                        text=c.name;textSize=15f;setTextColor(COLOR_INK)
-                        setTypeface(typeface,android.graphics.Typeface.BOLD)
-                    })
-                    addView(TextView(this@MainActivity).apply{
-                        text="${c.phone}  •  Balance: ${c.balance.toInt()} PKR"
-                        textSize=12.5f;setTextColor(COLOR_INK_SOFT)
-                    })
-                    setOnClickListener{onPick(c)}
-                })
-            }
-        }
-    }
-
-    internal fun pickDate(currentStr:String,onPicked:(String)->Unit){
-        val cal=Calendar.getInstance()
-        try{
-            val parts=currentStr.split("-")
-            if(parts.size==3){
-                cal.set(parts[2].toInt(),parts[1].toInt()-1,parts[0].toInt())
-            }
-        }catch(e:Exception){}
-        DatePickerDialog(this,{_,year,month,day->
-            val picked=String.format("%02d-%02d-%04d",day,month+1,year)
-            onPicked(picked)
-        },cal.get(Calendar.YEAR),cal.get(Calendar.MONTH),cal.get(Calendar.DAY_OF_MONTH)).show()
-    }
-
-    internal val defaultUnits=listOf("pcs","kg","gram","litre","dozen","bag","peti")
-
-    internal fun buildUnitSpinner(initial:String=""):Spinner{
-        val items=(defaultUnits+listOf("+ Add New Unit")).toMutableList()
-        val spinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,items)
-            if(initial.isNotBlank() && items.contains(initial)) setSelection(items.indexOf(initial))
-        }
-        lifecycleScope.launch{
-            val custom=db.unitDao().all().first().map{it.name}
-            if(custom.isNotEmpty()){
-                val merged=(defaultUnits+custom).distinct()+listOf("+ Add New Unit")
-                spinner.adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,merged)
-                if(initial.isNotBlank() && merged.contains(initial)) spinner.setSelection(merged.indexOf(initial))
-            }
-        }
-        spinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
-            override fun onItemSelected(parent:AdapterView<*>?,view:android.view.View?,position:Int,id:Long){
-                val selected=spinner.selectedItem?.toString()?:""
-                if(selected=="+ Add New Unit"){
-                    val input=EditText(this@MainActivity).apply{hint="Unit name e.g. carton"}
-                    android.app.AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Add New Unit")
-                        .setView(input)
-                        .setPositiveButton("Add"){_,_->
-                            val newUnit=input.text.toString().trim()
-                            if(newUnit.isNotBlank()){
-                                lifecycleScope.launch{
-                                    db.unitDao().insert(UnitType(newUnit))
-                                    toast("Unit added: $newUnit — reopen this screen to use it")
-                                }
-                            }
-                        }
-                        .setNegativeButton("Cancel",null)
-                        .show()
-                }
-            }
-            override fun onNothingSelected(parent:AdapterView<*>?){}
-        }
-        return spinner
-    }
-
-    private fun showPos(){
-        val root=base("🛒 POS / NEW BILL")
-
-        val dateField=styledEditText("Date").apply{
-            setText(posDateStr);isFocusable=false;isClickable=true
-        }
-        root.addView(dateField)
-        dateField.setOnClickListener{
-            pickDate(posDateStr){picked->posDateStr=picked;showPos()}
-        }
-
-        val payRow=LinearLayout(this).apply{
-            orientation=LinearLayout.HORIZONTAL
-            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0,8,0,8);layoutParams=lp
-        }
-        fun payChip(label:String):TextView=TextView(this).apply{
-            text=label;textSize=13f;setTextColor(Color.WHITE)
-            background=roundedBg(if(posPaymentType==label) COLOR_GREEN else COLOR_INK_SOFT,30f)
-            setPadding(30,20,30,20)
-            gravity=Gravity.CENTER
-            val lp=LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
-            lp.setMargins(4,0,4,0);layoutParams=lp
-        }
-        val cashChip=payChip("Cash")
-        val creditChip=payChip("Credit")
-        payRow.addView(cashChip);payRow.addView(creditChip)
-        root.addView(payRow)
-        cashChip.setOnClickListener{posPaymentType="Cash";posCustomer=null;showPos()}
-        creditChip.setOnClickListener{posPaymentType="Credit";showPos()}
-
-        if(posPaymentType=="Credit"){
-            val custBtn=styledButton(
-                if(posCustomer!=null) "👤 ${posCustomer!!.name}" else "📋 SELECT CUSTOMER",
-                if(posCustomer!=null) COLOR_GREEN else COLOR_GOLD,
-                if(posCustomer!=null) Color.WHITE else COLOR_INK
-            )
-            root.addView(custBtn)
-            custBtn.setOnClickListener{
-                showCustomerPicker({c->posCustomer=c;showPos()},{showPos()})
-            }
-        }
-
-        val pickBtn=styledButton(
-            if(posPickedProduct!=null) "✅ ${posPickedProduct!!.name}" else "📋 SELECT PRODUCT",
-            if(posPickedProduct!=null) COLOR_GREEN else COLOR_GOLD,
-            if(posPickedProduct!=null) Color.WHITE else COLOR_INK
-        )
-        root.addView(pickBtn)
-        pickBtn.setOnClickListener{
-            showProductPicker("Select Product",{p->posPickedProduct=p;showPos()},{showPos()})
-        }
-
-        val qty=styledEditText("Quantity").apply{setText("1");inputType=2}
-        val rate=styledEditText("Rate (editable)").apply{
-            inputType=8194
-            if(posPickedProduct!=null) setText(posPickedProduct!!.salePrice.toInt().toSt
+}
