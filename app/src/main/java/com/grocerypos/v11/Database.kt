@@ -145,6 +145,8 @@ interface ProductDao {
     suspend fun decrease(code:String,qty:Int):Int
     @Query("UPDATE products SET stock=stock+:qty WHERE barcode=:code")
     suspend fun increase(code:String,qty:Int)
+    @Query("UPDATE products SET unit=:unit WHERE barcode=:code")
+    suspend fun updateUnit(code:String,unit:String)
     @Query("SELECT * FROM products WHERE stock<=reorderLevel ORDER BY name")
     fun lowStock():Flow<List<Product>>
     @Query("SELECT * FROM products ORDER BY name")
@@ -190,7 +192,7 @@ interface ProductDao {
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class],
-    version=3, exportSchema=false
+    version=4, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
