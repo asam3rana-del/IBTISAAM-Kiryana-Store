@@ -389,7 +389,10 @@ private fun showPurchase(){
         findBtn.setOnClickListener{
             lifecycleScope.launch{
                 val p=db.productDao().find(barcode.text.toString().trim())
-                nameDisplay.text=if(p!=null) "✅ ${p.name}  (Current stock: ${p.stock} ${p.unit})" else "❌ Product not found"
+                nameDisplay.text=if(p!=null){
+                    val noteText=if(p.unitNote.isNotBlank()) "\n${p.unitNote}" else ""
+                    "✅ ${p.name}  (Current stock: ${p.stock} ${p.unit})$noteText"
+                } else "❌ Product not found"
                 nameDisplay.setTextColor(if(p!=null) COLOR_GREEN else COLOR_RED)
             }
         }
