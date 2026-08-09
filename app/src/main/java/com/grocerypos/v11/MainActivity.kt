@@ -58,7 +58,7 @@ class MainActivity:AppCompatActivity(){
 
     private fun showPos(){
         val root=base("POS / NEW BILL")
-        val code=EditText(this).apply{hint="Scan / enter barcode";singleLine=true}
+        val code=EditText(this).apply{hint="Scan / enter barcode";isSingleLine=true}
         val qty=EditText(this).apply{hint="Quantity";setText("1");inputType=2}
         val add=Button(this).apply{text="ADD"}
         val hold=Button(this).apply{text="HOLD BILL"}
