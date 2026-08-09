@@ -14,7 +14,8 @@ data class Product(
     val stock:Int=0,
 val reorderLevel:Int=0,
     val expiry:String="",
-    val unit:String="pcs"
+    val unit:String="pcs",
+    val unitSize:Int=1
 )
 
 @Entity(tableName="customers")
