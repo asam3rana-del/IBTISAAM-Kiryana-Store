@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
+data class DailySales(val day:String,val total:Double)
+data class TopProduct(val product:String,val totalQty:Int)
+
 @Entity(tableName="products")
 data class Product(
     @PrimaryKey val barcode:String,
@@ -12,7 +15,7 @@ data class Product(
     val cost:Double=0.0,
     val salePrice:Double=0.0,
     val stock:Int=0,
-val reorderLevel:Int=0,
+    val reorderLevel:Int=0,
     val expiry:String="",
     val unit:String="pcs",
     val unitSize:Int=1,
@@ -170,11 +173,21 @@ interface ProductDao {
     @Insert suspend fun items(items:List<SaleItem>)
     @Query("SELECT COUNT(*) FROM sales") suspend fun count():Int
     @Query("SELECT COALESCE(SUM(total),0) FROM sales") suspend fun totalSales():Double
+    @Query("SELECT COALESCE(SUM(total),0) FROM sales WHERE createdAt BETWEEN :start AND :end")
+    suspend fun totalSalesBetween(start:Long,end:Long):Double
+    @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end")
+    suspend fun countBetween(start:Long,end:Long):Int
+    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
+    suspend fun dailySales(start:Long,end:Long):List<DailySales>
+    @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
+    suspend fun topProducts(start:Long,end:Long):List<TopProduct>
 }
 
 @Dao interface ExpenseDao {
     @Insert suspend fun insert(e:Expense)
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses") suspend fun total():Double
+    @Query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE createdAt BETWEEN :start AND :end")
+    suspend fun totalBetween(start:Long,end:Long):Double
 }
 
 @Dao interface HeldDao {
@@ -182,7 +195,6 @@ interface ProductDao {
     @Query("SELECT * FROM held_bills ORDER BY createdAt DESC") fun all():Flow<List<HeldBill>>
     @Delete suspend fun delete(h:HeldBill)
 }
-
 
 @Dao interface PaymentDao { @Insert suspend fun insert(p:Payment); @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double }
 @Dao interface PurchaseDao { @Insert suspend fun purchase(p:Purchase); @Insert suspend fun items(items:List<PurchaseItem>); @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double }
@@ -194,7 +206,7 @@ interface ProductDao {
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class],
-    version=6, exportSchema=false
+    version=10, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
