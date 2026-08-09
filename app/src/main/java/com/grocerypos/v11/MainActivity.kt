@@ -186,8 +186,7 @@ class MainActivity:AppCompatActivity(){
         listAdapter?.notifyDataSetChanged()
         totalView?.text="Total: ${cart.sumOf{it.qty*it.p.salePrice}} PKR"
     }
-
-    private fun showProducts(){
+private fun showProducts(){
         val root=base("📦 PRODUCTS & STOCK")
         val bc=styledEditText("Barcode")
         val name=styledEditText("Product name")
@@ -210,7 +209,8 @@ class MainActivity:AppCompatActivity(){
             }
         }
         back.setOnClickListener{showDashboard()}
-    }
+}
+    
 
     private fun showCustomers(){
         val root=base("👤 CUSTOMERS / UDHAR")
