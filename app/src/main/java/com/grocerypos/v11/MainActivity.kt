@@ -19,29 +19,29 @@ import java.util.Locale
 data class CartLine(val p:Product,val qty:Int,val rate:Double)
 
 class MainActivity:AppCompatActivity(){
-    internal lateinit var db:PosDatabase
+    private lateinit var db:PosDatabase
     private val cart=mutableListOf<CartLine>()
     private var totalView:TextView?=null
     private var listAdapter:ArrayAdapter<String>?=null
-    internal var posPickedProduct:Product?=null
+    private var posPickedProduct:Product?=null
     private var posDateStr:String=SimpleDateFormat("dd-MM-yyyy",Locale.getDefault()).format(Date())
     private var posPaymentType:String="Cash"
     private var posCustomer:Customer?=null
 
-    internal data class PurchaseCartLine(val p:Product,val qty:Int,val unit:String,val rate:Double)
-    internal val purchaseCart=mutableListOf<PurchaseCartLine>()
-    internal var purSupplier:Supplier?=null
-    internal var purDateStr:String=SimpleDateFormat("dd-MM-yyyy",Locale.getDefault()).format(Date())
+    private data class PurchaseCartLine(val p:Product,val qty:Int,val unit:String,val rate:Double)
+    private val purchaseCart=mutableListOf<PurchaseCartLine>()
+    private var purSupplier:Supplier?=null
+    private var purDateStr:String=SimpleDateFormat("dd-MM-yyyy",Locale.getDefault()).format(Date())
 
-    internal val COLOR_GREEN=Color.parseColor("#0F5C39")
-    internal val COLOR_GREEN_DARK=Color.parseColor("#0B3A26")
-    internal val COLOR_GOLD=Color.parseColor("#C9972F")
-    internal val COLOR_CREAM=Color.parseColor("#F6F4EE")
-    internal val COLOR_INK=Color.parseColor("#16241D")
-    internal val COLOR_INK_SOFT=Color.parseColor("#5B6B62")
-    internal val COLOR_CARD=Color.parseColor("#FFFFFF")
-    internal val COLOR_RED=Color.parseColor("#C23B2F")
-    internal val COLOR_BLUE=Color.parseColor("#2B5F8A")
+    private val COLOR_GREEN=Color.parseColor("#0F5C39")
+    private val COLOR_GREEN_DARK=Color.parseColor("#0B3A26")
+    private val COLOR_GOLD=Color.parseColor("#C9972F")
+    private val COLOR_CREAM=Color.parseColor("#F6F4EE")
+    private val COLOR_INK=Color.parseColor("#16241D")
+    private val COLOR_INK_SOFT=Color.parseColor("#5B6B62")
+    private val COLOR_CARD=Color.parseColor("#FFFFFF")
+    private val COLOR_RED=Color.parseColor("#C23B2F")
+    private val COLOR_BLUE=Color.parseColor("#2B5F8A")
 
     override fun onCreate(b:Bundle?){
         super.onCreate(b)
@@ -49,11 +49,11 @@ class MainActivity:AppCompatActivity(){
         showDashboard()
     }
 
-    internal fun roundedBg(color:Int,radius:Float=24f):GradientDrawable{
+    private fun roundedBg(color:Int,radius:Float=24f):GradientDrawable{
         return GradientDrawable().apply{ setColor(color); cornerRadius=radius }
     }
 
-    internal fun styledButton(text:String,bg:Int=COLOR_GREEN,textColor:Int=Color.WHITE):Button{
+    private fun styledButton(text:String,bg:Int=COLOR_GREEN,textColor:Int=Color.WHITE):Button{
         return Button(this).apply{
             this.text=text
             setTextColor(textColor)
@@ -68,7 +68,7 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
-    internal fun styledEditText(hintText:String):EditText{
+    private fun styledEditText(hintText:String):EditText{
         return EditText(this).apply{
             hint=hintText
             setPadding(28,24,28,24)
@@ -81,7 +81,7 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
-    internal fun base(title:String):LinearLayout{
+    private fun base(title:String):LinearLayout{
         val scroll=ScrollView(this)
         val outer=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL
@@ -106,7 +106,7 @@ class MainActivity:AppCompatActivity(){
         return body
     }
 
-    internal fun statCard(label:String,value:String,bg:Int):LinearLayout{
+    private fun statCard(label:String,value:String,bg:Int):LinearLayout{
         return LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL
             background=roundedBg(bg,20f)
@@ -126,7 +126,7 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
-    internal fun menuCard(icon:String,label:String,bg:Int,textColor:Int=Color.WHITE,onClick:()->Unit):LinearLayout{
+    private fun menuCard(icon:String,label:String,bg:Int,textColor:Int=Color.WHITE,onClick:()->Unit):LinearLayout{
         return LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL
             gravity=Gravity.CENTER
@@ -150,7 +150,7 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
-    internal fun row(vararg views:android.view.View):LinearLayout{
+    private fun row(vararg views:android.view.View):LinearLayout{
         return LinearLayout(this).apply{
             orientation=LinearLayout.HORIZONTAL
             val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -159,7 +159,7 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
-    internal fun showDashboard(){
+    private fun showDashboard(){
         val root=base("🏪  IBTISAAM TRADERS POS")
 
         val statsRow1=LinearLayout(this).apply{
@@ -218,7 +218,8 @@ class MainActivity:AppCompatActivity(){
         root.addView(row(returnsCard,settingsCard))
     }
 
-    internal fun showProductPicker(title:String,onPick:(Product)->Unit,onCancel:()->Unit){
+    // ---------- Pickers ----------
+    private fun showProductPicker(title:String,onPick:(Product)->Unit,onCancel:()->Unit){
         val root=base(title)
         val listBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
         root.addView(listBox)
@@ -255,7 +256,7 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
-    internal fun showSupplierPicker(onPick:(Supplier)->Unit,onCancel:()->Unit){
+    private fun showSupplierPicker(onPick:(Supplier)->Unit,onCancel:()->Unit){
         val root=base("Select Supplier")
         val listBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
         root.addView(listBox)
@@ -291,7 +292,7 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
-    internal fun showCustomerPicker(onPick:(Customer)->Unit,onCancel:()->Unit){
+    private fun showCustomerPicker(onPick:(Customer)->Unit,onCancel:()->Unit){
         val root=base("Select Customer")
         val listBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
         root.addView(listBox)
@@ -328,7 +329,7 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
-    internal fun pickDate(currentStr:String,onPicked:(String)->Unit){
+    private fun pickDate(currentStr:String,onPicked:(String)->Unit){
         val cal=Calendar.getInstance()
         try{
             val parts=currentStr.split("-")
@@ -342,48 +343,7 @@ class MainActivity:AppCompatActivity(){
         },cal.get(Calendar.YEAR),cal.get(Calendar.MONTH),cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    internal val defaultUnits=listOf("pcs","kg","gram","litre","dozen","bag","peti")
-
-    internal fun buildUnitSpinner(initial:String=""):Spinner{
-        val items=(defaultUnits+listOf("+ Add New Unit")).toMutableList()
-        val spinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,items)
-            if(initial.isNotBlank() && items.contains(initial)) setSelection(items.indexOf(initial))
-        }
-        lifecycleScope.launch{
-            val custom=db.unitDao().all().first().map{it.name}
-            if(custom.isNotEmpty()){
-                val merged=(defaultUnits+custom).distinct()+listOf("+ Add New Unit")
-                spinner.adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,merged)
-                if(initial.isNotBlank() && merged.contains(initial)) spinner.setSelection(merged.indexOf(initial))
-            }
-        }
-        spinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
-            override fun onItemSelected(parent:AdapterView<*>?,view:android.view.View?,position:Int,id:Long){
-                val selected=spinner.selectedItem?.toString()?:""
-                if(selected=="+ Add New Unit"){
-                    val input=EditText(this@MainActivity).apply{hint="Unit name e.g. carton"}
-                    android.app.AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Add New Unit")
-                        .setView(input)
-                        .setPositiveButton("Add"){_,_->
-                            val newUnit=input.text.toString().trim()
-                            if(newUnit.isNotBlank()){
-                                lifecycleScope.launch{
-                                    db.unitDao().insert(UnitType(newUnit))
-                                    toast("Unit added: $newUnit — reopen this screen to use it")
-                                }
-                            }
-                        }
-                        .setNegativeButton("Cancel",null)
-                        .show()
-                }
-            }
-            override fun onNothingSelected(parent:AdapterView<*>?){}
-        }
-        return spinner
-    }
-
+    // ---------- POS ----------
     private fun showPos(){
         val root=base("🛒 POS / NEW BILL")
 
@@ -530,6 +490,7 @@ class MainActivity:AppCompatActivity(){
         totalView?.text="Total: ${cart.sumOf{it.qty*it.rate}} PKR"
     }
 
+    // ---------- Products ----------
     private fun showProducts(){
         val root=base("📦 PRODUCTS & STOCK")
         val name=styledEditText("Product name")
@@ -540,14 +501,15 @@ class MainActivity:AppCompatActivity(){
         val reorder=styledEditText("Reorder level").apply{inputType=2}
         val expiry=styledEditText("Expiry YYYY-MM-DD")
         val unitLabel=TextView(this).apply{text="Unit";setTextColor(COLOR_INK);setPadding(4,16,0,4)}
-        val unitSpinner=buildUnitSpinner()
+        val units=arrayOf("pcs","kg","gram","litre","dozen","bag","peti")
+        val unitSpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,units)
+        }
         val unitSize=styledEditText("Pieces per unit (e.g. Dozen=12)").apply{inputType=2;setText("1")}
-        val secLabel=TextView(this).apply{text="Secondary Unit (optional)";setTextColor(COLOR_INK);setPadding(4,16,0,4)}
-        val secUnit=styledEditText("e.g. kg")
-        val secQty=styledEditText("Qty per unit (e.g. bag=50 kg → 50)").apply{inputType=8194}
+        val unitNote=styledEditText("Unit contains (e.g. 1 bag = 50 kg)")
         val save=styledButton("SAVE PRODUCT",COLOR_GREEN)
         val back=styledButton("DASHBOARD",COLOR_RED)
-        listOf(name,cat,cost,price,stock,reorder,expiry,unitLabel,unitSpinner,unitSize,secLabel,secUnit,secQty,save,back).forEach(root::addView)
+        listOf(name,cat,cost,price,stock,reorder,expiry,unitLabel,unitSpinner,unitSize,unitNote,save,back).forEach(root::addView)
         save.setOnClickListener{
             lifecycleScope.launch{
                 if(name.text.toString().isBlank()){toast("Enter product name");return@launch}
@@ -560,10 +522,9 @@ class MainActivity:AppCompatActivity(){
                     stock=stock.text.toString().toIntOrNull()?:0,
                     reorderLevel=reorder.text.toString().toIntOrNull()?:0,
                     expiry=expiry.text.toString(),
-                    unit=unitSpinner.selectedItem?.toString()?:"pcs",
+                    unit=unitSpinner.selectedItem.toString(),
                     unitSize=unitSize.text.toString().toIntOrNull()?:1,
-                    secondaryUnit=secUnit.text.toString(),
-                    secondaryUnitQty=secQty.text.toString().toDoubleOrNull()?:0.0
+                    unitNote=unitNote.text.toString()
                 ))
                 toast("Product saved")
             }
@@ -615,6 +576,136 @@ class MainActivity:AppCompatActivity(){
         back.setOnClickListener{showDashboard()}
     }
 
+    // ---------- Purchase ----------
+    private fun showPurchaseAddItem(){
+        val root=base("Add Item")
+        val pickBtn=styledButton(
+            if(posPickedProduct!=null) "✅ ${posPickedProduct!!.name}" else "📋 SELECT PRODUCT",
+            if(posPickedProduct!=null) COLOR_GREEN else COLOR_GOLD,
+            if(posPickedProduct!=null) Color.WHITE else COLOR_INK
+        )
+        val qty=styledEditText("Quantity").apply{inputType=2}
+        val unitLabel=TextView(this).apply{text="Unit";setTextColor(COLOR_INK);setPadding(4,16,0,4)}
+        val units=arrayOf("pcs","kg","gram","litre","dozen","bag","peti")
+        val unitSpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,units)
+        }
+        val rate=styledEditText("Rate (per unit)").apply{inputType=2}
+        val addBtn=styledButton("ADD TO LIST",COLOR_GREEN)
+        val back=styledButton("CANCEL",COLOR_RED)
+        listOf(pickBtn,qty,unitLabel,unitSpinner,rate,addBtn,back).forEach(root::addView)
+        pickBtn.setOnClickListener{
+            showProductPicker("Select Product",{p->posPickedProduct=p;showPurchaseAddItem()},{showPurchaseAddItem()})
+        }
+        addBtn.setOnClickListener{
+            val p=posPickedProduct
+            if(p==null){toast("Select a product first");return@setOnClickListener}
+            val q=qty.text.toString().toIntOrNull()?:0
+            val r=rate.text.toString().toDoubleOrNull()?:0.0
+            if(q<=0){toast("Enter valid quantity");return@setOnClickListener}
+            purchaseCart.add(PurchaseCartLine(p,q,unitSpinner.selectedItem.toString(),r))
+            posPickedProduct=null
+            showPurchase()
+        }
+        back.setOnClickListener{posPickedProduct=null;showPurchase()}
+    }
+
+    private fun showPurchase(){
+        val root=base("🛍️ PURCHASE / STOCK IN")
+
+        val dateField=styledEditText("Date").apply{setText(purDateStr);isFocusable=false;isClickable=true}
+        dateField.setOnClickListener{
+            pickDate(purDateStr){picked->purDateStr=picked;showPurchase()}
+        }
+        val supplierBtn=styledButton(
+            if(purSupplier!=null) "🏢 ${purSupplier!!.name}" else "📋 SELECT SUPPLIER",
+            if(purSupplier!=null) COLOR_GREEN else COLOR_GOLD,
+            if(purSupplier!=null) Color.WHITE else COLOR_INK
+        )
+        val addItemBtn=styledButton("➕ ADD ITEM",COLOR_BLUE)
+        root.addView(dateField)
+        root.addView(supplierBtn)
+        root.addView(addItemBtn)
+
+        val listBox=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0,20,0,0);layoutParams=lp
+        }
+        root.addView(listBox)
+
+        val totalTextView=TextView(this).apply{
+            text="Total: ${purchaseCart.sumOf{it.qty*it.rate}.toInt()} PKR"
+            textSize=18f;setTextColor(COLOR_INK);setPadding(0,20,0,20)
+            setTypeface(typeface,android.graphics.Typeface.BOLD)
+        }
+        root.addView(totalTextView)
+
+        val save=styledButton("SAVE PURCHASE",COLOR_GREEN)
+        val back=styledButton("DASHBOARD",COLOR_RED)
+        root.addView(save);root.addView(back)
+
+        if(purchaseCart.isEmpty()){
+            listBox.addView(TextView(this).apply{
+                text="No items added yet";setTextColor(COLOR_INK_SOFT);setPadding(6,10,6,10)
+            })
+        }
+        purchaseCart.forEachIndexed{idx,line->
+            listBox.addView(LinearLayout(this).apply{
+                orientation=LinearLayout.HORIZONTAL
+                background=roundedBg(COLOR_CARD,14f)
+                setPadding(24,20,24,20)
+                val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
+                lp.setMargins(0,0,0,8);layoutParams=lp;elevation=1f
+                addView(LinearLayout(this@MainActivity).apply{
+                    orientation=LinearLayout.VERTICAL
+                    layoutParams=LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+                    addView(TextView(this@MainActivity).apply{
+                        text=line.p.name;textSize=14.5f;setTextColor(COLOR_INK)
+                        setTypeface(typeface,android.graphics.Typeface.BOLD)
+                    })
+                    addView(TextView(this@MainActivity).apply{
+                        text="${line.qty} ${line.unit} × ${line.rate.toInt()} = ${(line.qty*line.rate).toInt()} PKR"
+                        textSize=12.5f;setTextColor(COLOR_INK_SOFT)
+                    })
+                })
+                addView(TextView(this@MainActivity).apply{
+                    text="✕";textSize=18f;setTextColor(COLOR_RED)
+                    setPadding(20,0,4,0)
+                    isClickable=true
+                    setOnClickListener{purchaseCart.removeAt(idx);showPurchase()}
+                })
+            })
+        }
+
+        supplierBtn.setOnClickListener{
+            showSupplierPicker({s->purSupplier=s;showPurchase()},{showPurchase()})
+        }
+        addItemBtn.setOnClickListener{
+            showPurchaseAddItem()
+        }
+        save.setOnClickListener{
+            lifecycleScope.launch{
+                if(purchaseCart.isEmpty()){toast("Add at least one item");return@launch}
+                val billNo="PUR-${System.currentTimeMillis()}"
+                val total=purchaseCart.sumOf{it.qty*it.rate}
+                db.purchaseDao().purchase(Purchase(billNo=billNo,supplierId=purSupplier?.id,total=total,paid=0.0))
+                db.purchaseDao().items(purchaseCart.map{
+                    PurchaseItem(billNo=billNo,barcode=it.p.barcode,qty=it.qty,unitCost=it.rate,amount=it.qty*it.rate)
+                })
+                purchaseCart.forEach{
+                    db.productDao().increase(it.p.barcode,it.qty)
+                    db.productDao().updateUnit(it.p.barcode,it.unit)
+                }
+                db.auditDao().insert(Audit(username="local",action="PURCHASE_SAVED",reference=billNo,details="Items=${purchaseCart.size} Total=$total"))
+                toast("Purchase saved: $billNo")
+                purchaseCart.clear();purSupplier=null
+                showDashboard()
+            }
+        }
+        back.setOnClickListener{purchaseCart.clear();purSupplier=null;showDashboard()}
+    }
+
     private fun showPayments(){
         val root=base("💳 PAYMENTS")
         val ref=styledEditText("Reference")
@@ -662,7 +753,8 @@ class MainActivity:AppCompatActivity(){
         back.setOnClickListener{posPickedProduct=null;showDashboard()}
     }
 
-    internal fun startOfDay(daysAgo:Int):Long{
+    // ---------- Reports ----------
+    private fun startOfDay(daysAgo:Int):Long{
         val cal=Calendar.getInstance()
         cal.add(Calendar.DAY_OF_YEAR,-daysAgo)
         cal.set(Calendar.HOUR_OF_DAY,0);cal.set(Calendar.MINUTE,0)
@@ -670,5 +762,132 @@ class MainActivity:AppCompatActivity(){
         return cal.timeInMillis
     }
 
-    internal fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
+    private fun showReports(){
+        val root=base("📊 REPORTS")
+        val chipsRow=LinearLayout(this).apply{
+            orientation=LinearLayout.HORIZONTAL
+            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0,0,0,16)
+            layoutParams=lp
+        }
+        fun chip(label:String):TextView=TextView(this).apply{
+            text=label;textSize=12.5f;setTextColor(Color.WHITE)
+            background=roundedBg(COLOR_INK_SOFT,30f)
+            setPadding(30,18,30,18)
+            val lp=LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+            lp.setMargins(4,0,4,0)
+            layoutParams=lp
+            gravity=Gravity.CENTER
+        }
+        val chipToday=chip("Today")
+        val chipWeek=chip("7 Days")
+        val chipMonth=chip("30 Days")
+        val chipAll=chip("All Time")
+        listOf(chipToday,chipWeek,chipMonth,chipAll).forEach{chipsRow.addView(it)}
+        root.addView(chipsRow)
+
+        val statsBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        root.addView(statsBox)
+
+        val chartTitle=TextView(this).apply{
+            text="Last 7 Days Sales";textSize=13f;setTextColor(COLOR_INK_SOFT)
+            setTypeface(typeface,android.graphics.Typeface.BOLD)
+            setPadding(4,24,0,10)
+        }
+        root.addView(chartTitle)
+        val chartBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        root.addView(chartBox)
+
+        val topTitle=TextView(this).apply{
+            text="Best Selling Products";textSize=13f;setTextColor(COLOR_INK_SOFT)
+            setTypeface(typeface,android.graphics.Typeface.BOLD)
+            setPadding(4,24,0,10)
+        }
+        root.addView(topTitle)
+        val topBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        root.addView(topBox)
+
+        val back=styledButton("BACK",COLOR_RED)
+        root.addView(back)
+        back.setOnClickListener{showDashboard()}
+
+        fun loadRange(start:Long,end:Long){
+            lifecycleScope.launch{
+                val totalSales=db.saleDao().totalSalesBetween(start,end)
+                val totalExpenses=db.expenseDao().totalBetween(start,end)
+                val count=db.saleDao().countBetween(start,end)
+                statsBox.removeAllViews()
+                statsBox.addView(statCard("SALES","${totalSales.toInt()} PKR",COLOR_GREEN))
+                statsBox.addView(statCard("EXPENSES","${totalExpenses.toInt()} PKR",COLOR_BLUE))
+                statsBox.addView(statCard("NET PROFIT","${(totalSales-totalExpenses).toInt()} PKR",COLOR_GOLD))
+                statsBox.addView(statCard("TRANSACTIONS","$count",COLOR_GREEN_DARK))
+
+                val top=db.saleDao().topProducts(start,end)
+                topBox.removeAllViews()
+                if(top.isEmpty()){
+                    topBox.addView(TextView(this@MainActivity).apply{text="No sales in this range";setTextColor(COLOR_INK_SOFT)})
+                } else {
+                    top.forEach{tp->
+                        topBox.addView(LinearLayout(this@MainActivity).apply{
+                            orientation=LinearLayout.HORIZONTAL
+                            background=roundedBg(COLOR_CARD,14f)
+                            setPadding(24,20,24,20)
+                            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
+                            lp.setMargins(0,0,0,8);layoutParams=lp;elevation=1f
+                            addView(TextView(this@MainActivity).apply{
+                                text=tp.product;setTextColor(COLOR_INK);textSize=14f
+                                layoutParams=LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+                            })
+                            addView(TextView(this@MainActivity).apply{
+                                text="${tp.totalQty} sold";setTextColor(COLOR_GREEN);textSize=14f
+                                setTypeface(typeface,android.graphics.Typeface.BOLD)
+                            })
+                        })
+                    }
+                }
+            }
+        }
+
+        fun setActiveChip(active:TextView){
+            listOf(chipToday,chipWeek,chipMonth,chipAll).forEach{
+                it.background=roundedBg(if(it==active) COLOR_GREEN else COLOR_INK_SOFT,30f)
+            }
+        }
+
+        chipToday.setOnClickListener{setActiveChip(chipToday);loadRange(startOfDay(0),System.currentTimeMillis())}
+        chipWeek.setOnClickListener{setActiveChip(chipWeek);loadRange(startOfDay(7),System.currentTimeMillis())}
+        chipMonth.setOnClickListener{setActiveChip(chipMonth);loadRange(startOfDay(30),System.currentTimeMillis())}
+        chipAll.setOnClickListener{setActiveChip(chipAll);loadRange(0L,System.currentTimeMillis())}
+
+        setActiveChip(chipWeek)
+        loadRange(startOfDay(7),System.currentTimeMillis())
+
+        lifecycleScope.launch{
+            val daily=db.saleDao().dailySales(startOfDay(6),System.currentTimeMillis())
+            val maxVal=daily.maxOfOrNull{it.total}?:1.0
+            chartBox.removeAllViews()
+            if(daily.isEmpty()){
+                chartBox.addView(TextView(this@MainActivity).apply{text="No data yet";setTextColor(COLOR_INK_SOFT)})
+            } else {
+                daily.forEach{d->
+                    val pct=if(maxVal>0) (d.total/maxVal) else 0.0
+                    chartBox.addView(LinearLayout(this@MainActivity).apply{
+                        orientation=LinearLayout.VERTICAL
+                        setPadding(0,6,0,6)
+                        addView(TextView(this@MainActivity).apply{
+                            text="${d.day}  —  ${d.total.toInt()} PKR"
+                            textSize=11.5f;setTextColor(COLOR_INK_SOFT)
+                        })
+                        addView(android.view.View(this@MainActivity).apply{
+                            background=roundedBg(COLOR_GOLD,8f)
+                            val widthPx=(280*pct).toInt().coerceAtLeast(6)
+                            layoutParams=LinearLayout.LayoutParams(widthPx,20)
+                        })
+                    })
+                }
+            }
+        }
+    }
+
+    private fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
 }
