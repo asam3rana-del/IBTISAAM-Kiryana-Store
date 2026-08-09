@@ -349,24 +349,22 @@ class MainActivity:AppCompatActivity(){
                 } else toast("No held bills")
             }
         }
-        save.setOnClickListener{
-            lifecycleScope.launch{
-                if(cart.isEmpty()){toast("Cart empty");return@launch}
-                val invoice="INV-${System.currentTimeMillis()}"
-                val subtotal=cart.sumOf{it.qty*it.p.salePrice}
-                val items=cart.map{SaleItem(invoice=invoice,barcode=it.p.barcode,product=it.p.name,qty=it.qty,unitPrice=it.p.salePrice,cost=it.p.cost,amount=it.qty*it.p.salePrice)}
-                db.withTransaction{
-                    cart.forEach{line->
-                        val changed=db.productDao().decrease(line.p.barcode,line.qty)
-                        if(changed==0) throw IllegalStateException("Stock changed; bill not saved")
-                    }
-                    db.saleDao().sale(Sale(invoice=invoice,subtotal=subtotal,discount=0.0,tax=0.0,total=subtotal,paid=subtotal,paymentMethod="Cash"))
-                    db.saleDao().items(items)
-                }
-                cart.clear();refreshCart();toast("Saved $invoice");showDashboard()
+    save.setOnClickListener{
+    lifecycleScope.launch{
+        if(cart.isEmpty()){toast("Cart empty");return@launch}
+        val invoice="INV-${System.currentTimeMillis()}"
+        val subtotal=cart.sumOf{it.qty*it.p.salePrice}
+        val items=cart.map{SaleItem(invoice=invoice,barcode=it.p.barcode,product=it.p.name,qty=it.qty,unitPrice=it.p.salePrice,cost=it.p.cost,amount=it.qty*it.p.salePrice)}
+        db.withTransaction{
+            cart.forEach{line->
+                val changed=db.productDao().decrease(line.p.barcode,line.qty)
+                if(changed==0) throw IllegalStateException("Stock changed; bill not saved")
             }
+            db.saleDao().sale(Sale(invoice=invoice,subtotal=subtotal,discount=0.0,tax=0.0,total=subtotal,paid=subtotal,paymentMethod="Cash"))
+            db.saleDao().items(items)
         }
-        back.setOnClickListener{posPickedProduct=null;showDashboard()}
+        cart.clear();refreshCart();toast("Saved $invoice");showDashboard()
+    }
     }
 
     private fun refreshCart(){
