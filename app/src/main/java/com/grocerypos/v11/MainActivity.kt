@@ -258,24 +258,30 @@ private fun showProducts(){
         back.setOnClickListener{showDashboard()}
     }
 
-    private fun showPurchase(){
+private fun showPurchase(){
         val root=base("🛍️ PURCHASE / STOCK IN")
         val barcode=styledEditText("Barcode")
         val qty=styledEditText("Quantity").apply{inputType=2}
         val cost=styledEditText("Unit cost").apply{inputType=2}
+        val unitLabel=TextView(this).apply{text="Unit";setTextColor(COLOR_INK);setPadding(4,16,0,4)}
+        val units=arrayOf("pcs","kg","gram","litre","dozen")
+        val unitSpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,units)
+        }
         val save=styledButton("RECEIVE STOCK",COLOR_GREEN)
         val back=styledButton("BACK",COLOR_RED)
-        listOf(barcode,qty,cost,save,back).forEach(root::addView);setContentView(root)
+        listOf(barcode,qty,cost,unitLabel,unitSpinner,save,back).forEach(root::addView);setContentView(root)
         save.setOnClickListener{lifecycleScope.launch{
             val code=barcode.text.toString(); val q=qty.text.toString().toIntOrNull()?:0
             val p=db.productDao().find(code)
             if(p==null){toast("Product not found");return@launch}
             db.productDao().increase(code,q)
-            db.auditDao().insert(Audit(username="local",action="PURCHASE_STOCK_IN",reference=code,details="Qty=$q Cost=${cost.text}"))
+            db.productDao().updateUnit(code,unitSpinner.selectedItem.toString())
+            db.auditDao().insert(Audit(username="local",action="PURCHASE_STOCK_IN",reference=code,details="Qty=$q Unit=${unitSpinner.selectedItem} Cost=${cost.text}"))
             toast("Stock received");showDashboard()
         }}
         back.setOnClickListener{showDashboard()}
-    }
+}
 
     private fun showPayments(){
         val root=base("💳 PAYMENTS")
