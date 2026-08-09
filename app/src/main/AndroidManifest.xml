@@ -4,7 +4,7 @@
         android:theme="@style/Theme.GroceryPOS"
         android:label="IBTISAAM TRADERS POS"
         android:allowBackup="true"
-        android:supportsRtl="true"
+        android:supportsRtl="true">
     
         <activity android:name=".ui.SettingsActivity" />
         <activity android:name=".ui.LoginActivity" />
