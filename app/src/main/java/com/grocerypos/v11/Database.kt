@@ -193,7 +193,7 @@ interface ProductDao {
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class],
-    version=4, exportSchema=false
+    version=5, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
