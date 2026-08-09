@@ -295,13 +295,14 @@ class MainActivity:AppCompatActivity(){
         val reorder=styledEditText("Reorder level").apply{inputType=2}
         val expiry=styledEditText("Expiry YYYY-MM-DD")
         val unitLabel=TextView(this).apply{text="Unit";setTextColor(COLOR_INK);setPadding(4,16,0,4)}
-        val units=arrayOf("pcs","kg","gram","litre","dozen")
+        val units=arrayOf("pcs","kg","gram","litre","dozen","bag","peti")
         val unitSpinner=Spinner(this).apply{
             adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,units)
         }
+        val unitSize=styledEditText("Pieces per unit (e.g. Dozen=12)").apply{inputType=2;setText("1")}
         val save=styledButton("SAVE PRODUCT",COLOR_GREEN)
         val back=styledButton("DASHBOARD",COLOR_RED)
-        listOf(bc,name,cat,cost,price,stock,reorder,expiry,unitLabel,unitSpinner,save,back).forEach(root::addView)
+        listOf(bc,name,cat,cost,price,stock,reorder,expiry,unitLabel,unitSpinner,unitSize,save,back).forEach(root::addView)
         save.setOnClickListener{
             lifecycleScope.launch{
                 db.productDao().upsert(Product(
@@ -313,7 +314,8 @@ class MainActivity:AppCompatActivity(){
                     stock=stock.text.toString().toIntOrNull()?:0,
                     reorderLevel=reorder.text.toString().toIntOrNull()?:0,
                     expiry=expiry.text.toString(),
-                    unit=unitSpinner.selectedItem.toString()
+                    unit=unitSpinner.selectedItem.toString(),
+                    unitSize=unitSize.text.toString().toIntOrNull()?:1
                 ))
                 toast("Product saved")
             }
