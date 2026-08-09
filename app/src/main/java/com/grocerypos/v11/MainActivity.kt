@@ -300,9 +300,10 @@ class MainActivity:AppCompatActivity(){
             adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,units)
         }
         val unitSize=styledEditText("Pieces per unit (e.g. Dozen=12)").apply{inputType=2;setText("1")}
+        val unitNote=styledEditText("Unit contains (e.g. 1 bag = 50 kg)")
         val save=styledButton("SAVE PRODUCT",COLOR_GREEN)
         val back=styledButton("DASHBOARD",COLOR_RED)
-        listOf(bc,name,cat,cost,price,stock,reorder,expiry,unitLabel,unitSpinner,unitSize,save,back).forEach(root::addView)
+        listOf(bc,name,cat,cost,price,stock,reorder,expiry,unitLabel,unitSpinner,unitSize,unitNote,save,back).forEach(root::addView)
         save.setOnClickListener{
             lifecycleScope.launch{
                 db.productDao().upsert(Product(
@@ -315,14 +316,14 @@ class MainActivity:AppCompatActivity(){
                     reorderLevel=reorder.text.toString().toIntOrNull()?:0,
                     expiry=expiry.text.toString(),
                     unit=unitSpinner.selectedItem.toString(),
-                    unitSize=unitSize.text.toString().toIntOrNull()?:1
+                    unitSize=unitSize.text.toString().toIntOrNull()?:1,
+                    unitNote=unitNote.text.toString()
                 ))
                 toast("Product saved")
             }
         }
         back.setOnClickListener{showDashboard()}
     }
-
     private fun showCustomers(){
         val root=base("👤 CUSTOMERS / UDHAR")
         val name=styledEditText("Customer name")
