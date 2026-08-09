@@ -431,3 +431,14 @@ class MainActivity:AppCompatActivity(){
             val sales=db.saleDao().totalSales()
             val expenses=db.expenseDao().total()
             val root=base("📊 REPORTS")
+            root.addView(TextView(this@MainActivity).apply{
+                text="Total Sales: $sales PKR\nExpenses: $expenses PKR\nGross sales available for P&L: $sales PKR"
+                textSize=17f; setTextColor(COLOR_INK); setPadding(0,20,0,20)
+            })
+            val back=styledButton("BACK",COLOR_RED)
+            root.addView(back);back.setOnClickListener{showDashboard()}
+        }
+    }
+
+    private fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
+}
