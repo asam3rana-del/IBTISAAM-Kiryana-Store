@@ -1,5 +1,6 @@
 package com.grocerypos.v11
 
+import android.app.DatePickerDialog
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -15,7 +16,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class CartLine(val p:Product,val qty:Int)
+data class CartLine(val p:Product,val qty:Int,val rate:Double)
 
 class MainActivity:AppCompatActivity(){
     private lateinit var db:PosDatabase
@@ -23,6 +24,9 @@ class MainActivity:AppCompatActivity(){
     private var totalView:TextView?=null
     private var listAdapter:ArrayAdapter<String>?=null
     private var posPickedProduct:Product?=null
+    private var posDateStr:String=SimpleDateFormat("dd-MM-yyyy",Locale.getDefault()).format(Date())
+    private var posPaymentType:String="Cash"
+    private var posCustomer:Customer?=null
 
     private data class PurchaseCartLine(val p:Product,val qty:Int,val unit:String,val rate:Double)
     private val purchaseCart=mutableListOf<PurchaseCartLine>()
@@ -214,7 +218,7 @@ class MainActivity:AppCompatActivity(){
         root.addView(row(returnsCard,settingsCard))
     }
 
-    // ---------- Product picker (no barcode needed) ----------
+    // ---------- Pickers ----------
     private fun showProductPicker(title:String,onPick:(Product)->Unit,onCancel:()->Unit){
         val root=base(title)
         val listBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
@@ -288,15 +292,119 @@ class MainActivity:AppCompatActivity(){
         }
     }
 
+    private fun showCustomerPicker(onPick:(Customer)->Unit,onCancel:()->Unit){
+        val root=base("Select Customer")
+        val listBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        root.addView(listBox)
+        val back=styledButton("CANCEL",COLOR_RED)
+        root.addView(back)
+        back.setOnClickListener{onCancel()}
+        lifecycleScope.launch{
+            val customers=db.customerDao().all().first()
+            listBox.removeAllViews()
+            if(customers.isEmpty()){
+                listBox.addView(TextView(this@MainActivity).apply{
+                    text="No customers yet — add one from Customers screen";setTextColor(COLOR_INK_SOFT)
+                })
+            }
+            customers.forEach{c->
+                listBox.addView(LinearLayout(this@MainActivity).apply{
+                    orientation=LinearLayout.VERTICAL
+                    background=roundedBg(COLOR_CARD,14f)
+                    setPadding(24,20,24,20)
+                    val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
+                    lp.setMargins(0,0,0,8);layoutParams=lp;elevation=1f
+                    isClickable=true;isFocusable=true
+                    addView(TextView(this@MainActivity).apply{
+                        text=c.name;textSize=15f;setTextColor(COLOR_INK)
+                        setTypeface(typeface,android.graphics.Typeface.BOLD)
+                    })
+                    addView(TextView(this@MainActivity).apply{
+                        text="${c.phone}  •  Balance: ${c.balance.toInt()} PKR"
+                        textSize=12.5f;setTextColor(COLOR_INK_SOFT)
+                    })
+                    setOnClickListener{onPick(c)}
+                })
+            }
+        }
+    }
+
+    private fun pickDate(currentStr:String,onPicked:(String)->Unit){
+        val cal=Calendar.getInstance()
+        try{
+            val parts=currentStr.split("-")
+            if(parts.size==3){
+                cal.set(parts[2].toInt(),parts[1].toInt()-1,parts[0].toInt())
+            }
+        }catch(e:Exception){}
+        DatePickerDialog(this,{_,year,month,day->
+            val picked=String.format("%02d-%02d-%04d",day,month+1,year)
+            onPicked(picked)
+        },cal.get(Calendar.YEAR),cal.get(Calendar.MONTH),cal.get(Calendar.DAY_OF_MONTH)).show()
+    }
+
     // ---------- POS ----------
     private fun showPos(){
         val root=base("🛒 POS / NEW BILL")
+
+        val dateField=styledEditText("Date").apply{
+            setText(posDateStr);isFocusable=false;isClickable=true
+        }
+        root.addView(dateField)
+        dateField.setOnClickListener{
+            pickDate(posDateStr){picked->posDateStr=picked;showPos()}
+        }
+
+        val payRow=LinearLayout(this).apply{
+            orientation=LinearLayout.HORIZONTAL
+            val lp=LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0,8,0,8);layoutParams=lp
+        }
+        fun payChip(label:String):TextView=TextView(this).apply{
+            text=label;textSize=13f;setTextColor(Color.WHITE)
+            background=roundedBg(if(posPaymentType==label) COLOR_GREEN else COLOR_INK_SOFT,30f)
+            setPadding(30,20,30,20)
+            gravity=Gravity.CENTER
+            val lp=LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+            lp.setMargins(4,0,4,0);layoutParams=lp
+        }
+        val cashChip=payChip("Cash")
+        val creditChip=payChip("Credit")
+        payRow.addView(cashChip);payRow.addView(creditChip)
+        root.addView(payRow)
+        cashChip.setOnClickListener{posPaymentType="Cash";posCustomer=null;showPos()}
+        creditChip.setOnClickListener{posPaymentType="Credit";showPos()}
+
+        if(posPaymentType=="Credit"){
+            val custBtn=styledButton(
+                if(posCustomer!=null) "👤 ${posCustomer!!.name}" else "📋 SELECT CUSTOMER",
+                if(posCustomer!=null) COLOR_GREEN else COLOR_GOLD,
+                if(posCustomer!=null) Color.WHITE else COLOR_INK
+            )
+            root.addView(custBtn)
+            custBtn.setOnClickListener{
+                showCustomerPicker({c->posCustomer=c;showPos()},{showPos()})
+            }
+        }
+
         val pickBtn=styledButton(
             if(posPickedProduct!=null) "✅ ${posPickedProduct!!.name}" else "📋 SELECT PRODUCT",
             if(posPickedProduct!=null) COLOR_GREEN else COLOR_GOLD,
             if(posPickedProduct!=null) Color.WHITE else COLOR_INK
         )
+        root.addView(pickBtn)
+        pickBtn.setOnClickListener{
+            showProductPicker("Select Product",{p->posPickedProduct=p;showPos()},{showPos()})
+        }
+
         val qty=styledEditText("Quantity").apply{setText("1");inputType=2}
+        val rate=styledEditText("Rate (editable)").apply{
+            inputType=8194
+            if(posPickedProduct!=null) setText(posPickedProduct!!.salePrice.toInt().toString())
+        }
+        root.addView(qty)
+        root.addView(rate)
+
         val add=styledButton("ADD TO CART",COLOR_GOLD,COLOR_INK)
         val hold=styledButton("HOLD BILL",Color.parseColor("#555555"))
         val recall=styledButton("RECALL BILL",Color.parseColor("#555555"))
@@ -309,26 +417,25 @@ class MainActivity:AppCompatActivity(){
         listAdapter=ArrayAdapter(this,android.R.layout.simple_list_item_1,mutableListOf())
         list.adapter=listAdapter
         totalView=TextView(this).apply{text="Total: 0 PKR";textSize=20f;setTextColor(COLOR_INK);setPadding(0,20,0,20)}
-        root.addView(pickBtn);root.addView(qty);root.addView(add)
+        root.addView(add)
         root.addView(hold);root.addView(recall);root.addView(list)
         root.addView(totalView);root.addView(save);root.addView(back)
         refreshCart()
-        pickBtn.setOnClickListener{
-            showProductPicker("Select Product",{p->posPickedProduct=p;showPos()},{showPos()})
-        }
+
         add.setOnClickListener{
             val p=posPickedProduct
             val q=qty.text.toString().toIntOrNull()?:1
+            val r=rate.text.toString().toDoubleOrNull()?:(p?.salePrice?:0.0)
             if(p==null){toast("Select a product first");return@setOnClickListener}
             if(q<=0||q>p.stock){toast("Insufficient stock");return@setOnClickListener}
-            cart.add(CartLine(p,q));refreshCart()
+            cart.add(CartLine(p,q,r));refreshCart()
             posPickedProduct=null
             showPos()
         }
         hold.setOnClickListener{
             lifecycleScope.launch{
                 if(cart.isEmpty()) return@launch
-                val payload=cart.joinToString(";"){"${it.p.barcode},${it.qty}"}
+                val payload=cart.joinToString(";"){"${it.p.barcode},${it.qty},${it.rate}"}
                 db.heldDao().hold(HeldBill("HOLD-${System.currentTimeMillis()}",payload))
                 cart.clear();refreshCart();toast("Bill held")
             }
@@ -340,38 +447,47 @@ class MainActivity:AppCompatActivity(){
                     val h=heldList.first()
                     cart.clear()
                     h.payload.split(";").forEach{part->
-                        val x=part.split(","); if(x.size==2){
+                        val x=part.split(","); if(x.size>=2){
                             val p=db.productDao().find(x[0]); val q=x[1].toIntOrNull()?:1
-                            if(p!=null) cart.add(CartLine(p,q))
+                            val r=if(x.size>=3) x[2].toDoubleOrNull()?:(p?.salePrice?:0.0) else (p?.salePrice?:0.0)
+                            if(p!=null) cart.add(CartLine(p,q,r))
                         }
                     }
                     db.heldDao().delete(h);refreshCart()
                 } else toast("No held bills")
             }
         }
-    save.setOnClickListener{
-    lifecycleScope.launch{
-        if(cart.isEmpty()){toast("Cart empty");return@launch}
-        val invoice="INV-${System.currentTimeMillis()}"
-        val subtotal=cart.sumOf{it.qty*it.p.salePrice}
-        val items=cart.map{SaleItem(invoice=invoice,barcode=it.p.barcode,product=it.p.name,qty=it.qty,unitPrice=it.p.salePrice,cost=it.p.cost,amount=it.qty*it.p.salePrice)}
-        db.withTransaction{
-            cart.forEach{line->
-                val changed=db.productDao().decrease(line.p.barcode,line.qty)
-                if(changed==0) throw IllegalStateException("Stock changed; bill not saved")
+        save.setOnClickListener{
+            lifecycleScope.launch{
+                if(cart.isEmpty()){toast("Cart empty");return@launch}
+                if(posPaymentType=="Credit" && posCustomer==null){toast("Select a customer for credit sale");return@launch}
+                val invoice="INV-${System.currentTimeMillis()}"
+                val subtotal=cart.sumOf{it.qty*it.rate}
+                val items=cart.map{SaleItem(invoice=invoice,barcode=it.p.barcode,product=it.p.name,qty=it.qty,unitPrice=it.rate,cost=it.p.cost,amount=it.qty*it.rate)}
+                db.withTransaction{
+                    cart.forEach{line->
+                        val changed=db.productDao().decrease(line.p.barcode,line.qty)
+                        if(changed==0) throw IllegalStateException("Stock changed; bill not saved")
+                    }
+                    db.saleDao().sale(Sale(invoice=invoice,customerId=posCustomer?.id,subtotal=subtotal,discount=0.0,tax=0.0,total=subtotal,paid=if(posPaymentType=="Cash") subtotal else 0.0,paymentMethod=posPaymentType))
+                    db.saleDao().items(items)
+                }
+                if(posPaymentType=="Credit" && posCustomer!=null){
+                    db.customerDao().addBalance(posCustomer!!.id,subtotal)
+                }
+                cart.clear();refreshCart();toast("Saved $invoice")
+                posCustomer=null;posPaymentType="Cash"
+                showDashboard()
             }
-            db.saleDao().sale(Sale(invoice=invoice,subtotal=subtotal,discount=0.0,tax=0.0,total=subtotal,paid=subtotal,paymentMethod="Cash"))
-            db.saleDao().items(items)
         }
-        cart.clear();refreshCart();toast("Saved $invoice");showDashboard()
-    }
+        back.setOnClickListener{posPickedProduct=null;posCustomer=null;posPaymentType="Cash";showDashboard()}
     }
 
     private fun refreshCart(){
         listAdapter?.clear()
-        cart.forEach{listAdapter?.add("${it.p.name} × ${it.qty} = ${it.qty*it.p.salePrice} PKR")}
+        cart.forEach{listAdapter?.add("${it.p.name} × ${it.qty} @ ${it.rate.toInt()} = ${it.qty*it.rate} PKR")}
         listAdapter?.notifyDataSetChanged()
-        totalView?.text="Total: ${cart.sumOf{it.qty*it.p.salePrice}} PKR"
+        totalView?.text="Total: ${cart.sumOf{it.qty*it.rate}} PKR"
     }
 
     // ---------- Products ----------
@@ -460,7 +576,7 @@ class MainActivity:AppCompatActivity(){
         back.setOnClickListener{showDashboard()}
     }
 
-    // ---------- Purchase (invoice style: Date, Supplier, Add Item list) ----------
+    // ---------- Purchase ----------
     private fun showPurchaseAddItem(){
         val root=base("Add Item")
         val pickBtn=styledButton(
@@ -497,7 +613,10 @@ class MainActivity:AppCompatActivity(){
     private fun showPurchase(){
         val root=base("🛍️ PURCHASE / STOCK IN")
 
-        val dateField=styledEditText("Date").apply{setText(purDateStr);isSingleLine=true}
+        val dateField=styledEditText("Date").apply{setText(purDateStr);isFocusable=false;isClickable=true}
+        dateField.setOnClickListener{
+            pickDate(purDateStr){picked->purDateStr=picked;showPurchase()}
+        }
         val supplierBtn=styledButton(
             if(purSupplier!=null) "🏢 ${purSupplier!!.name}" else "📋 SELECT SUPPLIER",
             if(purSupplier!=null) COLOR_GREEN else COLOR_GOLD,
@@ -563,7 +682,6 @@ class MainActivity:AppCompatActivity(){
             showSupplierPicker({s->purSupplier=s;showPurchase()},{showPurchase()})
         }
         addItemBtn.setOnClickListener{
-            purDateStr=dateField.text.toString()
             showPurchaseAddItem()
         }
         save.setOnClickListener{
