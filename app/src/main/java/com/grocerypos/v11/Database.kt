@@ -25,16 +25,16 @@ data class Product(
     val category:String="",
     val cost:Double=0.0,            // purchase rate
     val salePrice:Double=0.0,       // retail sale rate
-    val wholesalePrice:Double=0.0,  // wholesale rate (parchon rate)
     val stock:Int=0,
-    val openingStock:Int=0,
     val reorderLevel:Int=0,
     val expiry:String="",
     val unit:String="pcs",
     val unitSize:Int=1,
     val unitNote:String="",
     val secondaryUnit:String="",
-    val secondaryUnitQty:Double=0.0
+    val secondaryUnitQty:Double=0.0,
+    val wholesalePrice:Double=0.0,  // wholesale rate (parchon rate) - added
+    val openingStock:Int=0          // added
 )
 
 @Entity(tableName="customers")
@@ -96,11 +96,11 @@ data class Payment(
 data class Purchase(
     @PrimaryKey val billNo:String,
     val supplierId:Long?,
-    val subtotal:Double=0.0,
-    val discount:Double=0.0,
     val total:Double,
     val paid:Double,
-    val createdAt:Long=System.currentTimeMillis()
+    val createdAt:Long=System.currentTimeMillis(),
+    val subtotal:Double=0.0,   // added
+    val discount:Double=0.0    // added
 )
 
 @Entity(tableName="purchase_items")
