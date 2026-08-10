@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.ui.LoginActivity
 import com.grocerypos.v11.ui.SettingsActivity
+import com.grocerypos.v11.ui.ProductActivity
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -49,7 +50,7 @@ class MainActivity : AppCompatActivity() {
             toast("New Sale screen agle step mein banayenge")
         })
         root.addView(menuButton("Products") {
-            toast("Product list/add screen agle step mein banayenge")
+            startActivity(Intent(this, ProductActivity::class.java))
         })
         root.addView(menuButton("Purchases") {
             toast("Purchase screen abhi khaali hai - agle step mein banayenge")
