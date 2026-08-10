@@ -11,6 +11,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.ui.LoginActivity
 import com.grocerypos.v11.ui.SettingsActivity
 import com.grocerypos.v11.ui.ProductActivity
+import com.grocerypos.v11.ui.PurchaseActivity
 import kotlinx.coroutines.launch
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -58,7 +59,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, ProductActivity::class.java))
         })
         root.addView(menuButton("Purchases") {
-            toast("Purchase screen abhi khaali hai - agle step mein banayenge")
+            startActivity(Intent(this, PurchaseActivity::class.java))
         })
         root.addView(menuButton("Reports") {
             toast("Reports screen abhi khaali hai - agle step mein banayenge")
