@@ -1,5 +1,6 @@
 package com.grocerypos.v11
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
@@ -11,6 +12,8 @@ import com.grocerypos.v11.ui.LoginActivity
 import com.grocerypos.v11.ui.SettingsActivity
 import com.grocerypos.v11.ui.ProductActivity
 import kotlinx.coroutines.launch
+import java.io.PrintWriter
+import java.io.StringWriter
 import java.util.Calendar
 
 class MainActivity : AppCompatActivity() {
@@ -20,6 +23,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        installCrashHandler()
+        showLastCrashIfAny()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -120,5 +125,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    // ---- Crash capture: saves the stack trace so it can be shown next time the app opens ----
+    private fun installCrashHandler() {
+        val prefs = getSharedPreferences("crash_log", MODE_PRIVATE)
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            val sw = StringWriter()
+            throwable.printStackTrace(PrintWriter(sw))
+            prefs.edit().putString("last_crash", sw.toString()).apply()
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+    }
+
+    private fun showLastCrashIfAny() {
+        val prefs = getSharedPreferences("crash_log", MODE_PRIVATE)
+        val crash = prefs.getString("last_crash", null)
+        if (crash != null) {
+            prefs.edit().remove("last_crash").apply()
+            AlertDialog.Builder(this)
+                .setTitle("Last Crash Log (screenshot this)")
+                .setMessage(crash)
+                .setPositiveButton("OK", null)
+                .show()
+        }
     }
 }
