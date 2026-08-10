@@ -1,470 +1,188 @@
 package com.grocerypos.v11
 
-import android.content.Context
-import androidx.room.*
-import kotlinx.coroutines.flow.Flow
-
-// ==========================================
-// 1. DATA TRANSFER OBJECTS (DTOs / POJOs)
-// ==========================================
-
-data class DailySales(
-    val day: String,
-    val total: Double
-)
-
-data class TopProduct(
-    val product: String,
-    val totalQty: Int
-)
-
-data class PurchaseWithSupplier(
-    val billNo: String,
-    val supplierName: String,
-    val total: Double,
-    val createdAt: Long
-)
-
-data class SupplierPurchaseTotal(
-    val supplierName: String,
-    val total: Double
-)
-
-data class SaleWithCustomer(
-    val invoice: String,
-    val customerName: String,
-    val total: Double,
-    val paymentMethod: String,
-    val createdAt: Long
-)
-
-data class CustomerSalesTotal(
-    val customerName: String,
-    val total: Double
-)
-
-// ==========================================
-// 2. ROOM ENTITIES
-// ==========================================
-
-@Entity(tableName = "units")
-data class UnitType(
-    @PrimaryKey val name: String
-)
-
-@Entity(tableName = "categories")
-data class Category(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,
-    val description: String = ""
-)
-
-@Entity(tableName = "products")
-data class Product(
-    @PrimaryKey val barcode: String,
-    val name: String,
-    val categoryId: Long? = null,
-    val category: String = "",
-    val cost: Double = 0.0,
-    val salePrice: Double = 0.0,
-    val wholesalePrice: Double = 0.0,
-    val stock: Int = 0,
-    val reorderLevel: Int = 0,
-    val expiry: String = "",
-    val unit: String = "pcs",
-    val unitSize: Int = 1,
-    val unitNote: String = "",
-    val secondaryUnit: String = "",
-    val secondaryUnitQty: Double = 0.0,
-    val isTaxable: Boolean = false,
-    val isActive: Boolean = true
-)
-
-@Entity(tableName = "customers")
-data class Customer(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,
-    val phone: String = "",
-    val address: String = "",
-    val creditLimit: Double = 0.0,
-    val balance: Double = 0.0
-)
-
-@Entity(tableName = "suppliers")
-data class Supplier(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,
-    val phone: String = "",
-    val company: String = "",
-    val balance: Double = 0.0
-)
-
-@Entity(tableName = "sales")
-data class Sale(
-    @PrimaryKey val invoice: String,
-    val customerId: Long? = null,
-    val subtotal: Double,
-    val discount: Double,
-    val tax: Double,
-    val total: Double,
-    val paid: Double,
-    val balanceDue: Double = 0.0,
-    val paymentMethod: String,
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-@Entity(tableName = "sale_items")
-data class SaleItem(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val invoice: String,
-    val barcode: String,
-    val product: String,
-    val qty: Int,
-    val unitPrice: Double,
-    val cost: Double,
-    val discount: Double = 0.0,
-    val tax: Double = 0.0,
-    val amount: Double
-)
-
-@Entity(tableName = "payments")
-data class Payment(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val reference: String,
-    val partyType: String, // "CUSTOMER" or "SUPPLIER"
-    val partyId: Long?,
-    val amount: Double,
-    val method: String,
-    val note: String = "",
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-@Entity(tableName = "purchases")
-data class Purchase(
-    @PrimaryKey val billNo: String,
-    val supplierId: Long?,
-    val total: Double,
-    val paid: Double,
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-@Entity(tableName = "purchase_items")
-data class PurchaseItem(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val billNo: String,
-    val barcode: String,
-    val qty: Int,
-    val unitCost: Double,
-    val amount: Double
-)
-
-@Entity(tableName = "returns")
-data class ReturnLine(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val reference: String,
-    val type: String, // "SALE_RETURN" or "PURCHASE_RETURN"
-    val barcode: String,
-    val qty: Int,
-    val amount: Double,
-    val reason: String = "",
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-@Entity(tableName = "stock_adjustments")
-data class StockAdjustment(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val barcode: String,
-    val adjustedQty: Int, // Positive for addition, negative for reduction
-    val reason: String, // e.g., "DAMAGE", "EXPIRED", "AUDIT"
-    val adjustedBy: String,
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-@Entity(tableName = "users")
-data class User(
-    @PrimaryKey val username: String,
-    val displayName: String,
-    val role: String,
-    val passwordHash: String,
-    val active: Boolean = true
-)
-
-@Entity(tableName = "audit")
-data class Audit(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val username: String,
-    val action: String,
-    val reference: String = "",
-    val details: String = "",
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-@Entity(tableName = "expenses")
-data class Expense(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val category: String,
-    val description: String,
-    val amount: Double,
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-@Entity(tableName = "held_bills")
-data class HeldBill(
-    @PrimaryKey val holdId: String,
-    val payload: String,
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-// ==========================================
-// 3. DATA ACCESS OBJECTS (DAOs)
-// ==========================================
-
-@Dao
-interface ProductDao {
-    @Query("SELECT * FROM products WHERE barcode = :code LIMIT 1")
-    suspend fun find(code: String): Product?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(p: Product)
-
-    @Query("UPDATE products SET stock = stock - :qty WHERE barcode = :code AND stock >= :qty")
-    suspend fun decrease(code: String, qty: Int): Int
-
-    @Query("UPDATE products SET stock = stock + :qty WHERE barcode = :code")
-    suspend fun increase(code: String, qty: Int)
-
-    @Query("UPDATE products SET unit = :unit WHERE barcode = :code")
-    suspend fun updateUnit(code: String, unit: String)
-
-    @Query("SELECT * FROM products WHERE stock <= reorderLevel AND isActive = 1 ORDER BY name")
-    fun lowStock(): Flow<List<Product>>
-
-    @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY name")
-    fun all(): Flow<List<Product>>
-
-    @Query("SELECT * FROM products WHERE name LIKE '%' || :query || '%' OR barcode LIKE '%' || :query || '%'")
-    suspend fun search(query: String): List<Product>
-}
-
-@Dao
-interface CategoryDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(c: Category): Long
-
-    @Query("SELECT * FROM categories ORDER BY name")
-    fun all(): Flow<List<Category>>
-
-    @Delete
-    suspend fun delete(c: Category)
-}
-
-@Dao
-interface UnitDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(u: UnitType)
-
-    @Query("SELECT * FROM units ORDER BY name")
-    fun all(): Flow<List<UnitType>>
-}
-
-@Dao
-interface CustomerDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(c: Customer): Long
-
-    @Query("SELECT * FROM customers ORDER BY name")
-    fun all(): Flow<List<Customer>>
-
-    @Query("UPDATE customers SET balance = balance + :amt WHERE id = :id")
-    suspend fun addBalance(id: Long, amt: Double)
-
-    @Query("SELECT COALESCE(name, 'Walk-in') as customerName, SUM(total) as total FROM sales LEFT JOIN customers ON sales.customerId = customers.id GROUP BY customerId ORDER BY total DESC")
-    suspend fun salesTotalsByCustomer(): List<CustomerSalesTotal>
-}
-
-@Dao
-interface SupplierDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(s: Supplier): Long
-
-    @Query("SELECT * FROM suppliers ORDER BY name")
-    fun all(): Flow<List<Supplier>>
-
-    @Query("UPDATE suppliers SET balance = balance + :amt WHERE id = :id")
-    suspend fun addBalance(id: Long, amt: Double)
-
-    @Query("SELECT COALESCE(name, 'Cash Purchase') as supplierName, SUM(total) as total FROM purchases LEFT JOIN suppliers ON purchases.supplierId = suppliers.id GROUP BY supplierId ORDER BY total DESC")
-    suspend fun purchaseTotalsBySupplier(): List<SupplierPurchaseTotal>
-}
-
-@Dao
-interface SaleDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun sale(s: Sale)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun items(items: List<SaleItem>)
-
-    @Query("SELECT COUNT(*) FROM sales")
-    suspend fun count(): Int
-
-    @Query("SELECT COALESCE(SUM(total), 0) FROM sales")
-    suspend fun totalSales(): Double
-
-    @Query("SELECT COALESCE(SUM(total), 0) FROM sales WHERE createdAt BETWEEN :start AND :end")
-    suspend fun totalSalesBetween(start: Long, end: Long): Double
-
-    @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end")
-    suspend fun countBetween(start: Long, end: Long): Int
-
-    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
-    suspend fun dailySales(start: Long, end: Long): List<DailySales>
-
-    @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
-    suspend fun topProducts(start: Long, end: Long): List<TopProduct>
-
-    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id = sales.customerId), 'Walk-in') as customerName, total, paymentMethod, createdAt FROM sales ORDER BY createdAt DESC LIMIT 100")
-    suspend fun allSales(): List<SaleWithCustomer>
-
-    @Query("SELECT COALESCE(SUM((unitPrice - cost) * qty), 0) FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end)")
-    suspend fun totalProfitBetween(start: Long, end: Long): Double
-}
-
-@Dao
-interface ExpenseDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(e: Expense)
-
-    @Query("SELECT COALESCE(SUM(amount), 0) FROM expenses")
-    suspend fun total(): Double
-
-    @Query("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE createdAt BETWEEN :start AND :end")
-    suspend fun totalBetween(start: Long, end: Long): Double
-
-    @Query("SELECT * FROM expenses ORDER BY createdAt DESC")
-    fun all(): Flow<List<Expense>>
-}
-
-@Dao
-interface HeldDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun hold(h: HeldBill)
-
-    @Query("SELECT * FROM held_bills ORDER BY createdAt DESC")
-    fun all(): Flow<List<HeldBill>>
-
-    @Delete
-    suspend fun delete(h: HeldBill)
-}
-
-@Dao
-interface PaymentDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(p: Payment)
-
-    @Query("SELECT COALESCE(SUM(amount), 0) FROM payments")
-    suspend fun total(): Double
-}
-
-@Dao
-interface PurchaseDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun purchase(p: Purchase)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun items(items: List<PurchaseItem>)
-
-    @Query("SELECT COALESCE(SUM(total), 0) FROM purchases")
-    suspend fun total(): Double
-
-    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id = purchases.supplierId), 'Cash Purchase') as supplierName, total, createdAt FROM purchases ORDER BY createdAt DESC LIMIT 100")
-    suspend fun allPurchases(): List<PurchaseWithSupplier>
-}
-
-@Dao
-interface ReturnDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(r: ReturnLine)
-
-    @Query("SELECT COALESCE(SUM(amount), 0) FROM returns")
-    suspend fun total(): Double
-}
-
-@Dao
-interface StockAdjustmentDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(adj: StockAdjustment)
-
-    @Query("SELECT * FROM stock_adjustments ORDER BY createdAt DESC")
-    fun all(): Flow<List<StockAdjustment>>
-}
-
-@Dao
-interface UserDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(u: User)
-
-    @Query("SELECT * FROM users WHERE username = :u AND active = 1 LIMIT 1")
-    suspend fun find(u: String): User?
-
-    @Query("SELECT * FROM users ORDER BY username")
-    fun all(): Flow<List<User>>
-}
-
-@Dao
-interface AuditDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(a: Audit)
-
-    @Query("SELECT * FROM audit ORDER BY createdAt DESC LIMIT 200")
-    fun recent(): Flow<List<Audit>>
-}
-
-// ==========================================
-// 4. ROOM DATABASE CLASS
-// ==========================================
-
-@Database(
-    entities = [
-        Product::class, Customer::class, Supplier::class, Sale::class,
-        SaleItem::class, Payment::class, Purchase::class, PurchaseItem::class,
-        ReturnLine::class, User::class, Audit::class, Expense::class,
-        HeldBill::class, UnitType::class, Category::class, StockAdjustment::class
-    ],
-    version = 13,
-    exportSchema = false
-)
-abstract class PosDatabase : RoomDatabase() {
-
-    abstract fun productDao(): ProductDao
-    abstract fun categoryDao(): CategoryDao
-    abstract fun customerDao(): CustomerDao
-    abstract fun supplierDao(): SupplierDao
-    abstract fun saleDao(): SaleDao
-    abstract fun expenseDao(): ExpenseDao
-    abstract fun paymentDao(): PaymentDao
-    abstract fun purchaseDao(): PurchaseDao
-    abstract fun returnDao(): ReturnDao
-    abstract fun stockAdjustmentDao(): StockAdjustmentDao
-    abstract fun userDao(): UserDao
-    abstract fun auditDao(): AuditDao
-    abstract fun heldDao(): HeldDao
-    abstract fun unitDao(): UnitDao
-
-    companion object {
-        @Volatile
-        private var INSTANCE: PosDatabase? = null
-
-        fun get(c: Context): PosDatabase =
-            INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
-                    c.applicationContext,
-                    PosDatabase::class.java,
-                    "grocery_pos_v11.db"
-                )
-                .fallbackToDestructiveMigration()
-                .build()
-                .also { INSTANCE = it }
+import android.content.Intent
+import android.os.Bundle
+import android.text.InputType
+import android.view.View
+import android.widget.*
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.grocerypos.v11.ui.LoginActivity
+import com.grocerypos.v11.ui.SettingsActivity
+import kotlinx.coroutines.launch
+import java.util.*
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var todaySalesText: TextView
+    private lateinit var todayProfitText: TextView
+    private lateinit var monthProfitText: TextView
+    private lateinit var yearProfitText: TextView
+    private lateinit var cashBalanceText: TextView
+
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+
+        val root = ScrollView(this)
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
+        }
+        root.addView(layout)
+
+        layout.addView(TextView(this).apply {
+            text = "Grocery POS Dashboard"
+            textSize = 24f
+        })
+
+        layout.addView(View(this).apply { setPadding(0, 16, 0, 16) })
+
+        // ---- Prominent profit / sales summary ----
+        todaySalesText = TextView(this).apply { textSize = 18f; text = "Today's Sales: -" }
+        todayProfitText = TextView(this).apply { textSize = 18f; text = "Today's Profit: -" }
+        monthProfitText = TextView(this).apply { textSize = 18f; text = "This Month's Profit: -" }
+        yearProfitText = TextView(this).apply { textSize = 18f; text = "This Year's Profit: -" }
+        cashBalanceText = TextView(this).apply { textSize = 18f; text = "Cash in Hand: -" }
+
+        listOf(todaySalesText, todayProfitText, monthProfitText, yearProfitText, cashBalanceText)
+            .forEach { layout.addView(it) }
+
+        layout.addView(View(this).apply { setPadding(0, 24, 0, 24) })
+
+        // ---- Navigation buttons ----
+        layout.addView(Button(this).apply {
+            text = "NEW SALE (POS)"
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, "POS billing screen - coming soon", Toast.LENGTH_SHORT).show()
             }
+        })
+        layout.addView(Button(this).apply {
+            text = "PURCHASE"
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, "Purchase screen - coming soon", Toast.LENGTH_SHORT).show()
+            }
+        })
+        layout.addView(Button(this).apply {
+            text = "PRODUCTS"
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, "Products screen - coming soon", Toast.LENGTH_SHORT).show()
+            }
+        })
+        layout.addView(Button(this).apply {
+            text = "REPORTS"
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, "Reports screen - coming soon", Toast.LENGTH_SHORT).show()
+            }
+        })
+        layout.addView(Button(this).apply {
+            text = "CASH IN / CASH OUT"
+            setOnClickListener { showCashDialog() }
+        })
+        layout.addView(Button(this).apply {
+            text = "SETTINGS"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+            }
+        })
+        layout.addView(Button(this).apply {
+            text = "LOGOUT"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, LoginActivity::class.java))
+                finish()
+            }
+        })
+
+        setContentView(root)
+        loadDashboard()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        loadDashboard()
+    }
+
+    private fun loadDashboard() {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@MainActivity)
+            val now = System.currentTimeMillis()
+
+            val todayCal = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+            }
+            val monthCal = Calendar.getInstance().apply {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+            }
+            val yearCal = Calendar.getInstance().apply {
+                set(Calendar.DAY_OF_YEAR, 1)
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+            }
+
+            val todaySales = db.saleDao().totalSalesBetween(todayCal.timeInMillis, now)
+            val todayProfit = db.saleDao().profitBetween(todayCal.timeInMillis, now)
+            val monthProfit = db.saleDao().profitBetween(monthCal.timeInMillis, now)
+            val yearProfit = db.saleDao().profitBetween(yearCal.timeInMillis, now)
+
+            val cashIn = db.cashTransactionDao().totalBetween("IN", "cash", 0L, now)
+            val cashOut = db.cashTransactionDao().totalBetween("OUT", "cash", 0L, now)
+            val cashFromSales = db.paymentDao().totalByMethodBetween("cash", 0L, now)
+            val cashBalance = cashIn - cashOut + cashFromSales
+
+            todaySalesText.text = "Today's Sales: %.2f".format(todaySales)
+            todayProfitText.text = "Today's Profit: %.2f".format(todayProfit)
+            monthProfitText.text = "This Month's Profit: %.2f".format(monthProfit)
+            yearProfitText.text = "This Year's Profit: %.2f".format(yearProfit)
+            cashBalanceText.text = "Cash in Hand: %.2f".format(cashBalance)
+        }
+    }
+
+    private fun showCashDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+        val typeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("IN", "OUT"))
+        }
+        val methodSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("cash", "bank"))
+        }
+        val amount = EditText(this).apply {
+            hint = "Amount"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val reason = EditText(this).apply { hint = "Reason (optional)" }
+
+        layout.addView(TextView(this).apply { text = "Type" })
+        layout.addView(typeSpinner)
+        layout.addView(TextView(this).apply { text = "Method" })
+        layout.addView(methodSpinner)
+        layout.addView(amount)
+        layout.addView(reason)
+
+        AlertDialog.Builder(this)
+            .setTitle("Cash In / Cash Out")
+            .setView(layout)
+            .setPositiveButton("SAVE") { _, _ ->
+                val amt = amount.text.toString().toDoubleOrNull() ?: 0.0
+                if (amt > 0) {
+                    lifecycleScope.launch {
+                        PosDatabase.get(this@MainActivity).cashTransactionDao().insert(
+                            CashTransaction(
+                                type = typeSpinner.selectedItem.toString(),
+                                method = methodSpinner.selectedItem.toString(),
+                                amount = amt,
+                                reason = reason.text.toString()
+                            )
+                        )
+                        loadDashboard()
+                    }
+                } else {
+                    Toast.makeText(this, "Enter a valid amount", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
     }
 }
