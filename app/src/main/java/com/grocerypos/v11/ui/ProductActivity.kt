@@ -14,7 +14,6 @@ import kotlinx.coroutines.launch
 
 class ProductActivity : AppCompatActivity() {
 
-    private lateinit var barcode: EditText
     private lateinit var name: EditText
     private lateinit var categorySpinner: Spinner
     private lateinit var unitSpinner: Spinner
@@ -24,8 +23,6 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var salePrice: EditText
     private lateinit var wholesalePrice: EditText
     private lateinit var stock: EditText
-    private lateinit var reorderLevel: EditText
-    private lateinit var expiry: EditText
     private lateinit var listContainer: LinearLayout
 
     private var units = listOf("pcs", "kg", "box", "dozen")
@@ -40,9 +37,8 @@ class ProductActivity : AppCompatActivity() {
 
         root.addView(TextView(this).apply { text = "Add / Edit Product"; textSize = 22f })
 
-        barcode = field("Barcode")
         name = field("Product Name")
-        root.addView(barcode); root.addView(name)
+        root.addView(name)
 
         categorySpinner = Spinner(this)
         root.addView(labeled("Category", categorySpinner))
@@ -61,10 +57,8 @@ class ProductActivity : AppCompatActivity() {
         salePrice = field("Sale Rate (Retail)")
         wholesalePrice = field("Wholesale Rate")
         stock = field("Opening Stock")
-        reorderLevel = field("Reorder Level (low stock alert)")
-        expiry = field("Expiry Date (YYYY-MM-DD, optional)")
         root.addView(cost); root.addView(salePrice); root.addView(wholesalePrice)
-        root.addView(stock); root.addView(reorderLevel); root.addView(expiry)
+        root.addView(stock)
 
         root.addView(Button(this).apply {
             text = "SAVE PRODUCT"
@@ -149,12 +143,13 @@ class ProductActivity : AppCompatActivity() {
     }
 
     private fun saveProduct() {
-        val code = barcode.text.toString().trim()
         val pname = name.text.toString().trim()
-        if (code.isEmpty() || pname.isEmpty()) {
-            Toast.makeText(this, "Barcode aur Name zaroori hain", Toast.LENGTH_SHORT).show()
+        if (pname.isEmpty()) {
+            Toast.makeText(this, "Product Name zaroori hai", Toast.LENGTH_SHORT).show()
             return
         }
+        // barcode auto-generated internally - not asked from user
+        val code = "P" + System.currentTimeMillis().toString()
         val secUnit = secondaryUnitSpinner.selectedItem?.toString() ?: "None"
         val openingQty = stock.text.toString().toIntOrNull() ?: 0
         val product = Product(
@@ -166,8 +161,6 @@ class ProductActivity : AppCompatActivity() {
             wholesalePrice = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0,
             stock = openingQty,
             openingStock = openingQty,
-            reorderLevel = reorderLevel.text.toString().toIntOrNull() ?: 0,
-            expiry = expiry.text.toString().trim(),
             unit = unitSpinner.selectedItem?.toString() ?: "pcs",
             secondaryUnit = if (secUnit == "None") "" else secUnit,
             secondaryUnitQty = secondaryUnitQty.text.toString().toDoubleOrNull() ?: 0.0
@@ -175,7 +168,7 @@ class ProductActivity : AppCompatActivity() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).productDao().upsert(product)
             Toast.makeText(this@ProductActivity, "Product saved", Toast.LENGTH_SHORT).show()
-            barcode.text.clear(); name.text.clear()
+            name.text.clear()
         }
     }
 
@@ -185,7 +178,7 @@ class ProductActivity : AppCompatActivity() {
                 listContainer.removeAllViews()
                 for (p in list) {
                     listContainer.addView(TextView(this@ProductActivity).apply {
-                        text = "${p.name} [${p.barcode}] - ${p.category}\n" +
+                        text = "${p.name} - ${p.category}\n" +
                                 "Stock: ${p.stock} ${p.unit}  |  Cost: ${p.cost}  Sale: ${p.salePrice}  Wholesale: ${p.wholesalePrice}"
                         setPadding(0, 12, 0, 12)
                     })
