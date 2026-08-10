@@ -2,6 +2,8 @@ package com.grocerypos.v11
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -12,6 +14,7 @@ import com.grocerypos.v11.ui.LoginActivity
 import com.grocerypos.v11.ui.SettingsActivity
 import com.grocerypos.v11.ui.ProductActivity
 import com.grocerypos.v11.ui.PurchaseActivity
+import com.grocerypos.v11.ui.SaleActivity
 import kotlinx.coroutines.launch
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -42,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         val summaryCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
+            background = roundedBackground("#F3E5F5", 24)
         }
         todaySaleText = TextView(this).apply { text = "Today's Sale: Rs 0"; textSize = 18f }
         todayProfitText = TextView(this).apply { text = "Today's Profit: Rs 0"; textSize = 18f }
@@ -51,29 +55,29 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(divider())
 
-        // ---- Menu buttons ----
-        root.addView(menuButton("New Sale (POS)") {
-            toast("New Sale screen agle step mein banayenge")
+        // ---- Menu buttons (premium colors) ----
+        root.addView(menuButton("New Sale (POS)", "#2E7D32") {
+            startActivity(Intent(this, SaleActivity::class.java))
         })
-        root.addView(menuButton("Products") {
+        root.addView(menuButton("Products", "#1565C0") {
             startActivity(Intent(this, ProductActivity::class.java))
         })
-        root.addView(menuButton("Purchases") {
+        root.addView(menuButton("Purchases", "#EF6C00") {
             startActivity(Intent(this, PurchaseActivity::class.java))
         })
-        root.addView(menuButton("Reports") {
+        root.addView(menuButton("Reports", "#6A1B9A") {
             toast("Reports screen abhi khaali hai - agle step mein banayenge")
         })
-        root.addView(menuButton("Cash In / Cash Out") {
+        root.addView(menuButton("Cash In / Cash Out", "#00838F") {
             toast("Cash register screen agle step mein banayenge")
         })
-        root.addView(menuButton("Customers & Suppliers") {
+        root.addView(menuButton("Customers & Suppliers", "#4E342E") {
             toast("Party ledger screen agle step mein banayenge")
         })
-        root.addView(menuButton("Settings") {
+        root.addView(menuButton("Settings", "#37474F") {
             startActivity(Intent(this, SettingsActivity::class.java))
         })
-        root.addView(menuButton("Logout") {
+        root.addView(menuButton("Logout", "#C62828") {
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
         })
@@ -107,11 +111,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun menuButton(label: String, onClick: () -> Unit): Button {
+    private fun menuButton(label: String, colorHex: String, onClick: () -> Unit): Button {
         return Button(this).apply {
             text = label
-            gravity = Gravity.START
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setTextColor(Color.WHITE)
+            setPadding(32, 28, 32, 28)
+            background = roundedBackground(colorHex, 18)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 10, 0, 10) }
             setOnClickListener { onClick() }
+        }
+    }
+
+    private fun roundedBackground(colorHex: String, cornerRadius: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(Color.parseColor(colorHex))
+            this.cornerRadius = cornerRadius.toFloat()
         }
     }
 
