@@ -1,189 +1,232 @@
 package com.grocerypos.v11.ui
 
-import android.app.AlertDialog
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.Gravity
+import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
-import com.grocerypos.v11.Product
-import com.grocerypos.v11.UnitType
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
-class ProductActivity : AppCompatActivity() {
+class ReportsActivity : AppCompatActivity() {
 
-    private lateinit var name: EditText
-    private lateinit var categorySpinner: Spinner
-    private lateinit var unitSpinner: Spinner
-    private lateinit var secondaryUnitSpinner: Spinner
-    private lateinit var secondaryUnitQty: EditText
-    private lateinit var cost: EditText
-    private lateinit var salePrice: EditText
-    private lateinit var wholesalePrice: EditText
-    private lateinit var stock: EditText
-    private lateinit var listContainer: LinearLayout
+    private lateinit var resultsBox: LinearLayout
+    private var periodLabel: TextView? = null
 
-    private var units = listOf("pcs", "kg", "box", "dozen")
+    // period range currently selected, defaults to Today
+    private var rangeStart: Long = 0
+    private var rangeEnd: Long = 0
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 32, 28, 32)
+            setPadding(32, 40, 32, 32)
         }
 
-        root.addView(TextView(this).apply { text = "Add / Edit Product"; textSize = 22f })
-
-        name = field("Product Name")
-        root.addView(name)
-
-        categorySpinner = Spinner(this)
-        root.addView(labeled("Category", categorySpinner))
-        root.addView(smallButton("+ Add New Category") { promptAddCategory() })
-
-        unitSpinner = Spinner(this)
-        root.addView(labeled("Unit", unitSpinner))
-        root.addView(smallButton("+ Add New Unit") { promptAddUnit() })
-
-        secondaryUnitSpinner = Spinner(this)
-        root.addView(labeled("Secondary Unit (optional)", secondaryUnitSpinner))
-        secondaryUnitQty = field("1 Unit = how many Secondary Units? (e.g. 1 box = 12 pcs)")
-        root.addView(secondaryUnitQty)
-
-        cost = field("Purchase Rate")
-        salePrice = field("Sale Rate (Retail)")
-        wholesalePrice = field("Wholesale Rate")
-        stock = field("Opening Stock")
-        root.addView(cost); root.addView(salePrice); root.addView(wholesalePrice)
-        root.addView(stock)
-
-        root.addView(Button(this).apply {
-            text = "SAVE PRODUCT"
-            setOnClickListener { saveProduct() }
+        root.addView(TextView(this).apply {
+            text = "Reports"
+            textSize = 24f
+            setPadding(0, 0, 0, 24)
         })
 
-        root.addView(TextView(this).apply { text = "\nProducts"; textSize = 20f })
-        listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(listContainer)
+        // ---- Period filter buttons ----
+        val filterRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        filterRow.addView(smallButton("Today") { setRangeToday(); loadReport() })
+        filterRow.addView(smallButton("This Week") { setRangeThisWeek(); loadReport() })
+        filterRow.addView(smallButton("This Month") { setRangeThisMonth(); loadReport() })
+        filterRow.addView(smallButton("All Time") { setRangeAllTime(); loadReport() })
+        root.addView(filterRow)
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        periodLabel = TextView(this).apply {
+            textSize = 14f
+            setTextColor(Color.GRAY)
+            setPadding(0, 16, 0, 16)
+        }
+        root.addView(periodLabel)
 
-        loadCategories()
-        loadUnits()
-        loadProducts()
+        root.addView(divider())
+
+        resultsBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        root.addView(resultsBox)
+
+        val scroll = ScrollView(this).apply { addView(root) }
+        setContentView(scroll)
+
+        setRangeToday()
+        loadReport()
     }
 
-    private fun field(hint: String) = EditText(this).apply { this.hint = hint }
+    // ---- Date range helpers ----
+    private fun setRangeToday() {
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+        rangeStart = cal.timeInMillis
+        rangeEnd = rangeStart + 24 * 60 * 60 * 1000L
+        periodLabel?.text = "Showing: Today"
+    }
 
-    private fun labeled(label: String, view: android.view.View): LinearLayout {
+    private fun setRangeThisWeek() {
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
+        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+        rangeStart = cal.timeInMillis
+        rangeEnd = System.currentTimeMillis()
+        periodLabel?.text = "Showing: This Week"
+    }
+
+    private fun setRangeThisMonth() {
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.DAY_OF_MONTH, 1)
+        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+        rangeStart = cal.timeInMillis
+        rangeEnd = System.currentTimeMillis()
+        periodLabel?.text = "Showing: This Month"
+    }
+
+    private fun setRangeAllTime() {
+        rangeStart = 0L
+        rangeEnd = System.currentTimeMillis()
+        periodLabel?.text = "Showing: All Time"
+    }
+
+    // ---- Load and display ----
+    private fun loadReport() {
+        resultsBox.removeAllViews()
+        resultsBox.addView(TextView(this).apply { text = "Loading..." })
+
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@ReportsActivity)
+
+            val totalSales = db.saleDao().totalSalesBetween(rangeStart, rangeEnd)
+            val totalProfit = db.saleDao().profitBetween(rangeStart, rangeEnd)
+            val totalPurchases = db.purchaseDao().totalBetween(rangeStart, rangeEnd)
+            val totalExpenses = db.expenseDao().totalBetween(rangeStart, rangeEnd)
+            val saleCount = db.saleDao().countBetween(rangeStart, rangeEnd)
+            val topProducts = db.saleDao().topProducts(rangeStart, rangeEnd)
+            val dailySales = db.saleDao().dailySales(rangeStart, rangeEnd)
+
+            resultsBox.removeAllViews()
+
+            // Summary cards
+            resultsBox.addView(summaryCard("Total Sales", "Rs %.2f".format(totalSales), "#1565C0"))
+            resultsBox.addView(summaryCard("Total Profit", "Rs %.2f".format(totalProfit), "#2E7D32"))
+            resultsBox.addView(summaryCard("Total Purchases", "Rs %.2f".format(totalPurchases), "#EF6C00"))
+            resultsBox.addView(summaryCard("Total Expenses", "Rs %.2f".format(totalExpenses), "#C62828"))
+            resultsBox.addView(summaryCard("Number of Sales", "$saleCount", "#6A1B9A"))
+
+            resultsBox.addView(divider())
+
+            // Top products
+            resultsBox.addView(sectionTitle("Top Products"))
+            if (topProducts.isEmpty()) {
+                resultsBox.addView(emptyText("Is period mein koi sale nahi hui"))
+            } else {
+                topProducts.forEach { tp ->
+                    resultsBox.addView(rowText("${tp.product}", "${tp.totalQty} sold"))
+                }
+            }
+
+            resultsBox.addView(divider())
+
+            // Daily breakdown
+            resultsBox.addView(sectionTitle("Daily Sales"))
+            if (dailySales.isEmpty()) {
+                resultsBox.addView(emptyText("Koi data nahi"))
+            } else {
+                dailySales.forEach { d ->
+                    resultsBox.addView(rowText(d.day, "Rs %.2f".format(d.total)))
+                }
+            }
+        }
+    }
+
+    // ---- UI helpers ----
+    private fun summaryCard(label: String, value: String, colorHex: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(TextView(this@ProductActivity).apply { text = label })
-            addView(view)
+            setPadding(24, 20, 24, 20)
+            background = roundedBackground(colorHex, 16)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 8, 0, 8) }
+            addView(TextView(this@ReportsActivity).apply {
+                text = label; setTextColor(Color.WHITE); textSize = 14f
+            })
+            addView(TextView(this@ReportsActivity).apply {
+                text = value; setTextColor(Color.WHITE); textSize = 22f
+            })
         }
     }
 
-    private fun smallButton(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        setOnClickListener { onClick() }
-    }
-
-    private fun loadCategories() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@ProductActivity).categoryDao().all().collectLatest { list ->
-                val names = (listOf("General") + list.map { it.name }).distinct()
-                categorySpinner.adapter = ArrayAdapter(this@ProductActivity, android.R.layout.simple_spinner_dropdown_item, names)
-            }
+    private fun sectionTitle(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            textSize = 18f
+            setPadding(0, 16, 0, 8)
         }
     }
 
-    private fun loadUnits() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@ProductActivity).unitDao().all().collectLatest { list ->
-                units = (listOf("pcs", "kg", "box", "dozen") + list.map { it.name }).distinct()
-                unitSpinner.adapter = ArrayAdapter(this@ProductActivity, android.R.layout.simple_spinner_dropdown_item, units)
-                secondaryUnitSpinner.adapter = ArrayAdapter(this@ProductActivity, android.R.layout.simple_spinner_dropdown_item, listOf("None") + units)
-            }
+    private fun rowText(left: String, right: String): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(8, 12, 8, 12)
+            addView(TextView(this@ReportsActivity).apply {
+                text = left; textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@ReportsActivity).apply {
+                text = right; textSize = 15f; gravity = Gravity.END
+            })
         }
     }
 
-    private fun promptAddCategory() {
-        val input = EditText(this)
-        AlertDialog.Builder(this)
-            .setTitle("New Category")
-            .setView(input)
-            .setPositiveButton("Add") { _, _ ->
-                val v = input.text.toString().trim()
-                if (v.isNotEmpty()) lifecycleScope.launch {
-                    PosDatabase.get(this@ProductActivity).categoryDao().insert(Category(v))
-                    Toast.makeText(this@ProductActivity, "Category added", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun promptAddUnit() {
-        val input = EditText(this)
-        AlertDialog.Builder(this)
-            .setTitle("New Unit")
-            .setView(input)
-            .setPositiveButton("Add") { _, _ ->
-                val v = input.text.toString().trim()
-                if (v.isNotEmpty()) lifecycleScope.launch {
-                    PosDatabase.get(this@ProductActivity).unitDao().insert(UnitType(v))
-                    Toast.makeText(this@ProductActivity, "Unit added", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun saveProduct() {
-        val pname = name.text.toString().trim()
-        if (pname.isEmpty()) {
-            Toast.makeText(this, "Product Name zaroori hai", Toast.LENGTH_SHORT).show()
-            return
-        }
-        // barcode auto-generated internally - not asked from user
-        val code = "P" + System.currentTimeMillis().toString()
-        val secUnit = secondaryUnitSpinner.selectedItem?.toString() ?: "None"
-        val openingQty = stock.text.toString().toIntOrNull() ?: 0
-        val product = Product(
-            barcode = code,
-            name = pname,
-            category = categorySpinner.selectedItem?.toString() ?: "General",
-            cost = cost.text.toString().toDoubleOrNull() ?: 0.0,
-            salePrice = salePrice.text.toString().toDoubleOrNull() ?: 0.0,
-            wholesalePrice = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0,
-            stock = openingQty,
-            openingStock = openingQty,
-            unit = unitSpinner.selectedItem?.toString() ?: "pcs",
-            secondaryUnit = if (secUnit == "None") "" else secUnit,
-            secondaryUnitQty = secondaryUnitQty.text.toString().toDoubleOrNull() ?: 0.0
-        )
-        lifecycleScope.launch {
-            PosDatabase.get(this@ProductActivity).productDao().upsert(product)
-            Toast.makeText(this@ProductActivity, "Product saved", Toast.LENGTH_SHORT).show()
-            name.text.clear()
+    private fun emptyText(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(Color.GRAY)
+            setPadding(8, 8, 8, 8)
         }
     }
 
-    private fun loadProducts() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@ProductActivity).productDao().all().collectLatest { list ->
-                listContainer.removeAllViews()
-                for (p in list) {
-                    listContainer.addView(TextView(this@ProductActivity).apply {
-                        text = "${p.name} - ${p.category}\n" +
-                                "Stock: ${p.stock} ${p.unit}  |  Cost: ${p.cost}  Sale: ${p.salePrice}  Wholesale: ${p.wholesalePrice}"
-                        setPadding(0, 12, 0, 12)
-                    })
-                }
-            }
+    private fun smallButton(label: String, onClick: () -> Unit): Button {
+        return Button(this).apply {
+            text = label
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            background = roundedBackground("#37474F", 12)
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+            ).apply { setMargins(4, 0, 4, 0) }
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun roundedBackground(colorHex: String, cornerRadius: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(Color.parseColor(colorHex))
+            this.cornerRadius = cornerRadius.toFloat()
+        }
+    }
+
+    private fun divider(): View {
+        return View(this).apply {
+            setBackgroundColor(0xFFDDDDDD.toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 2
+            ).apply { setMargins(0, 16, 0, 16) }
         }
     }
 }
