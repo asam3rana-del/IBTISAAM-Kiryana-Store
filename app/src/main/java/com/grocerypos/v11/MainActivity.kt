@@ -30,6 +30,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+
+        // ---- Require login before showing the dashboard ----
+        val session = getSharedPreferences("session", MODE_PRIVATE)
+        if (session.getString("username", null) == null) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
         installCrashHandler()
         showLastCrashIfAny()
 
@@ -68,19 +77,20 @@ class MainActivity : AppCompatActivity() {
         root.addView(menuButton("Purchases", "#EF6C00") {
             startActivity(Intent(this, PurchaseActivity::class.java))
         })
-    root.addView(menuButton("Reports", "#6A1B9A") {
-    startActivity(Intent(this, ReportsActivity::class.java))
-})
-root.addView(menuButton("Cash In / Cash Out", "#00838F") {
-    startActivity(Intent(this, CashActivity::class.java))
-})
-root.addView(menuButton("Customers & Suppliers", "#4E342E") {
-    startActivity(Intent(this, PartyActivity::class.java))
-})
+        root.addView(menuButton("Reports", "#6A1B9A") {
+            startActivity(Intent(this, ReportsActivity::class.java))
+        })
+        root.addView(menuButton("Cash In / Cash Out", "#00838F") {
+            startActivity(Intent(this, CashActivity::class.java))
+        })
+        root.addView(menuButton("Customers & Suppliers", "#4E342E") {
+            startActivity(Intent(this, PartyActivity::class.java))
+        })
         root.addView(menuButton("Settings", "#37474F") {
             startActivity(Intent(this, SettingsActivity::class.java))
         })
         root.addView(menuButton("Logout", "#C62828") {
+            getSharedPreferences("session", MODE_PRIVATE).edit().remove("username").apply()
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
         })
