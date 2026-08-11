@@ -293,6 +293,7 @@ interface ProductDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(u:User)
     @Query("SELECT * FROM users WHERE username=:u AND active=1 LIMIT 1") suspend fun find(u:String):User?
     @Query("SELECT * FROM users ORDER BY username") fun all():Flow<List<User>>
+    @Query("DELETE FROM users WHERE username=:u") suspend fun delete(u:String)
 }
 
 @Dao interface AuditDao { @Insert suspend fun insert(a:Audit) }
