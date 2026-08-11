@@ -1,7 +1,12 @@
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
+import android.graphics.Color
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.Gravity
+import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -23,6 +28,7 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var salePrice: EditText
     private lateinit var wholesalePrice: EditText
     private lateinit var stock: EditText
+    private lateinit var perUnitInfo: TextView
     private lateinit var listContainer: LinearLayout
 
     private var units = listOf("pcs", "kg", "box", "dozen")
@@ -35,23 +41,32 @@ class ProductActivity : AppCompatActivity() {
             setPadding(28, 32, 28, 32)
         }
 
-        root.addView(TextView(this).apply { text = "Add / Edit Product"; textSize = 22f })
+        root.addView(TextView(this).apply { text = "Add / Edit Product"; textSize = 22f; setPadding(0,0,0,16) })
 
         name = field("Product Name")
         root.addView(name)
 
+        // ---- Category: dropdown + small "+" button on the side ----
         categorySpinner = Spinner(this)
-        root.addView(labeled("Category", categorySpinner))
-        root.addView(smallButton("+ Add New Category") { promptAddCategory() })
+        root.addView(labeledWithAdd("Category", categorySpinner) { promptAddCategory() })
 
+        // ---- Unit: dropdown + small "+" button on the side ----
         unitSpinner = Spinner(this)
-        root.addView(labeled("Unit", unitSpinner))
-        root.addView(smallButton("+ Add New Unit") { promptAddUnit() })
+        root.addView(labeledWithAdd("Unit", unitSpinner) { promptAddUnit() })
 
+        // ---- Secondary unit (relation to main unit) ----
         secondaryUnitSpinner = Spinner(this)
         root.addView(labeled("Secondary Unit (optional)", secondaryUnitSpinner))
         secondaryUnitQty = field("1 Unit = how many Secondary Units? (e.g. 1 box = 12 pcs)")
         root.addView(secondaryUnitQty)
+
+        perUnitInfo = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#1565C0"))
+            setPadding(0, 8, 0, 16)
+            visibility = View.GONE
+        }
+        root.addView(perUnitInfo)
 
         cost = field("Purchase Rate")
         salePrice = field("Sale Rate (Retail)")
@@ -74,6 +89,7 @@ class ProductActivity : AppCompatActivity() {
         loadCategories()
         loadUnits()
         loadProducts()
+        setupLivePricingWatchers()
     }
 
     private fun field(hint: String) = EditText(this).apply { this.hint = hint }
@@ -86,9 +102,26 @@ class ProductActivity : AppCompatActivity() {
         }
     }
 
-    private fun smallButton(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        setOnClickListener { onClick() }
+    // Dropdown on the left, small "+" button beside it on the right
+    private fun labeledWithAdd(label: String, view: View, onAdd: () -> Unit): LinearLayout {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(TextView(this@ProductActivity).apply { text = label })
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        view.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        row.addView(view)
+        row.addView(Button(this).apply {
+            text = "+"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(12, 0, 0, 0) }
+            setOnClickListener { onAdd() }
+        })
+        col.addView(row)
+        return col
     }
 
     private fun loadCategories() {
@@ -140,6 +173,54 @@ class ProductActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    // ---- Live calculation: secondary unit price = main unit price / how many secondary units in 1 main unit ----
+    private fun setupLivePricingWatchers() {
+        val watcher = simpleWatcher { updateSecondaryUnitPricing() }
+        cost.addTextChangedListener(watcher)
+        salePrice.addTextChangedListener(watcher)
+        wholesalePrice.addTextChangedListener(watcher)
+        secondaryUnitQty.addTextChangedListener(watcher)
+
+        secondaryUnitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) = updateSecondaryUnitPricing()
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) = updateSecondaryUnitPricing()
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+    }
+
+    private fun updateSecondaryUnitPricing() {
+        val secUnit = secondaryUnitSpinner.selectedItem?.toString() ?: "None"
+        val qty = secondaryUnitQty.text.toString().toDoubleOrNull() ?: 0.0
+
+        if (secUnit == "None" || qty <= 0.0) {
+            perUnitInfo.visibility = View.GONE
+            return
+        }
+
+        val mainUnit = unitSpinner.selectedItem?.toString() ?: "unit"
+        val sp = salePrice.text.toString().toDoubleOrNull() ?: 0.0
+        val cp = cost.text.toString().toDoubleOrNull() ?: 0.0
+        val wp = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0
+
+        val sb = StringBuilder()
+        sb.append("1 $mainUnit = $qty $secUnit\n")
+        if (cp > 0) sb.append("Cost per $secUnit: Rs %.2f\n".format(cp / qty))
+        if (sp > 0) sb.append("Sale price per $secUnit: Rs %.2f\n".format(sp / qty))
+        if (wp > 0) sb.append("Wholesale price per $secUnit: Rs %.2f".format(wp / qty))
+
+        perUnitInfo.text = sb.toString().trim()
+        perUnitInfo.visibility = View.VISIBLE
+    }
+
+    private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun afterTextChanged(s: Editable?) = onChange()
     }
 
     private fun saveProduct() {
