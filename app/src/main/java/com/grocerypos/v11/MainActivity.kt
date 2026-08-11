@@ -25,8 +25,8 @@ import java.util.Calendar
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var todaySaleText: TextView
-    private lateinit var todayProfitText: TextView
+    private lateinit var todaySaleValue: TextView
+    private lateinit var todayProfitValue: TextView
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -42,60 +42,102 @@ class MainActivity : AppCompatActivity() {
         installCrashHandler()
         showLastCrashIfAny()
 
+        val bgColor = "#F4F3FB"
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 40, 32, 32)
+            setPadding(28, 36, 28, 36)
+            setBackgroundColor(Color.parseColor(bgColor))
         }
+
+        // ================= HEADER =================
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(24, 22, 24, 22)
+            background = roundedBackground("#1A237E", 22)
+            elevation = 10f
+        }
+        header.addView(avatarCircle("IK", 64, "#5C6BC0"))
+        val headerText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 0, 0, 0)
+        }
+        headerText.addView(TextView(this).apply {
+            text = "IBTISAAM Kiryana Store"
+            textSize = 19f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        headerText.addView(TextView(this).apply {
+            text = "Point of Sale System"
+            textSize = 12f
+            setTextColor(Color.parseColor("#C5CAE9"))
+        })
+        header.addView(headerText)
+        root.addView(header)
+
+        root.addView(spacer(24))
+
+        // ================= STAT CARDS =================
+        val statsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        val saleCard = statCard("💰", "Today's Sale", "#2E7D32")
+        todaySaleValue = saleCard.getTag(1) as TextView
+        val profitCard = statCard("📈", "Today's Profit", "#1565C0")
+        todayProfitValue = profitCard.getTag(1) as TextView
+
+        (saleCard.getTag(0) as LinearLayout).layoutParams =
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,10,0) }
+        (profitCard.getTag(0) as LinearLayout).layoutParams =
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10,0,0,0) }
+
+        statsRow.addView(saleCard.getTag(0) as LinearLayout)
+        statsRow.addView(profitCard.getTag(0) as LinearLayout)
+        root.addView(statsRow)
+
+        root.addView(spacer(28))
 
         root.addView(TextView(this).apply {
-            text = "IBTISAAM Kiryana Store"
-            textSize = 24f
-            setPadding(0, 0, 0, 24)
+            text = "MENU"
+            textSize = 13f
+            setTextColor(Color.parseColor("#9E9E9E"))
+            setPadding(4, 0, 0, 12)
         })
 
-        // ---- Dashboard summary card ----
-        val summaryCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            background = roundedBackground("#F3E5F5", 24)
+        // ================= MENU GRID (2 tiles per row) =================
+        val tiles = listOf(
+            Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this, SaleActivity::class.java)) },
+            Tile("📦", "Products", "#1565C0") { startActivity(Intent(this, ProductActivity::class.java)) },
+            Tile("🧾", "Purchases", "#EF6C00") { startActivity(Intent(this, PurchaseActivity::class.java)) },
+            Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this, ReportsActivity::class.java)) },
+            Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this, CashActivity::class.java)) },
+            Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this, PartyActivity::class.java)) },
+            Tile("⚙️", "Settings", "#37474F") { startActivity(Intent(this, SettingsActivity::class.java)) },
+            Tile("🚪", "Logout", "#C62828") {
+                getSharedPreferences("session", MODE_PRIVATE).edit().remove("username").apply()
+                startActivity(Intent(this, LoginActivity::class.java))
+                finish()
+            }
+        )
+
+        tiles.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            pair.forEachIndexed { idx, tile ->
+                val tileView = menuTile(tile)
+                tileView.layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                ).apply {
+                    if (idx == 0) setMargins(0, 0, 8, 16) else setMargins(8, 0, 0, 16)
+                }
+                row.addView(tileView)
+            }
+            root.addView(row)
         }
-        todaySaleText = TextView(this).apply { text = "Today's Sale: Rs 0"; textSize = 18f }
-        todayProfitText = TextView(this).apply { text = "Today's Profit: Rs 0"; textSize = 18f }
-        summaryCard.addView(todaySaleText)
-        summaryCard.addView(todayProfitText)
-        root.addView(summaryCard)
 
-        root.addView(divider())
-
-        // ---- Menu buttons (premium colors) ----
-        root.addView(menuButton("New Sale (POS)", "#2E7D32") {
-            startActivity(Intent(this, SaleActivity::class.java))
-        })
-        root.addView(menuButton("Products", "#1565C0") {
-            startActivity(Intent(this, ProductActivity::class.java))
-        })
-        root.addView(menuButton("Purchases", "#EF6C00") {
-            startActivity(Intent(this, PurchaseActivity::class.java))
-        })
-        root.addView(menuButton("Reports", "#6A1B9A") {
-            startActivity(Intent(this, ReportsActivity::class.java))
-        })
-        root.addView(menuButton("Cash In / Cash Out", "#00838F") {
-            startActivity(Intent(this, CashActivity::class.java))
-        })
-        root.addView(menuButton("Customers & Suppliers", "#4E342E") {
-            startActivity(Intent(this, PartyActivity::class.java))
-        })
-        root.addView(menuButton("Settings", "#37474F") {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        })
-        root.addView(menuButton("Logout", "#C62828") {
-            getSharedPreferences("session", MODE_PRIVATE).edit().remove("username").apply()
-            startActivity(Intent(this, LoginActivity::class.java))
-            finish()
-        })
-
-        val scroll = ScrollView(this).apply { addView(root) }
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor(bgColor))
+            addView(root)
+        }
         setContentView(scroll)
 
         loadDashboard()
@@ -104,6 +146,89 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadDashboard()
+    }
+
+    // ---- small holder for a menu tile's icon/label/color/click ----
+    private data class Tile(val emoji: String, val label: String, val colorHex: String, val onClick: () -> Unit)
+
+    private fun menuTile(tile: Tile): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(20, 26, 20, 22)
+            background = roundedBackground(tile.colorHex, 20)
+            elevation = 6f
+            addView(TextView(this@MainActivity).apply {
+                text = tile.emoji
+                textSize = 30f
+                gravity = Gravity.CENTER
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = tile.label
+                textSize = 13f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setPadding(0, 10, 0, 0)
+            })
+            setOnClickListener { tile.onClick() }
+        }
+    }
+
+    // ---- stat card: returns a container that also carries the value TextView via tags ----
+    private fun statCard(emoji: String, label: String, colorHex: String): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22, 20, 22, 20)
+            background = roundedBackground(colorHex, 20)
+            elevation = 6f
+        }
+        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        topRow.addView(TextView(this).apply { text = emoji; textSize = 18f })
+        topRow.addView(TextView(this).apply {
+            text = "  $label"
+            setTextColor(Color.WHITE)
+            textSize = 13f
+        })
+        card.addView(topRow)
+        val valueText = TextView(this).apply {
+            text = "Rs 0.00"
+            setTextColor(Color.WHITE)
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 8, 0, 0)
+        }
+        card.addView(valueText)
+
+        // small holder trick: return a plain View but stash refs via setTag (index 0 = container, 1 = valueText)
+        card.setTag(1, valueText)
+        val holder = card
+        holder.setTag(0, holder)
+        return holder
+    }
+
+    private fun avatarCircle(initials: String, sizeDp: Int, colorHex: String): FrameLayout {
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        return FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(colorHex))
+            }
+            addView(TextView(this@MainActivity).apply {
+                text = initials
+                textSize = 20f
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            })
+        }
+    }
+
+    private fun spacer(heightPx: Int) = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, heightPx)
     }
 
     private fun loadDashboard() {
@@ -119,22 +244,8 @@ class MainActivity : AppCompatActivity() {
             val todaySale = db.saleDao().totalSalesBetween(startOfDay, endOfDay)
             val todayProfit = db.saleDao().profitBetween(startOfDay, endOfDay)
 
-            todaySaleText.text = "Today's Sale: Rs %.2f".format(todaySale)
-            todayProfitText.text = "Today's Profit: Rs %.2f".format(todayProfit)
-        }
-    }
-
-    private fun menuButton(label: String, colorHex: String, onClick: () -> Unit): Button {
-        return Button(this).apply {
-            text = label
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setTextColor(Color.WHITE)
-            setPadding(32, 28, 32, 28)
-            background = roundedBackground(colorHex, 18)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 10, 0, 10) }
-            setOnClickListener { onClick() }
+            todaySaleValue.text = "Rs %.2f".format(todaySale)
+            todayProfitValue.text = "Rs %.2f".format(todayProfit)
         }
     }
 
@@ -142,15 +253,6 @@ class MainActivity : AppCompatActivity() {
         return GradientDrawable().apply {
             setColor(Color.parseColor(colorHex))
             this.cornerRadius = cornerRadius.toFloat()
-        }
-    }
-
-    private fun divider(): View {
-        return View(this).apply {
-            setBackgroundColor(0xFFDDDDDD.toInt())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 2
-            ).apply { setMargins(0, 16, 0, 16) }
         }
     }
 
