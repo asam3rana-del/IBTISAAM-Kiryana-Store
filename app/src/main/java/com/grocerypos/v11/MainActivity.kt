@@ -81,18 +81,20 @@ class MainActivity : AppCompatActivity() {
         // ================= STAT CARDS =================
         val statsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val saleCard = statCard("💰", "Today's Sale", "#2E7D32")
-        todaySaleValue = saleCard.getTag(1) as TextView
-        val profitCard = statCard("📈", "Today's Profit", "#1565C0")
-        todayProfitValue = profitCard.getTag(1) as TextView
+        val saleCardParts = statCard("💰", "Today's Sale", "#2E7D32")
+        val saleCardView = saleCardParts.first
+        todaySaleValue = saleCardParts.second
+        val profitCardParts = statCard("📈", "Today's Profit", "#1565C0")
+        val profitCardView = profitCardParts.first
+        todayProfitValue = profitCardParts.second
 
-        (saleCard.getTag(0) as LinearLayout).layoutParams =
+        saleCardView.layoutParams =
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,10,0) }
-        (profitCard.getTag(0) as LinearLayout).layoutParams =
+        profitCardView.layoutParams =
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10,0,0,0) }
 
-        statsRow.addView(saleCard.getTag(0) as LinearLayout)
-        statsRow.addView(profitCard.getTag(0) as LinearLayout)
+        statsRow.addView(saleCardView)
+        statsRow.addView(profitCardView)
         root.addView(statsRow)
 
         root.addView(spacer(28))
@@ -174,8 +176,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- stat card: returns a container that also carries the value TextView via tags ----
-    private fun statCard(emoji: String, label: String, colorHex: String): View {
+    // ---- stat card: returns the card view plus its live value TextView ----
+    private fun statCard(emoji: String, label: String, colorHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 20, 22, 20)
@@ -198,12 +200,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 8, 0, 0)
         }
         card.addView(valueText)
-
-        // small holder trick: return a plain View but stash refs via setTag (index 0 = container, 1 = valueText)
-        card.setTag(1, valueText)
-        val holder = card
-        holder.setTag(0, holder)
-        return holder
+        return Pair(card, valueText)
     }
 
     private fun avatarCircle(initials: String, sizeDp: Int, colorHex: String): FrameLayout {
