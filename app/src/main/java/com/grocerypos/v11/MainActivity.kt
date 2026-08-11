@@ -66,8 +66,8 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, PurchaseActivity::class.java))
         })
         root.addView(menuButton("Reports", "#6A1B9A") {
-            toast("Reports screen abhi khaali hai - agle step mein banayenge")
-        })
+    startActivity(Intent(this, ReportsActivity::class.java))
+})
         root.addView(menuButton("Cash In / Cash Out", "#00838F") {
             toast("Cash register screen agle step mein banayenge")
         })
