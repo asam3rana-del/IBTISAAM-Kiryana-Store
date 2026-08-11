@@ -17,20 +17,19 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.UnitType
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class ProductActivity : AppCompatActivity() {
 
     private val bg = "#F4F3FB"
     private val blue = "#1565C0"
+    private val darkBlue = "#0D47A1"
     private val green = "#2E7D32"
     private val purple = "#6A1B9A"
 
     private lateinit var name: EditText
-    private lateinit var unitSpinner: Spinner
-    private lateinit var secondaryCard: LinearLayout
-    private lateinit var secondaryUnitSpinner: Spinner
-    private lateinit var secondaryUnitQty: EditText
+    private lateinit var selectUnitBtn: Button
     private lateinit var categorySpinner: Spinner
     private lateinit var cost: EditText
     private lateinit var wholesalePrice: EditText
@@ -40,6 +39,11 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var listContainer: LinearLayout
 
     private var units = listOf("pcs", "kg", "box", "dozen")
+
+    // ---- currently chosen unit + secondary unit (set via the "Select Unit" dialog) ----
+    private var selectedPrimaryUnit = "pcs"
+    private var selectedSecondaryUnit = "None"
+    private var selectedSecondaryQty = 0.0
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -66,56 +70,39 @@ class ProductActivity : AppCompatActivity() {
         root.addView(header)
         root.addView(spacer(20))
 
-        // ================= NAME + UNIT (unit at the corner) =================
+        // ================= NAME + embedded "Select Unit" pill =================
         val nameCard = cardContainer()
         nameCard.addView(sectionLabel("Product Name"))
 
-        val nameRow = LinearLayout(this).apply {
+        // Outer bordered box holding BOTH the name field and the unit pill (single "field" look)
+        val nameBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 6, 10, 6)
+            background = strokedBg("#BDBDBD", "#FFFFFF", 14)
         }
         name = EditText(this).apply {
             hint = "Product Name"
+            background = null
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        unitSpinner = Spinner(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                (110 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(12, 0, 0, 0) }
-        }
-        nameRow.addView(name)
-        nameRow.addView(unitSpinner)
-        nameCard.addView(nameRow)
-
-        nameCard.addView(TextView(this).apply {
-            text = "+ Add New Unit"
+        selectUnitBtn = Button(this).apply {
+            text = "Select Unit"
             textSize = 12f
-            setTextColor(Color.parseColor(blue))
-            setPadding(0, 10, 0, 0)
-            setOnClickListener { promptAddUnit() }
-        })
-
-        // ---- Secondary unit: opens as soon as a main unit is picked ----
-        secondaryCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 18, 0, 0)
-            visibility = View.GONE
+            setTextColor(Color.WHITE)
+            background = roundedBg(blue, 30)
+            setPadding(28, 10, 28, 10)
+            minWidth = 0; minHeight = 0
+            setOnClickListener { openUnitDialog() }
         }
-        secondaryCard.addView(sectionLabel("Secondary Unit (chhoti quantity, optional)"))
-        secondaryUnitSpinner = Spinner(this)
-        secondaryCard.addView(secondaryUnitSpinner)
-        secondaryCard.addView(spacer(10))
-        secondaryUnitQty = EditText(this).apply {
-            hint = "1 Unit = kitne Secondary Units? (e.g. 1 box = 12 pcs)"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        }
-        secondaryCard.addView(secondaryUnitQty)
-        nameCard.addView(secondaryCard)
+        nameBox.addView(name)
+        nameBox.addView(selectUnitBtn)
+        nameCard.addView(nameBox)
 
         perUnitInfo = TextView(this).apply {
             textSize = 13f
             setTextColor(Color.parseColor(blue))
-            setPadding(0, 10, 0, 0)
+            setPadding(0, 12, 0, 0)
             visibility = View.GONE
         }
         nameCard.addView(perUnitInfo)
@@ -187,15 +174,6 @@ class ProductActivity : AppCompatActivity() {
         loadUnits()
         loadProducts()
         setupLivePricingWatchers()
-
-        // Jaise hi main Unit select ho, Secondary Unit section turant khul jaye
-        unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                secondaryCard.visibility = View.VISIBLE
-                updateSecondaryUnitPricing()
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
     }
 
     // ---- UI helpers ----
@@ -224,6 +202,12 @@ class ProductActivity : AppCompatActivity() {
         cornerRadius = radius.toFloat()
     }
 
+    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
+        setColor(Color.parseColor(fillHex))
+        setStroke((1.5 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
+        cornerRadius = radius.toFloat()
+    }
+
     private fun spacer(heightDp: Int) = View(this).apply {
         val px = (heightDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
@@ -249,8 +233,6 @@ class ProductActivity : AppCompatActivity() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).unitDao().all().collectLatest { list ->
                 units = (listOf("pcs", "kg", "box", "dozen") + list.map { it.name }).distinct()
-                unitSpinner.adapter = ArrayAdapter(this@ProductActivity, android.R.layout.simple_spinner_dropdown_item, units)
-                secondaryUnitSpinner.adapter = ArrayAdapter(this@ProductActivity, android.R.layout.simple_spinner_dropdown_item, listOf("None") + units)
             }
         }
     }
@@ -261,7 +243,7 @@ class ProductActivity : AppCompatActivity() {
             .setTitle("New Category")
             .setView(input)
             .setPositiveButton("Add") { _, _ ->
-                val v = input.text.toString().trim()
+                                val v = input.text.toString().trim()
                 if (v.isNotEmpty()) lifecycleScope.launch {
                     PosDatabase.get(this@ProductActivity).categoryDao().insert(Category(v))
                     Toast.makeText(this@ProductActivity, "Category added", Toast.LENGTH_SHORT).show()
@@ -271,7 +253,127 @@ class ProductActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun promptAddUnit() {
+    // ================= "Add Item Unit" dialog: Primary Unit + Secondary Unit =================
+    private fun openUnitDialog() {
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        val dialogHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(28, 24, 28, 24)
+            setBackgroundColor(Color.parseColor(darkBlue))
+        }
+        dialogHeader.addView(TextView(this).apply {
+            text = "Add Item Unit"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        content.addView(dialogHeader)
+
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 24, 28, 8)
+        }
+
+        // ---- Primary Unit ----
+        body.addView(TextView(this).apply { text = "Primary Unit"; textSize = 13f; setTextColor(Color.GRAY) })
+        val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val primarySpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        primaryRow.addView(primarySpinner)
+        primaryRow.addView(smallAddButton {
+            promptAddUnitInline { newUnit ->
+                units = (units + newUnit).distinct()
+                primarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, units)
+                primarySpinner.setSelection(units.indexOf(newUnit))
+            }
+        })
+        body.addView(primaryRow)
+        body.addView(spacer(18))
+
+        // ---- Secondary Unit ----
+        body.addView(TextView(this).apply { text = "Secondary Unit (chhoti quantity, optional)"; textSize = 13f; setTextColor(Color.GRAY) })
+        val secondaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val secondarySpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        secondaryRow.addView(secondarySpinner)
+        secondaryRow.addView(smallAddButton {
+            promptAddUnitInline { newUnit ->
+                units = (units + newUnit).distinct()
+                secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("None") + units)
+                secondarySpinner.setSelection((listOf("None") + units).indexOf(newUnit))
+            }
+        })
+        body.addView(secondaryRow)
+        body.addView(spacer(14))
+
+        val qtyField = EditText(this).apply {
+            hint = "1 Unit = kitne Secondary Units? (e.g. 1 box = 12 pcs)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            if (selectedSecondaryQty > 0) setText(selectedSecondaryQty.toString())
+        }
+        body.addView(qtyField)
+
+        content.addView(body)
+
+        // ---- initial adapters + preselect current values ----
+        primarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, units)
+        primarySpinner.setSelection(units.indexOf(selectedPrimaryUnit).coerceAtLeast(0))
+        val secondaryOptions = listOf("None") + units
+        secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, secondaryOptions)
+        secondarySpinner.setSelection(secondaryOptions.indexOf(selectedSecondaryUnit).coerceAtLeast(0))
+
+        // ---- Cancel / Save footer ----
+        val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        content.addView(spacer(16))
+        content.addView(footer)
+
+        val dialog = AlertDialog.Builder(this).setView(content).create()
+
+        footer.addView(Button(this).apply {
+            text = "Cancel"
+            setTextColor(Color.parseColor(darkBlue))
+            background = ColorDrawableFlat()
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { dialog.dismiss() }
+        })
+        footer.addView(Button(this).apply {
+            text = "Save"
+            setTextColor(Color.WHITE)
+            background = roundedBg(blue, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                selectedPrimaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"
+                selectedSecondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"
+                selectedSecondaryQty = qtyField.text.toString().toDoubleOrNull() ?: 0.0
+
+                selectUnitBtn.text = if (selectedSecondaryUnit != "None")
+                    "$selectedPrimaryUnit / $selectedSecondaryUnit" else selectedPrimaryUnit
+
+                updateSecondaryUnitPricing()
+                dialog.dismiss()
+            }
+        })
+
+        dialog.show()
+    }
+
+    private fun ColorDrawableFlat() = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
+
+    private fun smallAddButton(onClick: () -> Unit) = Button(this).apply {
+        text = "+"
+        setTextColor(Color.WHITE)
+        background = roundedBg(blue, 10)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(10, 0, 0, 0) }
+        setOnClickListener { onClick() }
+    }
+
+    private fun promptAddUnitInline(onAdded: (String) -> Unit) {
         val input = EditText(this)
         AlertDialog.Builder(this)
             .setTitle("New Unit")
@@ -281,6 +383,7 @@ class ProductActivity : AppCompatActivity() {
                 if (v.isNotEmpty()) lifecycleScope.launch {
                     PosDatabase.get(this@ProductActivity).unitDao().insert(UnitType(v))
                     Toast.makeText(this@ProductActivity, "Unit added", Toast.LENGTH_SHORT).show()
+                    onAdded(v)
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -293,33 +396,23 @@ class ProductActivity : AppCompatActivity() {
         cost.addTextChangedListener(watcher)
         salePrice.addTextChangedListener(watcher)
         wholesalePrice.addTextChangedListener(watcher)
-        secondaryUnitQty.addTextChangedListener(watcher)
-
-        secondaryUnitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) = updateSecondaryUnitPricing()
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
     }
 
     private fun updateSecondaryUnitPricing() {
-        val secUnit = secondaryUnitSpinner.selectedItem?.toString() ?: "None"
-        val qty = secondaryUnitQty.text.toString().toDoubleOrNull() ?: 0.0
-
-        if (secUnit == "None" || qty <= 0.0) {
+        if (selectedSecondaryUnit == "None" || selectedSecondaryQty <= 0.0) {
             perUnitInfo.visibility = View.GONE
             return
         }
 
-        val mainUnit = unitSpinner.selectedItem?.toString() ?: "unit"
         val sp = salePrice.text.toString().toDoubleOrNull() ?: 0.0
         val cp = cost.text.toString().toDoubleOrNull() ?: 0.0
         val wp = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0
 
         val sb = StringBuilder()
-        sb.append("1 $mainUnit = $qty $secUnit\n")
-        if (cp > 0) sb.append("Purchase rate per $secUnit: Rs %.2f\n".format(cp / qty))
-        if (wp > 0) sb.append("Wholesale rate per $secUnit: Rs %.2f\n".format(wp / qty))
-        if (sp > 0) sb.append("Retail rate per $secUnit: Rs %.2f".format(sp / qty))
+        sb.append("1 $selectedPrimaryUnit = $selectedSecondaryQty $selectedSecondaryUnit\n")
+        if (cp > 0) sb.append("Purchase rate per $selectedSecondaryUnit: Rs %.2f\n".format(cp / selectedSecondaryQty))
+        if (wp > 0) sb.append("Wholesale rate per $selectedSecondaryUnit: Rs %.2f\n".format(wp / selectedSecondaryQty))
+        if (sp > 0) sb.append("Retail rate per $selectedSecondaryUnit: Rs %.2f".format(sp / selectedSecondaryQty))
 
         perUnitInfo.text = sb.toString().trim()
         perUnitInfo.visibility = View.VISIBLE
@@ -332,7 +425,6 @@ class ProductActivity : AppCompatActivity() {
             return
         }
         val code = "P" + System.currentTimeMillis().toString()
-        val secUnit = secondaryUnitSpinner.selectedItem?.toString() ?: "None"
         val openingQty = stock.text.toString().toIntOrNull() ?: 0
         val product = Product(
             barcode = code,
@@ -343,9 +435,9 @@ class ProductActivity : AppCompatActivity() {
             wholesalePrice = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0,
             stock = openingQty,
             openingStock = openingQty,
-            unit = unitSpinner.selectedItem?.toString() ?: "pcs",
-            secondaryUnit = if (secUnit == "None") "" else secUnit,
-            secondaryUnitQty = secondaryUnitQty.text.toString().toDoubleOrNull() ?: 0.0
+            unit = selectedPrimaryUnit,
+            secondaryUnit = if (selectedSecondaryUnit == "None") "" else selectedSecondaryUnit,
+            secondaryUnitQty = selectedSecondaryQty
         )
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).productDao().upsert(product)
