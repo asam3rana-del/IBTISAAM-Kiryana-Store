@@ -35,6 +35,13 @@ class ReportsActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 24)
         })
 
+        root.addView(Button(this).apply {
+            text = "VIEW SALE / PURCHASE HISTORY"
+            setOnClickListener {
+                startActivity(android.content.Intent(this@ReportsActivity, HistoryActivity::class.java))
+            }
+        })
+
         // ---- Period filter buttons ----
         val filterRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
