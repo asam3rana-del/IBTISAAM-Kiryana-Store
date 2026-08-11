@@ -267,7 +267,7 @@ class PurchaseActivity : AppCompatActivity() {
         this.text = text
         textSize = 15f
         setTextColor(Color.parseColor("#424242"))
-        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
         setPadding(0, 0, 0, 10)
     }
 
@@ -494,4 +494,46 @@ class PurchaseActivity : AppCompatActivity() {
             for (line in lines) {
                 val isSecondary = line.secondaryUnit.isNotEmpty() && line.unit == line.secondaryUnit && line.secondaryUnitQty > 0
                 val mainUnitQty = if (isSecondary) line.qty / line.secondaryUnitQty else line.qty
-                val costPerMainUnit = if (isSecondary) li
+                val costPerMainUnit = if (isSecondary) line.rate * line.secondaryUnitQty else line.rate
+
+                var product = if (line.barcode != null) products.find { it.barcode == line.barcode }
+                    else products.find { it.name.equals(line.itemName, ignoreCase = true) }
+
+                if (product == null) {
+                    val newBarcode = "P" + System.currentTimeMillis().toString() + line.itemName.hashCode()
+                    product = Product(
+                        barcode = newBarcode,
+                        name = line.itemName,
+                        cost = costPerMainUnit,
+                        salePrice = costPerMainUnit,
+                        stock = 0,
+                        unit = line.mainUnit
+                    )
+                    db.productDao().upsert(product)
+                } else {
+                    db.productDao().upsert(product.copy(cost = costPerMainUnit))
+                }
+
+                db.productDao().increase(product.barcode, mainUnitQty.roundToInt())
+                purchaseItems.add(
+                    PurchaseItem(
+                        billNo = billNo,
+                        barcode = product.barcode,
+                        qty = mainUnitQty.roundToInt(),
+                        unitCost = costPerMainUnit,
+                        amount = line.amount
+                    )
+                )
+            }
+            db.purchaseDao().items(purchaseItems)
+
+            Toast.makeText(this@PurchaseActivity, "Purchase saved: $billNo", Toast.LENGTH_LONG).show()
+            lines.clear()
+            itemsContainer.removeAllViews()
+            grandTotalText.text = "Grand Total: Rs 0.00"
+            purchaseDateMillis = System.currentTimeMillis()
+            dateButton.text = formatDate(purchaseDateMillis)
+            partyName.text.clear()
+        }
+    }
+}
