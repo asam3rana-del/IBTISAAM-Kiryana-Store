@@ -13,6 +13,7 @@
         <activity android:name=".ui.PurchaseActivity" />
         <activity android:name=".ui.SaleActivity" />
         <activity android:name=".ui.CashActivity" />
+        <activity android:name=".ui.HistoryActivity" />
 <activity android:name=".ui.PartyActivity" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
