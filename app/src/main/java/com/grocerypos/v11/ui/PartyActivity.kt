@@ -17,7 +17,6 @@ class PartyActivity : AppCompatActivity() {
 
     private lateinit var tabRow: LinearLayout
     private lateinit var formContainer: LinearLayout
-    private lateinit name: EditText.let { }
     private lateinit var nameField: EditText
     private lateinit var phoneField: EditText
     private lateinit var extraField: EditText
