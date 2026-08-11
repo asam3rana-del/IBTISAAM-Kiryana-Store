@@ -16,6 +16,8 @@ import com.grocerypos.v11.ui.ProductActivity
 import com.grocerypos.v11.ui.PurchaseActivity
 import com.grocerypos.v11.ui.SaleActivity
 import com.grocerypos.v11.ui.ReportsActivity
+import com.grocerypos.v11.ui.CashActivity
+import com.grocerypos.v11.ui.PartyActivity
 import kotlinx.coroutines.launch
 import java.io.PrintWriter
 import java.io.StringWriter
