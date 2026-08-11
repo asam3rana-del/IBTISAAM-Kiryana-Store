@@ -65,7 +65,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(menuButton("Purchases", "#EF6C00") {
             startActivity(Intent(this, PurchaseActivity::class.java))
         })
-        root.addView(menuButton("Reports", "#6A1B9A") {
+    root.addView(menuButton("Reports", "#6A1B9A") {
     startActivity(Intent(this, ReportsActivity::class.java))
 })
         root.addView(menuButton("Cash In / Cash Out", "#00838F") {
