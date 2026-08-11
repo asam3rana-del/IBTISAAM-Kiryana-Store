@@ -35,7 +35,6 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var wholesalePrice: EditText
     private lateinit var salePrice: EditText
     private lateinit var stock: EditText
-    private lateinit var perUnitInfo: TextView
     private lateinit var listContainer: LinearLayout
 
     private var units = listOf("pcs", "kg", "box", "dozen")
@@ -98,14 +97,6 @@ class ProductActivity : AppCompatActivity() {
         nameBox.addView(name)
         nameBox.addView(selectUnitBtn)
         nameCard.addView(nameBox)
-
-        perUnitInfo = TextView(this).apply {
-            textSize = 13f
-            setTextColor(Color.parseColor(blue))
-            setPadding(0, 12, 0, 0)
-            visibility = View.GONE
-        }
-        nameCard.addView(perUnitInfo)
 
         root.addView(nameCard)
         root.addView(spacer(20))
@@ -173,7 +164,6 @@ class ProductActivity : AppCompatActivity() {
         loadCategories()
         loadUnits()
         loadProducts()
-        setupLivePricingWatchers()
     }
 
     // ---- UI helpers ----
@@ -243,12 +233,12 @@ class ProductActivity : AppCompatActivity() {
             .setTitle("New Category")
             .setView(input)
             .setPositiveButton("Add") { _, _ ->
-                                val v = input.text.toString().trim()
+                val v = input.text.toString().trim()
                 if (v.isNotEmpty()) lifecycleScope.launch {
                     PosDatabase.get(this@ProductActivity).categoryDao().insert(Category(v))
                     Toast.makeText(this@ProductActivity, "Category added", Toast.LENGTH_SHORT).show()
                 }
-            }
+                            }
             .setNegativeButton("Cancel", null)
             .show()
     }
@@ -390,32 +380,15 @@ class ProductActivity : AppCompatActivity() {
             .show()
     }
 
-    // ---- Live calculation: secondary unit price = main unit price / how many secondary units in 1 main unit ----
-    private fun setupLivePricingWatchers() {
-        val watcher = simpleWatcher { updateSecondaryUnitPricing() }
-        cost.addTextChangedListener(watcher)
-        salePrice.addTextChangedListener(watcher)
-        wholesalePrice.addTextChangedListener(watcher)
-    }
-
+    // ---- Conversion confirmation: shown briefly (Toast) when the unit dialog is saved, not as a permanent box ----
     private fun updateSecondaryUnitPricing() {
-        if (selectedSecondaryUnit == "None" || selectedSecondaryQty <= 0.0) {
-            perUnitInfo.visibility = View.GONE
-            return
-        }
+        if (selectedSecondaryUnit == "None" || selectedSecondaryQty <= 0.0) return
 
-        val sp = salePrice.text.toString().toDoubleOrNull() ?: 0.0
-        val cp = cost.text.toString().toDoubleOrNull() ?: 0.0
-        val wp = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0
-
-        val sb = StringBuilder()
-        sb.append("1 $selectedPrimaryUnit = $selectedSecondaryQty $selectedSecondaryUnit\n")
-        if (cp > 0) sb.append("Purchase rate per $selectedSecondaryUnit: Rs %.2f\n".format(cp / selectedSecondaryQty))
-        if (wp > 0) sb.append("Wholesale rate per $selectedSecondaryUnit: Rs %.2f\n".format(wp / selectedSecondaryQty))
-        if (sp > 0) sb.append("Retail rate per $selectedSecondaryUnit: Rs %.2f".format(sp / selectedSecondaryQty))
-
-        perUnitInfo.text = sb.toString().trim()
-        perUnitInfo.visibility = View.VISIBLE
+        Toast.makeText(
+            this,
+            "1 $selectedPrimaryUnit = $selectedSecondaryQty $selectedSecondaryUnit noted",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun saveProduct() {
@@ -442,8 +415,25 @@ class ProductActivity : AppCompatActivity() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).productDao().upsert(product)
             Toast.makeText(this@ProductActivity, "Product saved", Toast.LENGTH_SHORT).show()
-            name.text.clear()
-            stock.text.clear()
+            clearForm()
+        }
+    }
+
+    // ---- Reset the whole form so it's ready for the next product ----
+    private fun clearForm() {
+        name.text.clear()
+        cost.text.clear()
+        wholesalePrice.text.clear()
+        salePrice.text.clear()
+        stock.text.clear()
+
+        selectedPrimaryUnit = "pcs"
+        selectedSecondaryUnit = "None"
+        selectedSecondaryQty = 0.0
+        selectUnitBtn.text = "Select Unit"
+
+        if (categorySpinner.adapter != null && categorySpinner.adapter.count > 0) {
+            categorySpinner.setSelection(0)
         }
     }
 
