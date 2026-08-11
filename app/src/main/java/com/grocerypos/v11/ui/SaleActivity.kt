@@ -497,4 +497,90 @@ class SaleActivity : AppCompatActivity() {
         }
         obj.put("lines", linesArr)
 
-        
+        val bills = readHeldBills()
+        bills.put(obj)
+        writeHeldBills(bills)
+
+        Toast.makeText(this, "Bill hold ho gaya", Toast.LENGTH_SHORT).show()
+        clearForNewSale()
+    }
+
+    private fun clearForNewSale() {
+        lines.clear()
+        renderItems()
+        customerName.text.clear()
+        discountInput.text.clear()
+        paidInput.text.clear()
+        cashRadio.isChecked = true
+        updateTotals()
+    }
+
+    private fun showRecallDialog() {
+        val bills = readHeldBills()
+        if (bills.length() == 0) {
+            Toast.makeText(this, "Koi held bill nahi hai", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val labels = (0 until bills.length()).map { i ->
+            val bObj = bills.getJSONObject(i)
+            val name = bObj.optString("customerName").ifBlank { "Walk-in" }
+            val itemCount = bObj.getJSONArray("lines").length()
+            val mode = if (bObj.optBoolean("isCredit")) "Credit" else "Cash"
+            "$name — $itemCount items ($mode)"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Held Bills")
+            .setItems(labels.toTypedArray()) { _, which -> recallBill(which) }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun recallBill(index: Int) {
+        val bills = readHeldBills()
+        val bObj = bills.getJSONObject(index)
+
+        clearForNewSale()
+
+        customerName.setText(bObj.optString("customerName"))
+        isCreditSale = bObj.optBoolean("isCredit")
+        if (isCreditSale) creditRadio.isChecked = true else cashRadio.isChecked = true
+
+        val saleTypeVal = bObj.optString("saleType", "Retail")
+        val stAdapter = saleTypeSpinner.adapter as ArrayAdapter<String>
+        val stPos = (0 until stAdapter.count).find { stAdapter.getItem(it) == saleTypeVal } ?: 0
+        saleTypeSpinner.setSelection(stPos)
+
+        val pmVal = bObj.optString("paymentMethod", "Cash")
+        val pmAdapter = paymentMethodSpinner.adapter as ArrayAdapter<String>
+        val pmPos = (0 until pmAdapter.count).find { pmAdapter.getItem(it) == pmVal } ?: 0
+        paymentMethodSpinner.setSelection(pmPos)
+
+        discountInput.setText(bObj.optString("discount"))
+        paidInput.setText(bObj.optString("paid"))
+
+        val linesArr = bObj.getJSONArray("lines")
+        for (i in 0 until linesArr.length()) {
+            val lo = linesArr.getJSONObject(i)
+            lines.add(
+                SaleLine(
+                    barcode = lo.getString("barcode"),
+                    itemName = lo.getString("itemName"),
+                    qty = lo.getInt("qty"),
+                    unit = lo.optString("unit", "Pcs"),
+                    unitPrice = lo.getDouble("unitPrice"),
+                    cost = lo.getDouble("cost"),
+                    amount = lo.getDouble("amount")
+                )
+            )
+        }
+        renderItems()
+        updateTotals()
+
+        bills.remove(index)
+        writeHeldBills(bills)
+
+        Toast.makeText(this, "Bill recall ho gaya", Toast.LENGTH_SHORT).show()
+    }
+}
