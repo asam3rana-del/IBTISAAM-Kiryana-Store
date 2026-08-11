@@ -71,12 +71,12 @@ class MainActivity : AppCompatActivity() {
     root.addView(menuButton("Reports", "#6A1B9A") {
     startActivity(Intent(this, ReportsActivity::class.java))
 })
-        root.addView(menuButton("Cash In / Cash Out", "#00838F") {
-            toast("Cash register screen agle step mein banayenge")
-        })
-        root.addView(menuButton("Customers & Suppliers", "#4E342E") {
-            toast("Party ledger screen agle step mein banayenge")
-        })
+root.addView(menuButton("Cash In / Cash Out", "#00838F") {
+    startActivity(Intent(this, CashActivity::class.java))
+})
+root.addView(menuButton("Customers & Suppliers", "#4E342E") {
+    startActivity(Intent(this, PartyActivity::class.java))
+})
         root.addView(menuButton("Settings", "#37474F") {
             startActivity(Intent(this, SettingsActivity::class.java))
         })
