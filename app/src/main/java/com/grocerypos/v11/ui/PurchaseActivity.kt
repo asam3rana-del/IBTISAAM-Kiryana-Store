@@ -43,7 +43,7 @@ class PurchaseActivity : AppCompatActivity() {
     private val purple = "#6A1B9A"
 
     private lateinit var dateButton: Button
-    private lateinit var partySpinner: Spinner
+    private lateinit var partyName: AutoCompleteTextView
     private lateinit var itemName: AutoCompleteTextView
     private lateinit var qty: EditText
     private lateinit var unitSpinner: Spinner
@@ -97,11 +97,24 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(header)
         root.addView(spacer(20))
 
-        // ================= PARTY CARD (no add button) =================
+        // ================= PARTY CARD (type freely OR pick from "+" list) =================
         val partyCard = cardContainer()
         partyCard.addView(sectionLabel("Party Name (Supplier)"))
-        partySpinner = Spinner(this)
-        partyCard.addView(partySpinner)
+        partyName = AutoCompleteTextView(this).apply { hint = "Type or pick supplier name" }
+        val partyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        partyName.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        partyRow.addView(partyName)
+        partyRow.addView(Button(this).apply {
+            text = "+"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(12, 0, 0, 0) }
+            setOnClickListener { promptAddSupplier() }
+        })
+        partyCard.addView(partyRow)
         root.addView(partyCard)
         root.addView(spacer(20))
 
@@ -295,7 +308,7 @@ class PurchaseActivity : AppCompatActivity() {
         lifecycleScope.launch {
             PosDatabase.get(this@PurchaseActivity).supplierDao().all().collectLatest { list ->
                 suppliers = list
-                partySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, list.map { it.name })
+                partyName.setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
             }
         }
     }
@@ -344,6 +357,23 @@ class PurchaseActivity : AppCompatActivity() {
         } else {
             conversionInfo.visibility = View.GONE
         }
+    }
+
+    private fun promptAddSupplier() {
+        val input = EditText(this).apply { hint = "Supplier Name" }
+        AlertDialog.Builder(this)
+            .setTitle("New Supplier")
+            .setView(input)
+            .setPositiveButton("Add") { _, _ ->
+                val v = input.text.toString().trim()
+                if (v.isNotEmpty()) lifecycleScope.launch {
+                    PosDatabase.get(this@PurchaseActivity).supplierDao().insert(Supplier(name = v))
+                    Toast.makeText(this@PurchaseActivity, "Supplier added", Toast.LENGTH_SHORT).show()
+                    partyName.setText(v)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun promptAddItem() {
@@ -435,13 +465,19 @@ class PurchaseActivity : AppCompatActivity() {
             Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
             return
         }
-        val partyName = partySpinner.selectedItem?.toString()
-        val supplier = suppliers.find { it.name == partyName }
+        val enteredParty = partyName.text.toString().trim()
+        var supplier = suppliers.find { it.name.equals(enteredParty, ignoreCase = true) }
         val billNo = "PUR" + System.currentTimeMillis().toString()
         val grandTotal = lines.sumOf { it.amount }
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
+
+            // Naya supplier type kiya ho (list se select nahi kiya) to usay khud add kar dein
+            if (supplier == null && enteredParty.isNotEmpty()) {
+                val newId = db.supplierDao().insert(Supplier(name = enteredParty))
+                supplier = Supplier(id = newId, name = enteredParty)
+            }
 
             db.purchaseDao().purchase(
                 Purchase(
@@ -458,45 +494,4 @@ class PurchaseActivity : AppCompatActivity() {
             for (line in lines) {
                 val isSecondary = line.secondaryUnit.isNotEmpty() && line.unit == line.secondaryUnit && line.secondaryUnitQty > 0
                 val mainUnitQty = if (isSecondary) line.qty / line.secondaryUnitQty else line.qty
-                val costPerMainUnit = if (isSecondary) line.rate * line.secondaryUnitQty else line.rate
-
-                var product = if (line.barcode != null) products.find { it.barcode == line.barcode }
-                    else products.find { it.name.equals(line.itemName, ignoreCase = true) }
-
-                if (product == null) {
-                    val newBarcode = "P" + System.currentTimeMillis().toString() + line.itemName.hashCode()
-                    product = Product(
-                        barcode = newBarcode,
-                        name = line.itemName,
-                        cost = costPerMainUnit,
-                        salePrice = costPerMainUnit,
-                        stock = 0,
-                        unit = line.mainUnit
-                    )
-                    db.productDao().upsert(product)
-                } else {
-                    db.productDao().upsert(product.copy(cost = costPerMainUnit))
-                }
-
-                db.productDao().increase(product.barcode, mainUnitQty.roundToInt())
-                purchaseItems.add(
-                    PurchaseItem(
-                        billNo = billNo,
-                        barcode = product.barcode,
-                        qty = mainUnitQty.roundToInt(),
-                        unitCost = costPerMainUnit,
-                        amount = line.amount
-                    )
-                )
-            }
-            db.purchaseDao().items(purchaseItems)
-
-            Toast.makeText(this@PurchaseActivity, "Purchase saved: $billNo", Toast.LENGTH_LONG).show()
-            lines.clear()
-            itemsContainer.removeAllViews()
-            grandTotalText.text = "Grand Total: Rs 0.00"
-            purchaseDateMillis = System.currentTimeMillis()
-            dateButton.text = formatDate(purchaseDateMillis)
-        }
-    }
-}
+                val costPerMainUnit = if (isSecondary) li
