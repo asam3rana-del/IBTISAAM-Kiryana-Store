@@ -69,7 +69,7 @@ class SaleActivity : AppCompatActivity() {
     private val lines = mutableListOf<SaleLine>()
     private var isCreditSale = false
 
-    // currently selected item in "Add Item" — drives which units + price apply
+    // currently selected item in "Add Item" - drives which units + price apply
     private var selectedProduct: Product? = null
 
     override fun onCreate(b: Bundle?) {
@@ -153,10 +153,10 @@ class SaleActivity : AppCompatActivity() {
                 isCreditSale = checkedId == creditRadio.id
                 if (isCreditSale) {
                     customerName.hint = "Customer Name (required for credit)"
-                    Toast.makeText(this@SaleActivity, "Credit Sale — customer select ya add karen", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@SaleActivity, "Credit Sale - customer select ya add karen", Toast.LENGTH_SHORT).show()
                 } else {
                     customerName.hint = "Customer Name (optional for cash)"
-                    Toast.makeText(this@SaleActivity, "Cash Sale — customer optional hai", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@SaleActivity, "Cash Sale - customer optional hai", Toast.LENGTH_SHORT).show()
                 }
             }
         })
