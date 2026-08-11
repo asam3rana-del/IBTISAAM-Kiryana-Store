@@ -1,7 +1,11 @@
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
+import android.graphics.Color
 import android.os.Bundle
+import android.text.InputType
+import android.view.Gravity
+import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -20,17 +24,20 @@ data class SaleLine(
 
 class SaleActivity : AppCompatActivity() {
 
-    private lateinit var customerSpinner: Spinner
+    private lateinit var customerInput: AutoCompleteTextView
     private lateinit var saleTypeSpinner: Spinner
+    private lateinit var paymentTypeSpinner: Spinner
+
     private lateinit var itemName: AutoCompleteTextView
     private lateinit var qty: EditText
+    private lateinit var qtyUnitSpinner: Spinner
     private lateinit var unitPrice: EditText
+
     private lateinit var itemsContainer: LinearLayout
     private lateinit var subtotalText: TextView
     private lateinit var discountInput: EditText
     private lateinit var totalText: TextView
     private lateinit var paidInput: EditText
-    private lateinit var paymentMethodSpinner: Spinner
 
     private var customers = listOf<Customer>()
     private var products = listOf<Product>()
@@ -39,182 +46,714 @@ class SaleActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
+        val scroll = ScrollView(this)
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 32, 28, 32)
+            setPadding(20, 20, 20, 30)
         }
 
-        root.addView(TextView(this).apply { text = "New Sale"; textSize = 22f })
+        // =========================
+        // HEADER
+        // =========================
 
-        customerSpinner = Spinner(this)
-        root.addView(labeled("Customer", customerSpinner))
-        root.addView(smallButton("+ Add New Customer") { promptAddCustomer() })
+        root.addView(TextView(this).apply {
+            text = "NEW SALE"
+            textSize = 25f
+            setTextColor(Color.BLACK)
+            setPadding(0, 0, 0, 18)
+        })
 
-        saleTypeSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Retail", "Wholesale"))
+        // =========================
+        // CUSTOMER CARD
+        // =========================
+
+        val customerBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 15, 18, 15)
         }
-        root.addView(labeled("Sale Type", saleTypeSpinner))
 
-        root.addView(TextView(this).apply { text = "\nAdd Item"; textSize = 18f })
-        itemName = AutoCompleteTextView(this).apply { hint = "Item Name (type to search)" }
-        root.addView(itemName)
-        itemName.setOnItemClickListener { _, _, position, _ ->
-            val matches = products.filter { it.name.contains(itemName.text.toString(), ignoreCase = true) }
-            if (position < matches.size) {
-                val p = matches[position]
-                val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
-                unitPrice.setText((if (isWholesale) p.wholesalePrice else p.salePrice).toString())
+        customerBox.addView(TextView(this).apply {
+            text = "CUSTOMER"
+            textSize = 14f
+        })
+
+        val customerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        customerInput = AutoCompleteTextView(this).apply {
+            hint = "Customer name / Walk-in"
+            textSize = 16f
+            singleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+
+        customerRow.addView(
+            customerInput,
+            LinearLayout.LayoutParams(0, 60, 1f)
+        )
+
+        val addCustomerButton = Button(this).apply {
+            text = "+"
+            textSize = 20f
+            setOnClickListener {
+                promptAddCustomer()
             }
         }
 
-        qty = EditText(this).apply { hint = "Quantity" }
-        unitPrice = EditText(this).apply { hint = "Unit Price (auto-filled, editable)" }
-        root.addView(qty); root.addView(unitPrice)
+        customerRow.addView(
+            addCustomerButton,
+            LinearLayout.LayoutParams(65, 60)
+        )
 
-        root.addView(Button(this).apply {
-            text = "ADD ITEM"
-            setOnClickListener { addItem() }
+        customerBox.addView(customerRow)
+        root.addView(customerBox)
+
+        // =========================
+        // CASH / CREDIT
+        // =========================
+
+        root.addView(TextView(this).apply {
+            text = "Payment"
+            textSize = 15f
+            setPadding(0, 12, 0, 4)
         })
 
-        root.addView(TextView(this).apply { text = "\nBill Items"; textSize = 18f })
-        itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        paymentTypeSpinner = Spinner(this)
+
+        paymentTypeSpinner.adapter =
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                listOf("Cash Sale", "Credit Sale")
+            )
+
+        root.addView(paymentTypeSpinner)
+
+        // =========================
+        // SALE TYPE
+        // =========================
+
+        root.addView(TextView(this).apply {
+            text = "Sale Type"
+            textSize = 15f
+            setPadding(0, 12, 0, 4)
+        })
+
+        saleTypeSpinner = Spinner(this)
+
+        saleTypeSpinner.adapter =
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                listOf("Retail", "Wholesale")
+            )
+
+        root.addView(saleTypeSpinner)
+
+        // =========================
+        // ADD ITEM TITLE
+        // =========================
+
+        root.addView(TextView(this).apply {
+            text = "ADD ITEM"
+            textSize = 20f
+            setPadding(0, 25, 0, 10)
+        })
+
+        // =========================
+        // ITEM NAME
+        // =========================
+
+        itemName = AutoCompleteTextView(this).apply {
+            hint = "Search item name"
+            textSize = 17f
+            singleLine = true
+        }
+
+        root.addView(itemName)
+
+        // =========================
+        // QUANTITY ROW
+        // =========================
+
+        val quantityRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        qty = EditText(this).apply {
+            hint = "Quantity"
+            inputType =
+                InputType.TYPE_CLASS_NUMBER or
+                InputType.TYPE_NUMBER_FLAG_DECIMAL
+            singleLine = true
+        }
+
+        quantityRow.addView(
+            qty,
+            LinearLayout.LayoutParams(0, 60, 1f)
+        )
+
+        qtyUnitSpinner = Spinner(this)
+
+        qtyUnitSpinner.adapter =
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                listOf("Unit", "Box")
+            )
+
+        quantityRow.addView(
+            qtyUnitSpinner,
+            LinearLayout.LayoutParams(150, 60)
+        )
+
+        root.addView(quantityRow)
+
+        // =========================
+        // RATE
+        // =========================
+
+        unitPrice = EditText(this).apply {
+            hint = "Rate"
+            inputType =
+                InputType.TYPE_CLASS_NUMBER or
+                InputType.TYPE_NUMBER_FLAG_DECIMAL
+            singleLine = true
+        }
+
+        root.addView(unitPrice)
+
+        // =========================
+        // ADD ITEM BUTTON
+        // =========================
+
+        root.addView(Button(this).apply {
+            text = "＋  ADD ITEM"
+            textSize = 17f
+
+            setOnClickListener {
+                addItem()
+            }
+        })
+
+        // =========================
+        // BILL ITEMS
+        // =========================
+
+        root.addView(TextView(this).apply {
+            text = "BILL ITEMS"
+            textSize = 20f
+            setPadding(0, 25, 0, 10)
+        })
+
+        itemsContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
         root.addView(itemsContainer)
 
-        subtotalText = TextView(this).apply { text = "Subtotal: Rs 0.00"; textSize = 16f }
+        // =========================
+        // TOTALS
+        // =========================
+
+        subtotalText = TextView(this).apply {
+            text = "Subtotal: Rs 0.00"
+            textSize = 17f
+            setPadding(0, 18, 0, 5)
+        }
+
         root.addView(subtotalText)
 
-        discountInput = EditText(this).apply { hint = "Discount (Rs)" }
+        discountInput = EditText(this).apply {
+            hint = "Discount (Rs)"
+            inputType =
+                InputType.TYPE_CLASS_NUMBER or
+                InputType.TYPE_NUMBER_FLAG_DECIMAL
+            singleLine = true
+        }
+
         root.addView(discountInput)
 
-        totalText = TextView(this).apply { text = "Total: Rs 0.00"; textSize = 18f }
+        totalText = TextView(this).apply {
+            text = "TOTAL: Rs 0.00"
+            textSize = 22f
+            setPadding(0, 10, 0, 15)
+        }
+
         root.addView(totalText)
 
-        discountInput.addTextChangedListener(simpleWatcher { updateTotals() })
+        discountInput.addTextChangedListener(
+            simpleWatcher {
+                updateTotals()
+            }
+        )
 
-        paymentMethodSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
+        // =========================
+        // AMOUNT PAID
+        // =========================
+
+        paidInput = EditText(this).apply {
+            hint = "Amount Paid"
+            inputType =
+                InputType.TYPE_CLASS_NUMBER or
+                InputType.TYPE_NUMBER_FLAG_DECIMAL
+            singleLine = true
         }
-        root.addView(labeled("Payment Method", paymentMethodSpinner))
 
-        paidInput = EditText(this).apply { hint = "Amount Paid" }
         root.addView(paidInput)
+
+        // =========================
+        // SAVE SALE
+        // =========================
 
         root.addView(Button(this).apply {
             text = "SAVE SALE"
-            setOnClickListener { saveSale() }
+            textSize = 19f
+
+            setOnClickListener {
+                saveSale()
+            }
         })
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        scroll.addView(root)
+        setContentView(scroll)
 
         loadCustomers()
         loadProducts()
+
+        setupItemSearch()
     }
 
-    private fun simpleWatcher(onChange: () -> Unit) = object : android.text.TextWatcher {
-        override fun afterTextChanged(s: android.text.Editable?) { onChange() }
-        override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, e: Int) {}
-        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+    // =====================================================
+    // ITEM SEARCH
+    // =====================================================
+
+    private fun setupItemSearch() {
+
+        itemName.setOnItemClickListener { _, _, position, _ ->
+
+            val name = itemName.text.toString()
+
+            val matches = products.filter {
+                it.name.contains(name, ignoreCase = true)
+            }
+
+            if (position < matches.size) {
+
+                val product = matches[position]
+
+                val wholesale =
+                    saleTypeSpinner.selectedItem?.toString() == "Wholesale"
+
+                val price =
+                    if (wholesale)
+                        product.wholesalePrice
+                    else
+                        product.salePrice
+
+                unitPrice.setText(price.toString())
+
+                qty.requestFocus()
+            }
+        }
     }
 
-    private fun labeled(label: String, view: android.view.View) = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        addView(TextView(this@SaleActivity).apply { text = label })
-        addView(view)
-    }
-
-    private fun smallButton(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        setOnClickListener { onClick() }
-    }
+    // =====================================================
+    // LOAD CUSTOMERS
+    // =====================================================
 
     private fun loadCustomers() {
+
         lifecycleScope.launch {
-            PosDatabase.get(this@SaleActivity).customerDao().all().collectLatest { list ->
-                customers = list
-                val names = listOf("Walk-in") + list.map { it.name }
-                customerSpinner.adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, names)
-            }
+
+            PosDatabase
+                .get(this@SaleActivity)
+                .customerDao()
+                .all()
+                .collectLatest { list ->
+
+                    customers = list
+
+                    val names =
+                        listOf("Walk-in") + list.map { it.name }
+
+                    customerInput.setAdapter(
+                        ArrayAdapter(
+                            this@SaleActivity,
+                            android.R.layout.simple_dropdown_item_1line,
+                            names
+                        )
+                    )
+
+                    customerInput.setText("Walk-in", false)
+                }
         }
     }
+
+    // =====================================================
+    // LOAD PRODUCTS
+    // =====================================================
 
     private fun loadProducts() {
+
         lifecycleScope.launch {
-            PosDatabase.get(this@SaleActivity).productDao().all().collectLatest { list ->
-                products = list
-                itemName.setAdapter(ArrayAdapter(this@SaleActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
-            }
+
+            PosDatabase
+                .get(this@SaleActivity)
+                .productDao()
+                .all()
+                .collectLatest { list ->
+
+                    products = list
+
+                    itemName.setAdapter(
+                        ArrayAdapter(
+                            this@SaleActivity,
+                            android.R.layout.simple_dropdown_item_1line,
+                            list.map { it.name }
+                        )
+                    )
+                }
         }
     }
 
+    // =====================================================
+    // ADD CUSTOMER
+    // =====================================================
+
     private fun promptAddCustomer() {
+
         val input = EditText(this)
+
+        input.hint = "Customer name"
+
         AlertDialog.Builder(this)
             .setTitle("New Customer")
             .setView(input)
-            .setPositiveButton("Add") { _, _ ->
-                val v = input.text.toString().trim()
-                if (v.isNotEmpty()) lifecycleScope.launch {
-                    PosDatabase.get(this@SaleActivity).customerDao().insert(Customer(name = v))
-                    Toast.makeText(this@SaleActivity, "Customer added", Toast.LENGTH_SHORT).show()
+            .setPositiveButton("ADD") { _, _ ->
+
+                val name =
+                    input.text.toString().trim()
+
+                if (name.isNotEmpty()) {
+
+                    lifecycleScope.launch {
+
+                        PosDatabase
+                            .get(this@SaleActivity)
+                            .customerDao()
+                            .insert(
+                                Customer(name = name)
+                            )
+
+                        customerInput.setText(name, false)
+
+                        Toast.makeText(
+                            this@SaleActivity,
+                            "Customer added",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("CANCEL", null)
             .show()
     }
 
+    // =====================================================
+    // ADD ITEM
+    // =====================================================
+
     private fun addItem() {
-        val n = itemName.text.toString().trim()
-        val q = qty.text.toString().toIntOrNull() ?: 0
-        val price = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
-        val product = products.find { it.name.equals(n, ignoreCase = true) }
+
+        val name =
+            itemName.text.toString().trim()
+
+        val q =
+            qty.text.toString().toDoubleOrNull()
+
+        val price =
+            unitPrice.text.toString().toDoubleOrNull()
+
+        val product =
+            products.find {
+                it.name.equals(name, ignoreCase = true)
+            }
 
         if (product == null) {
-            Toast.makeText(this, "Ye item product list mein nahi hai", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (q <= 0) {
-            Toast.makeText(this, "Quantity theek se likhen", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (product.stock < q) {
-            Toast.makeText(this, "Stock kam hai (available: ${product.stock})", Toast.LENGTH_SHORT).show()
+
+            Toast.makeText(
+                this,
+                "Item product list mein nahi hai",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            itemName.requestFocus()
             return
         }
 
-        val amount = q * price
-        lines.add(SaleLine(product.barcode, product.name, q, price, product.cost, amount))
-        itemsContainer.addView(TextView(this).apply {
-            text = "${product.name}  |  Qty: $q  |  Price: $price  |  Amount: %.2f".format(amount)
-            setPadding(0, 8, 0, 8)
-        })
-        itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
+        if (q == null || q <= 0) {
+
+            Toast.makeText(
+                this,
+                "Quantity likhen",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            qty.requestFocus()
+            return
+        }
+
+        if (price == null || price < 0) {
+
+            Toast.makeText(
+                this,
+                "Rate theek se likhen",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            unitPrice.requestFocus()
+            return
+        }
+
+        // Current database qty is Int,
+        // therefore quantity is converted to Int here.
+        val finalQty = q.toInt()
+
+        if (finalQty <= 0) {
+
+            Toast.makeText(
+                this,
+                "Quantity kam az kam 1 honi chahiye",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            return
+        }
+
+        if (product.stock < finalQty) {
+
+            Toast.makeText(
+                this,
+                "Stock kam hai (available: ${product.stock})",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            return
+        }
+
+        val amount =
+            finalQty * price
+
+        lines.add(
+            SaleLine(
+                barcode = product.barcode,
+                itemName = product.name,
+                qty = finalQty,
+                unitPrice = price,
+                cost = product.cost,
+                amount = amount
+            )
+        )
+
+        addBillLine(
+            product.name,
+            finalQty,
+            price,
+            amount
+        )
+
+        // IMPORTANT:
+        // Customer, Sale Type aur Payment reset nahi honge.
+        // Sirf next item ke fields clear honge.
+
+        itemName.text.clear()
+        qty.text.clear()
+        unitPrice.text.clear()
+
+        itemName.requestFocus()
+
         updateTotals()
     }
 
-    private fun updateTotals() {
-        val subtotal = lines.sumOf { it.amount }
-        val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
-        subtotalText.text = "Subtotal: Rs %.2f".format(subtotal)
-        totalText.text = "Total: Rs %.2f".format((subtotal - discount).coerceAtLeast(0.0))
+    // =====================================================
+    // ADD BILL ROW
+    // =====================================================
+
+    private fun addBillLine(
+        name: String,
+        quantity: Int,
+        price: Double,
+        amount: Double
+    ) {
+
+        val row = LinearLayout(this).apply {
+
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+
+            setPadding(8, 12, 8, 12)
+        }
+
+        val text = TextView(this).apply {
+
+            text =
+                "$name\nQty: $quantity   Rate: Rs %.2f\nAmount: Rs %.2f"
+                    .format(price, amount)
+
+            textSize = 15f
+
+            layoutParams =
+                LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+        }
+
+        val delete = Button(this).apply {
+
+            text = "X"
+
+            setOnClickListener {
+
+                val index =
+                    itemsContainer.indexOfChild(row)
+
+                if (index >= 0 && index < lines.size) {
+
+                    lines.removeAt(index)
+                    itemsContainer.removeView(row)
+
+                    updateTotals()
+                }
+            }
+        }
+
+        row.addView(text)
+        row.addView(delete)
+
+        itemsContainer.addView(row)
     }
 
+    // =====================================================
+    // TOTALS
+    // =====================================================
+
+    private fun updateTotals() {
+
+        val subtotal =
+            lines.sumOf { it.amount }
+
+        val discount =
+            discountInput.text
+                .toString()
+                .toDoubleOrNull()
+                ?: 0.0
+
+        val total =
+            (subtotal - discount)
+                .coerceAtLeast(0.0)
+
+        subtotalText.text =
+            "Subtotal: Rs %.2f".format(subtotal)
+
+        totalText.text =
+            "TOTAL: Rs %.2f".format(total)
+    }
+
+    // =====================================================
+    // SAVE SALE
+    // =====================================================
+
     private fun saveSale() {
+
         if (lines.isEmpty()) {
-            Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
+
+            Toast.makeText(
+                this,
+                "Kam az kam ek item add karen",
+                Toast.LENGTH_SHORT
+            ).show()
+
             return
         }
-        val subtotal = lines.sumOf { it.amount }
-        val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
-        val total = (subtotal - discount).coerceAtLeast(0.0)
-        val paid = paidInput.text.toString().toDoubleOrNull() ?: total
-        val method = paymentMethodSpinner.selectedItem?.toString() ?: "Cash"
-        val custName = customerSpinner.selectedItem?.toString()
-        val customer = customers.find { it.name == custName }
-        val saleType = if (saleTypeSpinner.selectedItem?.toString() == "Wholesale") "wholesale" else "retail"
-        val invoice = "INV" + System.currentTimeMillis().toString()
+
+        val subtotal =
+            lines.sumOf { it.amount }
+
+        val discount =
+            discountInput.text
+                .toString()
+                .toDoubleOrNull()
+                ?: 0.0
+
+        val total =
+            (subtotal - discount)
+                .coerceAtLeast(0.0)
+
+        val paymentType =
+            paymentTypeSpinner
+                .selectedItem
+                ?.toString()
+                ?: "Cash Sale"
+
+        val isCredit =
+            paymentType == "Credit Sale"
+
+        val paid =
+            if (isCredit) {
+                paidInput.text
+                    .toString()
+                    .toDoubleOrNull()
+                    ?: 0.0
+            } else {
+                paidInput.text
+                    .toString()
+                    .toDoubleOrNull()
+                    ?: total
+            }
+
+        val method =
+            "cash"
+
+        val customerName =
+            customerInput.text
+                .toString()
+                .trim()
+
+        val customer =
+            customers.find {
+                it.name.equals(
+                    customerName,
+                    ignoreCase = true
+                )
+            }
+
+        val saleType =
+            if (
+                saleTypeSpinner.selectedItem
+                    ?.toString() == "Wholesale"
+            )
+                "wholesale"
+            else
+                "retail"
+
+        val invoice =
+            "INV" + System.currentTimeMillis()
 
         lifecycleScope.launch {
-            val db = PosDatabase.get(this@SaleActivity)
+
+            val db =
+                PosDatabase.get(this@SaleActivity)
+
+            // -----------------------------
+            // SAVE SALE
+            // -----------------------------
 
             db.saleDao().sale(
                 Sale(
@@ -225,44 +764,30 @@ class SaleActivity : AppCompatActivity() {
                     tax = 0.0,
                     total = total,
                     paid = paid,
-                    paymentMethod = method.lowercase(),
+                    paymentMethod = method,
                     saleType = saleType
                 )
             )
 
-            val saleItems = lines.map {
-                SaleItem(
-                    invoice = invoice,
-                    barcode = it.barcode,
-                    product = it.itemName,
-                    qty = it.qty,
-                    unitPrice = it.unitPrice,
-                    cost = it.cost,
-                    amount = it.amount
-                )
-            }
+            // -----------------------------
+            // SALE ITEMS
+            // -----------------------------
+
+            val saleItems =
+                lines.map {
+
+                    SaleItem(
+                        invoice = invoice,
+                        barcode = it.barcode,
+                        product = it.itemName,
+                        qty = it.qty,
+                        unitPrice = it.unitPrice,
+                        cost = it.cost,
+                        amount = it.amount
+                    )
+                }
+
             db.saleDao().items(saleItems)
 
-            for (line in lines) {
-                db.productDao().decrease(line.barcode, line.qty)
-            }
-
-            if (customer != null && paid < total) {
-                db.customerDao().addBalance(customer.id, total - paid)
-            }
-
-            db.cashTransactionDao().insert(
-                CashTransaction(
-                    type = "IN",
-                    method = method.lowercase(),
-                    amount = paid,
-                    reason = "Sale",
-                    reference = invoice
-                )
-            )
-
-            Toast.makeText(this@SaleActivity, "Sale saved: $invoice", Toast.LENGTH_LONG).show()
-            finish()
-        }
-    }
-}
+            // -----------------------------
+            //
