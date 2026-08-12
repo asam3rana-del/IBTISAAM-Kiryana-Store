@@ -92,9 +92,6 @@ class SaleActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        headerTop.addView(pillButton("HOLD", "#FFFFFF", darkGreen) { holdBill() })
-        headerTop.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
-        headerTop.addView(pillButton("RECALL", "#FFFFFF", darkGreen) { openRecallDialog() })
         header.addView(headerTop)
 
         header.addView(TextView(this).apply {
@@ -114,8 +111,33 @@ class SaleActivity : AppCompatActivity() {
             setOnClickListener { openDatePicker() }
         }
         header.addView(dateButton)
-        root.addView(header)
-        root.addView(spacer(20))
+
+        val headerWrap = FrameLayout(this)
+        headerWrap.addView(header)
+
+        // ---- Floating HOLD / RECALL tab, overlapping the bottom edge of the header ----
+        val floatingRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = roundedBg("#FFFFFF", 18)
+            elevation = 10f
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
+            ).apply {
+                val m = (28 * resources.displayMetrics.density).toInt()
+                val overlap = -(22 * resources.displayMetrics.density).toInt()
+                setMargins(m, 0, m, overlap)
+            }
+        }
+        floatingRow.addView(floatingTabButton("📌  Hold") { holdBill() })
+        floatingRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams((1 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.MATCH_PARENT).apply { setMargins(0,14,0,14) }
+            setBackgroundColor(Color.parseColor("#E0E0E0"))
+        })
+        floatingRow.addView(floatingTabButton("↩️  Recall") { openRecallDialog() })
+        headerWrap.addView(floatingRow)
+
+        root.addView(headerWrap)
+        root.addView(spacer(36))
 
         // ================= CUSTOMER CARD (typeable + Cash/Credit corner toggle) =================
         val customerCard = cardContainer()
@@ -141,7 +163,7 @@ class SaleActivity : AppCompatActivity() {
         cashCreditToggle.addView(creditBtn)
         custTopRow.addView(cashCreditToggle)
         customerCard.addView(custTopRow)
-        customerCard.addView(spacer(10))
+        customerCard.addView(spacer(14))
 
         val custRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         customerName = AutoCompleteTextView(this).apply {
@@ -149,7 +171,7 @@ class SaleActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         custRow.addView(customerName)
-        custRow.addView(smallAddButton { promptAddCustomer() })
+        custRow.addView(personAddButton { promptAddCustomer() })
         customerCard.addView(custRow)
         root.addView(customerCard)
         root.addView(spacer(20))
@@ -262,6 +284,7 @@ class SaleActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
             addView(root)
         })
+
         loadCustomers()
         loadProducts()
         setSaleMode(true)
@@ -330,20 +353,24 @@ class SaleActivity : AppCompatActivity() {
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    private fun pillButton(label: String, textColorHex: String, bgHex: String, onClick: () -> Unit) = Button(this).apply {
+    private fun floatingTabButton(label: String, onClick: () -> Unit) = TextView(this).apply {
         text = label
-        textSize = 11f
-        setTextColor(Color.parseColor(textColorHex))
-        background = roundedBg(bgHex, 30)
-        setPadding(22, 8, 22, 8)
-        minWidth = 0; minHeight = 0
+        textSize = 13f
+        setTextColor(Color.parseColor(green))
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        gravity = Gravity.CENTER
+        setPadding(0, 22, 0, 22)
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         setOnClickListener { onClick() }
     }
 
-    private fun smallAddButton(onClick: () -> Unit) = Button(this).apply {
-        text = "+"
+    private fun personAddButton(onClick: () -> Unit) = TextView(this).apply {
+        text = "👤+"
+        textSize = 16f
         setTextColor(Color.WHITE)
-        background = roundedBg(blue, 10)
+        gravity = Gravity.CENTER
+        background = roundedBg("#00897B", 14)
+        setPadding(28, 20, 28, 20)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(10, 0, 0, 0) }
@@ -527,7 +554,7 @@ class SaleActivity : AppCompatActivity() {
     // ================= Save =================
     private fun saveSale() {
         if (lines.isEmpty()) {
-                        Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
             return
         }
         val enteredCustomer = customerName.text.toString().trim()
@@ -571,12 +598,15 @@ class SaleActivity : AppCompatActivity() {
             val saleItems = lines.map {
                 val isSecondary = it.secondaryUnit.isNotEmpty() && it.unit == it.secondaryUnit && it.secondaryUnitQty > 0
                 val mainUnitQty = if (isSecondary) it.qty / it.secondaryUnitQty else it.qty
+                // qty ab main-unit mein store hoti hai, isliye unitPrice ko bhi usi basis (per main unit) par convert karna zaroori hai
+                // warna profit (unitPrice-cost)*qty ghalat nikalta hai
+                val unitPricePerMainUnit = if (isSecondary) it.unitPrice * it.secondaryUnitQty else it.unitPrice
                 SaleItem(
                     invoice = invoice,
                     barcode = it.barcode,
                     product = it.itemName,
                     qty = mainUnitQty.roundToInt(),
-                    unitPrice = it.unitPrice,
+                    unitPrice = unitPricePerMainUnit,
                     cost = it.cost,
                     amount = it.amount
                 )
