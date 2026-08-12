@@ -432,7 +432,14 @@ class SaleActivity : AppCompatActivity() {
         }
 
         val amount = q * price
-        lines.add(SaleLine(product.barcode, product.name, q, unit, price, product.cost, amount))
+        // Cost must match the chosen unit, same as price - otherwise Amount - Cost (profit) is wrong
+        // whenever the item is sold in the secondary unit. product.cost is stored per PRIMARY unit.
+        val costForUnit = when {
+            unit == product.unit -> product.cost
+            unit == product.secondaryUnit && product.secondaryUnitQty > 0 -> product.cost / product.secondaryUnitQty
+            else -> product.cost
+        }
+        lines.add(SaleLine(product.barcode, product.name, q, unit, price, costForUnit, amount))
         renderItems()
 
         // clear only the item-entry fields so the next item can be added immediately
