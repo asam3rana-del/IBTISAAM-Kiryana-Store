@@ -52,8 +52,12 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var totalAmountText: TextView
     private lateinit var itemsContainer: LinearLayout
     private lateinit var grandTotalText: TextView
-    private lateinit var paymentMethodSpinner: Spinner
+    private lateinit var cashBtn: Button
+    private lateinit var creditBtn: Button
+    private lateinit var paymentSection: LinearLayout
     private lateinit var paidInput: EditText
+    private lateinit var paymentMethodSpinner: Spinner
+    private var isCashPurchase = true
 
     private var suppliers = listOf<Supplier>()
     private var products = listOf<Product>()
@@ -99,9 +103,32 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(header)
         root.addView(spacer(20))
 
-        // ================= PARTY CARD (type freely OR pick from "+" list) =================
+        // ================= PARTY CARD (type freely OR pick from "+" list) + Cash/Credit =================
         val partyCard = cardContainer()
-        partyCard.addView(sectionLabel("Party Name (Supplier)"))
+        val partyTopRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        partyTopRow.addView(sectionLabel("Party Name (Supplier)").apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        val cashCreditToggle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        cashBtn = Button(this).apply {
+            text = "CASH"; textSize = 11f; setTextColor(Color.WHITE)
+            background = roundedBg(orange, 20)
+            setPadding(20, 6, 20, 6); minWidth = 0; minHeight = 0
+            setOnClickListener { setPurchaseMode(true) }
+        }
+        creditBtn = Button(this).apply {
+            text = "CREDIT"; textSize = 11f; setTextColor(Color.parseColor("#9E9E9E"))
+            background = roundedBg("#EEEEEE", 20)
+            setPadding(20, 6, 20, 6); minWidth = 0; minHeight = 0
+            setOnClickListener { setPurchaseMode(false) }
+        }
+        cashCreditToggle.addView(cashBtn)
+        cashCreditToggle.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
+        cashCreditToggle.addView(creditBtn)
+        partyTopRow.addView(cashCreditToggle)
+        partyCard.addView(partyTopRow)
+        partyCard.addView(spacer(10))
+
         partyName = AutoCompleteTextView(this).apply { hint = "Type or pick supplier name" }
         val partyRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -202,22 +229,6 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(itemsContainer)
         root.addView(spacer(12))
 
-        // ================= PAYMENT (drives Cash OUT) =================
-        val paymentCard = cardContainer()
-        paymentCard.addView(sectionLabel("Payment"))
-        paymentMethodSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
-        }
-        paymentCard.addView(paymentMethodSpinner)
-        paymentCard.addView(spacer(12))
-        paidInput = EditText(this).apply {
-            hint = "Paid Amount (khaali chhoden agar poora udhaar hai)"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        }
-        paymentCard.addView(paidInput)
-        root.addView(paymentCard)
-        root.addView(spacer(20))
-
         // ================= TOTAL + SAVE =================
         val totalCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -234,6 +245,22 @@ class PurchaseActivity : AppCompatActivity() {
         }
         totalCard.addView(grandTotalText)
         root.addView(totalCard)
+        root.addView(spacer(20))
+
+        // ================= PAYMENT (hidden for Credit purchase) =================
+        paymentSection = cardContainer()
+        paymentSection.addView(sectionLabel("Payment"))
+        paymentMethodSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
+        }
+        paymentSection.addView(paymentMethodSpinner)
+        paymentSection.addView(spacer(12))
+        paidInput = EditText(this).apply {
+            hint = "Amount Paid"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        paymentSection.addView(paidInput)
+        root.addView(paymentSection)
         root.addView(spacer(16))
 
         root.addView(Button(this).apply {
@@ -253,6 +280,7 @@ class PurchaseActivity : AppCompatActivity() {
         loadSuppliers()
         loadUnits()
         loadProducts()
+        setPurchaseMode(true)
 
         itemName.setOnItemClickListener { _, _, position, _ ->
             val name = itemName.adapter.getItem(position).toString()
@@ -268,7 +296,7 @@ class PurchaseActivity : AppCompatActivity() {
         })
 
         unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { applyUnitRate() }
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { updateLineTotal() }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
     }
@@ -282,10 +310,10 @@ class PurchaseActivity : AppCompatActivity() {
     }
 
     private fun sectionLabel(text: String) = TextView(this).apply {
-        this.text = text
+                this.text = text
         textSize = 15f
         setTextColor(Color.parseColor("#424242"))
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
         setPadding(0, 0, 0, 10)
     }
 
@@ -297,6 +325,19 @@ class PurchaseActivity : AppCompatActivity() {
     private fun ovalBg(colorHex: String) = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(Color.parseColor(colorHex))
+    }
+
+    private fun setPurchaseMode(cash: Boolean) {
+        isCashPurchase = cash
+        if (cash) {
+            cashBtn.background = roundedBg(orange, 20); cashBtn.setTextColor(Color.WHITE)
+            creditBtn.background = roundedBg("#EEEEEE", 20); creditBtn.setTextColor(Color.parseColor("#9E9E9E"))
+            paymentSection.visibility = View.VISIBLE
+        } else {
+            creditBtn.background = roundedBg("#C62828", 20); creditBtn.setTextColor(Color.WHITE)
+            cashBtn.background = roundedBg("#EEEEEE", 20); cashBtn.setTextColor(Color.parseColor("#9E9E9E"))
+            paymentSection.visibility = View.GONE
+        }
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {
@@ -357,28 +398,7 @@ class PurchaseActivity : AppCompatActivity() {
         val unitChoices = if (product.secondaryUnit.isNotEmpty())
             listOf(product.unit, product.secondaryUnit) else listOf(product.unit)
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
-        unitSpinner.setSelection(0)
-        applyUnitRate()
-    }
-
-    // Recomputes the Rate field whenever the chosen unit (primary/secondary) changes.
-    // product.cost is stored per PRIMARY unit; secondary-unit rate = cost / secondaryUnitQty.
-    private fun applyUnitRate() {
-        val p = selectedProduct
-        if (p == null) { updateLineTotal(); return }
-        val chosenUnit = unitSpinner.selectedItem?.toString() ?: p.unit
-        val baseRate = p.cost
-
-        if (baseRate <= 0.0) {
-            rate.text.clear()
-        } else {
-            val newRate = when {
-                chosenUnit == p.unit -> baseRate
-                chosenUnit == p.secondaryUnit && p.secondaryUnitQty > 0 -> baseRate / p.secondaryUnitQty
-                else -> baseRate
-            }
-            rate.setText(if (newRate == newRate.toLong().toDouble()) newRate.toLong().toString() else "%.2f".format(newRate))
-        }
+        rate.setText(if (product.cost > 0) product.cost.toString() else "")
         updateLineTotal()
     }
 
@@ -391,7 +411,7 @@ class PurchaseActivity : AppCompatActivity() {
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: ""
         if (product != null && product.secondaryUnit.isNotEmpty() && chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0) {
             val mainUnitCost = r * product.secondaryUnitQty
-            conversionInfo.text = "1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}  ->  ${product.unit} cost: Rs %.2f".format(mainUnitCost)
+            conversionInfo.text = "1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}  →  ${product.unit} cost: Rs %.2f".format(mainUnitCost)
             conversionInfo.visibility = View.VISIBLE
         } else {
             conversionInfo.visibility = View.GONE
@@ -416,32 +436,18 @@ class PurchaseActivity : AppCompatActivity() {
     }
 
     private fun promptAddItem() {
-        val dialogRoot = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 0)
-        }
         val input = EditText(this).apply { hint = "Item Name" }
-        dialogRoot.addView(input)
-        dialogRoot.addView(spacer(12))
-        dialogRoot.addView(TextView(this).apply { text = "Unit"; textSize = 13f; setTextColor(Color.GRAY) })
-        // same shared unit list used everywhere (Product / Sale / Purchase) - keeps units consistent app-wide
-        val unitPicker = Spinner(this).apply {
-            adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits)
-        }
-        dialogRoot.addView(unitPicker)
-
         AlertDialog.Builder(this)
             .setTitle("New Item")
-            .setView(dialogRoot)
+            .setView(input)
             .setPositiveButton("Add") { _, _ ->
                 val v = input.text.toString().trim()
-                val chosenUnit = unitPicker.selectedItem?.toString() ?: "pcs"
                 if (v.isNotEmpty()) lifecycleScope.launch {
                     val code = "P" + System.currentTimeMillis().toString()
                     PosDatabase.get(this@PurchaseActivity).productDao().upsert(
-                        Product(barcode = code, name = v, unit = chosenUnit)
+                        Product(barcode = code, name = v, unit = "pcs")
                     )
-                    Toast.makeText(this@PurchaseActivity, "Item added ($chosenUnit)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@PurchaseActivity, "Item added", Toast.LENGTH_SHORT).show()
                     itemName.setText(v)
                 }
             }
@@ -498,13 +504,14 @@ class PurchaseActivity : AppCompatActivity() {
             })
             addView(top)
             addView(TextView(this@PurchaseActivity).apply {
-                text = "Qty: $q $u  -  Rate: $r"
+                text = "Qty: $q $u  •  Rate: $r"
                 textSize = 13f
                 setTextColor(Color.GRAY)
             })
         })
 
         grandTotalText.text = "Grand Total: Rs %.2f".format(lines.sumOf { it.amount })
+        if (isCashPurchase) paidInput.setText("%.2f".format(lines.sumOf { it.amount }))
 
         itemName.text.clear(); qty.text.clear(); rate.text.clear()
         totalAmountText.text = "Total Amount: Rs 0.00"
@@ -519,11 +526,15 @@ class PurchaseActivity : AppCompatActivity() {
             return
         }
         val enteredParty = partyName.text.toString().trim()
+        if (!isCashPurchase && enteredParty.isEmpty()) {
+            Toast.makeText(this, "Credit purchase ke liye Party Name zaroori hai", Toast.LENGTH_SHORT).show()
+            return
+        }
         var supplier = suppliers.find { it.name.equals(enteredParty, ignoreCase = true) }
         val billNo = "PUR" + System.currentTimeMillis().toString()
         val grandTotal = lines.sumOf { it.amount }
-        val paidAmount = (paidInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, grandTotal)
-        val method = paymentMethodSpinner.selectedItem?.toString() ?: "Cash"
+        val paid = if (isCashPurchase) (paidInput.text.toString().toDoubleOrNull() ?: grandTotal) else 0.0
+        val method = if (isCashPurchase) (paymentMethodSpinner.selectedItem?.toString() ?: "Cash") else "credit"
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
@@ -539,7 +550,7 @@ class PurchaseActivity : AppCompatActivity() {
                     billNo = billNo,
                     supplierId = supplier?.id,
                     total = grandTotal,
-                    paid = paidAmount,
+                    paid = paid,
                     subtotal = grandTotal,
                     createdAt = purchaseDateMillis
                 )
@@ -582,16 +593,22 @@ class PurchaseActivity : AppCompatActivity() {
             }
             db.purchaseDao().items(purchaseItems)
 
-            if (paidAmount > 0) {
+            // ---- Cash Out: purchase par jo cash/bank se ada kiya, wo Cash Out mein record hota hai ----
+            if (paid > 0) {
                 db.cashTransactionDao().insert(
                     CashTransaction(
                         type = "OUT",
                         method = method.lowercase(),
-                        amount = paidAmount,
+                        amount = paid,
                         reason = "Purchase",
                         reference = billNo
                     )
                 )
+            }
+
+            // ---- Baqi (unpaid) raqam supplier ke credit balance mein chali jaati hai ----
+            if (supplier != null && paid < grandTotal) {
+                db.supplierDao().addBalance(supplier!!.id, grandTotal - paid)
             }
 
             Toast.makeText(this@PurchaseActivity, "Purchase saved: $billNo", Toast.LENGTH_LONG).show()
@@ -602,6 +619,7 @@ class PurchaseActivity : AppCompatActivity() {
             dateButton.text = formatDate(purchaseDateMillis)
             partyName.text.clear()
             paidInput.text.clear()
+            setPurchaseMode(true)
         }
     }
 }
