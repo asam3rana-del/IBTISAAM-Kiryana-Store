@@ -308,7 +308,6 @@ interface ProductDao {
 @Dao interface AuditDao { @Insert suspend fun insert(a:Audit) }
 
 @Dao interface CashTransactionDao {
-
     @Insert suspend fun insert(t:CashTransaction)
     @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end")
