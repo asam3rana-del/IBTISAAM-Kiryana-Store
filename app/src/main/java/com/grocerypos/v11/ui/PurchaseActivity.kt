@@ -12,6 +12,8 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
 import kotlinx.coroutines.flow.collectLatest
@@ -354,6 +356,12 @@ class PurchaseActivity : AppCompatActivity() {
             setPadding(24, 10, 24, 18)
             setBackgroundColor(Color.parseColor("#FFFFFF"))
             addView(saveButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+        // Keep the bar clear of the system nav bar / gesture area on any device.
+        ViewCompat.setOnApplyWindowInsetsListener(saveBar) { view, insets ->
+            val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, 18 + sysBars.bottom)
+            insets
         }
 
         setContentView(LinearLayout(this).apply {
