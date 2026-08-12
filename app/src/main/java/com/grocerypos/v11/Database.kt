@@ -280,10 +280,6 @@ interface ProductDao {
 }
 
 @Dao interface PurchaseDao {
-    @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1") suspend fun findPurchase(bill:String):Purchase?
-@Query("SELECT * FROM purchase_items WHERE billNo=:bill") suspend fun itemsForBill(bill:String):List<PurchaseItem>
-@Query("DELETE FROM purchase_items WHERE billNo=:bill") suspend fun deleteItems(bill:String)
-@Query("DELETE FROM purchases WHERE billNo=:bill") suspend fun deletePurchase(bill:String)
     @Insert suspend fun purchase(p:Purchase)
     @Insert suspend fun items(items:List<PurchaseItem>)
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
@@ -311,7 +307,6 @@ interface ProductDao {
     @Insert suspend fun insert(t:CashTransaction)
     @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end")
-    @Query("DELETE FROM cash_transactions WHERE reference=:ref") suspend fun deleteByReference(ref:String)
     suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
 }
 
