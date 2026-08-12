@@ -309,8 +309,7 @@ class PurchaseActivity : AppCompatActivity() {
         elevation = 4f
     }
 
-    private fun sectionLabel(text: String) = TextView(this).apply {
-                this.text = text
+    private fun sectionLabel(text: String) = TextView(this).apply {        this.text = text
         textSize = 15f
         setTextColor(Color.parseColor("#424242"))
         setTypeface(typeface, android.graphics.Typeface.BOLD)
