@@ -495,4 +495,99 @@ class PurchaseActivity : AppCompatActivity() {
         itemName.text.clear(); qty.text.clear(); rate.text.clear()
         totalAmountText.text = "Total Amount: Rs 0.00"
         conversionInfo.visibility = View.GONE
-        selectedProduct =
+        selectedProduct = null
+        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
+    }
+
+    private fun savePurchase() {
+        if (lines.isEmpty()) {
+            Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val enteredParty = partyName.text.toString().trim()
+        var supplier = suppliers.find { it.name.equals(enteredParty, ignoreCase = true) }
+        val billNo = "PUR" + System.currentTimeMillis().toString()
+        val grandTotal = lines.sumOf { it.amount }
+        val paidAmount = (paidInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, grandTotal)
+        val method = paymentMethodSpinner.selectedItem?.toString() ?: "Cash"
+
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PurchaseActivity)
+
+            // Naya supplier type kiya ho (list se select nahi kiya) to usay khud add kar dein
+            if (supplier == null && enteredParty.isNotEmpty()) {
+                val newId = db.supplierDao().insert(Supplier(name = enteredParty))
+                supplier = Supplier(id = newId, name = enteredParty)
+            }
+
+            db.purchaseDao().purchase(
+                Purchase(
+                    billNo = billNo,
+                    supplierId = supplier?.id,
+                    total = grandTotal,
+                    paid = paidAmount,
+                    subtotal = grandTotal,
+                    createdAt = purchaseDateMillis
+                )
+            )
+
+            val purchaseItems = mutableListOf<PurchaseItem>()
+            for (line in lines) {
+                val isSecondary = line.secondaryUnit.isNotEmpty() && line.unit == line.secondaryUnit && line.secondaryUnitQty > 0
+                val mainUnitQty = if (isSecondary) line.qty / line.secondaryUnitQty else line.qty
+                val costPerMainUnit = if (isSecondary) line.rate * line.secondaryUnitQty else line.rate
+
+                var product = if (line.barcode != null) products.find { it.barcode == line.barcode }
+                    else products.find { it.name.equals(line.itemName, ignoreCase = true) }
+
+                if (product == null) {
+                    val newBarcode = "P" + System.currentTimeMillis().toString() + line.itemName.hashCode()
+                    product = Product(
+                        barcode = newBarcode,
+                        name = line.itemName,
+                        cost = costPerMainUnit,
+                        salePrice = costPerMainUnit,
+                        stock = 0,
+                        unit = line.mainUnit
+                    )
+                    db.productDao().upsert(product)
+                } else {
+                    db.productDao().upsert(product.copy(cost = costPerMainUnit))
+                }
+
+                db.productDao().increase(product.barcode, mainUnitQty.roundToInt())
+                purchaseItems.add(
+                    PurchaseItem(
+                        billNo = billNo,
+                        barcode = product.barcode,
+                        qty = mainUnitQty.roundToInt(),
+                        unitCost = costPerMainUnit,
+                        amount = line.amount
+                    )
+                )
+            }
+            db.purchaseDao().items(purchaseItems)
+
+            if (paidAmount > 0) {
+                db.cashTransactionDao().insert(
+                    CashTransaction(
+                        type = "OUT",
+                        method = method.lowercase(),
+                        amount = paidAmount,
+                        reason = "Purchase",
+                        reference = billNo
+                    )
+                )
+            }
+
+            Toast.makeText(this@PurchaseActivity, "Purchase saved: $billNo", Toast.LENGTH_LONG).show()
+            lines.clear()
+            itemsContainer.removeAllViews()
+            grandTotalText.text = "Grand Total: Rs 0.00"
+            purchaseDateMillis = System.currentTimeMillis()
+            dateButton.text = formatDate(purchaseDateMillis)
+            partyName.text.clear()
+            paidInput.text.clear()
+        }
+    }
+}
