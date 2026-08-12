@@ -471,4 +471,174 @@ class PurchaseActivity : AppCompatActivity() {
     private fun addItem() {
         val name = itemName.text.toString().trim()
         val q = qty.text.toString().toDoubleOrNull()
-        val r = rate.text.t
+        val r = rate.text.toString().toDoubleOrNull()
+        val unit = (unitSpinner.selectedItem as? String) ?: "pcs"
+
+        if (name.isEmpty()) { itemName.error = "Required"; return }
+        if (q == null || q <= 0) { qty.error = "Enter quantity"; return }
+        if (r == null || r < 0) { rate.error = "Enter rate"; return }
+
+        // Purchase items are stored against a product barcode, so the item must
+        // already exist in Products. Add it there first if it's new.
+        val product = selectedProduct ?: products.find { it.name.equals(name, ignoreCase = true) }
+        if (product == null) {
+            itemName.error = "Select an existing product, or add it in Products first"
+            return
+        }
+
+        val line = PurchaseLine(
+            itemName = product.name,
+            barcode = product.barcode,
+            qty = q,
+            unit = unit,
+            rate = r,
+            amount = q * r,
+            mainUnit = product.unit,
+            secondaryUnit = product.secondaryUnit,
+            secondaryUnitQty = product.secondaryUnitQty
+        )
+        lines.add(line)
+        renderItemsList()
+        updateGrandTotal()
+
+        // reset entry fields for next item
+        itemName.setText("")
+        qty.setText("")
+        rate.setText("")
+        selectedProduct = null
+        conversionInfo.visibility = View.GONE
+        totalAmountText.text = "Total Amount: Rs 0.00"
+        itemName.requestFocus()
+    }
+
+    private fun renderItemsList() {
+        itemsContainer.removeAllViews()
+        lines.forEachIndexed { index, line ->
+            val row = outlinedBox().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            row.addView(TextView(this).apply {
+                text = "${line.itemName}\n${line.qty} ${line.unit} x Rs ${line.rate}"
+                textSize = 13f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(TextView(this).apply {
+                text = "Rs %.2f".format(line.amount)
+                textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(12, 0, 12, 0)
+            })
+            row.addView(TextView(this).apply {
+                text = "✕"
+                textSize = 15f
+                setTextColor(Color.parseColor("#C62828"))
+                setPadding(12, 0, 4, 0)
+                setOnClickListener {
+                    lines.removeAt(index)
+                    renderItemsList()
+                    updateGrandTotal()
+                }
+            })
+            itemsContainer.addView(row)
+        }
+    }
+
+    private fun updateGrandTotal() {
+        val total = lines.sumOf { it.amount }
+        grandTotalText.text = "Rs %.2f".format(total)
+    }
+
+    // ---- Supplier quick-add ----
+    private fun promptAddSupplier() {
+        val input = EditText(this).apply { hint = "Supplier name"; setPadding(32, 24, 32, 24) }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Add Supplier")
+            .setView(input)
+            .setPositiveButton("Add") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotBlank()) {
+                    lifecycleScope.launch {
+                        // TODO: confirm Supplier constructor matches your SupplierDao insert signature
+                        val supplier = Supplier(name = name)
+                        PosDatabase.get(this@PurchaseActivity).supplierDao().insert(supplier)
+                        partyName.setText(name)
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ---- Save ----
+    private fun savePurchase() {
+        val party = partyName.text.toString().trim()
+        if (party.isEmpty()) { partyName.error = "Required"; return }
+        if (lines.isEmpty()) {
+            Toast.makeText(this, "Add at least one item, or continue without items", Toast.LENGTH_SHORT).show()
+        }
+
+        val grandTotal = lines.sumOf { it.amount }
+        val amountPaid = if (isCashPurchase) (paidInput.text.toString().toDoubleOrNull() ?: grandTotal) else 0.0
+        val paymentMethod = (paymentMethodSpinner.selectedItem as? String) ?: "Cash"
+
+        // Resolve to an existing supplier's id (case-insensitive match on the typed
+        // name). If none matches, supplierId stays null — Reports/Suppliers treat
+        // a null supplierId purchase as a plain "Cash Purchase".
+        val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
+        val supplierId = matchedSupplier?.id
+
+        val billNo = genBillNo()
+
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PurchaseActivity)
+
+            db.purchaseDao().purchase(
+                Purchase(
+                    billNo = billNo,
+                    supplierId = supplierId,
+                    total = grandTotal,
+                    paid = amountPaid,
+                    createdAt = purchaseDateMillis,
+                    subtotal = grandTotal,
+                    discount = 0.0
+                )
+            )
+
+            db.purchaseDao().items(
+                lines.map { line ->
+                    PurchaseItem(
+                        billNo = billNo,
+                        barcode = line.barcode ?: "",
+                        qty = line.qty.roundToInt(),
+                        unitCost = line.rate,
+                        amount = line.amount
+                    )
+                }
+            )
+
+            // Restock each item.
+            lines.forEach { line ->
+                line.barcode?.let { db.productDao().increase(it, line.qty.roundToInt()) }
+            }
+
+            // Track outstanding balance / payment for credit or partial-paid purchases.
+            val outstanding = grandTotal - amountPaid
+            if (supplierId != null && outstanding > 0) {
+                db.supplierDao().addBalance(supplierId, outstanding)
+            }
+            if (supplierId != null && amountPaid > 0) {
+                db.paymentDao().insert(
+                    Payment(
+                        reference = billNo,
+                        partyType = "supplier",
+                        partyId = supplierId,
+                        amount = amountPaid,
+                        method = paymentMethod,
+                        note = "Purchase payment"
+                    )
+                )
+            }
+
+            Toast.makeText(this@PurchaseActivity, "Purchase saved", Toast.LENGTH_SHORT).show()
+            finish()
+        }
+    }
+}
