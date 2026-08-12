@@ -1,6 +1,7 @@
 package com.grocerypos.v11.ui
 
 import android.app.DatePickerDialog
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -14,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -37,6 +39,10 @@ private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
 
 class PurchaseActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_BILL_NO = "billNo"
+    }
+
     private val bg = "#F4F3FB"
     private val orange = "#EF6C00"
     private val blue = "#1565C0"
@@ -50,6 +56,7 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var itemName: AutoCompleteTextView
     private lateinit var qty: EditText
     private lateinit var unitSpinner: Spinner
+    private lateinit var unitToggleRow: LinearLayout
     private lateinit var rate: EditText
     private lateinit var conversionInfo: TextView
     private lateinit var totalAmountText: TextView
@@ -60,6 +67,7 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var paymentSection: LinearLayout
     private lateinit var paidInput: EditText
     private lateinit var paymentMethodSpinner: Spinner
+    private lateinit var saveButton: Button
     private var isCashPurchase = true
 
     private var suppliers = listOf<Supplier>()
@@ -69,8 +77,13 @@ class PurchaseActivity : AppCompatActivity() {
     private var purchaseDateMillis = System.currentTimeMillis()
     private var selectedProduct: Product? = null
 
+    private var editBillNo: String? = null
+    private var originalPurchase: Purchase? = null
+    private var originalItems: List<PurchaseItem> = emptyList()
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        editBillNo = intent.getStringExtra(EXTRA_BILL_NO)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -84,9 +97,18 @@ class PurchaseActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(4, 0, 4, 18)
             addView(TextView(this@PurchaseActivity).apply {
-                text = "Purchase"
+                text = if (editBillNo != null) "Edit Purchase" else "Purchase"
                 textSize = 20f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@PurchaseActivity).apply {
+                text = "History"
+                textSize = 13f
+                setTextColor(Color.parseColor(blue))
+                setOnClickListener {
+                    startActivity(Intent(this@PurchaseActivity, PurchaseHistoryActivity::class.java))
+                }
             })
         })
 
@@ -195,6 +217,14 @@ class PurchaseActivity : AppCompatActivity() {
         itemName = AutoCompleteTextView(this).apply { hint = "Item Name"; background = null }
         itemBox.addView(itemName)
         itemEntrySection.addView(itemBox)
+
+        // Unit / Secondary Unit toggle — shows which unit this line is being
+        // purchased in as soon as a known product is picked.
+        unitToggleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+        }
+        itemEntrySection.addView(unitToggleRow)
         itemEntrySection.addView(spacer(10))
 
         val qtyUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -305,25 +335,39 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(paymentSection)
         root.addView(spacer(10))
 
-        // ================= SAVE =================
-        root.addView(Button(this).apply {
-            text = "SAVE PURCHASE"
+        // ================= SAVE (fixed bottom bar, not inside the scroll) =================
+        saveButton = Button(this).apply {
+            text = if (editBillNo != null) "UPDATE PURCHASE" else "SAVE PURCHASE"
             setTextColor(Color.WHITE)
             textSize = 15f
             background = roundedBg(green, 14)
             setPadding(0, 22, 0, 22)
             setOnClickListener { savePurchase() }
-        })
+        }
 
-        setContentView(ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor(bg))
+        val scrollArea = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
             addView(root)
+        }
+
+        val saveBar = LinearLayout(this).apply {
+            setPadding(24, 10, 24, 18)
+            setBackgroundColor(Color.parseColor("#FFFFFF"))
+            addView(saveButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor(bg))
+            addView(scrollArea)
+            addView(saveBar)
         })
 
         loadSuppliers()
         loadUnits()
         loadProducts()
         setPurchaseMode(true)
+        editBillNo?.let { loadForEdit(it) }
 
         itemName.setOnItemClickListener { _, _, position, _ ->
             val name = itemName.adapter.getItem(position).toString()
@@ -335,6 +379,7 @@ class PurchaseActivity : AppCompatActivity() {
                 selectedProduct = null
                 unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
                 conversionInfo.visibility = View.GONE
+                unitToggleRow.visibility = View.GONE
             }
         })
 
@@ -410,6 +455,52 @@ class PurchaseActivity : AppCompatActivity() {
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
+    // ---- Load an existing bill into the form for editing ----
+    private fun loadForEdit(bill: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PurchaseActivity)
+            val purchase = db.purchaseDao().findPurchase(bill) ?: return@launch
+            val items = db.purchaseDao().itemsForBill(bill)
+            originalPurchase = purchase
+            originalItems = items
+
+            purchaseDateMillis = purchase.createdAt
+            dateValueText.text = formatDate(purchaseDateMillis)
+
+            val supplierName = purchase.supplierId?.let { id ->
+                db.supplierDao().all().first().find { it.id == id }?.name
+            } ?: ""
+            partyName.setText(supplierName)
+
+            setPurchaseMode(purchase.paid > 0)
+            paidInput.setText(purchase.paid.toString())
+
+            lines.clear()
+            items.forEach { pi ->
+                val product = db.productDao().find(pi.barcode)
+                lines.add(
+                    PurchaseLine(
+                        itemName = product?.name ?: pi.barcode,
+                        barcode = pi.barcode,
+                        qty = pi.qty.toDouble(),
+                        unit = pi.unit.ifBlank { product?.unit ?: "" },
+                        rate = pi.unitCost,
+                        amount = pi.amount,
+                        mainUnit = product?.unit ?: "",
+                        secondaryUnit = product?.secondaryUnit ?: "",
+                        secondaryUnitQty = product?.secondaryUnitQty ?: 0.0
+                    )
+                )
+            }
+            renderItemsList()
+            updateGrandTotal()
+            if (lines.isNotEmpty()) {
+                itemEntrySection.visibility = View.VISIBLE
+                addItemsTrigger.text = "  Hide Item Entry"
+            }
+        }
+    }
+
     // ---- Data loading ----
     private fun loadSuppliers() {
         lifecycleScope.launch {
@@ -451,6 +542,7 @@ class PurchaseActivity : AppCompatActivity() {
             unitOptions.add(product.secondaryUnit)
         }
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
+        buildUnitChips(unitOptions, product.unit)
 
         if (unitOptions.size > 1 && product.secondaryUnitQty > 0) {
             conversionInfo.text = "1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}"
@@ -459,6 +551,34 @@ class PurchaseActivity : AppCompatActivity() {
             conversionInfo.visibility = View.GONE
         }
         updateLineTotal()
+    }
+
+    private fun buildUnitChips(options: List<String>, selected: String) {
+        unitToggleRow.removeAllViews()
+        if (options.size < 2) {
+            unitToggleRow.visibility = View.GONE
+            return
+        }
+        unitToggleRow.visibility = View.VISIBLE
+        options.forEachIndexed { index, unitLabel ->
+            val isSelected = unitLabel == selected
+            val chip = TextView(this).apply {
+                text = unitLabel
+                textSize = 13f
+                setPadding(28, 12, 28, 12)
+                setTextColor(if (isSelected) Color.WHITE else Color.parseColor(blue))
+                background = if (isSelected) roundedBg(blue, 18) else strokedBg(blue, "#FFFFFF", 18)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(if (index == 0) 0 else 8, 0, 0, 0) }
+                setOnClickListener {
+                    unitSpinner.setSelection(options.indexOf(unitLabel))
+                    buildUnitChips(options, unitLabel)
+                    updateLineTotal()
+                }
+            }
+            unitToggleRow.addView(chip)
+        }
     }
 
     private fun updateLineTotal() {
@@ -507,6 +627,7 @@ class PurchaseActivity : AppCompatActivity() {
         rate.setText("")
         selectedProduct = null
         conversionInfo.visibility = View.GONE
+        unitToggleRow.visibility = View.GONE
         totalAmountText.text = "Total Amount: Rs 0.00"
         itemName.requestFocus()
     }
@@ -585,10 +706,24 @@ class PurchaseActivity : AppCompatActivity() {
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
         val supplierId = matchedSupplier?.id
 
-        val billNo = genBillNo()
+        val billNo = editBillNo ?: genBillNo()
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
+
+            // Editing an existing bill: undo its old stock/balance effect and clear
+            // its old rows before writing the updated version back under the same billNo.
+            val original = originalPurchase
+            if (original != null) {
+                originalItems.forEach { db.productDao().decrease(it.barcode, it.qty) }
+                val originalOutstanding = original.total - original.paid
+                if (original.supplierId != null && originalOutstanding > 0) {
+                    db.supplierDao().addBalance(original.supplierId, -originalOutstanding)
+                }
+                db.purchaseDao().deleteItems(billNo)
+                db.purchaseDao().deletePurchase(billNo)
+                db.paymentDao().deleteByReference(billNo)
+            }
 
             db.purchaseDao().purchase(
                 Purchase(
@@ -609,7 +744,8 @@ class PurchaseActivity : AppCompatActivity() {
                         barcode = line.barcode ?: "",
                         qty = line.qty.roundToInt(),
                         unitCost = line.rate,
-                        amount = line.amount
+                        amount = line.amount,
+                        unit = line.unit
                     )
                 }
             )
@@ -632,12 +768,16 @@ class PurchaseActivity : AppCompatActivity() {
                         partyId = supplierId,
                         amount = amountPaid,
                         method = paymentMethod,
-                        note = "Purchase payment"
+                        note = if (original != null) "Purchase payment (edited)" else "Purchase payment"
                     )
                 )
             }
 
-            Toast.makeText(this@PurchaseActivity, "Purchase saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this@PurchaseActivity,
+                if (original != null) "Purchase updated" else "Purchase saved",
+                Toast.LENGTH_SHORT
+            ).show()
             finish()
         }
     }
