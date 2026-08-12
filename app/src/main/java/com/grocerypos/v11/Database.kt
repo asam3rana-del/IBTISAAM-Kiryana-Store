@@ -233,6 +233,10 @@ interface ProductDao {
 }
 
 @Dao interface SaleDao {
+    @Query("SELECT * FROM sales WHERE invoice=:inv LIMIT 1") suspend fun findSale(inv:String):Sale?
+@Query("SELECT * FROM sale_items WHERE invoice=:inv") suspend fun itemsForInvoice(inv:String):List<SaleItem>
+@Query("DELETE FROM sale_items WHERE invoice=:inv") suspend fun deleteItems(inv:String)
+@Query("DELETE FROM sales WHERE invoice=:inv") suspend fun deleteSale(inv:String)
     @Insert suspend fun sale(s:Sale)
     @Insert suspend fun items(items:List<SaleItem>)
     @Query("SELECT COUNT(*) FROM sales") suspend fun count():Int
