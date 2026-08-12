@@ -5,344 +5,366 @@ import android.app.DatePickerDialog
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.roundToInt
 
 data class SaleLine(
     val barcode: String,
     val itemName: String,
-    val qty: Int,
+    val qty: Double,
     val unit: String,
     val unitPrice: Double,
     val cost: Double,
-    val amount: Double
+    val amount: Double,
+    val mainUnit: String,
+    val secondaryUnit: String,
+    val secondaryUnitQty: Double
 )
 
 class SaleActivity : AppCompatActivity() {
 
-    // ---- palette ----
-    private val colorBg = Color.parseColor("#F4F6F5")
-    private val colorCard = Color.parseColor("#FFFFFF")
-    private val colorBorder = Color.parseColor("#E3E7E5")
-    private val colorPrimary = Color.parseColor("#2E7D32")
-    private val colorAccent = Color.parseColor("#1565C0")
-    private val colorHold = Color.parseColor("#EF6C00")
-    private val colorDanger = Color.parseColor("#C62828")
-    private val colorMuted = Color.parseColor("#6B7280")
+    private val bg = "#F4F3FB"
+    private val green = "#2E7D32"
+    private val darkGreen = "#1B5E20"
+    private val blue = "#1565C0"
+    private val red = "#C62828"
 
-    private lateinit var saleModeGroup: RadioGroup
-    private lateinit var cashRadio: RadioButton
-    private lateinit var creditRadio: RadioButton
     private lateinit var customerName: AutoCompleteTextView
-
+    private lateinit var cashBtn: Button
+    private lateinit var creditBtn: Button
     private lateinit var saleTypeSpinner: Spinner
     private lateinit var itemName: AutoCompleteTextView
     private lateinit var qty: EditText
     private lateinit var unitSpinner: Spinner
     private lateinit var unitPrice: EditText
-    private lateinit var itemsTable: TableLayout
+    private lateinit var itemsContainer: LinearLayout
     private lateinit var subtotalText: TextView
     private lateinit var discountInput: EditText
     private lateinit var totalText: TextView
+    private lateinit var paymentSection: LinearLayout
     private lateinit var paidInput: EditText
     private lateinit var paymentMethodSpinner: Spinner
-    private lateinit var dateText: TextView
-
-    private val firmName = "Ibtisaam Traders"
-    private val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-    private var saleCalendar: Calendar = Calendar.getInstance()
 
     private var customers = listOf<Customer>()
     private var products = listOf<Product>()
     private val lines = mutableListOf<SaleLine>()
-    private var isCreditSale = false
-
-    // currently selected item in "Add Item" - drives which units + price apply
     private var selectedProduct: Product? = null
+    private var isCashSale = true
+    private var saleDateMillis = System.currentTimeMillis()
+    private lateinit var dateButton: Button
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(colorBg)
-            setPadding(24, 28, 24, 40)
+            setPadding(24, 32, 24, 32)
+            setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ---- topbar: firm name + calendar date picker ----
-        val topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(28, 22, 28, 22)
-            background = GradientDrawable().apply { setColor(colorPrimary); cornerRadius = 20f }
-        }
-        val topBarText = LinearLayout(this).apply {
+        // ================= HEADER (with Hold / Recall) =================
+        val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setPadding(24, 20, 24, 18)
+            background = roundedBg(green, 20)
+            elevation = 8f
         }
-        topBarText.addView(TextView(this).apply {
-            text = firmName
-            textSize = 19f
+        val headerTop = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        headerTop.addView(TextView(this).apply {
+            text = "New Sale"
+            textSize = 20f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        topBarText.addView(TextView(this).apply {
-            text = "New Sale"
-            textSize = 13f
-            setTextColor(Color.parseColor("#DCEDC8"))
-        })
-        topBar.addView(topBarText)
+        headerTop.addView(pillButton("HOLD", "#FFFFFF", darkGreen) { holdBill() })
+        headerTop.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
+        headerTop.addView(pillButton("RECALL", "#FFFFFF", darkGreen) { openRecallDialog() })
+        header.addView(headerTop)
 
-        dateText = TextView(this).apply {
-            text = "\uD83D\uDCC5 " + dateFormat.format(saleCalendar.time)
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setPadding(20, 12, 20, 12)
-            background = GradientDrawable().apply { setColor(Color.parseColor("#33FFFFFF")); cornerRadius = 14f }
+        header.addView(TextView(this).apply {
+            text = "IBTISAAM Kiryana Store"
+            textSize = 12f
+            setTextColor(Color.parseColor("#C8E6C9"))
+            setPadding(0, 4, 0, 10)
+        })
+
+        dateButton = Button(this).apply {
+            text = formatDate(saleDateMillis)
+            textSize = 12f
+            setTextColor(Color.parseColor(green))
+            background = roundedBg("#FFFFFF", 30)
+            setPadding(24, 8, 24, 8)
+            minWidth = 0; minHeight = 0
             setOnClickListener { openDatePicker() }
         }
-        topBar.addView(dateText)
+        header.addView(dateButton)
+        root.addView(header)
+        root.addView(spacer(20))
 
-        root.addView(topBar)
-        root.addView(spacerView(20))
-
-        // ---- top actions: Hold / Recall ----
-        val topActions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        // ================= CUSTOMER CARD (typeable + Cash/Credit corner toggle) =================
+        val customerCard = cardContainer()
+        val custTopRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        custTopRow.addView(sectionLabel("Customer").apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        val cashCreditToggle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        cashBtn = Button(this).apply {
+            text = "CASH"; textSize = 11f; setTextColor(Color.WHITE)
+            background = roundedBg(green, 20)
+            setPadding(20, 6, 20, 6); minWidth = 0; minHeight = 0
+            setOnClickListener { setSaleMode(true) }
         }
-        topActions.addView(outlineButton("Hold Bill", colorHold) { holdCurrentBill() }.apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).also { it.marginEnd = 12 }
+        creditBtn = Button(this).apply {
+            text = "CREDIT"; textSize = 11f; setTextColor(Color.parseColor("#9E9E9E"))
+            background = roundedBg("#EEEEEE", 20)
+            setPadding(20, 6, 20, 6); minWidth = 0; minHeight = 0
+            setOnClickListener { setSaleMode(false) }
+        }
+        cashCreditToggle.addView(cashBtn)
+        cashCreditToggle.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
+        cashCreditToggle.addView(creditBtn)
+        custTopRow.addView(cashCreditToggle)
+        customerCard.addView(custTopRow)
+        customerCard.addView(spacer(10))
+
+        val custRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        customerName = AutoCompleteTextView(this).apply {
+            hint = "Walk-in (type or pick customer)"
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        custRow.addView(customerName)
+        custRow.addView(smallAddButton { promptAddCustomer() })
+        customerCard.addView(custRow)
+        root.addView(customerCard)
+        root.addView(spacer(20))
+
+        // ================= SALE TYPE =================
+        val saleTypeCard = cardContainer()
+        saleTypeCard.addView(sectionLabel("Sale Type"))
+        saleTypeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Retail", "Wholesale"))
+        }
+        saleTypeCard.addView(saleTypeSpinner)
+        root.addView(saleTypeCard)
+        root.addView(spacer(20))
+
+        // ================= ADD ITEM =================
+        val itemCard = cardContainer()
+        itemCard.addView(sectionLabel("Add Item"))
+
+        itemName = AutoCompleteTextView(this).apply { hint = "Item Name (type to search)" }
+        itemCard.addView(itemName)
+        itemCard.addView(spacer(14))
+
+        val qtyUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        qty = EditText(this).apply {
+            hint = "Quantity"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,8,0) }
+        }
+        unitSpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8,0,0,0) }
+        }
+        qtyUnitRow.addView(qty)
+        qtyUnitRow.addView(unitSpinner)
+        itemCard.addView(qtyUnitRow)
+        itemCard.addView(spacer(14))
+
+        unitPrice = EditText(this).apply {
+            hint = "Rate (auto-filled, editable)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        itemCard.addView(unitPrice)
+        itemCard.addView(spacer(16))
+
+        itemCard.addView(Button(this).apply {
+            text = "+  ADD ITEM"
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            background = roundedBg(blue, 14)
+            setOnClickListener { addItem() }
         })
-        topActions.addView(outlineButton("Recall Bill", colorAccent) { showRecallDialog() }.apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        root.addView(card { addView(topActions) })
+        root.addView(itemCard)
+        root.addView(spacer(20))
 
-        // ---- customer section ----
-        root.addView(card {
-            addView(sectionTitle("Customer"))
+        // ================= BILL ITEMS =================
+        root.addView(sectionLabel("Bill Items"))
+        itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(itemsContainer)
+        root.addView(spacer(12))
 
-            saleModeGroup = RadioGroup(this@SaleActivity).apply { orientation = LinearLayout.HORIZONTAL }
-            cashRadio = RadioButton(this@SaleActivity).apply { text = "Cash Sale"; isChecked = true }
-            creditRadio = RadioButton(this@SaleActivity).apply { text = "Credit Sale"; setPadding(40, 0, 0, 0) }
-            saleModeGroup.addView(cashRadio)
-            saleModeGroup.addView(creditRadio)
-            addView(saleModeGroup)
+        // ================= TOTALS =================
+        val totalsCard = cardContainer()
+        subtotalText = TextView(this).apply { text = "Subtotal: Rs 0.00"; textSize = 15f }
+        totalsCard.addView(subtotalText)
+        totalsCard.addView(spacer(10))
+        discountInput = EditText(this).apply {
+            hint = "Discount (Rs)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        totalsCard.addView(discountInput)
+        totalsCard.addView(spacer(10))
+        totalText = TextView(this).apply {
+            text = "Total: Rs 0.00"
+            textSize = 19f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(green))
+        }
+        totalsCard.addView(totalText)
+        root.addView(totalsCard)
+        root.addView(spacer(20))
 
-            customerName = AutoCompleteTextView(this@SaleActivity).apply {
-                hint = "Customer Name (optional for cash, type or pick)"
-                threshold = 1
-            }
-            addView(customerName)
-            addView(smallLink("+ Add New Customer") { promptAddCustomer() })
+        discountInput.addTextChangedListener(simpleWatcher { updateTotals() })
 
-            saleModeGroup.setOnCheckedChangeListener { _, checkedId ->
-                isCreditSale = checkedId == creditRadio.id
-                if (isCreditSale) {
-                    customerName.hint = "Customer Name (required for credit)"
-                    Toast.makeText(this@SaleActivity, "Credit Sale - customer select ya add karen", Toast.LENGTH_SHORT).show()
-                } else {
-                    customerName.hint = "Customer Name (optional for cash)"
-                    Toast.makeText(this@SaleActivity, "Cash Sale - customer optional hai", Toast.LENGTH_SHORT).show()
-                }
-            }
-        })
+        // ================= PAYMENT (hidden for Credit sales) =================
+        paymentSection = cardContainer()
+        paymentSection.addView(sectionLabel("Payment"))
+        paymentMethodSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
+        }
+        paymentSection.addView(paymentMethodSpinner)
+        paymentSection.addView(spacer(12))
+        paidInput = EditText(this).apply {
+            hint = "Amount Paid"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        paymentSection.addView(paidInput)
+        root.addView(paymentSection)
+        root.addView(spacer(20))
 
-        // ---- sale type ----
-        root.addView(card {
-            addView(sectionTitle("Sale Type"))
-            saleTypeSpinner = Spinner(this@SaleActivity).apply {
-                adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Retail", "Wholesale"))
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
-                        applyUnitPrice()
-                    }
-                    override fun onNothingSelected(parent: AdapterView<*>?) {}
-                }
-            }
-            addView(saleTypeSpinner)
-        })
-
-        // ---- add item ----
-        root.addView(card {
-            addView(sectionTitle("Add Item"))
-
-            itemName = AutoCompleteTextView(this@SaleActivity).apply { hint = "Item Name (type to search)" }
-            addView(itemName)
-            itemName.setOnItemClickListener { _, _, position, _ ->
-                val matches = products.filter { it.name.contains(itemName.text.toString(), ignoreCase = true) }
-                if (position < matches.size) {
-                    val p = matches[position]
-                    selectedProduct = p
-                    val opts = mutableListOf(p.unit)
-                    if (p.secondaryUnit.isNotBlank() && p.secondaryUnitQty > 0) opts.add(p.secondaryUnit)
-                    unitSpinner.adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, opts)
-                    unitSpinner.setSelection(0)
-                    applyUnitPrice()
-                }
-            }
-            // also clear the stale product link if the user edits the text after picking one
-            itemName.addTextChangedListener(simpleWatcher {
-                val p = selectedProduct
-                if (p != null && !itemName.text.toString().equals(p.name, ignoreCase = true)) {
-                    selectedProduct = null
-                }
-            })
-
-            val qtyRow = LinearLayout(this@SaleActivity).apply { orientation = LinearLayout.HORIZONTAL }
-            qty = EditText(this@SaleActivity).apply {
-                hint = "Quantity"
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).also { it.marginEnd = 12 }
-            }
-            unitSpinner = Spinner(this@SaleActivity).apply {
-                adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Unit"))
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
-                        applyUnitPrice()
-                    }
-                    override fun onNothingSelected(parent: AdapterView<*>?) {}
-                }
-            }
-            qtyRow.addView(qty); qtyRow.addView(unitSpinner)
-            addView(qtyRow)
-
-            unitPrice = EditText(this@SaleActivity).apply {
-                hint = "Unit Price (auto-filled, editable)"
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            }
-            addView(unitPrice)
-
-            addView(filledButton("ADD ITEM", colorPrimary) { addItem() })
-        })
-
-        // ---- bill items ----
-        root.addView(card {
-            addView(sectionTitle("Bill Items"))
-            itemsTable = TableLayout(this@SaleActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            }
-            addView(itemsTable)
-        })
-
-        // ---- totals ----
-        root.addView(card {
-            subtotalText = TextView(this@SaleActivity).apply { text = "Subtotal: Rs 0.00"; textSize = 16f }
-            addView(subtotalText)
-
-            discountInput = EditText(this@SaleActivity).apply {
-                hint = "Discount (Rs)"
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            }
-            addView(discountInput)
-            discountInput.addTextChangedListener(simpleWatcher { updateTotals() })
-
-            totalText = TextView(this@SaleActivity).apply {
-                text = "Total: Rs 0.00"
-                textSize = 20f
-                setTextColor(colorPrimary)
-                setPadding(0, 8, 0, 0)
-            }
-            addView(totalText)
+        // ================= SAVE =================
+        root.addView(Button(this).apply {
+            text = "SAVE SALE"
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            background = roundedBg(green, 16)
+            setPadding(0, 28, 0, 28)
+            setOnClickListener { saveSale() }
         })
 
-        // ---- payment ----
-        root.addView(card {
-            addView(sectionTitle("Payment"))
-            paymentMethodSpinner = Spinner(this@SaleActivity).apply {
-                adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
-            }
-            addView(paymentMethodSpinner)
-
-            paidInput = EditText(this@SaleActivity).apply {
-                hint = "Amount Paid"
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            }
-            addView(paidInput)
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor(bg))
+            addView(root)
         })
-
-        root.addView(filledButton("SAVE SALE", colorPrimary) { saveSale() }.apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 140).also { it.topMargin = 8 }
-        })
-
-        setContentView(ScrollView(this).apply { setBackgroundColor(colorBg); addView(root) })
-
         loadCustomers()
         loadProducts()
-    }
+        setSaleMode(true)
 
-    // ---------- small UI helpers ----------
-
-    private fun card(builder: LinearLayout.() -> Unit): LinearLayout {
-        val c = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(28, 24, 28, 24)
-            background = GradientDrawable().apply {
-                setColor(colorCard)
-                cornerRadius = 22f
-                setStroke(2, colorBorder)
-            }
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { it.bottomMargin = 20 }
+        itemName.setOnItemClickListener { _, _, position, _ ->
+            val name = itemName.adapter.getItem(position).toString()
+            onItemPicked(name)
         }
-        c.builder()
-        return c
+        itemName.addTextChangedListener(simpleWatcher {
+            val match = products.find { it.name.equals(itemName.text.toString().trim(), ignoreCase = true) }
+            if (match == null) {
+                selectedProduct = null
+                unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
+            }
+        })
+        unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { refillAutoPrice() }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        saleTypeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { refillAutoPrice() }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
     }
 
-    private fun sectionTitle(text: String) = TextView(this).apply {
+    // ================= UI helpers =================
+    private fun cardContainer() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(24, 22, 24, 22)
+        background = roundedBg("#FFFFFF", 20)
+        elevation = 4f
+    }
+
+    private fun sectionLabel(text: String) = TextView(this).apply {
         this.text = text
         textSize = 15f
-        setTextColor(colorMuted)
+        setTextColor(Color.parseColor("#424242"))
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
         setPadding(0, 0, 0, 10)
     }
 
-    private fun spacerView(heightDp: Int) = View(this).apply {
+    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
+        setColor(Color.parseColor(colorHex))
+        cornerRadius = radius.toFloat()
+    }
+
+    private fun spacer(heightDp: Int) = View(this).apply {
         val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px)
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
 
-    private fun filledButton(label: String, color: Int, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { setColor(color); cornerRadius = 16f }
-        setOnClickListener { onClick() }
-    }
-
-    private fun outlineButton(label: String, color: Int, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        setTextColor(color)
-        background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = 16f; setStroke(3, color) }
-        setOnClickListener { onClick() }
-    }
-
-    private fun smallLink(label: String, onClick: () -> Unit) = TextView(this).apply {
-        text = label
-        setTextColor(colorAccent)
-        setPadding(0, 12, 0, 4)
-        setOnClickListener { onClick() }
-    }
-
-    private fun simpleWatcher(onChange: () -> Unit) = object : android.text.TextWatcher {
-        override fun afterTextChanged(s: android.text.Editable?) { onChange() }
-        override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, e: Int) {}
+    private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun afterTextChanged(s: Editable?) = onChange()
     }
 
-    // ---------- data loading ----------
+    private fun formatDate(millis: Long) = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(millis))
 
+    private fun openDatePicker() {
+        val cal = Calendar.getInstance().apply { timeInMillis = saleDateMillis }
+        DatePickerDialog(this, { _, y, m, d ->
+            cal.set(y, m, d)
+            saleDateMillis = cal.timeInMillis
+            dateButton.text = formatDate(saleDateMillis)
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+    }
+
+    private fun pillButton(label: String, textColorHex: String, bgHex: String, onClick: () -> Unit) = Button(this).apply {
+        text = label
+        textSize = 11f
+        setTextColor(Color.parseColor(textColorHex))
+        background = roundedBg(bgHex, 30)
+        setPadding(22, 8, 22, 8)
+        minWidth = 0; minHeight = 0
+        setOnClickListener { onClick() }
+    }
+
+    private fun smallAddButton(onClick: () -> Unit) = Button(this).apply {
+        text = "+"
+        setTextColor(Color.WHITE)
+        background = roundedBg(blue, 10)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(10, 0, 0, 0) }
+        setOnClickListener { onClick() }
+    }
+
+    // ================= Cash / Credit toggle =================
+    private fun setSaleMode(cash: Boolean) {
+        isCashSale = cash
+        if (cash) {
+            cashBtn.background = roundedBg(green, 20); cashBtn.setTextColor(Color.WHITE)
+            creditBtn.background = roundedBg("#EEEEEE", 20); creditBtn.setTextColor(Color.parseColor("#9E9E9E"))
+            paymentSection.visibility = View.VISIBLE
+        } else {
+            creditBtn.background = roundedBg(red, 20); creditBtn.setTextColor(Color.WHITE)
+            cashBtn.background = roundedBg("#EEEEEE", 20); cashBtn.setTextColor(Color.parseColor("#9E9E9E"))
+            paymentSection.visibility = View.GONE
+        }
+    }
+
+    // ================= Data loading =================
     private fun loadCustomers() {
         lifecycleScope.launch {
             PosDatabase.get(this@SaleActivity).customerDao().all().collectLatest { list ->
@@ -361,21 +383,6 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    private fun openDatePicker() {
-        DatePickerDialog(
-            this,
-            { _, year, month, day ->
-                saleCalendar.set(Calendar.YEAR, year)
-                saleCalendar.set(Calendar.MONTH, month)
-                saleCalendar.set(Calendar.DAY_OF_MONTH, day)
-                dateText.text = "\uD83D\uDCC5 " + dateFormat.format(saleCalendar.time)
-            },
-            saleCalendar.get(Calendar.YEAR),
-            saleCalendar.get(Calendar.MONTH),
-            saleCalendar.get(Calendar.DAY_OF_MONTH)
-        ).show()
-    }
-
     private fun promptAddCustomer() {
         val input = EditText(this)
         AlertDialog.Builder(this)
@@ -385,38 +392,40 @@ class SaleActivity : AppCompatActivity() {
                 val v = input.text.toString().trim()
                 if (v.isNotEmpty()) lifecycleScope.launch {
                     PosDatabase.get(this@SaleActivity).customerDao().insert(Customer(name = v))
-                    customerName.setText(v)
                     Toast.makeText(this@SaleActivity, "Customer added", Toast.LENGTH_SHORT).show()
+                    customerName.setText(v)
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    // ---------- item add / render (repeatable without redoing customer / sale type) ----------
-
-    // Recomputes unit price whenever the chosen unit or Retail/Wholesale sale type changes.
-    // Base salePrice/wholesalePrice are stored per PRIMARY unit; secondary-unit price = base / secondaryUnitQty.
-    private fun applyUnitPrice() {
-        val p = selectedProduct ?: return
-        val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
-        val baseRate = if (isWholesale) p.wholesalePrice else p.salePrice
-        val chosenUnit = unitSpinner.selectedItem?.toString() ?: p.unit
-
-        val rate = when {
-            chosenUnit == p.unit -> baseRate
-            chosenUnit == p.secondaryUnit && p.secondaryUnitQty > 0 -> baseRate / p.secondaryUnitQty
-            else -> baseRate
-        }
-        unitPrice.setText(if (rate == rate.toLong().toDouble()) rate.toLong().toString() else "%.2f".format(rate))
+    // ================= Item selection & auto price =================
+    private fun onItemPicked(name: String) {
+        val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
+        selectedProduct = product
+        val unitChoices = if (product.secondaryUnit.isNotEmpty())
+            listOf(product.unit, product.secondaryUnit) else listOf(product.unit)
+        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
+        refillAutoPrice()
     }
 
+    private fun refillAutoPrice() {
+        val product = selectedProduct ?: return
+        val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
+        val basePrice = if (isWholesale) product.wholesalePrice else product.salePrice
+        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
+        val isSecondary = chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0
+        val price = if (isSecondary) basePrice / product.secondaryUnitQty else basePrice
+        unitPrice.setText(if (price > 0) "%.2f".format(price) else "")
+    }
+
+    // ================= Add item to bill =================
     private fun addItem() {
         val n = itemName.text.toString().trim()
-        val q = qty.text.toString().toIntOrNull() ?: 0
-        val unit = unitSpinner.selectedItem?.toString() ?: (selectedProduct?.unit ?: "pcs")
+        val q = qty.text.toString().toDoubleOrNull() ?: 0.0
         val price = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
-        val product = selectedProduct ?: products.find { it.name.equals(n, ignoreCase = true) }
+        val product = products.find { it.name.equals(n, ignoreCase = true) }
 
         if (product == null) {
             Toast.makeText(this, "Ye item product list mein nahi hai", Toast.LENGTH_SHORT).show()
@@ -426,69 +435,79 @@ class SaleActivity : AppCompatActivity() {
             Toast.makeText(this, "Quantity theek se likhen", Toast.LENGTH_SHORT).show()
             return
         }
-        if (product.stock < q) {
-            Toast.makeText(this, "Stock kam hai (available: ${product.stock})", Toast.LENGTH_SHORT).show()
+
+        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
+        val isSecondary = chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0
+        val mainUnitQtyEquivalent = if (isSecondary) q / product.secondaryUnitQty else q
+
+        if (product.stock < mainUnitQtyEquivalent) {
+            Toast.makeText(this, "Stock kam hai (available: ${product.stock} ${product.unit})", Toast.LENGTH_SHORT).show()
             return
         }
 
         val amount = q * price
-        // Cost must match the chosen unit, same as price - otherwise Amount - Cost (profit) is wrong
-        // whenever the item is sold in the secondary unit. product.cost is stored per PRIMARY unit.
-        val costForUnit = when {
-            unit == product.unit -> product.cost
-            unit == product.secondaryUnit && product.secondaryUnitQty > 0 -> product.cost / product.secondaryUnitQty
-            else -> product.cost
-        }
-        lines.add(SaleLine(product.barcode, product.name, q, unit, price, costForUnit, amount))
-        renderItems()
+        lines.add(
+            SaleLine(
+                barcode = product.barcode,
+                itemName = product.name,
+                qty = q,
+                unit = chosenUnit,
+                unitPrice = price,
+                cost = product.cost,
+                amount = amount,
+                mainUnit = product.unit,
+                secondaryUnit = product.secondaryUnit,
+                secondaryUnitQty = product.secondaryUnitQty
+            )
+        )
+        renderItemsList()
+        updateTotals()
 
-        // clear only the item-entry fields so the next item can be added immediately
+        // ---- reset just the item-entry fields so the next item can be added right away ----
         itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
         selectedProduct = null
-        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("Unit"))
+        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
         itemName.requestFocus()
-        updateTotals()
     }
 
-    private fun tableCell(text: String, bold: Boolean = false, color: Int = Color.parseColor("#212121"), weight: Float = 1f) =
-        TextView(this).apply {
-            this.text = text
-            textSize = 13f
-            setTextColor(color)
-            if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(8, 10, 8, 10)
-            layoutParams = TableRow.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, weight)
-        }
-
-    private fun renderItems() {
-        itemsTable.removeAllViews()
-        if (lines.isEmpty()) return
-
-        itemsTable.addView(TableRow(this).apply {
-            background = GradientDrawable().apply { setColor(Color.parseColor("#EEF2F1")); cornerRadius = 8f }
-            addView(tableCell("Item", bold = true, color = colorMuted, weight = 2.4f))
-            addView(tableCell("Qty", bold = true, color = colorMuted, weight = 1.1f))
-            addView(tableCell("Rate", bold = true, color = colorMuted, weight = 1.2f))
-            addView(tableCell("Amount", bold = true, color = colorMuted, weight = 1.3f))
-            addView(tableCell("", weight = 0.5f))
-        })
-
+    private fun renderItemsList() {
+        itemsContainer.removeAllViews()
         lines.forEachIndexed { index, line ->
-            itemsTable.addView(TableRow(this).apply {
-                setPadding(0, 4, 0, 4)
-                addView(tableCell(line.itemName, weight = 2.4f))
-                addView(tableCell("${line.qty} ${line.unit}", weight = 1.1f))
-                addView(tableCell("%.2f".format(line.unitPrice), weight = 1.2f))
-                addView(tableCell("%.2f".format(line.amount), weight = 1.3f))
+            itemsContainer.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(20, 16, 20, 16)
+                background = roundedBg("#FFFFFF", 14)
+                elevation = 2f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 0, 0, 10) }
+
+                val top = LinearLayout(this@SaleActivity).apply { orientation = LinearLayout.HORIZONTAL }
+                top.addView(TextView(this@SaleActivity).apply {
+                    text = line.itemName; textSize = 15f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                top.addView(TextView(this@SaleActivity).apply {
+                    text = "Rs %.2f".format(line.amount)
+                    setTextColor(Color.parseColor(green))
+                    textSize = 15f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                addView(top)
                 addView(TextView(this@SaleActivity).apply {
-                    text = "X"
-                    setTextColor(colorDanger)
+                    text = "Qty: ${line.qty} ${line.unit}  •  Rate: ${line.unitPrice}"
                     textSize = 13f
-                    setPadding(8, 10, 8, 10)
-                    layoutParams = TableRow.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.5f)
+                    setTextColor(Color.GRAY)
+                })
+                addView(TextView(this@SaleActivity).apply {
+                    text = "Remove"
+                    textSize = 12f
+                    setTextColor(Color.parseColor(red))
+                    setPadding(0, 8, 0, 0)
                     setOnClickListener {
                         lines.removeAt(index)
-                        renderItems()
+                        renderItemsList()
                         updateTotals()
                     }
                 })
@@ -500,41 +519,39 @@ class SaleActivity : AppCompatActivity() {
         val subtotal = lines.sumOf { it.amount }
         val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
         subtotalText.text = "Subtotal: Rs %.2f".format(subtotal)
-        totalText.text = "Total: Rs %.2f".format((subtotal - discount).coerceAtLeast(0.0))
+        val total = (subtotal - discount).coerceAtLeast(0.0)
+        totalText.text = "Total: Rs %.2f".format(total)
+        if (isCashSale) paidInput.setText("%.2f".format(total))
     }
 
-    // ---------- save (stock / invoice logic unchanged from original) ----------
-
+    // ================= Save =================
     private fun saveSale() {
         if (lines.isEmpty()) {
-            Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
             return
         }
-
-        val typedName = customerName.text.toString().trim()
-        val customer = customers.find { it.name.equals(typedName, ignoreCase = true) }
-
-        if (isCreditSale) {
-            if (typedName.isEmpty()) {
-                Toast.makeText(this, "Credit sale ke liye customer name zaroori hai", Toast.LENGTH_SHORT).show()
-                return
-            }
-            if (customer == null) {
-                Toast.makeText(this, "Ye customer list mein nahi hai, pehle '+ Add New Customer' se add karen", Toast.LENGTH_LONG).show()
-                return
-            }
+        val enteredCustomer = customerName.text.toString().trim()
+        if (!isCashSale && enteredCustomer.isEmpty()) {
+            Toast.makeText(this, "Credit sale ke liye Customer zaroori hai", Toast.LENGTH_SHORT).show()
+            return
         }
 
         val subtotal = lines.sumOf { it.amount }
         val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
         val total = (subtotal - discount).coerceAtLeast(0.0)
-        val paid = paidInput.text.toString().toDoubleOrNull() ?: total
-        val method = paymentMethodSpinner.selectedItem?.toString() ?: "Cash"
+        val paid = if (isCashSale) (paidInput.text.toString().toDoubleOrNull() ?: total) else 0.0
+        val method = if (isCashSale) (paymentMethodSpinner.selectedItem?.toString() ?: "Cash") else "credit"
+        var customer = customers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
         val saleType = if (saleTypeSpinner.selectedItem?.toString() == "Wholesale") "wholesale" else "retail"
         val invoice = "INV" + System.currentTimeMillis().toString()
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
+
+            if (customer == null && enteredCustomer.isNotEmpty()) {
+                val newId = db.customerDao().insert(Customer(name = enteredCustomer))
+                customer = Customer(id = newId, name = enteredCustomer)
+            }
 
             db.saleDao().sale(
                 Sale(
@@ -546,16 +563,19 @@ class SaleActivity : AppCompatActivity() {
                     total = total,
                     paid = paid,
                     paymentMethod = method.lowercase(),
-                    saleType = saleType
+                    saleType = saleType,
+                    createdAt = saleDateMillis
                 )
             )
 
             val saleItems = lines.map {
+                val isSecondary = it.secondaryUnit.isNotEmpty() && it.unit == it.secondaryUnit && it.secondaryUnitQty > 0
+                val mainUnitQty = if (isSecondary) it.qty / it.secondaryUnitQty else it.qty
                 SaleItem(
                     invoice = invoice,
                     barcode = it.barcode,
-                    product = "${it.itemName} (${it.unit})",
-                    qty = it.qty,
+                    product = it.itemName,
+                    qty = mainUnitQty.roundToInt(),
                     unitPrice = it.unitPrice,
                     cost = it.cost,
                     amount = it.amount
@@ -564,152 +584,211 @@ class SaleActivity : AppCompatActivity() {
             db.saleDao().items(saleItems)
 
             for (line in lines) {
-                db.productDao().decrease(line.barcode, line.qty)
+                val isSecondary = line.secondaryUnit.isNotEmpty() && line.unit == line.secondaryUnit && line.secondaryUnitQty > 0
+                val mainUnitQty = if (isSecondary) line.qty / line.secondaryUnitQty else line.qty
+                db.productDao().decrease(line.barcode, mainUnitQty.roundToInt())
             }
 
             if (customer != null && paid < total) {
-                db.customerDao().addBalance(customer.id, total - paid)
+                db.customerDao().addBalance(customer!!.id, total - paid)
             }
 
-            db.cashTransactionDao().insert(
-                CashTransaction(
-                    type = "IN",
-                    method = method.lowercase(),
-                    amount = paid,
-                    reason = "Sale",
-                    reference = invoice
+            if (paid > 0) {
+                db.cashTransactionDao().insert(
+                    CashTransaction(
+                        type = "IN",
+                        method = method.lowercase(),
+                        amount = paid,
+                        reason = "Sale",
+                        reference = invoice
+                    )
                 )
-            )
+            }
 
             Toast.makeText(this@SaleActivity, "Sale saved: $invoice", Toast.LENGTH_LONG).show()
             finish()
         }
     }
 
-    // ---------- Hold Bill / Recall (stored locally, does NOT touch stock/invoice tables) ----------
-
-    private fun heldBillsPrefs() = getSharedPreferences("held_bills_v11", MODE_PRIVATE)
-
-    private fun readHeldBills(): JSONArray =
-        JSONArray(heldBillsPrefs().getString("bills", "[]"))
-
-    private fun writeHeldBills(arr: JSONArray) {
-        heldBillsPrefs().edit().putString("bills", arr.toString()).apply()
-    }
-
-    private fun holdCurrentBill() {
+    // ================= Hold Bill =================
+    private fun holdBill() {
         if (lines.isEmpty()) {
-            Toast.makeText(this, "Hold karne ke liye kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Add items pehle, phir hold karen", Toast.LENGTH_SHORT).show()
             return
         }
+        val holdId = "HOLD" + System.currentTimeMillis().toString()
+        val payload = encodeHold()
 
-        val obj = JSONObject()
-        obj.put("customerName", customerName.text.toString())
-        obj.put("isCredit", isCreditSale)
-        obj.put("saleType", saleTypeSpinner.selectedItem?.toString() ?: "Retail")
-        obj.put("paymentMethod", paymentMethodSpinner.selectedItem?.toString() ?: "Cash")
-        obj.put("discount", discountInput.text.toString())
-        obj.put("paid", paidInput.text.toString())
-        obj.put("createdAt", System.currentTimeMillis())
-
-        val linesArr = JSONArray()
-        lines.forEach {
-            val lo = JSONObject()
-            lo.put("barcode", it.barcode)
-            lo.put("itemName", it.itemName)
-            lo.put("qty", it.qty)
-            lo.put("unit", it.unit)
-            lo.put("unitPrice", it.unitPrice)
-            lo.put("cost", it.cost)
-            lo.put("amount", it.amount)
-            linesArr.put(lo)
+        lifecycleScope.launch {
+            PosDatabase.get(this@SaleActivity).heldDao().hold(HeldBill(holdId = holdId, payload = payload))
+            Toast.makeText(this@SaleActivity, "Bill hold ho gayi", Toast.LENGTH_SHORT).show()
+            clearAll()
         }
-        obj.put("lines", linesArr)
-
-        val bills = readHeldBills()
-        bills.put(obj)
-        writeHeldBills(bills)
-
-        Toast.makeText(this, "Bill hold ho gaya", Toast.LENGTH_SHORT).show()
-        clearForNewSale()
     }
 
-    private fun clearForNewSale() {
+    private fun encodeHold(): String {
+        val header = listOf(
+            customerName.text.toString(),
+            saleTypeSpinner.selectedItem?.toString() ?: "Retail",
+            if (isCashSale) "CASH" else "CREDIT",
+            discountInput.text.toString()
+        ).joinToString("\u0001")
+
+        val itemsPart = lines.joinToString("\u0002") {
+            listOf(it.barcode, it.itemName, it.qty, it.unit, it.unitPrice, it.cost, it.amount, it.mainUnit, it.secondaryUnit, it.secondaryUnitQty)
+                .joinToString("\u0003")
+        }
+        return header + "\u0004" + itemsPart
+    }
+
+    private fun decodeHold(payload: String) {
+        val parts = payload.split("\u0004")
+        if (parts.isEmpty()) return
+        val header = parts[0].split("\u0001")
+        if (header.size >= 4) {
+            customerName.setText(header[0])
+            val saleTypeIndex = if (header[1] == "Wholesale") 1 else 0
+            saleTypeSpinner.setSelection(saleTypeIndex)
+            setSaleMode(header[2] != "CREDIT")
+            discountInput.setText(header[3])
+        }
+
         lines.clear()
-        renderItems()
+        if (parts.size > 1 && parts[1].isNotEmpty()) {
+            parts[1].split("\u0002").forEach { row ->
+                val f = row.split("\u0003")
+                if (f.size >= 10) {
+                    lines.add(
+                        SaleLine(
+                            barcode = f[0],
+                            itemName = f[1],
+                            qty = f[2].toDoubleOrNull() ?: 0.0,
+                            unit = f[3],
+                            unitPrice = f[4].toDoubleOrNull() ?: 0.0,
+                            cost = f[5].toDoubleOrNull() ?: 0.0,
+                            amount = f[6].toDoubleOrNull() ?: 0.0,
+                            mainUnit = f[7],
+                            secondaryUnit = f[8],
+                            secondaryUnitQty = f[9].toDoubleOrNull() ?: 0.0
+                        )
+                    )
+                }
+            }
+        }
+        renderItemsList()
+        updateTotals()
+    }
+
+    private fun clearAll() {
+        lines.clear()
+        renderItemsList()
         customerName.text.clear()
         discountInput.text.clear()
+        itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
+        selectedProduct = null
+        setSaleMode(true)
+        subtotalText.text = "Subtotal: Rs 0.00"
+        totalText.text = "Total: Rs 0.00"
         paidInput.text.clear()
-        cashRadio.isChecked = true
-        updateTotals()
+        saleDateMillis = System.currentTimeMillis()
+        dateButton.text = formatDate(saleDateMillis)
     }
 
-    private fun showRecallDialog() {
-        val bills = readHeldBills()
-        if (bills.length() == 0) {
-            Toast.makeText(this, "Koi held bill nahi hai", Toast.LENGTH_SHORT).show()
-            return
+    // ================= Recall Bill dialog =================
+    private fun openRecallDialog() {
+        lifecycleScope.launch {
+            val held = PosDatabase.get(this@SaleActivity).heldDao().all().first()
+
+            val content = LinearLayout(this@SaleActivity).apply { orientation = LinearLayout.VERTICAL }
+            val dialogHeader = LinearLayout(this@SaleActivity).apply {
+                setPadding(28, 24, 28, 24)
+                setBackgroundColor(Color.parseColor(darkGreen))
+            }
+            dialogHeader.addView(TextView(this@SaleActivity).apply {
+                text = "Held Bills"
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            content.addView(dialogHeader)
+
+            val list = LinearLayout(this@SaleActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(24, 16, 24, 16)
+            }
+
+            if (held.isEmpty()) {
+                list.addView(TextView(this@SaleActivity).apply {
+                    text = "Koi held bill nahi hai"
+                    setTextColor(Color.GRAY)
+                    setPadding(8, 20, 8, 20)
+                })
+            }
+
+            val dialog = AlertDialog.Builder(this@SaleActivity).setView(content).create()
+            val fmt = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+
+            for (h in held) {
+                val itemCount = h.payload.split("\u0004").getOrNull(1)?.split("\u0002")?.filter { it.isNotEmpty() }?.size ?: 0
+                val row = LinearLayout(this@SaleActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(16, 16, 16, 16)
+                    background = roundedBg("#F4F3FB", 12)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { setMargins(0, 0, 0, 10) }
+                }
+                val info = LinearLayout(this@SaleActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                info.addView(TextView(this@SaleActivity).apply {
+                    text = "$itemCount items"; textSize = 15f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                info.addView(TextView(this@SaleActivity).apply {
+                    text = fmt.format(Date(h.createdAt))
+                    textSize = 12f
+                    setTextColor(Color.GRAY)
+                })
+                row.addView(info)
+                row.addView(TextView(this@SaleActivity).apply {
+                    text = "RECALL"
+                    textSize = 12f
+                    setTextColor(Color.parseColor(blue))
+                    setPadding(20, 0, 20, 0)
+                    setOnClickListener {
+                        decodeHold(h.payload)
+                        lifecycleScope.launch {
+                            PosDatabase.get(this@SaleActivity).heldDao().delete(h)
+                        }
+                        dialog.dismiss()
+                    }
+                })
+                row.addView(TextView(this@SaleActivity).apply {
+                    text = "✕"
+                    textSize = 14f
+                    setTextColor(Color.parseColor(red))
+                    setPadding(16, 0, 8, 0)
+                    setOnClickListener {
+                        lifecycleScope.launch {
+                            PosDatabase.get(this@SaleActivity).heldDao().delete(h)
+                            Toast.makeText(this@SaleActivity, "Held bill hata di", Toast.LENGTH_SHORT).show()
+                        }
+                        dialog.dismiss()
+                    }
+                })
+                list.addView(row)
+            }
+            content.addView(list)
+
+            content.addView(Button(this@SaleActivity).apply {
+                text = "Close"
+                setOnClickListener { dialog.dismiss() }
+            })
+
+            dialog.show()
         }
-
-        val labels = (0 until bills.length()).map { i ->
-            val bObj = bills.getJSONObject(i)
-            val name = bObj.optString("customerName").ifBlank { "Walk-in" }
-            val itemCount = bObj.getJSONArray("lines").length()
-            val mode = if (bObj.optBoolean("isCredit")) "Credit" else "Cash"
-            "$name - $itemCount items ($mode)"
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Held Bills")
-            .setItems(labels.toTypedArray()) { _, which -> recallBill(which) }
-            .setNegativeButton("Close", null)
-            .show()
-    }
-
-    private fun recallBill(index: Int) {
-        val bills = readHeldBills()
-        val bObj = bills.getJSONObject(index)
-
-        clearForNewSale()
-
-        customerName.setText(bObj.optString("customerName"))
-        isCreditSale = bObj.optBoolean("isCredit")
-        if (isCreditSale) creditRadio.isChecked = true else cashRadio.isChecked = true
-
-        val saleTypeVal = bObj.optString("saleType", "Retail")
-        val stAdapter = saleTypeSpinner.adapter as ArrayAdapter<String>
-        val stPos = (0 until stAdapter.count).find { stAdapter.getItem(it) == saleTypeVal } ?: 0
-        saleTypeSpinner.setSelection(stPos)
-
-        val pmVal = bObj.optString("paymentMethod", "Cash")
-        val pmAdapter = paymentMethodSpinner.adapter as ArrayAdapter<String>
-        val pmPos = (0 until pmAdapter.count).find { pmAdapter.getItem(it) == pmVal } ?: 0
-        paymentMethodSpinner.setSelection(pmPos)
-
-        discountInput.setText(bObj.optString("discount"))
-        paidInput.setText(bObj.optString("paid"))
-
-        val linesArr = bObj.getJSONArray("lines")
-        for (i in 0 until linesArr.length()) {
-            val lo = linesArr.getJSONObject(i)
-            lines.add(
-                SaleLine(
-                    barcode = lo.getString("barcode"),
-                    itemName = lo.getString("itemName"),
-                    qty = lo.getInt("qty"),
-                    unit = lo.optString("unit", "Pcs"),
-                    unitPrice = lo.getDouble("unitPrice"),
-                    cost = lo.getDouble("cost"),
-                    amount = lo.getDouble("amount")
-                )
-            )
-        }
-        renderItems()
-        updateTotals()
-
-        bills.remove(index)
-        writeHeldBills(bills)
-
-        Toast.makeText(this, "Bill recall ho gaya", Toast.LENGTH_SHORT).show()
     }
 }
