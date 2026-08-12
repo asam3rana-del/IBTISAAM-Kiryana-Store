@@ -247,10 +247,10 @@ interface ProductDao {
     suspend fun topProducts(start:Long,end:Long):List<TopProduct>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt FROM sales ORDER BY createdAt DESC LIMIT 100")
     suspend fun allSales():List<SaleWithCustomer>@Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1")
-suspend fun findSale(invoice:String):Sale?
+    suspend fun findSale(invoice:String):Sale?
 
-@Query("SELECT * FROM sale_items WHERE invoice=:invoice")
-suspend fun itemsForInvoice(invoice:String):List<SaleItem>
+    @Query("SELECT * FROM sale_items WHERE invoice=:invoice")
+    suspend fun itemsForInvoice(invoice:String):List<SaleItem>
 
     // ---- Profit (sale price - cost) ----
     @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
