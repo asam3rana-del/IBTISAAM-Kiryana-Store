@@ -416,18 +416,32 @@ class PurchaseActivity : AppCompatActivity() {
     }
 
     private fun promptAddItem() {
+        val dialogRoot = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+        }
         val input = EditText(this).apply { hint = "Item Name" }
+        dialogRoot.addView(input)
+        dialogRoot.addView(spacer(12))
+        dialogRoot.addView(TextView(this).apply { text = "Unit"; textSize = 13f; setTextColor(Color.GRAY) })
+        // same shared unit list used everywhere (Product / Sale / Purchase) - keeps units consistent app-wide
+        val unitPicker = Spinner(this).apply {
+            adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits)
+        }
+        dialogRoot.addView(unitPicker)
+
         AlertDialog.Builder(this)
             .setTitle("New Item")
-            .setView(input)
+            .setView(dialogRoot)
             .setPositiveButton("Add") { _, _ ->
                 val v = input.text.toString().trim()
+                val chosenUnit = unitPicker.selectedItem?.toString() ?: "pcs"
                 if (v.isNotEmpty()) lifecycleScope.launch {
                     val code = "P" + System.currentTimeMillis().toString()
                     PosDatabase.get(this@PurchaseActivity).productDao().upsert(
-                        Product(barcode = code, name = v, unit = "pcs")
+                        Product(barcode = code, name = v, unit = chosenUnit)
                     )
-                    Toast.makeText(this@PurchaseActivity, "Item added", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@PurchaseActivity, "Item added ($chosenUnit)", Toast.LENGTH_SHORT).show()
                     itemName.setText(v)
                 }
             }
