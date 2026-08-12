@@ -311,6 +311,7 @@ interface ProductDao {
     @Insert suspend fun insert(t:CashTransaction)
     @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end")
+    @Query("DELETE FROM cash_transactions WHERE reference=:ref") suspend fun deleteByReference(ref:String)
     suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
 }
 
