@@ -185,6 +185,8 @@ data class CashRegister(
 // Generic key-value store for app settings (language, printer, backup, etc.)
 @Entity(tableName="app_settings")
 data class AppSetting(@PrimaryKey val key:String, val value:String)
+
+@Dao
 interface ProductDao {
     @Query("SELECT * FROM products WHERE barcode=:code LIMIT 1")
     suspend fun find(code:String):Product?
@@ -375,4 +377,3 @@ abstract class PosDatabase:RoomDatabase(){
         }
     }
 }
-@Dao
