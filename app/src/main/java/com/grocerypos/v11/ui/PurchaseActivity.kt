@@ -19,6 +19,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 data class PurchaseLine(
     val itemName: String,
@@ -31,6 +32,8 @@ data class PurchaseLine(
     val secondaryUnit: String,
     val secondaryUnitQty: Double
 )
+
+private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
 
 class PurchaseActivity : AppCompatActivity() {
 
@@ -441,16 +444,16 @@ class PurchaseActivity : AppCompatActivity() {
     private fun onItemPicked(name: String) {
         val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
         selectedProduct = product
-        rate.setText(product.purchaseRate.toString())
+        rate.setText(product.cost.toString())
 
-        val unitOptions = mutableListOf(product.mainUnit)
-        if (product.secondaryUnit.isNotBlank() && product.secondaryUnit != product.mainUnit) {
+        val unitOptions = mutableListOf(product.unit)
+        if (product.secondaryUnit.isNotBlank() && product.secondaryUnit != product.unit) {
             unitOptions.add(product.secondaryUnit)
         }
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
 
         if (unitOptions.size > 1 && product.secondaryUnitQty > 0) {
-            conversionInfo.text = "1 ${product.mainUnit} = ${product.secondaryUnitQty} ${product.secondaryUnit}"
+            conversionInfo.text = "1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}"
             conversionInfo.visibility = View.VISIBLE
         } else {
             conversionInfo.visibility = View.GONE
@@ -468,135 +471,4 @@ class PurchaseActivity : AppCompatActivity() {
     private fun addItem() {
         val name = itemName.text.toString().trim()
         val q = qty.text.toString().toDoubleOrNull()
-        val r = rate.text.toString().toDoubleOrNull()
-        val unit = (unitSpinner.selectedItem as? String) ?: "pcs"
-
-        if (name.isEmpty()) { itemName.error = "Required"; return }
-        if (q == null || q <= 0) { qty.error = "Enter quantity"; return }
-        if (r == null || r < 0) { rate.error = "Enter rate"; return }
-
-        val product = selectedProduct
-        val mainUnit = product?.mainUnit ?: unit
-        val secondaryUnit = product?.secondaryUnit ?: ""
-        val secondaryUnitQty = product?.secondaryUnitQty ?: 0.0
-
-        val line = PurchaseLine(
-            itemName = name,
-            barcode = product?.barcode,
-            qty = q,
-            unit = unit,
-            rate = r,
-            amount = q * r,
-            mainUnit = mainUnit,
-            secondaryUnit = secondaryUnit,
-            secondaryUnitQty = secondaryUnitQty
-        )
-        lines.add(line)
-        renderItemsList()
-        updateGrandTotal()
-
-        // reset entry fields for next item
-        itemName.setText("")
-        qty.setText("")
-        rate.setText("")
-        selectedProduct = null
-        conversionInfo.visibility = View.GONE
-        totalAmountText.text = "Total Amount: Rs 0.00"
-        itemName.requestFocus()
-    }
-
-    private fun renderItemsList() {
-        itemsContainer.removeAllViews()
-        lines.forEachIndexed { index, line ->
-            val row = outlinedBox().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            row.addView(TextView(this).apply {
-                text = "${line.itemName}\n${line.qty} ${line.unit} x Rs ${line.rate}"
-                textSize = 13f
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            row.addView(TextView(this).apply {
-                text = "Rs %.2f".format(line.amount)
-                textSize = 13f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(12, 0, 12, 0)
-            })
-            row.addView(TextView(this).apply {
-                text = "✕"
-                textSize = 15f
-                setTextColor(Color.parseColor("#C62828"))
-                setPadding(12, 0, 4, 0)
-                setOnClickListener {
-                    lines.removeAt(index)
-                    renderItemsList()
-                    updateGrandTotal()
-                }
-            })
-            itemsContainer.addView(row)
-        }
-    }
-
-    private fun updateGrandTotal() {
-        val total = lines.sumOf { it.amount }
-        grandTotalText.text = "Rs %.2f".format(total)
-    }
-
-    // ---- Supplier quick-add ----
-    private fun promptAddSupplier() {
-        val input = EditText(this).apply { hint = "Supplier name"; setPadding(32, 24, 32, 24) }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Add Supplier")
-            .setView(input)
-            .setPositiveButton("Add") { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isNotBlank()) {
-                    lifecycleScope.launch {
-                        // TODO: confirm Supplier constructor matches your SupplierDao insert signature
-                        val supplier = Supplier(name = name)
-                        PosDatabase.get(this@PurchaseActivity).supplierDao().insert(supplier)
-                        partyName.setText(name)
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    // ---- Save ----
-    private fun savePurchase() {
-        val party = partyName.text.toString().trim()
-        if (party.isEmpty()) { partyName.error = "Required"; return }
-        if (lines.isEmpty()) {
-            Toast.makeText(this, "Add at least one item, or continue without items", Toast.LENGTH_SHORT).show()
-        }
-
-        val grandTotal = lines.sumOf { it.amount }
-        val amountPaid = if (isCashPurchase) (paidInput.text.toString().toDoubleOrNull() ?: grandTotal) else 0.0
-        val paymentMethod = (paymentMethodSpinner.selectedItem as? String) ?: "Cash"
-
-        lifecycleScope.launch {
-            // TODO: confirm Purchase constructor matches your PurchaseDao / PurchaseItem entities
-            val purchase = Purchase(
-                supplierName = party,
-                dateMillis = purchaseDateMillis,
-                isCash = isCashPurchase,
-                amountPaid = amountPaid,
-                paymentMethod = paymentMethod,
-                grandTotal = grandTotal
-            )
-            val purchaseId = PosDatabase.get(this@PurchaseActivity).purchaseDao().insert(purchase)
-            lines.forEach { line ->
-                val item = PurchaseItem(
-                    purchaseId = purchaseId,
-                    itemName = line.itemName,
-                    qty = line.qty,
-                    unit = line.unit,
-                    rate = line.rate,
-                    amount = line.amount
-                )
-                PosDatabase.get(this@PurchaseActivity).purchaseDao().insertItem(item)
-            }
-            Toast.makeText(this@PurchaseActivity, "Purchase saved", Toast.LENGTH_SHORT).show()
-            finish()
-        }
-    }
-}
+        val r = rate.text.t
