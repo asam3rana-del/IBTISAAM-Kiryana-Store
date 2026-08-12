@@ -228,7 +228,6 @@ interface ProductDao {
     @Insert suspend fun insert(s:Supplier):Long
     @Query("UPDATE suppliers SET balance=balance+:amt WHERE id=:id") suspend fun addBalance(id:Long,amt:Double)
     @Query("SELECT * FROM suppliers ORDER BY name") fun all():Flow<List<Supplier>>
-    @Query("UPDATE suppliers SET balance=balance+:amt WHERE id=:id") suspend fun addBalance(id:Long,amt:Double)
     @Query("SELECT COALESCE(name,'Cash Purchase') as supplierName, SUM(total) as total FROM purchases LEFT JOIN suppliers ON purchases.supplierId=suppliers.id GROUP BY supplierId ORDER BY total DESC")
     suspend fun purchaseTotalsBySupplier():List<SupplierPurchaseTotal>
 }
@@ -281,6 +280,10 @@ interface ProductDao {
 }
 
 @Dao interface PurchaseDao {
+    @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1") suspend fun findPurchase(bill:String):Purchase?
+@Query("SELECT * FROM purchase_items WHERE billNo=:bill") suspend fun itemsForBill(bill:String):List<PurchaseItem>
+@Query("DELETE FROM purchase_items WHERE billNo=:bill") suspend fun deleteItems(bill:String)
+@Query("DELETE FROM purchases WHERE billNo=:bill") suspend fun deletePurchase(bill:String)
     @Insert suspend fun purchase(p:Purchase)
     @Insert suspend fun items(items:List<PurchaseItem>)
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
