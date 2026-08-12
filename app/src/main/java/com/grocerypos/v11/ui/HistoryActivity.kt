@@ -190,7 +190,7 @@ class HistoryActivity : AppCompatActivity() {
             // Agar customer ka udhar tha to wo wapas kam karo
             if (sale.customerId != null && sale.paid < sale.total) {
                 db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
-                            }
+            }
 
             db.cashTransactionDao().deleteByReference(invoice)
             db.saleDao().deleteItems(invoice)
