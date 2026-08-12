@@ -233,10 +233,6 @@ interface ProductDao {
 }
 
 @Dao interface SaleDao {
-    @Query("SELECT * FROM sales WHERE invoice=:inv LIMIT 1") suspend fun findSale(inv:String):Sale?
-@Query("SELECT * FROM sale_items WHERE invoice=:inv") suspend fun itemsForInvoice(inv:String):List<SaleItem>
-@Query("DELETE FROM sale_items WHERE invoice=:inv") suspend fun deleteItems(inv:String)
-@Query("DELETE FROM sales WHERE invoice=:inv") suspend fun deleteSale(inv:String)
     @Insert suspend fun sale(s:Sale)
     @Insert suspend fun items(items:List<SaleItem>)
     @Query("SELECT COUNT(*) FROM sales") suspend fun count():Int
@@ -280,10 +276,6 @@ interface ProductDao {
 }
 
 @Dao interface PurchaseDao {
-    @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1") suspend fun findPurchase(bill:String):Purchase?
-@Query("SELECT * FROM purchase_items WHERE billNo=:bill") suspend fun itemsForBill(bill:String):List<PurchaseItem>
-@Query("DELETE FROM purchase_items WHERE billNo=:bill") suspend fun deleteItems(bill:String)
-@Query("DELETE FROM purchases WHERE billNo=:bill") suspend fun deletePurchase(bill:String)
     @Insert suspend fun purchase(p:Purchase)
     @Insert suspend fun items(items:List<PurchaseItem>)
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
