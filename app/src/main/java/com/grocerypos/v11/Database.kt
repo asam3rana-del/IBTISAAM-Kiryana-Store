@@ -185,8 +185,6 @@ data class CashRegister(
 // Generic key-value store for app settings (language, printer, backup, etc.)
 @Entity(tableName="app_settings")
 data class AppSetting(@PrimaryKey val key:String, val value:String)
-
-@Dao
 interface ProductDao {
     @Query("SELECT * FROM products WHERE barcode=:code LIMIT 1")
     suspend fun find(code:String):Product?
@@ -246,11 +244,19 @@ interface ProductDao {
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
     suspend fun topProducts(start:Long,end:Long):List<TopProduct>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt FROM sales ORDER BY createdAt DESC LIMIT 100")
-    suspend fun allSales():List<SaleWithCustomer>@Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1")
+    suspend fun allSales():List<SaleWithCustomer>
+
+    @Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1")
     suspend fun findSale(invoice:String):Sale?
 
     @Query("SELECT * FROM sale_items WHERE invoice=:invoice")
     suspend fun itemsForInvoice(invoice:String):List<SaleItem>
+
+    @Query("DELETE FROM sale_items WHERE invoice=:invoice")
+    suspend fun deleteItems(invoice:String)
+
+    @Query("DELETE FROM sales WHERE invoice=:invoice")
+    suspend fun deleteSale(invoice:String)
 
     // ---- Profit (sale price - cost) ----
     @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
@@ -287,6 +293,18 @@ interface ProductDao {
     suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt FROM purchases ORDER BY createdAt DESC LIMIT 100")
     suspend fun allPurchases():List<PurchaseWithSupplier>
+
+    @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1")
+    suspend fun findPurchase(bill:String):Purchase?
+
+    @Query("SELECT * FROM purchase_items WHERE billNo=:bill")
+    suspend fun itemsForBill(bill:String):List<PurchaseItem>
+
+    @Query("DELETE FROM purchase_items WHERE billNo=:bill")
+    suspend fun deleteItems(bill:String)
+
+    @Query("DELETE FROM purchases WHERE billNo=:bill")
+    suspend fun deletePurchase(bill:String)
 }
 
 @Dao interface ReturnDao {
@@ -308,6 +326,9 @@ interface ProductDao {
     @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end")
     suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
+
+    @Query("DELETE FROM cash_transactions WHERE reference=:ref")
+    suspend fun deleteByReference(ref:String)
 }
 
 @Dao interface CashRegisterDao {
@@ -354,3 +375,4 @@ abstract class PosDatabase:RoomDatabase(){
         }
     }
 }
+@Dao
