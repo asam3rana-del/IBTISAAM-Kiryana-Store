@@ -2,6 +2,8 @@ package com.grocerypos.v11
 
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 data class DailySales(val day:String,val total:Double)
@@ -110,7 +112,8 @@ data class PurchaseItem(
     val barcode:String,
     val qty:Int,
     val unitCost:Double,
-    val amount:Double
+    val amount:Double,
+    val unit:String=""   // added — which unit (main/secondary) this line was purchased in
 )
 
 @Entity(tableName="returns")
@@ -285,6 +288,8 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE method=:method AND createdAt BETWEEN :start AND :end")
     suspend fun totalByMethodBetween(method:String,start:Long,end:Long):Double
+    @Query("DELETE FROM payments WHERE reference=:ref")
+    suspend fun deleteByReference(ref:String)
 }
 
 @Dao interface PurchaseDao {
@@ -345,12 +350,22 @@ interface ProductDao {
     @Query("SELECT * FROM app_settings") fun all():Flow<List<AppSetting>>
 }
 
+// v13 -> v14: purchase_items gains a `unit` column (which unit — main or
+// secondary — a purchase line was bought in). Existing rows default to ''
+// and are treated as "unknown unit" by the UI, which falls back to the
+// product's current default unit for display. No data is lost.
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE purchase_items ADD COLUMN unit TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class],
-    version=13, exportSchema=false
+    version=14, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -373,7 +388,9 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .fallbackToDestructiveMigration().build().also{INSTANCE=it}
+                .addMigrations(MIGRATION_13_14)
+                .fallbackToDestructiveMigration()
+                .build().also{INSTANCE=it}
         }
     }
 }
