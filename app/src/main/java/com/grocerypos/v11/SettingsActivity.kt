@@ -165,7 +165,12 @@ class SettingsActivity : AppCompatActivity() {
                 return@launch
             }
             val shopName = db.appSettingDao().get("shop_name")?.value ?: "IBTISAAM Kiryana Store"
-            val ok = PrinterHelper.testPrint(this@SettingsActivity, mac, shopName)
+            val ok = PrinterHelper.testPrint(
+                this@SettingsActivity,
+                PrinterHelper.PrinterType.BLUETOOTH,
+                mac,
+                shopName
+            )
             Toast.makeText(
                 this@SettingsActivity,
                 if (ok) "Test print bhej diya" else "Print fail ho gaya. Printer on hai aur range mein hai check karein.",
