@@ -14,10 +14,15 @@ import java.util.Calendar
 
 class ReportsActivity : AppCompatActivity() {
 
+    private val bg = "#F3F4F9"
+    private val cardWhite = "#FFFFFF"
+    private val textDark = "#1A1D2E"
+    private val textMuted = "#8A8FA3"
+
     private lateinit var resultsBox: LinearLayout
     private var periodLabel: TextView? = null
+    private val filterButtons = mutableListOf<Button>()
 
-    // period range currently selected, defaults to Today
     private var rangeStart: Long = 0
     private var rangeEnd: Long = 0
 
@@ -26,47 +31,57 @@ class ReportsActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 40, 32, 32)
+            setPadding(28, 40, 28, 32)
+            setBackgroundColor(Color.parseColor(bg))
         }
 
         root.addView(TextView(this).apply {
             text = "Reports"
-            textSize = 24f
-            setPadding(0, 0, 0, 24)
+            textSize = 21f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(4, 0, 0, 20)
         })
 
         root.addView(Button(this).apply {
             text = "VIEW SALE / PURCHASE HISTORY"
+            textSize = 12.5f
+            setTextColor(Color.parseColor("#1565C0"))
+            background = strokedBg("#1565C0", "#FFFFFF", 16)
+            setPadding(0, 20, 0, 20)
             setOnClickListener {
                 startActivity(android.content.Intent(this@ReportsActivity, HistoryActivity::class.java))
             }
         })
+        root.addView(spacer(18))
 
-        // ---- Period filter buttons ----
-        val filterRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        filterRow.addView(smallButton("Today") { setRangeToday(); loadReport() })
-        filterRow.addView(smallButton("This Week") { setRangeThisWeek(); loadReport() })
-        filterRow.addView(smallButton("This Month") { setRangeThisMonth(); loadReport() })
-        filterRow.addView(smallButton("All Time") { setRangeAllTime(); loadReport() })
+        val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val today = smallButton("Today") { setRangeToday(); loadReport() }
+        val week = smallButton("This Week") { setRangeThisWeek(); loadReport() }
+        val month = smallButton("This Month") { setRangeThisMonth(); loadReport() }
+        val all = smallButton("All Time") { setRangeAllTime(); loadReport() }
+        filterButtons.addAll(listOf(today, week, month, all))
+        filterRow.addView(today)
+        filterRow.addView(week)
+        filterRow.addView(month)
+        filterRow.addView(all)
         root.addView(filterRow)
 
         periodLabel = TextView(this).apply {
-            textSize = 14f
-            setTextColor(Color.GRAY)
-            setPadding(0, 16, 0, 16)
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(4, 18, 0, 6)
         }
         root.addView(periodLabel)
 
-        root.addView(divider())
-
-        resultsBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(resultsBox)
 
-        val scroll = ScrollView(this).apply { addView(root) }
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor(bg))
+            addView(root)
+        }
         setContentView(scroll)
 
         setRangeToday()
@@ -80,7 +95,8 @@ class ReportsActivity : AppCompatActivity() {
         cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
         rangeStart = cal.timeInMillis
         rangeEnd = rangeStart + 24 * 60 * 60 * 1000L
-        periodLabel?.text = "Showing: Today"
+        periodLabel?.text = "SHOWING: TODAY"
+        highlightFilter(0)
     }
 
     private fun setRangeThisWeek() {
@@ -90,7 +106,8 @@ class ReportsActivity : AppCompatActivity() {
         cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
         rangeStart = cal.timeInMillis
         rangeEnd = System.currentTimeMillis()
-        periodLabel?.text = "Showing: This Week"
+        periodLabel?.text = "SHOWING: THIS WEEK"
+        highlightFilter(1)
     }
 
     private fun setRangeThisMonth() {
@@ -100,19 +117,32 @@ class ReportsActivity : AppCompatActivity() {
         cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
         rangeStart = cal.timeInMillis
         rangeEnd = System.currentTimeMillis()
-        periodLabel?.text = "Showing: This Month"
+        periodLabel?.text = "SHOWING: THIS MONTH"
+        highlightFilter(2)
     }
 
     private fun setRangeAllTime() {
         rangeStart = 0L
         rangeEnd = System.currentTimeMillis()
-        periodLabel?.text = "Showing: All Time"
+        periodLabel?.text = "SHOWING: ALL TIME"
+        highlightFilter(3)
+    }
+
+    private fun highlightFilter(activeIndex: Int) {
+        filterButtons.forEachIndexed { i, btn ->
+            if (i == activeIndex) {
+                btn.background = roundedBg("#1A237E", 14)
+                btn.setTextColor(Color.WHITE)
+            } else {
+                btn.background = roundedBg(cardWhite, 14)
+                btn.setTextColor(Color.parseColor(textMuted))
+            }
+        }
     }
 
     // ---- Load and display ----
     private fun loadReport() {
         resultsBox.removeAllViews()
-        resultsBox.addView(TextView(this).apply { text = "Loading..." })
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ReportsActivity)
@@ -127,75 +157,106 @@ class ReportsActivity : AppCompatActivity() {
 
             resultsBox.removeAllViews()
 
-            // Summary cards
-            resultsBox.addView(summaryCard("Total Sales", "Rs %.2f".format(totalSales), "#1565C0"))
-            resultsBox.addView(summaryCard("Total Profit", "Rs %.2f".format(totalProfit), "#2E7D32"))
-            resultsBox.addView(summaryCard("Total Purchases", "Rs %.2f".format(totalPurchases), "#EF6C00"))
-            resultsBox.addView(summaryCard("Total Expenses", "Rs %.2f".format(totalExpenses), "#C62828"))
-            resultsBox.addView(summaryCard("Number of Sales", "$saleCount", "#6A1B9A"))
+            resultsBox.addView(summaryCard("💰", "Total Sales", "Rs %.2f".format(totalSales), "#1565C0", "#E3F2FD"))
+            resultsBox.addView(summaryCard("📈", "Total Profit", "Rs %.2f".format(totalProfit), "#2E7D32", "#E8F5E9"))
+            resultsBox.addView(summaryCard("🧾", "Total Purchases", "Rs %.2f".format(totalPurchases), "#EF6C00", "#FFF3E0"))
+            resultsBox.addView(summaryCard("💸", "Total Expenses", "Rs %.2f".format(totalExpenses), "#C62828", "#FFEBEE"))
+            resultsBox.addView(summaryCard("🧮", "Number of Sales", "$saleCount", "#6A1B9A", "#F3E5F5"))
 
-            resultsBox.addView(divider())
+            resultsBox.addView(spacer(10))
 
-            // Top products
-            resultsBox.addView(sectionTitle("Top Products"))
-            if (topProducts.isEmpty()) {
-                resultsBox.addView(emptyText("Is period mein koi sale nahi hui"))
-            } else {
-                topProducts.forEach { tp ->
-                    resultsBox.addView(rowText("${tp.product}", "${tp.totalQty} sold"))
-                }
-            }
+            resultsBox.addView(listCard("Top Products", topProducts.isEmpty(), "Is period mein koi sale nahi hui") { box ->
+                topProducts.forEach { tp -> box.addView(rowText(tp.product, "${tp.totalQty} sold")) }
+            })
 
-            resultsBox.addView(divider())
+            resultsBox.addView(spacer(14))
 
-            // Daily breakdown
-            resultsBox.addView(sectionTitle("Daily Sales"))
-            if (dailySales.isEmpty()) {
-                resultsBox.addView(emptyText("Koi data nahi"))
-            } else {
-                dailySales.forEach { d ->
-                    resultsBox.addView(rowText(d.day, "Rs %.2f".format(d.total)))
-                }
-            }
+            resultsBox.addView(listCard("Daily Sales", dailySales.isEmpty(), "Koi data nahi") { box ->
+                dailySales.forEach { d -> box.addView(rowText(d.day, "Rs %.2f".format(d.total))) }
+            })
+
+            resultsBox.addView(spacer(30))
         }
     }
 
     // ---- UI helpers ----
-    private fun summaryCard(label: String, value: String, colorHex: String): LinearLayout {
+    private fun summaryCard(emoji: String, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
         return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 20, 24, 20)
-            background = roundedBackground(colorHex, 16)
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(22, 20, 22, 20)
+            background = roundedBg(cardWhite, 20)
+            elevation = 4f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 8, 0, 8) }
-            addView(TextView(this@ReportsActivity).apply {
-                text = label; setTextColor(Color.WHITE); textSize = 14f
+            ).apply { setMargins(0, 0, 0, 10) }
+
+            addView(FrameLayout(this@ReportsActivity).apply {
+                val size = (40 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    colors = intArrayOf(lighten(accentHex, 0.85f), Color.parseColor(tintHex))
+                    gradientType = GradientDrawable.LINEAR_GRADIENT
+                    orientation = GradientDrawable.Orientation.TL_BR
+                }
+                addView(TextView(this@ReportsActivity).apply {
+                    text = emoji; textSize = 16f; gravity = Gravity.CENTER
+                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                })
             })
-            addView(TextView(this@ReportsActivity).apply {
-                text = value; setTextColor(Color.WHITE); textSize = 22f
+
+            val textCol = LinearLayout(this@ReportsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(18, 0, 0, 0)
+            }
+            textCol.addView(TextView(this@ReportsActivity).apply {
+                text = label; setTextColor(Color.parseColor(textMuted)); textSize = 12.5f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
+            textCol.addView(TextView(this@ReportsActivity).apply {
+                text = value; setTextColor(Color.parseColor(accentHex)); textSize = 18f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 4, 0, 0)
+            })
+            addView(textCol)
         }
     }
 
-    private fun sectionTitle(text: String): TextView {
-        return TextView(this).apply {
-            this.text = text
-            textSize = 18f
-            setPadding(0, 16, 0, 8)
+    private fun listCard(title: String, isEmpty: Boolean, emptyMsg: String, fill: (LinearLayout) -> Unit): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22, 20, 22, 16)
+            background = roundedBg(cardWhite, 20)
+            elevation = 4f
+
+            addView(TextView(this@ReportsActivity).apply {
+                text = title; textSize = 15f
+                setTextColor(Color.parseColor(textDark))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 0, 0, 8)
+            })
+            if (isEmpty) {
+                addView(emptyText(emptyMsg))
+            } else {
+                fill(this)
+            }
         }
     }
 
     private fun rowText(left: String, right: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(8, 12, 8, 12)
+            setPadding(4, 10, 4, 10)
             addView(TextView(this@ReportsActivity).apply {
-                text = left; textSize = 15f
+                text = left; textSize = 14f
+                setTextColor(Color.parseColor(textDark))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(TextView(this@ReportsActivity).apply {
-                text = right; textSize = 15f; gravity = Gravity.END
+                text = right; textSize = 14f; gravity = Gravity.END
+                setTextColor(Color.parseColor("#1565C0"))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
         }
     }
@@ -203,17 +264,19 @@ class ReportsActivity : AppCompatActivity() {
     private fun emptyText(text: String): TextView {
         return TextView(this).apply {
             this.text = text
-            setTextColor(Color.GRAY)
-            setPadding(8, 8, 8, 8)
+            setTextColor(Color.parseColor(textMuted))
+            textSize = 13f
+            setPadding(0, 6, 0, 6)
         }
     }
 
     private fun smallButton(label: String, onClick: () -> Unit): Button {
         return Button(this).apply {
             text = label
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            background = roundedBackground("#37474F", 12)
+            textSize = 11.5f
+            setTextColor(Color.parseColor(textMuted))
+            background = roundedBg(cardWhite, 14)
+            setPadding(6, 20, 6, 20)
             layoutParams = LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
             ).apply { setMargins(4, 0, 4, 0) }
@@ -221,19 +284,27 @@ class ReportsActivity : AppCompatActivity() {
         }
     }
 
-    private fun roundedBackground(colorHex: String, cornerRadius: Int): GradientDrawable {
-        return GradientDrawable().apply {
-            setColor(Color.parseColor(colorHex))
-            this.cornerRadius = cornerRadius.toFloat()
-        }
+    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
+        setColor(Color.parseColor(colorHex))
+        cornerRadius = radius.toFloat()
     }
 
-    private fun divider(): View {
-        return View(this).apply {
-            setBackgroundColor(0xFFDDDDDD.toInt())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 2
-            ).apply { setMargins(0, 16, 0, 16) }
-        }
+    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
+        setColor(Color.parseColor(fillHex))
+        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
+        cornerRadius = radius.toFloat()
+    }
+
+    private fun lighten(hex: String, factor: Float): Int {
+        val base = Color.parseColor(hex)
+        val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt()
+        val g = (Color.green(base) + (255 - Color.green(base)) * factor).toInt()
+        val bl = (Color.blue(base) + (255 - Color.blue(base)) * factor).toInt()
+        return Color.rgb(r.coerceIn(0,255), g.coerceIn(0,255), bl.coerceIn(0,255))
+    }
+
+    private fun spacer(heightDp: Int) = View(this).apply {
+        val px = (heightDp * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
 }
