@@ -54,7 +54,10 @@ class LoginActivity : AppCompatActivity() {
                 val user = db.userDao().find(u.text.toString().trim())
                 if (user != null && user.passwordHash == p.text.toString()) {
                     getSharedPreferences("session", MODE_PRIVATE)
-                        .edit().putString("username", user.username).apply()
+                        .edit()
+                        .putString("username", user.username)
+                        .putString("role", user.role)
+                        .apply()
                     Toast.makeText(this@LoginActivity, "Welcome ${user.displayName}", Toast.LENGTH_SHORT).show()
                     startActivity(Intent(this@LoginActivity, MainActivity::class.java))
                     finish()
