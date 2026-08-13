@@ -18,6 +18,7 @@ import com.grocerypos.v11.ui.SaleActivity
 import com.grocerypos.v11.ui.ReportsActivity
 import com.grocerypos.v11.ui.CashActivity
 import com.grocerypos.v11.ui.PartyActivity
+import com.grocerypos.v11.ui.UserManagementActivity
 import kotlinx.coroutines.launch
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -26,7 +27,8 @@ import java.util.Calendar
 class MainActivity : AppCompatActivity() {
 
     private lateinit var todaySaleValue: TextView
-    private lateinit var todayProfitValue: TextView
+    private var todayProfitValue: TextView? = null
+    private var role: String = "cashier"
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -38,6 +40,7 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
+        role = session.getString("role", "cashier") ?: "cashier"
 
         installCrashHandler()
         showLastCrashIfAny()
@@ -69,7 +72,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         headerText.addView(TextView(this).apply {
-            text = "Point of Sale System"
+            text = "Point of Sale System  (${role.replaceFirstChar { it.uppercase() }})"
             textSize = 12f
             setTextColor(Color.parseColor("#C5CAE9"))
         })
@@ -84,17 +87,27 @@ class MainActivity : AppCompatActivity() {
         val saleCardParts = statCard("💰", "Today's Sale", "#2E7D32")
         val saleCardView = saleCardParts.first
         todaySaleValue = saleCardParts.second
-        val profitCardParts = statCard("📈", "Today's Profit", "#1565C0")
-        val profitCardView = profitCardParts.first
-        todayProfitValue = profitCardParts.second
 
-        saleCardView.layoutParams =
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,10,0) }
-        profitCardView.layoutParams =
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10,0,0,0) }
+        if (role == "admin") {
+            // Admin sees both Sale and Profit side by side
+            val profitCardParts = statCard("📈", "Today's Profit", "#1565C0")
+            val profitCardView = profitCardParts.first
+            todayProfitValue = profitCardParts.second
 
-        statsRow.addView(saleCardView)
-        statsRow.addView(profitCardView)
+            saleCardView.layoutParams =
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,10,0) }
+            profitCardView.layoutParams =
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10,0,0,0) }
+
+            statsRow.addView(saleCardView)
+            statsRow.addView(profitCardView)
+        } else {
+            // Manager / Cashier: sale card only, full width — no profit shown
+            saleCardView.layoutParams =
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            statsRow.addView(saleCardView)
+        }
+
         root.addView(statsRow)
 
         root.addView(spacer(28))
@@ -106,21 +119,32 @@ class MainActivity : AppCompatActivity() {
             setPadding(4, 0, 0, 12)
         })
 
-        // ================= MENU GRID (2 tiles per row) =================
-        val tiles = listOf(
-            Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
-            Tile("📦", "Products", "#1565C0") { startActivity(Intent(this@MainActivity, ProductActivity::class.java)) },
-            Tile("🧾", "Purchases", "#EF6C00") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
-            Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
-            Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
-            Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
-            Tile("⚙️", "Settings", "#37474F") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
-            Tile("🚪", "Logout", "#C62828") {
-                getSharedPreferences("session", MODE_PRIVATE).edit().remove("username").apply()
-                startActivity(Intent(this@MainActivity, LoginActivity::class.java))
-                finish()
-            }
-        )
+        // ================= MENU GRID (role-based) =================
+        val tiles: List<Tile> = when (role) {
+            "admin" -> listOf(
+                Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
+                Tile("📦", "Products", "#1565C0") { startActivity(Intent(this@MainActivity, ProductActivity::class.java)) },
+                Tile("🧾", "Purchases", "#EF6C00") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
+                Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
+                Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
+                Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+                Tile("⚙️", "Settings", "#37474F") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
+                Tile("🧑‍💼", "Manage\nUsers", "#795548") { startActivity(Intent(this@MainActivity, UserManagementActivity::class.java)) },
+                Tile("🚪", "Logout", "#C62828") { doLogout() }
+            )
+            "manager" -> listOf(
+                Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
+                Tile("🧾", "Purchases", "#EF6C00") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
+                Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
+                Tile("🚪", "Logout", "#C62828") { doLogout() }
+            )
+            else -> listOf( // cashier
+                Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
+                Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
+                Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+                Tile("🚪", "Logout", "#C62828") { doLogout() }
+            )
+        }
 
         tiles.chunked(2).forEach { pair ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -150,6 +174,13 @@ class MainActivity : AppCompatActivity() {
         loadDashboard()
     }
 
+    private fun doLogout() {
+        getSharedPreferences("session", MODE_PRIVATE).edit().clear().apply()
+        startActivity(Intent(this@MainActivity, LoginActivity::class.java))
+        finish()
+    }
+
+    // ---- small holder for a menu tile's icon/label/color/click ----
     private data class Tile(val emoji: String, val label: String, val colorHex: String, val onClick: () -> Unit)
 
     private fun menuTile(tile: Tile): LinearLayout {
@@ -175,6 +206,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---- stat card: returns the card view plus its live value TextView ----
     private fun statCard(emoji: String, label: String, colorHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -237,10 +269,12 @@ class MainActivity : AppCompatActivity() {
             val endOfDay = startOfDay + 24 * 60 * 60 * 1000L
 
             val todaySale = db.saleDao().totalSalesBetween(startOfDay, endOfDay)
-            val todayProfit = db.saleDao().profitBetween(startOfDay, endOfDay)
-
             todaySaleValue.text = "Rs %.2f".format(todaySale)
-            todayProfitValue.text = "Rs %.2f".format(todayProfit)
+
+            if (role == "admin") {
+                val todayProfit = db.saleDao().profitBetween(startOfDay, endOfDay)
+                todayProfitValue?.text = "Rs %.2f".format(todayProfit)
+            }
         }
     }
 
@@ -255,6 +289,7 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
+    // ---- Crash capture: saves the stack trace so it can be shown next time the app opens ----
     private fun installCrashHandler() {
         val prefs = getSharedPreferences("crash_log", MODE_PRIVATE)
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
