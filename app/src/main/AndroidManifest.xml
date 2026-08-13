@@ -1,7 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
     <application
-     android:theme="@style/Theme.GroceryPOS"
+        android:theme="@style/Theme.GroceryPOS"
         android:label="IBTISAAM TRADERS POS"
         android:allowBackup="true"
         android:supportsRtl="true">
@@ -17,10 +22,6 @@
         <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
         <activity android:name=".ui.PartyActivity" />
         <activity android:name=".MainActivity" android:exported="true">
-        <uses-permission android:name="android.permission.BLUETOOTH" />
-        <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-        <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-        <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
