@@ -29,10 +29,14 @@ class MainActivity : AppCompatActivity() {
     private var todayProfitValue: TextView? = null
     private var role: String = "cashier"
 
+    private val bgColor = "#F3F4F9"
+    private val cardWhite = "#FFFFFF"
+    private val textDark = "#1A1D2E"
+    private val textMuted = "#8A8FA3"
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
-        // ---- Require login before showing the dashboard ----
         val session = getSharedPreferences("session", MODE_PRIVATE)
         if (session.getString("username", null) == null) {
             startActivity(Intent(this@MainActivity, LoginActivity::class.java))
@@ -44,22 +48,24 @@ class MainActivity : AppCompatActivity() {
         installCrashHandler()
         showLastCrashIfAny()
 
-        val bgColor = "#F4F3FB"
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 36, 28, 36)
             setBackgroundColor(Color.parseColor(bgColor))
         }
 
-        // ================= HEADER =================
+        // ================= HEADER (gradient, rounded bottom) =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(24, 22, 24, 22)
-            background = roundedBackground("#1A237E", 22)
-            elevation = 10f
+            setPadding(30, 60, 30, 44)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor("#1A237E"), Color.parseColor("#3949AB"))
+            ).apply {
+                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 36f, 36f, 36f, 36f)
+            }
         }
-        header.addView(avatarCircle("IK", 64, "#5C6BC0"))
+        header.addView(avatarCircle("IK", 58, "#FFFFFF", "#3949AB"))
         val headerText = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 0, 0, 0)
@@ -70,32 +76,48 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
-        headerText.addView(TextView(this).apply {
-            text = "Point of Sale System  (${role.replaceFirstChar { it.uppercase() }})"
-            textSize = 12f
-            setTextColor(Color.parseColor("#C5CAE9"))
+        headerText.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 6, 0, 0)
+            addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(16, 16)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor("#69F0AE"))
+                }
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "  ${role.replaceFirstChar { it.uppercase() }} Panel"
+                textSize = 12.5f
+                setTextColor(Color.parseColor("#C5CAE9"))
+            })
         })
         header.addView(headerText)
         root.addView(header)
 
-        root.addView(spacer(24))
+        // ================= scrollable body =================
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 28, 28, 36)
+        }
 
         // ================= STAT CARDS =================
         val statsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val saleCardParts = statCard("💰", "Today's Sale", "#2E7D32")
+        val saleCardParts = premiumStatCard("💰", "Today's Sale", "#2E7D32", "#E8F5E9")
         val saleCardView = saleCardParts.first
         todaySaleValue = saleCardParts.second
 
         if (role == "admin") {
-            val profitCardParts = statCard("📈", "Today's Profit", "#1565C0")
+            val profitCardParts = premiumStatCard("📈", "Today's Profit", "#1565C0", "#E3F2FD")
             val profitCardView = profitCardParts.first
             todayProfitValue = profitCardParts.second
 
             saleCardView.layoutParams =
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,10,0) }
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,9,0) }
             profitCardView.layoutParams =
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10,0,0,0) }
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9,0,0,0) }
 
             statsRow.addView(saleCardView)
             statsRow.addView(profitCardView)
@@ -105,55 +127,57 @@ class MainActivity : AppCompatActivity() {
             statsRow.addView(saleCardView)
         }
 
-        root.addView(statsRow)
+        body.addView(statsRow)
+        body.addView(spacer(30))
 
-        root.addView(spacer(28))
-
-        root.addView(TextView(this).apply {
-            text = "MENU"
-            textSize = 13f
-            setTextColor(Color.parseColor("#9E9E9E"))
-            setPadding(4, 0, 0, 12)
+        body.addView(TextView(this).apply {
+            text = "QUICK ACCESS"
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(4, 0, 0, 14)
         })
 
-        // ================= MENU GRID (role-based) =================
+        // ================= MENU GRID (role-based, premium tiles) =================
         val tiles: List<Tile> = when (role) {
             "admin" -> listOf(
-                Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
-                Tile("📦", "Products", "#1565C0") { startActivity(Intent(this@MainActivity, ProductActivity::class.java)) },
-                Tile("🧾", "Purchases", "#EF6C00") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
-                Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
-                Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
-                Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
-                Tile("⚙️", "Settings", "#37474F") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+                Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
+                Tile("📦", "Products", "#1565C0", "#E3F2FD") { startActivity(Intent(this@MainActivity, ProductActivity::class.java)) },
+                Tile("🧾", "Purchases", "#EF6C00", "#FFF3E0") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
+                Tile("📊", "Reports", "#6A1B9A", "#F3E5F5") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
+                Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
+                Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+                Tile("⚙️", "Settings", "#37474F", "#ECEFF1") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
             )
             "manager" -> listOf(
-                Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
-                Tile("🧾", "Purchases", "#EF6C00") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
-                Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
-                Tile("🚪", "Logout", "#C62828") { doLogout() }
+                Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
+                Tile("🧾", "Purchases", "#EF6C00", "#FFF3E0") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
+                Tile("📊", "Reports", "#6A1B9A", "#F3E5F5") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
+                Tile("🚪", "Logout", "#C62828", "#FFEBEE") { doLogout() }
             )
-            else -> listOf( // cashier
-                Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
-                Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
-                Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
-                Tile("🚪", "Logout", "#C62828") { doLogout() }
+            else -> listOf(
+                Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
+                Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
+                Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+                Tile("🚪", "Logout", "#C62828", "#FFEBEE") { doLogout() }
             )
         }
 
         tiles.chunked(2).forEach { pair ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             pair.forEachIndexed { idx, tile ->
-                val tileView = menuTile(tile)
+                val tileView = premiumMenuTile(tile)
                 tileView.layoutParams = LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
                 ).apply {
-                    if (idx == 0) setMargins(0, 0, 8, 16) else setMargins(8, 0, 0, 16)
+                    if (idx == 0) setMargins(0, 0, 8, 14) else setMargins(8, 0, 0, 14)
                 }
                 row.addView(tileView)
             }
-            root.addView(row)
+            body.addView(row)
         }
+
+        root.addView(body)
 
         val scroll = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bgColor))
@@ -175,69 +199,118 @@ class MainActivity : AppCompatActivity() {
         finish()
     }
 
-    private data class Tile(val emoji: String, val label: String, val colorHex: String, val onClick: () -> Unit)
+    private data class Tile(val emoji: String, val label: String, val accentHex: String, val tintHex: String, val onClick: () -> Unit)
 
-    private fun menuTile(tile: Tile): LinearLayout {
+    // ---- premium white card tile with a colored icon "chip" ----
+    private fun premiumMenuTile(tile: Tile): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(20, 26, 20, 22)
-            background = roundedBackground(tile.colorHex, 20)
-            elevation = 6f
-            addView(TextView(this@MainActivity).apply {
-                text = tile.emoji
-                textSize = 30f
-                gravity = Gravity.CENTER
+            setPadding(18, 26, 18, 22)
+            background = roundedBackground(cardWhite, 24)
+            elevation = 4f
+
+            addView(FrameLayout(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    (52 * resources.displayMetrics.density).toInt(),
+                    (52 * resources.displayMetrics.density).toInt()
+                )
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor(tile.tintHex))
+                }
+                addView(TextView(this@MainActivity).apply {
+                    text = tile.emoji
+                    textSize = 22f
+                    gravity = Gravity.CENTER
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                })
             })
+
             addView(TextView(this@MainActivity).apply {
                 text = tile.label
                 textSize = 13f
-                setTextColor(Color.WHITE)
+                setTextColor(Color.parseColor(textDark))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
-                setPadding(0, 10, 0, 0)
+                setPadding(0, 14, 0, 0)
             })
+
+            // subtle accent underline
+            addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams((26 * resources.displayMetrics.density).toInt(), 4).apply {
+                    topMargin = 10
+                    gravity = Gravity.CENTER_HORIZONTAL
+                }
+                background = GradientDrawable().apply {
+                    cornerRadius = 4f
+                    setColor(Color.parseColor(tile.accentHex))
+                }
+            })
+
             setOnClickListener { tile.onClick() }
         }
     }
 
-    private fun statCard(emoji: String, label: String, colorHex: String): Pair<LinearLayout, TextView> {
+    // ---- premium stat card: white bg, icon chip, big bold value ----
+    private fun premiumStatCard(emoji: String, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(22, 20, 22, 20)
-            background = roundedBackground(colorHex, 20)
-            elevation = 6f
+            setPadding(24, 22, 24, 22)
+            background = roundedBackground(cardWhite, 24)
+            elevation = 4f
         }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        topRow.addView(TextView(this).apply { text = emoji; textSize = 18f })
+        topRow.addView(FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (38 * resources.displayMetrics.density).toInt(),
+                (38 * resources.displayMetrics.density).toInt()
+            )
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(tintHex))
+            }
+            addView(TextView(this@MainActivity).apply {
+                text = emoji
+                textSize = 16f
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            })
+        })
         topRow.addView(TextView(this).apply {
             text = "  $label"
-            setTextColor(Color.WHITE)
-            textSize = 13f
+            setTextColor(Color.parseColor(textMuted))
+            textSize = 12.5f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         card.addView(topRow)
         val valueText = TextView(this).apply {
             text = "Rs 0.00"
-            setTextColor(Color.WHITE)
-            textSize = 20f
+            setTextColor(Color.parseColor(accentHex))
+            textSize = 21f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, 8, 0, 0)
+            setPadding(0, 12, 0, 0)
         }
         card.addView(valueText)
         return Pair(card, valueText)
     }
 
-    private fun avatarCircle(initials: String, sizeDp: Int, colorHex: String): FrameLayout {
+    private fun avatarCircle(initials: String, sizeDp: Int, bgHex: String, textHex: String): FrameLayout {
         val size = (sizeDp * resources.displayMetrics.density).toInt()
         return FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(size, size)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(colorHex))
+                setColor(Color.parseColor(bgHex))
             }
             addView(TextView(this@MainActivity).apply {
                 text = initials
-                textSize = 20f
-                setTextColor(Color.WHITE)
+                textSize = 18f
+                setTextColor(Color.parseColor(textHex))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(
