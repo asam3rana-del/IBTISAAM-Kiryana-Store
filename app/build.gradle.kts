@@ -12,8 +12,23 @@ android {
         applicationId = "com.grocerypos.v11"
         minSdk = 24
         targetSdk = 35
-versionCode = 10
+        versionCode = 10
         versionName = "10.0"
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("${rootProject.projectDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 
     compileOptions {
