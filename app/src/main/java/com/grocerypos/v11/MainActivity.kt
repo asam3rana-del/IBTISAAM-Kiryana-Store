@@ -18,7 +18,6 @@ import com.grocerypos.v11.ui.SaleActivity
 import com.grocerypos.v11.ui.ReportsActivity
 import com.grocerypos.v11.ui.CashActivity
 import com.grocerypos.v11.ui.PartyActivity
-import com.grocerypos.v11.ui.UserManagementActivity
 import kotlinx.coroutines.launch
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -89,7 +88,6 @@ class MainActivity : AppCompatActivity() {
         todaySaleValue = saleCardParts.second
 
         if (role == "admin") {
-            // Admin sees both Sale and Profit side by side
             val profitCardParts = statCard("📈", "Today's Profit", "#1565C0")
             val profitCardView = profitCardParts.first
             todayProfitValue = profitCardParts.second
@@ -102,7 +100,6 @@ class MainActivity : AppCompatActivity() {
             statsRow.addView(saleCardView)
             statsRow.addView(profitCardView)
         } else {
-            // Manager / Cashier: sale card only, full width — no profit shown
             saleCardView.layoutParams =
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             statsRow.addView(saleCardView)
@@ -128,9 +125,7 @@ class MainActivity : AppCompatActivity() {
                 Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
                 Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
-                Tile("⚙️", "Settings", "#37474F") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
-                Tile("🧑‍💼", "Manage\nUsers", "#795548") { startActivity(Intent(this@MainActivity, UserManagementActivity::class.java)) },
-                Tile("🚪", "Logout", "#C62828") { doLogout() }
+                Tile("⚙️", "Settings", "#37474F") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
             )
             "manager" -> listOf(
                 Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
@@ -180,7 +175,6 @@ class MainActivity : AppCompatActivity() {
         finish()
     }
 
-    // ---- small holder for a menu tile's icon/label/color/click ----
     private data class Tile(val emoji: String, val label: String, val colorHex: String, val onClick: () -> Unit)
 
     private fun menuTile(tile: Tile): LinearLayout {
@@ -206,7 +200,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- stat card: returns the card view plus its live value TextView ----
     private fun statCard(emoji: String, label: String, colorHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -289,7 +282,6 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
-    // ---- Crash capture: saves the stack trace so it can be shown next time the app opens ----
     private fun installCrashHandler() {
         val prefs = getSharedPreferences("crash_log", MODE_PRIVATE)
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
