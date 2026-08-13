@@ -75,7 +75,7 @@ class SaleActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 28, 24, 28)
+            setPadding(24, 56, 24, 24)
             setBackgroundColor(Color.parseColor(bg))
         }
 
@@ -159,15 +159,15 @@ class SaleActivity : AppCompatActivity() {
         // ---- Cash / Credit ----
         val cashCreditToggle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         cashBtn = Button(this).apply {
-            text = "CASH"; textSize = 11f; setTextColor(Color.WHITE)
-            background = roundedBg(green, 20)
-            setPadding(20, 6, 20, 6); minWidth = 0; minHeight = 0
+            text = "CASH"; textSize = 10f; setTextColor(Color.WHITE)
+            background = roundedBg(green, 16)
+            setPadding(14, 4, 14, 4); minWidth = 0; minHeight = 0
             setOnClickListener { setSaleMode(true) }
         }
         creditBtn = Button(this).apply {
-            text = "CREDIT"; textSize = 11f; setTextColor(Color.parseColor("#9E9E9E"))
-            background = roundedBg("#EEEEEE", 20)
-            setPadding(20, 6, 20, 6); minWidth = 0; minHeight = 0
+            text = "CREDIT"; textSize = 10f; setTextColor(Color.parseColor("#9E9E9E"))
+            background = roundedBg("#EEEEEE", 16)
+            setPadding(14, 4, 14, 4); minWidth = 0; minHeight = 0
             setOnClickListener { setSaleMode(false) }
         }
         cashCreditToggle.addView(cashBtn)
@@ -273,7 +273,7 @@ class SaleActivity : AppCompatActivity() {
         subtotalRow.addView(subtotalText)
         root.addView(subtotalRow)
 
-        val discountBox = outlinedBox().apply { setPadding(16, 4, 16, 4) }
+        val discountBox = outlinedBox().apply { setPadding(16, 2, 16, 2) }
         discountInput = EditText(this).apply {
             hint = "Discount (Rs)"
             background = null
@@ -332,6 +332,7 @@ class SaleActivity : AppCompatActivity() {
             setPadding(0, 22, 0, 22)
             setOnClickListener { saveSale() }
         })
+        root.addView(spacer(40))
 
         setContentView(ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bg))
@@ -420,12 +421,12 @@ class SaleActivity : AppCompatActivity() {
     private fun setSaleMode(cash: Boolean) {
         isCashSale = cash
         if (cash) {
-            cashBtn.background = roundedBg(green, 20); cashBtn.setTextColor(Color.WHITE)
-            creditBtn.background = roundedBg("#EEEEEE", 20); creditBtn.setTextColor(Color.parseColor("#9E9E9E"))
+            cashBtn.background = roundedBg(green, 16); cashBtn.setTextColor(Color.WHITE)
+            creditBtn.background = roundedBg("#EEEEEE", 16); creditBtn.setTextColor(Color.parseColor("#9E9E9E"))
             paymentSection.visibility = View.VISIBLE
         } else {
-            creditBtn.background = roundedBg(red, 20); creditBtn.setTextColor(Color.WHITE)
-            cashBtn.background = roundedBg("#EEEEEE", 20); cashBtn.setTextColor(Color.parseColor("#9E9E9E"))
+            creditBtn.background = roundedBg(red, 16); creditBtn.setTextColor(Color.WHITE)
+            cashBtn.background = roundedBg("#EEEEEE", 16); cashBtn.setTextColor(Color.parseColor("#9E9E9E"))
             paymentSection.visibility = View.GONE
         }
     }
