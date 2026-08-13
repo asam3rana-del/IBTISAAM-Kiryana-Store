@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
         // ---- Require login before showing the dashboard ----
         val session = getSharedPreferences("session", MODE_PRIVATE)
         if (session.getString("username", null) == null) {
-            startActivity(Intent(this, LoginActivity::class.java))
+            startActivity(Intent(this@MainActivity, LoginActivity::class.java))
             finish()
             return
         }
@@ -108,16 +108,16 @@ class MainActivity : AppCompatActivity() {
 
         // ================= MENU GRID (2 tiles per row) =================
         val tiles = listOf(
-            Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this, SaleActivity::class.java)) },
-            Tile("📦", "Products", "#1565C0") { startActivity(Intent(this, ProductActivity::class.java)) },
-            Tile("🧾", "Purchases", "#EF6C00") { startActivity(Intent(this, PurchaseActivity::class.java)) },
-            Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this, ReportsActivity::class.java)) },
-            Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this, CashActivity::class.java)) },
-            Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this, PartyActivity::class.java)) },
-            Tile("⚙️", "Settings", "#37474F") { startActivity(Intent(this, SettingsActivity::class.java)) },
+            Tile("🛒", "New Sale", "#2E7D32") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
+            Tile("📦", "Products", "#1565C0") { startActivity(Intent(this@MainActivity, ProductActivity::class.java)) },
+            Tile("🧾", "Purchases", "#EF6C00") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
+            Tile("📊", "Reports", "#6A1B9A") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
+            Tile("💵", "Cash In/Out", "#00838F") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
+            Tile("👥", "Customers &\nSuppliers", "#4E342E") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+            Tile("⚙️", "Settings", "#37474F") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
             Tile("🚪", "Logout", "#C62828") {
                 getSharedPreferences("session", MODE_PRIVATE).edit().remove("username").apply()
-                startActivity(Intent(this, LoginActivity::class.java))
+                startActivity(Intent(this@MainActivity, LoginActivity::class.java))
                 finish()
             }
         )
@@ -150,7 +150,6 @@ class MainActivity : AppCompatActivity() {
         loadDashboard()
     }
 
-    // ---- small holder for a menu tile's icon/label/color/click ----
     private data class Tile(val emoji: String, val label: String, val colorHex: String, val onClick: () -> Unit)
 
     private fun menuTile(tile: Tile): LinearLayout {
@@ -176,7 +175,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- stat card: returns the card view plus its live value TextView ----
     private fun statCard(emoji: String, label: String, colorHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -257,7 +255,6 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
-    // ---- Crash capture: saves the stack trace so it can be shown next time the app opens ----
     private fun installCrashHandler() {
         val prefs = getSharedPreferences("crash_log", MODE_PRIVATE)
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
