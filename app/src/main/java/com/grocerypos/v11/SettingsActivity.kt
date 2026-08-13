@@ -181,7 +181,7 @@ class SettingsActivity : AppCompatActivity() {
 
     // ================= BACKUP / RESTORE =================
 
-    pprivate fun onBackupClicked() {
+    private fun onBackupClicked() {
     val file = BackupHelper.backupNow(this)
     if (file != null) {
         Toast.makeText(this, "Backup ho gaya: ${file.name}", Toast.LENGTH_LONG).show()
