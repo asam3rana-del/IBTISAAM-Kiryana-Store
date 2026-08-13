@@ -201,27 +201,38 @@ class MainActivity : AppCompatActivity() {
 
     private data class Tile(val emoji: String, val label: String, val accentHex: String, val tintHex: String, val onClick: () -> Unit)
 
-    // ---- premium white card tile with a colored icon "chip" ----
+    // ---- premium white card tile with a colored icon "chip" (gradient + shadow + ripple + border) ----
     private fun premiumMenuTile(tile: Tile): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(18, 26, 18, 22)
-            background = roundedBackground(cardWhite, 24)
-            elevation = 4f
+            elevation = 6f
+
+            val ripple = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.parseColor(tile.accentHex)).withAlpha(40),
+                roundedBackgroundBordered(cardWhite, 24),
+                roundedBackgroundBordered(cardWhite, 24)
+            )
+            background = ripple
+            isClickable = true
 
             addView(FrameLayout(this@MainActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    (52 * resources.displayMetrics.density).toInt(),
-                    (52 * resources.displayMetrics.density).toInt()
-                )
+                val size = (58 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size)
+                elevation = 8f
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    setColor(Color.parseColor(tile.tintHex))
+                    colors = intArrayOf(
+                        lighten(tile.accentHex, 0.85f),
+                        Color.parseColor(tile.tintHex)
+                    )
+                    gradientType = GradientDrawable.LINEAR_GRADIENT
+                    orientation = GradientDrawable.Orientation.TL_BR
                 }
                 addView(TextView(this@MainActivity).apply {
                     text = tile.emoji
-                    textSize = 22f
+                    textSize = 24f
                     gravity = Gravity.CENTER
                     layoutParams = FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
@@ -235,17 +246,16 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(textDark))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
-                setPadding(0, 14, 0, 0)
+                setPadding(0, 16, 0, 0)
             })
 
-            // subtle accent underline
             addView(View(this@MainActivity).apply {
-                layoutParams = LinearLayout.LayoutParams((26 * resources.displayMetrics.density).toInt(), 4).apply {
+                layoutParams = LinearLayout.LayoutParams((28 * resources.displayMetrics.density).toInt(), 5).apply {
                     topMargin = 10
                     gravity = Gravity.CENTER_HORIZONTAL
                 }
                 background = GradientDrawable().apply {
-                    cornerRadius = 4f
+                    cornerRadius = 6f
                     setColor(Color.parseColor(tile.accentHex))
                 }
             })
@@ -254,27 +264,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- premium stat card: white bg, icon chip, big bold value ----
+    // ---- premium stat card: white bg, gradient icon chip, big bold value ----
     private fun premiumStatCard(emoji: String, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 22, 24, 22)
-            background = roundedBackground(cardWhite, 24)
-            elevation = 4f
+            background = roundedBackgroundBordered(cardWhite, 24)
+            elevation = 6f
         }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         topRow.addView(FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                (38 * resources.displayMetrics.density).toInt(),
-                (38 * resources.displayMetrics.density).toInt()
-            )
+            val size = (42 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            elevation = 6f
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(tintHex))
+                colors = intArrayOf(lighten(accentHex, 0.85f), Color.parseColor(tintHex))
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                orientation = GradientDrawable.Orientation.TL_BR
             }
             addView(TextView(this@MainActivity).apply {
                 text = emoji
-                textSize = 16f
+                textSize = 18f
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
@@ -349,6 +360,24 @@ class MainActivity : AppCompatActivity() {
             setColor(Color.parseColor(colorHex))
             this.cornerRadius = cornerRadius.toFloat()
         }
+    }
+
+    // ---- rounded background with a subtle border stroke for premium card look ----
+    private fun roundedBackgroundBordered(colorHex: String, cornerRadius: Int, strokeColorHex: String = "#EDEFF5"): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(Color.parseColor(colorHex))
+            this.cornerRadius = cornerRadius.toFloat()
+            setStroke(2, Color.parseColor(strokeColorHex))
+        }
+    }
+
+    // ---- helper: lighten a hex color for gradient's light edge ----
+    private fun lighten(hex: String, factor: Float): Int {
+        val base = Color.parseColor(hex)
+        val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt()
+        val g = (Color.green(base) + (255 - Color.green(base)) * factor).toInt()
+        val b = (Color.blue(base) + (255 - Color.blue(base)) * factor).toInt()
+        return Color.rgb(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
     }
 
     private fun toast(msg: String) {
