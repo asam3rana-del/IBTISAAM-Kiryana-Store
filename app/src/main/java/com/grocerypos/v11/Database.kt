@@ -45,8 +45,8 @@ data class Customer(
     val name:String,
     val phone:String="",
     val creditLimit:Double=0.0,
-    val balance:Double=0.0,
-    val openingBalance:Double=0.0
+    val openingBalance:Double=0.0,  // added — previous due before app tracking started
+    val balance:Double=0.0
 )
 
 @Entity(tableName="suppliers")
@@ -54,8 +54,8 @@ data class Supplier(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val name:String,
     val phone:String="",
-    val balance:Double=0.0,
-    val openingBalance:Double=0.0
+    val openingBalance:Double=0.0,  // added — previous due before app tracking started
+    val balance:Double=0.0
 )
 
 @Entity(tableName="sales")
@@ -368,10 +368,9 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
-// v14 -> v15: customers and suppliers gain an `openingBalance` column (the
-// previous-due amount entered when a party is first added), used by
-// PartyActivity to show Opening / Closing balances. Existing rows default
-// to 0.0. No data is lost.
+// v14 -> v15: customers and suppliers gain an `openingBalance` column (their
+// previous due before the app started tracking balances). Existing rows
+// default to 0.0, so nobody's current running balance changes.
 val MIGRATION_14_15 = object : Migration(14, 15) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE customers ADD COLUMN openingBalance REAL NOT NULL DEFAULT 0.0")
@@ -410,6 +409,10 @@ abstract class PosDatabase:RoomDatabase(){
                 .addMigrations(MIGRATION_13_14, MIGRATION_14_15)
                 .fallbackToDestructiveMigration()
                 .build().also{INSTANCE=it}
+        }
+        fun closeInstance() {
+            INSTANCE?.close()
+            INSTANCE = null
         }
     }
 }
