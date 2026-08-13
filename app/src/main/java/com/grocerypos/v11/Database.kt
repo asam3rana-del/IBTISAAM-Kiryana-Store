@@ -392,5 +392,9 @@ abstract class PosDatabase:RoomDatabase(){
                 .fallbackToDestructiveMigration()
                 .build().also{INSTANCE=it}
         }
+        fun closeInstance() {
+            INSTANCE?.close()
+            INSTANCE = null
+        }
     }
 }
