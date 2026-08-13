@@ -1,6 +1,7 @@
 package com.grocerypos.v11.ui
 
 import android.bluetooth.BluetoothDevice
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.*
@@ -104,7 +105,29 @@ class SettingsActivity : AppCompatActivity() {
             setOnClickListener { updateLogin(loggedInUsername) }
         })
 
+        // ---- Users & Account ----
+        l.addView(divider())
+        l.addView(TextView(this).apply {
+            text = "Users & Account"
+            textSize = 18f
+            setPadding(0, 24, 0, 12)
+        })
+        l.addView(Button(this).apply {
+            text = "MANAGE USERS"
+            setOnClickListener { startActivity(Intent(this@SettingsActivity, UserManagementActivity::class.java)) }
+        })
+        l.addView(Button(this).apply {
+            text = "LOGOUT"
+            setOnClickListener { doLogout() }
+        })
+
         setContentView(ScrollView(this).apply { addView(l) })
+    }
+
+    private fun doLogout() {
+        getSharedPreferences("session", MODE_PRIVATE).edit().clear().apply()
+        startActivity(Intent(this@SettingsActivity, LoginActivity::class.java))
+        finish()
     }
 
     // ================= PRINTER =================
@@ -182,13 +205,13 @@ class SettingsActivity : AppCompatActivity() {
     // ================= BACKUP / RESTORE =================
 
     private fun onBackupClicked() {
-    val file = BackupHelper.backupNow(this)
-    if (file != null) {
-        Toast.makeText(this, "Backup ho gaya: ${file.name}", Toast.LENGTH_LONG).show()
-        BackupHelper.shareBackup(this, file)
-    } else {
-        Toast.makeText(this, "Backup fail ho gaya", Toast.LENGTH_SHORT).show()
-    }
+        val file = BackupHelper.backupNow(this)
+        if (file != null) {
+            Toast.makeText(this, "Backup ho gaya: ${file.name}", Toast.LENGTH_LONG).show()
+            BackupHelper.shareBackup(this, file)
+        } else {
+            Toast.makeText(this, "Backup fail ho gaya", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun onRestoreClicked() {
@@ -254,7 +277,6 @@ class SettingsActivity : AppCompatActivity() {
                 )
             )
 
-            // Username badla ho to purana record hatayein aur session update karein
             if (finalUsername != currentUsername) {
                 db.userDao().delete(currentUsername)
                 getSharedPreferences("session", MODE_PRIVATE).edit()
