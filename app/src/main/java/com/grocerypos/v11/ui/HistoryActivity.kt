@@ -1,6 +1,7 @@
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -216,7 +217,8 @@ class HistoryActivity : AppCompatActivity() {
             body.addView(spacer())
             body.addView(sectionTitle("Items"))
             for (it in items) {
-                body.addView(itemRow(it.barcode, "${it.qty} × ${it.unitCost}", "Rs %.2f".format(it.amount)))
+                val unitLabel = if (it.unit.isBlank()) "" else " ${it.unit}"
+                body.addView(itemRow(it.barcode, "${it.qty}$unitLabel × ${it.unitCost}", "Rs %.2f".format(it.amount)))
             }
 
             val dialog = AlertDialog.Builder(this@HistoryActivity).setView(content).create()
@@ -225,6 +227,19 @@ class HistoryActivity : AppCompatActivity() {
                 text = "Close"
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener { dialog.dismiss() }
+            })
+            footer.addView(Button(this@HistoryActivity).apply {
+                text = "Edit"
+                setTextColor(Color.WHITE)
+                background = roundedBackground("#1565C0", 12)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setOnClickListener {
+                    dialog.dismiss()
+                    startActivity(
+                        Intent(this@HistoryActivity, PurchaseActivity::class.java)
+                            .putExtra(PurchaseActivity.EXTRA_BILL_NO, billNo)
+                    )
+                }
             })
             footer.addView(Button(this@HistoryActivity).apply {
                 text = "Delete (Reverse)"
@@ -264,6 +279,7 @@ class HistoryActivity : AppCompatActivity() {
             }
 
             db.cashTransactionDao().deleteByReference(billNo)
+            db.paymentDao().deleteByReference(billNo)
             db.purchaseDao().deleteItems(billNo)
             db.purchaseDao().deletePurchase(billNo)
 
