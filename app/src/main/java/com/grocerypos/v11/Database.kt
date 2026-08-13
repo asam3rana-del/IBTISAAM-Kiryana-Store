@@ -45,7 +45,8 @@ data class Customer(
     val name:String,
     val phone:String="",
     val creditLimit:Double=0.0,
-    val balance:Double=0.0
+    val balance:Double=0.0,
+    val openingBalance:Double=0.0
 )
 
 @Entity(tableName="suppliers")
@@ -53,7 +54,8 @@ data class Supplier(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val name:String,
     val phone:String="",
-    val balance:Double=0.0
+    val balance:Double=0.0,
+    val openingBalance:Double=0.0
 )
 
 @Entity(tableName="sales")
@@ -251,6 +253,9 @@ interface ProductDao {
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt FROM sales ORDER BY createdAt DESC LIMIT 100")
     suspend fun allSales():List<SaleWithCustomer>
 
+    @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC")
+    suspend fun salesByCustomer(customerId:Long):List<Sale>
+
     @Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1")
     suspend fun findSale(invoice:String):Sale?
 
@@ -300,6 +305,9 @@ interface ProductDao {
     suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt FROM purchases ORDER BY createdAt DESC LIMIT 100")
     suspend fun allPurchases():List<PurchaseWithSupplier>
+
+    @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC")
+    suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
 
     @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1")
     suspend fun findPurchase(bill:String):Purchase?
@@ -360,12 +368,23 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+// v14 -> v15: customers and suppliers gain an `openingBalance` column (the
+// previous-due amount entered when a party is first added), used by
+// PartyActivity to show Opening / Closing balances. Existing rows default
+// to 0.0. No data is lost.
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE customers ADD COLUMN openingBalance REAL NOT NULL DEFAULT 0.0")
+        database.execSQL("ALTER TABLE suppliers ADD COLUMN openingBalance REAL NOT NULL DEFAULT 0.0")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class],
-    version=14, exportSchema=false
+    version=15, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -388,13 +407,9 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15)
                 .fallbackToDestructiveMigration()
                 .build().also{INSTANCE=it}
-        }
-        fun closeInstance() {
-            INSTANCE?.close()
-            INSTANCE = null
         }
     }
 }
