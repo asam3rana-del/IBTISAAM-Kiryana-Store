@@ -3,12 +3,15 @@ package com.grocerypos.v11.ui
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -22,14 +25,23 @@ import kotlinx.coroutines.launch
 
 class ProductActivity : AppCompatActivity() {
 
-    private val bg = "#F4F3FB"
-    private val blue = "#1565C0"
-    private val darkBlue = "#0D47A1"
-    private val green = "#2E7D32"
-    private val purple = "#6A1B9A"
+    // ================= PREMIUM COLOR PALETTE (matches SaleActivity) =================
+    private val bg = "#F3F2FA"
+    private val cardBg = "#FFFFFF"
+    private val primary = "#4A3AFF"
+    private val primaryDark = "#3527D6"
+    private val green = "#1FA971"
+    private val greenDark = "#158A5A"
+    private val red = "#E5484D"
+    private val blue = "#2F6FED"
+    private val amber = "#F5A524"
+    private val purple = "#8B5CF6"
+    private val textDark = "#1A1A2E"
+    private val textGray = "#8A8A9E"
+    private val border = "#E7E5F3"
 
     private lateinit var name: EditText
-    private lateinit var selectUnitBtn: Button
+    private lateinit var selectUnitBtn: TextView
     private lateinit var categorySpinner: Spinner
     private lateinit var cost: EditText
     private lateinit var wholesalePrice: EditText
@@ -49,49 +61,71 @@ class ProductActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 32, 24, 32)
+            setPadding(24, 48, 24, 24)
             setBackgroundColor(Color.parseColor(bg))
         }
 
         // ================= HEADER =================
         val header = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 20, 24, 20)
-            background = roundedBg(blue, 20)
-            elevation = 8f
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(26, 22, 26, 22)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            ).apply { cornerRadius = 22f }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            applyElevation(this, 10f)
         }
-        header.addView(TextView(this).apply {
+        header.addView(circleIcon("📦", "#5C4DFF", 40))
+        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
+        val headerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headerCol.addView(TextView(this).apply {
             text = "Add / Edit Product"
-            textSize = 20f
+            textSize = 19f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
+        headerCol.addView(TextView(this).apply {
+            text = "Inventory Management"
+            textSize = 11.5f
+            setTextColor(Color.parseColor("#D8D3FF"))
+            setPadding(0, 4, 0, 0)
+        })
+        header.addView(headerCol)
         root.addView(header)
         root.addView(spacer(20))
 
         // ================= NAME + embedded "Select Unit" pill =================
         val nameCard = cardContainer()
-        nameCard.addView(sectionLabel("Product Name"))
+        nameCard.addView(sectionLabel("🏷️", "Product Name"))
 
         // Outer bordered box holding BOTH the name field and the unit pill (single "field" look)
         val nameBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 6, 10, 6)
-            background = strokedBg("#BDBDBD", "#FFFFFF", 14)
+            setPadding(20, 8, 8, 8)
+            background = strokedBg(border, "#FAFAFF", 14)
         }
         name = EditText(this).apply {
             hint = "Product Name"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
             background = null
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        selectUnitBtn = Button(this).apply {
-            text = "Select Unit"
+        selectUnitBtn = TextView(this).apply {
+            text = "📏 Select Unit"
             textSize = 12f
             setTextColor(Color.WHITE)
-            background = roundedBg(blue, 30)
-            setPadding(28, 10, 28, 10)
-            minWidth = 0; minHeight = 0
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = roundedBg(primary, 30)
+            setPadding(28, 16, 28, 16)
             setOnClickListener { openUnitDialog() }
         }
         nameBox.addView(name)
@@ -99,62 +133,76 @@ class ProductActivity : AppCompatActivity() {
         nameCard.addView(nameBox)
 
         root.addView(nameCard)
-        root.addView(spacer(20))
+        root.addView(spacer(18))
 
         // ================= CATEGORY =================
         val categoryCard = cardContainer()
-        categoryCard.addView(sectionLabel("Category"))
+        categoryCard.addView(sectionLabel("🗂️", "Category"))
+        val spinnerBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = strokedBg(border, "#FAFAFF", 12)
+            setPadding(16, 2, 16, 2)
+        }
         categorySpinner = Spinner(this)
-        categoryCard.addView(categorySpinner)
-        categoryCard.addView(TextView(this).apply {
-            text = "+ Add New Category"
-            textSize = 12f
-            setTextColor(Color.parseColor(blue))
-            setPadding(0, 10, 0, 0)
-            setOnClickListener { promptAddCategory() }
-        })
+        spinnerBox.addView(categorySpinner)
+        categoryCard.addView(spinnerBox)
+        categoryCard.addView(spacer(10))
+        categoryCard.addView(pillLink("✚  Add New Category", primary) { promptAddCategory() })
         root.addView(categoryCard)
-        root.addView(spacer(20))
+        root.addView(spacer(18))
 
         // ================= RATES =================
         val ratesCard = cardContainer()
-        ratesCard.addView(sectionLabel("Pricing"))
+        ratesCard.addView(sectionLabel("💰", "Pricing"))
 
-        cost = rateField("Purchase Rate")
-        ratesCard.addView(cost)
+        cost = rateField("🛒", "Purchase Rate")
+        ratesCard.addView(fieldBox(cost))
         ratesCard.addView(spacer(12))
 
-        wholesalePrice = rateField("Wholesale Sale Rate")
-        ratesCard.addView(wholesalePrice)
+        wholesalePrice = rateField("📦", "Wholesale Sale Rate")
+        ratesCard.addView(fieldBox(wholesalePrice))
         ratesCard.addView(spacer(12))
 
-        salePrice = rateField("Retail Sale Rate")
-        ratesCard.addView(salePrice)
+        salePrice = rateField("🏪", "Retail Sale Rate")
+        ratesCard.addView(fieldBox(salePrice))
         ratesCard.addView(spacer(12))
 
         stock = EditText(this).apply {
             hint = "Opening Stock (optional)"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
             inputType = InputType.TYPE_CLASS_NUMBER
         }
-        ratesCard.addView(stock)
+        ratesCard.addView(fieldBox(stock, "🔢"))
 
         root.addView(ratesCard)
-        root.addView(spacer(24))
+        root.addView(spacer(22))
 
         // ================= SAVE =================
         root.addView(Button(this).apply {
-            text = "SAVE PRODUCT"
+            text = "💾  SAVE PRODUCT"
             setTextColor(Color.WHITE)
             textSize = 16f
-            background = roundedBg(green, 16)
+            isAllCaps = false
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor(greenDark), Color.parseColor(green))
+            ).apply { cornerRadius = 18f }
             setPadding(0, 28, 0, 28)
             setOnClickListener { saveProduct() }
+            applyElevation(this, 8f)
         })
         root.addView(spacer(28))
 
-        root.addView(sectionLabel("Products"))
+        val listHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        listHeaderRow.addView(sectionLabel("🗃️", "Products"))
+        root.addView(listHeaderRow)
+        root.addView(spacer(6))
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
+        root.addView(spacer(30))
 
         setContentView(ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bg))
@@ -170,20 +218,62 @@ class ProductActivity : AppCompatActivity() {
     private fun cardContainer() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(24, 22, 24, 22)
-        background = roundedBg("#FFFFFF", 20)
-        elevation = 4f
+        background = strokedBg(border, cardBg, 18)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        applyElevation(this, 3f)
     }
 
-    private fun sectionLabel(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 15f
-        setTextColor(Color.parseColor("#424242"))
+    private fun fieldBox(field: EditText, icon: String = "") = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = strokedBg(border, "#FAFAFF", 12)
+        setPadding(18, 4, 18, 4)
+        if (icon.isNotEmpty()) {
+            addView(TextView(this@ProductActivity).apply { text = "$icon  "; textSize = 14f })
+        }
+        (field.parent as? ViewGroup)?.removeView(field)
+        field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        addView(field)
+    }
+
+    private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, 0, 0, 12)
+        addView(TextView(this@ProductActivity).apply { text = "$icon  "; textSize = 15f })
+        addView(TextView(this@ProductActivity).apply {
+            text = label
+            textSize = 14.5f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+    }
+
+    private fun pillLink(label: String, colorHex: String, onClick: () -> Unit) = TextView(this).apply {
+        text = label
+        textSize = 12.5f
+        setTextColor(Color.parseColor(colorHex))
         setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setPadding(0, 0, 0, 10)
+        setPadding(4, 4, 4, 4)
+        setOnClickListener { onClick() }
     }
 
-    private fun rateField(hint: String) = EditText(this).apply {
+    private fun circleIcon(text: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
+        this.text = text
+        textSize = 17f
+        gravity = Gravity.CENTER
+        background = ovalBg(colorHex)
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        width = px; height = px
+    }
+
+    private fun rateField(icon: String, hint: String) = EditText(this).apply {
         this.hint = hint
+        setHintTextColor(Color.parseColor(textGray))
+        setTextColor(Color.parseColor(textDark))
+        background = null
         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
     }
 
@@ -194,8 +284,21 @@ class ProductActivity : AppCompatActivity() {
 
     private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(fillHex))
-        setStroke((1.5 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
+        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
         cornerRadius = radius.toFloat()
+    }
+
+    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.parseColor(colorHex))
+    }
+
+    /** Adds a soft elevation/shadow to a view that has a rounded background (API 21+). */
+    private fun applyElevation(view: View, dp: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            view.elevation = dp * resources.displayMetrics.density
+            view.outlineProvider = ViewOutlineProvider.BACKGROUND
+        }
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {
@@ -228,7 +331,7 @@ class ProductActivity : AppCompatActivity() {
     }
 
     private fun promptAddCategory() {
-        val input = EditText(this)
+        val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
         AlertDialog.Builder(this)
             .setTitle("New Category")
             .setView(input)
@@ -238,23 +341,29 @@ class ProductActivity : AppCompatActivity() {
                     PosDatabase.get(this@ProductActivity).categoryDao().insert(Category(v))
                     Toast.makeText(this@ProductActivity, "Category added", Toast.LENGTH_SHORT).show()
                 }
-                            }
+            }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
     // ================= "Add Item Unit" dialog: Primary Unit + Secondary Unit =================
     private fun openUnitDialog() {
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor(cardBg))
+        }
 
         val dialogHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(28, 24, 28, 24)
-            setBackgroundColor(Color.parseColor(darkBlue))
+            setPadding(28, 26, 28, 26)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            )
         }
         dialogHeader.addView(TextView(this).apply {
-            text = "Add Item Unit"
+            text = "📏  Add Item Unit"
             textSize = 18f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -263,16 +372,27 @@ class ProductActivity : AppCompatActivity() {
 
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 24, 28, 8)
+            setPadding(28, 26, 28, 8)
         }
 
         // ---- Primary Unit ----
-        body.addView(TextView(this).apply { text = "Primary Unit"; textSize = 13f; setTextColor(Color.GRAY) })
+        body.addView(TextView(this).apply {
+            text = "PRIMARY UNIT"; textSize = 11.5f
+            setTextColor(Color.parseColor(textGray))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, 8)
+        })
         val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val primarySpinner = Spinner(this).apply {
+        val primarySpinnerBox = LinearLayout(this).apply {
+            background = strokedBg(border, "#FAFAFF", 12)
+            setPadding(14, 2, 14, 2)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        primaryRow.addView(primarySpinner)
+        val primarySpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        primarySpinnerBox.addView(primarySpinner)
+        primaryRow.addView(primarySpinnerBox)
         primaryRow.addView(smallAddButton {
             promptAddUnitInline { newUnit ->
                 units = (units + newUnit).distinct()
@@ -281,15 +401,26 @@ class ProductActivity : AppCompatActivity() {
             }
         })
         body.addView(primaryRow)
-        body.addView(spacer(18))
+        body.addView(spacer(20))
 
         // ---- Secondary Unit ----
-        body.addView(TextView(this).apply { text = "Secondary Unit (chhoti quantity, optional)"; textSize = 13f; setTextColor(Color.GRAY) })
+        body.addView(TextView(this).apply {
+            text = "SECONDARY UNIT (chhoti quantity, optional)"; textSize = 11.5f
+            setTextColor(Color.parseColor(textGray))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, 8)
+        })
         val secondaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val secondarySpinner = Spinner(this).apply {
+        val secondarySpinnerBox = LinearLayout(this).apply {
+            background = strokedBg(border, "#FAFAFF", 12)
+            setPadding(14, 2, 14, 2)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        secondaryRow.addView(secondarySpinner)
+        val secondarySpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        secondarySpinnerBox.addView(secondarySpinner)
+        secondaryRow.addView(secondarySpinnerBox)
         secondaryRow.addView(smallAddButton {
             promptAddUnitInline { newUnit ->
                 units = (units + newUnit).distinct()
@@ -298,14 +429,25 @@ class ProductActivity : AppCompatActivity() {
             }
         })
         body.addView(secondaryRow)
-        body.addView(spacer(14))
+        body.addView(spacer(16))
 
+        val qtyBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = strokedBg(border, "#FAFAFF", 12)
+            setPadding(16, 4, 16, 4)
+        }
+        qtyBox.addView(TextView(this).apply { text = "🔁  "; textSize = 14f })
         val qtyField = EditText(this).apply {
             hint = "1 Unit = kitne Secondary Units? (e.g. 1 box = 12 pcs)"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             if (selectedSecondaryQty > 0) setText(selectedSecondaryQty.toString())
         }
-        body.addView(qtyField)
+        qtyBox.addView(qtyField)
+        body.addView(qtyBox)
 
         content.addView(body)
 
@@ -317,31 +459,45 @@ class ProductActivity : AppCompatActivity() {
         secondarySpinner.setSelection(secondaryOptions.indexOf(selectedSecondaryUnit).coerceAtLeast(0))
 
         // ---- Cancel / Save footer ----
-        val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        content.addView(spacer(16))
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(28, 8, 28, 26)
+        }
+        content.addView(spacer(10))
         content.addView(footer)
 
         val dialog = AlertDialog.Builder(this).setView(content).create()
 
-        footer.addView(Button(this).apply {
+        footer.addView(TextView(this).apply {
             text = "Cancel"
-            setTextColor(Color.parseColor(darkBlue))
-            background = ColorDrawableFlat()
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            gravity = Gravity.CENTER
+            textSize = 14f
+            setTextColor(Color.parseColor(textGray))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = strokedBg(border, "#FAFAFF", 14)
+            setPadding(0, 22, 0, 22)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
             setOnClickListener { dialog.dismiss() }
         })
-        footer.addView(Button(this).apply {
-            text = "Save"
+        footer.addView(TextView(this).apply {
+            text = "✓  Save"
+            gravity = Gravity.CENTER
+            textSize = 14f
             setTextColor(Color.WHITE)
-            background = roundedBg(blue, 0)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            ).apply { cornerRadius = 14f }
+            setPadding(0, 22, 0, 22)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener {
                 selectedPrimaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"
                 selectedSecondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"
                 selectedSecondaryQty = qtyField.text.toString().toDoubleOrNull() ?: 0.0
 
                 selectUnitBtn.text = if (selectedSecondaryUnit != "None")
-                    "$selectedPrimaryUnit / $selectedSecondaryUnit" else selectedPrimaryUnit
+                    "📏 $selectedPrimaryUnit / $selectedSecondaryUnit" else "📏 $selectedPrimaryUnit"
 
                 updateSecondaryUnitPricing()
                 dialog.dismiss()
@@ -351,20 +507,21 @@ class ProductActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun ColorDrawableFlat() = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
-
-    private fun smallAddButton(onClick: () -> Unit) = Button(this).apply {
+    private fun smallAddButton(onClick: () -> Unit) = TextView(this).apply {
         text = "+"
+        textSize = 18f
+        gravity = Gravity.CENTER
         setTextColor(Color.WHITE)
-        background = roundedBg(blue, 10)
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(10, 0, 0, 0) }
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        background = ovalBg(primary)
+        val px = (36 * resources.displayMetrics.density).toInt()
+        width = px; height = px
+        layoutParams = LinearLayout.LayoutParams(px, px).apply { setMargins(10, 0, 0, 0) }
         setOnClickListener { onClick() }
     }
 
     private fun promptAddUnitInline(onAdded: (String) -> Unit) {
-        val input = EditText(this)
+        val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
         AlertDialog.Builder(this)
             .setTitle("New Unit")
             .setView(input)
@@ -430,7 +587,7 @@ class ProductActivity : AppCompatActivity() {
         selectedPrimaryUnit = "pcs"
         selectedSecondaryUnit = "None"
         selectedSecondaryQty = 0.0
-        selectUnitBtn.text = "Select Unit"
+        selectUnitBtn.text = "📏 Select Unit"
 
         if (categorySpinner.adapter != null && categorySpinner.adapter.count > 0) {
             categorySpinner.setSelection(0)
@@ -444,34 +601,43 @@ class ProductActivity : AppCompatActivity() {
                 for (p in list) {
                     listContainer.addView(LinearLayout(this@ProductActivity).apply {
                         orientation = LinearLayout.VERTICAL
-                        setPadding(20, 16, 20, 16)
-                        background = roundedBg("#FFFFFF", 14)
-                        elevation = 2f
+                        setPadding(20, 18, 20, 18)
+                        background = strokedBg(border, cardBg, 16)
                         layoutParams = LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                         ).apply { setMargins(0, 0, 0, 10) }
+                        applyElevation(this, 2f)
 
-                        val top = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL }
+                        val top = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                        top.addView(circleIcon("🧴", purple, 30))
+                        top.addView(View(this@ProductActivity).apply { layoutParams = LinearLayout.LayoutParams(12, 1) })
                         top.addView(TextView(this@ProductActivity).apply {
                             text = p.name; textSize = 15f
+                            setTextColor(Color.parseColor(textDark))
                             setTypeface(typeface, android.graphics.Typeface.BOLD)
                             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                         })
                         top.addView(TextView(this@ProductActivity).apply {
                             text = p.category
-                            setTextColor(Color.parseColor(purple))
-                            textSize = 12f
+                            setTextColor(Color.WHITE)
+                            textSize = 11f
+                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            background = roundedBg(purple, 20)
+                            setPadding(18, 6, 18, 6)
                         })
                         addView(top)
                         addView(TextView(this@ProductActivity).apply {
-                            text = "Stock: ${p.stock} ${p.unit}"
-                            textSize = 13f
-                            setTextColor(Color.GRAY)
+                            text = "📊 Stock: ${p.stock} ${p.unit}"
+                            textSize = 12.5f
+                            setTextColor(Color.parseColor(textGray))
+                            setPadding(42, 8, 0, 4)
                         })
                         addView(TextView(this@ProductActivity).apply {
-                            text = "Purchase: %.2f  •  Wholesale: %.2f  •  Retail: %.2f".format(p.cost, p.wholesalePrice, p.salePrice)
-                            textSize = 13f
+                            text = "🛒 Purchase: %.2f   •   📦 Wholesale: %.2f   •   🏪 Retail: %.2f".format(p.cost, p.wholesalePrice, p.salePrice)
+                            textSize = 12.5f
                             setTextColor(Color.parseColor(blue))
+                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            setPadding(42, 0, 0, 0)
                         })
                     })
                 }
