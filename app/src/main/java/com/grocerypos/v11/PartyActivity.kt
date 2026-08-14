@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -20,64 +21,181 @@ import java.util.Locale
 
 class PartyActivity : AppCompatActivity() {
 
+    // ---- Palette matched to the Dashboard ----
+    private val bg = "#F4F3FB"
+    private val gradientStart = "#3949AB"
+    private val gradientEnd = "#5C6BC0"
     private val blue = "#1565C0"
     private val orange = "#EF6C00"
+    private val green = "#2E7D32"
+    private val red = "#C62828"
+    private val cardWhite = "#FFFFFF"
+    private val labelGray = "#9E9E9E"
 
     private lateinit var tabRow: LinearLayout
-    private lateinit var formContainer: LinearLayout
+    private lateinit var formCard: LinearLayout
     private lateinit var nameField: EditText
     private lateinit var phoneField: EditText
     private lateinit var creditLimitField: EditText
+    private lateinit var creditLimitBox: LinearLayout
     private lateinit var openingBalanceField: EditText
     private lateinit var listContainer: LinearLayout
+    private lateinit var saveButton: Button
+    private lateinit var sectionAccentText: TextView
 
     private var showingCustomers = true
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor(bg))
+        }
+
+        // ================= GRADIENT HEADER =================
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(28, 40, 24, 32)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(gradientStart), Color.parseColor(gradientEnd))
+            )
+        }
+        header.addView(TextView(this).apply {
+            text = "\uD83D\uDC65"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            background = ovalBg(cardWhite)
+            width = (48 * resources.displayMetrics.density).toInt()
+            height = (48 * resources.displayMetrics.density).toInt()
+        })
+        val headerText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headerText.addView(TextView(this).apply {
+            text = "Customers & Suppliers"
+            textSize = 19f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        headerText.addView(TextView(this).apply {
+            text = "Manage parties & view ledgers"
+            textSize = 12f
+            setTextColor(Color.parseColor("#D5D8F5"))
+        })
+        header.addView(headerText)
+        outer.addView(header)
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 32, 28, 32)
+            setPadding(24, 20, 24, 28)
         }
 
-        root.addView(TextView(this).apply { text = "Customers & Suppliers"; textSize = 22f; setPadding(0,0,0,20) })
-
+        // ================= TABS (pill style) =================
         tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         root.addView(tabRow)
+        root.addView(spacer(16))
 
-        root.addView(divider())
+        // ================= ADD PARTY FORM CARD =================
+        formCard = premiumCard().apply { setPadding(22, 20, 22, 20) }
 
-        formContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        nameField = EditText(this).apply { hint = "Name" }
-        phoneField = EditText(this).apply { hint = "Phone (optional)" }
+        sectionAccentText = TextView(this).apply {
+            text = "\uD83D\uDC64  Add Customer"
+            textSize = 13f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(blue))
+            setPadding(0, 0, 0, 12)
+        }
+        formCard.addView(sectionAccentText)
+
+        val nameBox = innerField()
+        nameField = EditText(this).apply { hint = "Name *"; background = null; textSize = 15f }
+        nameBox.addView(nameField)
+        formCard.addView(nameBox)
+        formCard.addView(spacer(10))
+
+        val phoneBox = innerField()
+        phoneField = EditText(this).apply {
+            hint = "Phone (optional)"
+            background = null
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+        phoneBox.addView(phoneField)
+        formCard.addView(phoneBox)
+        formCard.addView(spacer(10))
+
+        creditLimitBox = innerField()
         creditLimitField = EditText(this).apply {
             hint = "Credit Limit (optional)"
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            background = null
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
+        creditLimitBox.addView(creditLimitField)
+        formCard.addView(creditLimitBox)
+        formCard.addView(spacer(10))
+
+        val openingBox = innerField()
         openingBalanceField = EditText(this).apply {
             hint = "Opening Balance (Rs, if any previous due)"
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            background = null
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
-        formContainer.addView(nameField)
-        formContainer.addView(phoneField)
-        formContainer.addView(creditLimitField)
-        formContainer.addView(openingBalanceField)
-        formContainer.addView(Button(this).apply {
+        openingBox.addView(openingBalanceField)
+        formCard.addView(openingBox)
+        formCard.addView(spacer(14))
+
+        saveButton = Button(this).apply {
             text = "SAVE"
             setTextColor(Color.WHITE)
+            textSize = 14f
             background = roundedBackground(blue, 14)
+            setPadding(0, 20, 0, 20)
             setOnClickListener { saveParty() }
+        }
+        formCard.addView(saveButton)
+        root.addView(formCard)
+        root.addView(spacer(18))
+
+        // ================= LIST HEADER =================
+        val listHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(4, 0, 4, 10)
+        }
+        listHeaderRow.addView(TextView(this).apply {
+            text = "\uD83D\uDCCB  "
+            textSize = 15f
         })
-        root.addView(formContainer)
+        listHeaderRow.addView(TextView(this).apply {
+            text = "Party List"
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        listHeaderRow.addView(TextView(this).apply {
+            text = "Tap a party for full history"
+            textSize = 11f
+            setTextColor(Color.parseColor(labelGray))
+        })
+        root.addView(listHeaderRow)
 
-        root.addView(divider())
-
-        root.addView(TextView(this).apply { text = "List (tap for history)"; textSize = 15f; setTextColor(Color.GRAY); setPadding(0,8,0,8) })
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        val scrollArea = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            addView(root)
+        }
+        outer.addView(scrollArea)
+
+        setContentView(outer)
 
         buildTabs()
         showCustomers()
@@ -88,20 +206,23 @@ class PartyActivity : AppCompatActivity() {
         if (showingCustomers) loadCustomers() else loadSuppliers()
     }
 
+    // ================= Tabs =================
     private fun buildTabs() {
         tabRow.removeAllViews()
         tabRow.addView(Button(this).apply {
-            text = "CUSTOMERS"
+            text = "\uD83D\uDC64  CUSTOMERS"
             setTextColor(Color.WHITE)
-            background = roundedBackground(if (showingCustomers) blue else "#90A4AE", 14)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,8,0) }
+            textSize = 12f
+            background = roundedBackground(if (showingCustomers) blue else "#B0B7C3", 24)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
             setOnClickListener { showCustomers() }
         })
         tabRow.addView(Button(this).apply {
-            text = "SUPPLIERS"
+            text = "\uD83D\uDCE6  SUPPLIERS"
             setTextColor(Color.WHITE)
-            background = roundedBackground(if (!showingCustomers) orange else "#90A4AE", 14)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8,0,0,0) }
+            textSize = 12f
+            background = roundedBackground(if (!showingCustomers) orange else "#B0B7C3", 24)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener { showSuppliers() }
         })
     }
@@ -109,14 +230,20 @@ class PartyActivity : AppCompatActivity() {
     private fun showCustomers() {
         showingCustomers = true
         buildTabs()
-        creditLimitField.visibility = View.VISIBLE
+        creditLimitBox.visibility = View.VISIBLE
+        sectionAccentText.text = "\uD83D\uDC64  Add Customer"
+        sectionAccentText.setTextColor(Color.parseColor(blue))
+        saveButton.background = roundedBackground(blue, 14)
         loadCustomers()
     }
 
     private fun showSuppliers() {
         showingCustomers = false
         buildTabs()
-        creditLimitField.visibility = View.GONE
+        creditLimitBox.visibility = View.GONE
+        sectionAccentText.text = "\uD83D\uDCE6  Add Supplier"
+        sectionAccentText.setTextColor(Color.parseColor(orange))
+        saveButton.background = roundedBackground(orange, 14)
         loadSuppliers()
     }
 
@@ -153,10 +280,10 @@ class PartyActivity : AppCompatActivity() {
             PosDatabase.get(this@PartyActivity).customerDao().all().collectLatest { list ->
                 listContainer.removeAllViews()
                 if (list.isEmpty()) {
-                    listContainer.addView(emptyText("Koi customer nahi hai"))
+                    listContainer.addView(emptyCard("Koi customer nahi hai"))
                 }
                 for (c in list) {
-                    listContainer.addView(partyRow(c.name, c.phone, c.openingBalance, c.balance) { openCustomerHistory(c) })
+                    listContainer.addView(partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64") { openCustomerHistory(c) })
                 }
             }
         }
@@ -167,58 +294,94 @@ class PartyActivity : AppCompatActivity() {
             PosDatabase.get(this@PartyActivity).supplierDao().all().collectLatest { list ->
                 listContainer.removeAllViews()
                 if (list.isEmpty()) {
-                    listContainer.addView(emptyText("Koi supplier nahi hai"))
+                    listContainer.addView(emptyCard("Koi supplier nahi hai"))
                 }
                 for (s in list) {
-                    listContainer.addView(partyRow(s.name, s.phone, s.openingBalance, s.balance) { openSupplierHistory(s) })
+                    listContainer.addView(partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6") { openSupplierHistory(s) })
                 }
             }
         }
     }
 
-    private fun partyRow(name: String, phone: String, opening: Double, running: Double, onClick: () -> Unit): LinearLayout {
+    // ================= Premium party row card =================
+    private fun partyRow(
+        name: String,
+        phone: String,
+        opening: Double,
+        running: Double,
+        accentHex: String,
+        icon: String,
+        onClick: () -> Unit
+    ): LinearLayout {
         val closing = opening + running
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 14, 16, 14)
+        val outerRow = premiumCard().apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 16, 18, 16)
             setOnClickListener { onClick() }
-            addView(TextView(this@PartyActivity).apply { text = name; textSize = 16f })
-            if (phone.isNotEmpty()) {
-                addView(TextView(this@PartyActivity).apply { text = phone; textSize = 13f; setTextColor(Color.GRAY) })
-            }
-            val balRow = LinearLayout(this@PartyActivity).apply { orientation = LinearLayout.HORIZONTAL }
-            balRow.addView(TextView(this@PartyActivity).apply {
-                text = "Opening: Rs %.2f".format(opening)
-                textSize = 13f
-                setTextColor(Color.DKGRAY)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            balRow.addView(TextView(this@PartyActivity).apply {
-                text = "Closing: Rs %.2f".format(closing)
-                textSize = 13f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(Color.parseColor(if (closing > 0) "#C62828" else "#2E7D32"))
-            })
-            addView(balRow)
-            addView(TextView(this@PartyActivity).apply {
-                text = "Tap for full history"
-                textSize = 11f
-                setTextColor(Color.parseColor(blue))
-                setPadding(0, 4, 0, 0)
-            })
-            addView(divider())
         }
+
+        outerRow.addView(TextView(this).apply {
+            text = icon
+            textSize = 18f
+            gravity = Gravity.CENTER
+            background = ovalBg(accentHex)
+            width = (42 * resources.displayMetrics.density).toInt()
+            height = (42 * resources.displayMetrics.density).toInt()
+        })
+
+        val infoCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 0, 12, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        infoCol.addView(TextView(this).apply {
+            text = name
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        if (phone.isNotEmpty()) {
+            infoCol.addView(TextView(this).apply {
+                text = phone
+                textSize = 12f
+                setTextColor(Color.parseColor(labelGray))
+            })
+        }
+        val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
+        balRow.addView(TextView(this).apply {
+            text = "Opening: Rs %.2f".format(opening)
+            textSize = 11f
+            setTextColor(Color.parseColor(labelGray))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        infoCol.addView(balRow)
+        infoCol.addView(TextView(this).apply {
+            text = "Tap for full history  ›"
+            textSize = 11f
+            setTextColor(Color.parseColor(accentHex))
+            setPadding(0, 4, 0, 0)
+        })
+        outerRow.addView(infoCol)
+
+        outerRow.addView(TextView(this).apply {
+            text = "Rs %.2f".format(closing)
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(if (closing > 0) red else green))
+        })
+
+        return outerRow
     }
 
     // ================= Customer full history =================
     private fun openCustomerHistory(c: Customer) {
         lifecycleScope.launch {
             val sales = PosDatabase.get(this@PartyActivity).saleDao().salesByCustomer(c.id)
-            val content = historyDialogContainer(c.name, blue, c.openingBalance, c.balance)
+            val content = historyDialogContainer(c.name, blue, "\uD83D\uDC64", c.openingBalance, c.balance)
             val body = content.getChildAt(1) as LinearLayout
 
             if (sales.isEmpty()) {
-                body.addView(emptyText("Koi sale nahi hui abhi tak"))
+                body.addView(emptyCard("Koi sale nahi hui abhi tak"))
             } else {
                 val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                 for (s in sales) {
@@ -229,6 +392,8 @@ class PartyActivity : AppCompatActivity() {
             val dialog = AlertDialog.Builder(this@PartyActivity).setView(content).create()
             (content.getChildAt(2) as LinearLayout).addView(Button(this@PartyActivity).apply {
                 text = "Close"
+                setTextColor(Color.WHITE)
+                background = roundedBackground(blue, 14)
                 setOnClickListener { dialog.dismiss() }
             })
             dialog.show()
@@ -239,11 +404,11 @@ class PartyActivity : AppCompatActivity() {
     private fun openSupplierHistory(s: Supplier) {
         lifecycleScope.launch {
             val purchases = PosDatabase.get(this@PartyActivity).purchaseDao().purchasesBySupplier(s.id)
-            val content = historyDialogContainer(s.name, orange, s.openingBalance, s.balance)
+            val content = historyDialogContainer(s.name, orange, "\uD83D\uDCE6", s.openingBalance, s.balance)
             val body = content.getChildAt(1) as LinearLayout
 
             if (purchases.isEmpty()) {
-                body.addView(emptyText("Koi purchase nahi hui abhi tak"))
+                body.addView(emptyCard("Koi purchase nahi hui abhi tak"))
             } else {
                 val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                 for (p in purchases) {
@@ -254,30 +419,56 @@ class PartyActivity : AppCompatActivity() {
             val dialog = AlertDialog.Builder(this@PartyActivity).setView(content).create()
             (content.getChildAt(2) as LinearLayout).addView(Button(this@PartyActivity).apply {
                 text = "Close"
+                setTextColor(Color.WHITE)
+                background = roundedBackground(orange, 14)
                 setOnClickListener { dialog.dismiss() }
             })
             dialog.show()
         }
     }
 
-    // ================= shared dialog helpers =================
-    private fun historyDialogContainer(name: String, colorHex: String, opening: Double, running: Double): LinearLayout {
-        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+    // ================= shared dialog helpers (premium gradient header dialog) =================
+    private fun historyDialogContainer(name: String, colorHex: String, icon: String, opening: Double, running: Double): LinearLayout {
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(bg))
+                cornerRadius = 20f
+            }
+        }
 
         val header = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(28, 24, 28, 24)
-            setBackgroundColor(Color.parseColor(colorHex))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(colorHex), darken(colorHex))
+            ).apply {
+                cornerRadii = floatArrayOf(20f, 20f, 20f, 20f, 0f, 0f, 0f, 0f)
+            }
         }
         header.addView(TextView(this).apply {
-            text = name; textSize = 18f
+            text = icon
+            textSize = 18f
+            gravity = Gravity.CENTER
+            background = ovalBg(cardWhite)
+            width = (40 * resources.displayMetrics.density).toInt()
+            height = (40 * resources.displayMetrics.density).toInt()
+        })
+        val headerTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 0, 0, 0)
+        }
+        headerTextCol.addView(TextView(this).apply {
+            text = name; textSize = 17f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
-        val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 10, 0, 0) }
+        val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
         balRow.addView(TextView(this).apply {
             text = "Opening: Rs %.2f".format(opening)
-            setTextColor(Color.WHITE); textSize = 12f
+            setTextColor(Color.parseColor("#EAEAFF")); textSize = 11f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         balRow.addView(TextView(this).apply {
@@ -285,7 +476,8 @@ class PartyActivity : AppCompatActivity() {
             setTextColor(Color.WHITE); textSize = 12f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
-        header.addView(balRow)
+        headerTextCol.addView(balRow)
+        header.addView(headerTextCol)
         outer.addView(header)
 
         val body = LinearLayout(this).apply {
@@ -305,13 +497,14 @@ class PartyActivity : AppCompatActivity() {
     private fun historyRow(ref: String, date: String, total: Double, paid: Double, colorHex: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 12, 16, 12)
-            background = roundedBackground("#F4F3FB", 10)
+            setPadding(18, 14, 18, 14)
+            background = elevatedCardBg()
+            elevation = 3f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 8) }
+            ).apply { setMargins(0, 0, 0, 10) }
 
-            val top = LinearLayout(this@PartyActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            val top = LinearLayout(this@PartyActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             top.addView(TextView(this@PartyActivity).apply {
                 text = ref; textSize = 14f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -320,26 +513,81 @@ class PartyActivity : AppCompatActivity() {
             top.addView(TextView(this@PartyActivity).apply {
                 text = "Rs %.2f".format(total)
                 setTextColor(Color.parseColor(colorHex))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
                 textSize = 14f
             })
             addView(top)
             addView(TextView(this@PartyActivity).apply {
                 text = "$date  •  Paid: Rs %.2f".format(paid)
                 textSize = 11f
-                setTextColor(Color.GRAY)
+                setTextColor(Color.parseColor(labelGray))
+                setPadding(0, 4, 0, 0)
             })
         }
     }
 
-    private fun emptyText(text: String) = TextView(this).apply {
-        this.text = text
-        setTextColor(Color.GRAY)
-        setPadding(8,8,8,8)
+    private fun emptyCard(text: String) = premiumCard().apply {
+        gravity = Gravity.CENTER
+        setPadding(20, 24, 20, 24)
+        addView(TextView(this@PartyActivity).apply {
+            this.text = text
+            setTextColor(Color.parseColor(labelGray))
+            textSize = 13f
+        })
+    }
+
+    // ---- UI helpers ----
+
+    /** Elevated white card matching the dashboard's stat cards. */
+    private fun premiumCard() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(20, 16, 20, 16)
+        background = elevatedCardBg()
+        elevation = 4f
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(0, 0, 0, 12) }
+    }
+
+    /** Lighter inner wrapper used for text fields inside a card. */
+    private fun innerField() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(18, 10, 18, 10)
+        background = GradientDrawable().apply {
+            setColor(Color.parseColor("#F7F7FB"))
+            cornerRadius = 10f
+        }
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+    }
+
+    private fun elevatedCardBg() = GradientDrawable().apply {
+        setColor(Color.parseColor(cardWhite))
+        cornerRadius = 16f
+    }
+
+    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.parseColor(colorHex))
     }
 
     private fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(colorHex))
         this.cornerRadius = cornerRadius.toFloat()
+    }
+
+    private fun darken(colorHex: String): Int {
+        val c = Color.parseColor(colorHex)
+        val hsv = FloatArray(3)
+        Color.colorToHSV(c, hsv)
+        hsv[2] *= 0.75f
+        return Color.HSVToColor(hsv)
+    }
+
+    private fun spacer(heightDp: Int) = View(this).apply {
+        val px = (heightDp * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
 
     private fun divider(): View {
