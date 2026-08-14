@@ -463,13 +463,13 @@ class SaleActivity : AppCompatActivity() {
         applyElevation(this, 2f)
     }
 
-    private fun labelRow(icon: String, text: String) = LinearLayout(this).apply {
+    private fun labelRow(icon: String, label: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, 0, 0, 4)
-        addView(TextView(this@SaleActivity).apply { text = "$icon  "; textSize = 12f })
+        addView(TextView(this@SaleActivity).apply { this.text = "$icon  "; textSize = 12f })
         addView(TextView(this@SaleActivity).apply {
-            this.text = text; textSize = 11.5f
+            this.text = label; textSize = 11.5f
             setTextColor(Color.parseColor(textGray))
         })
     }
