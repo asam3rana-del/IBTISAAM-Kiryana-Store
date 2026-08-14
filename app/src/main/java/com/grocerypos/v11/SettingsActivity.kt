@@ -297,14 +297,6 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(loginCard)
         root.addView(spacer(18))
 
-        // ---- Category & Units ----
-        val catUnitCard = sectionCard("🗂️", "Category & Units")
-        catUnitCard.addView(secondaryButton("🗂️  VIEW CATEGORY & UNIT DETAILS", purple) {
-            startActivity(Intent(this@SettingsActivity, CategoryUnitsActivity::class.java))
-        })
-        root.addView(catUnitCard)
-        root.addView(spacer(18))
-
         // ---- Categories & Units ----
         val categoriesCard = sectionCard("🗂️", "Categories & Units")
         categoriesCard.addView(secondaryButton("🗂️  VIEW CATEGORIES & UNITS", amber) {
