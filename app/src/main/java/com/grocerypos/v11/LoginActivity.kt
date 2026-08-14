@@ -4,6 +4,9 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.MainActivity
@@ -12,6 +15,8 @@ import com.grocerypos.v11.User
 import kotlinx.coroutines.launch
 
 class LoginActivity : AppCompatActivity() {
+
+    private lateinit var loggedInUser: User
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -53,18 +58,67 @@ class LoginActivity : AppCompatActivity() {
                 val db = PosDatabase.get(this@LoginActivity)
                 val user = db.userDao().find(u.text.toString().trim())
                 if (user != null && user.passwordHash == p.text.toString()) {
-                    getSharedPreferences("session", MODE_PRIVATE)
-                        .edit()
-                        .putString("username", user.username)
-                        .putString("role", user.role)
-                        .apply()
-                    Toast.makeText(this@LoginActivity, "Welcome ${user.displayName}", Toast.LENGTH_SHORT).show()
-                    startActivity(Intent(this@LoginActivity, MainActivity::class.java))
-                    finish()
+                    loggedInUser = user
+                    // Password sahi hai — ab fingerprint mangenge (extra security layer)
+                    requireFingerprintThenProceed()
                 } else {
                     Toast.makeText(this@LoginActivity, "Invalid login", Toast.LENGTH_SHORT).show()
                 }
             }
         }
+    }
+
+    /** Password ke baad fingerprint verify karta hai; agar device par fingerprint set hi nahi hai to seedha login continue kar deta hai. */
+    private fun requireFingerprintThenProceed() {
+        val biometricManager = BiometricManager.from(this)
+        val canAuthenticate = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+
+        if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+            // Is device par fingerprint hardware/enrollment nahi hai — normal login se aage badhein
+            Toast.makeText(this, "Fingerprint set nahi hai is device par, password se login ho raha hai", Toast.LENGTH_SHORT).show()
+            completeLogin()
+            return
+        }
+
+        val executor = ContextCompat.getMainExecutor(this)
+        val biometricPrompt = BiometricPrompt(
+            this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    completeLogin()
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    Toast.makeText(this@LoginActivity, "Fingerprint verify nahi hua: $errString", Toast.LENGTH_LONG).show()
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    Toast.makeText(this@LoginActivity, "Fingerprint match nahi hua, dobara try karein", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Fingerprint Verify Karein")
+            .setSubtitle("Login complete karne ke liye apni fingerprint dikhayein")
+            .setNegativeButtonText("Cancel")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .build()
+
+        biometricPrompt.authenticate(promptInfo)
+    }
+
+    private fun completeLogin() {
+        getSharedPreferences("session", MODE_PRIVATE)
+            .edit()
+            .putString("username", loggedInUser.username)
+            .putString("role", loggedInUser.role)
+            .apply()
+        Toast.makeText(this, "Welcome ${loggedInUser.displayName}", Toast.LENGTH_SHORT).show()
+        startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+        finish()
     }
 }
