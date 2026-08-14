@@ -297,12 +297,12 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(loginCard)
         root.addView(spacer(18))
 
-        // ---- Categories & Units ----
-        val categoriesCard = sectionCard("🗂️", "Categories & Units")
-        categoriesCard.addView(secondaryButton("🗂️  VIEW CATEGORIES & UNITS", amber) {
-            startActivity(Intent(this@SettingsActivity, CategoriesUnitsActivity::class.java))
+        // ---- Items (Products / Categories / Units) ----
+        val itemsCard = sectionCard("🗃️", "Items")
+        itemsCard.addView(secondaryButton("🗃️  OPEN ITEMS", amber) {
+            startActivity(Intent(this@SettingsActivity, ItemsActivity::class.java))
         })
-        root.addView(categoriesCard)
+        root.addView(itemsCard)
         root.addView(spacer(18))
 
         // ---- Users & Account ----
