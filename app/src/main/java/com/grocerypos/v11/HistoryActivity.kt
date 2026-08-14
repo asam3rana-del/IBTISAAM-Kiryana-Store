@@ -11,6 +11,7 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.ReturnLine
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -102,7 +103,8 @@ class HistoryActivity : AppCompatActivity() {
                     subtitle = "${s.customerName}  •  ${s.paymentMethod}",
                     amount = s.total,
                     date = fmt.format(Date(s.createdAt)),
-                    color = "#2E7D32"
+                    color = "#2E7D32",
+                    returned = s.status == "returned"
                 ) { openSaleDetail(s.invoice) })
             }
         }
@@ -123,7 +125,8 @@ class HistoryActivity : AppCompatActivity() {
                     subtitle = p.supplierName,
                     amount = p.total,
                     date = fmt.format(Date(p.createdAt)),
-                    color = "#EF6C00"
+                    color = "#EF6C00",
+                    returned = p.status == "returned"
                 ) { openPurchaseDetail(p.billNo) })
             }
         }
@@ -135,10 +138,14 @@ class HistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@HistoryActivity)
             val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
+            val isReturned = sale.status == "returned"
 
             val content = detailContainer("Sale: $invoice", "#2E7D32")
             val body = content.getChildAt(1) as LinearLayout
 
+            if (isReturned) {
+                body.addView(returnedBanner())
+            }
             body.addView(kv("Total", "Rs %.2f".format(sale.total)))
             body.addView(kv("Paid", "Rs %.2f".format(sale.paid)))
             body.addView(kv("Payment Method", sale.paymentMethod))
@@ -156,24 +163,82 @@ class HistoryActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener { dialog.dismiss() }
             })
-            footer.addView(Button(this@HistoryActivity).apply {
-                text = "Delete (Reverse)"
-                setTextColor(Color.WHITE)
-                background = roundedBackground("#C62828", 12)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setOnClickListener {
-                    AlertDialog.Builder(this@HistoryActivity)
-                        .setTitle("Sale delete karen?")
-                        .setMessage("Stock aur cash record wapas revert ho jayenge. Ye action undo nahi ho sakta.")
-                        .setPositiveButton("Delete") { _, _ ->
-                            deleteSale(invoice)
-                            dialog.dismiss()
-                        }
-                        .setNegativeButton("Cancel", null)
-                        .show()
-                }
-            })
+
+            if (!isReturned) {
+                footer.addView(Button(this@HistoryActivity).apply {
+                    text = "↩ Return"
+                    setTextColor(Color.WHITE)
+                    background = roundedBackground("#EF6C00", 12)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setOnClickListener {
+                        AlertDialog.Builder(this@HistoryActivity)
+                            .setTitle("Sale return karen?")
+                            .setMessage("Stock wapas add ho jayega aur customer ka udhaar adjust ho jayega. Record History mein 'Returned' ke tor par reh jayega.")
+                            .setPositiveButton("Return") { _, _ ->
+                                returnSale(invoice)
+                                dialog.dismiss()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                })
+                footer.addView(Button(this@HistoryActivity).apply {
+                    text = "Delete"
+                    setTextColor(Color.WHITE)
+                    background = roundedBackground("#C62828", 12)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setOnClickListener {
+                        AlertDialog.Builder(this@HistoryActivity)
+                            .setTitle("Sale delete karen?")
+                            .setMessage("Stock aur cash record wapas revert ho jayenge. Ye action undo nahi ho sakta.")
+                            .setPositiveButton("Delete") { _, _ ->
+                                deleteSale(invoice)
+                                dialog.dismiss()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                })
+            }
             dialog.show()
+        }
+    }
+
+    /** Reverses stock/balance like delete, but keeps the sale record and marks it as returned. */
+    private fun returnSale(invoice: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@HistoryActivity)
+            val sale = db.saleDao().findSale(invoice) ?: return@launch
+            if (sale.status == "returned") {
+                Toast.makeText(this@HistoryActivity, "Ye sale pehle hi return ho chuki hai", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val items = db.saleDao().itemsForInvoice(invoice)
+
+            // Stock wapas add karo (jitna becha tha)
+            for (it in items) {
+                db.productDao().increase(it.barcode, it.qty)
+                db.returnDao().insert(
+                    ReturnLine(
+                        reference = invoice,
+                        type = "sale",
+                        barcode = it.barcode,
+                        qty = it.qty,
+                        amount = it.amount
+                    )
+                )
+            }
+
+            // Agar customer ka udhar tha to wo wapas kam karo
+            if (sale.customerId != null && sale.paid < sale.total) {
+                db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
+            }
+
+            db.cashTransactionDao().deleteByReference(invoice)
+            db.saleDao().markReturned(invoice)
+
+            Toast.makeText(this@HistoryActivity, "Sale return ho gayi, stock revert ho gaya", Toast.LENGTH_LONG).show()
+            loadSales()
         }
     }
 
@@ -208,10 +273,14 @@ class HistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@HistoryActivity)
             val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
+            val isReturned = purchase.status == "returned"
 
             val content = detailContainer("Purchase: $billNo", "#EF6C00")
             val body = content.getChildAt(1) as LinearLayout
 
+            if (isReturned) {
+                body.addView(returnedBanner())
+            }
             body.addView(kv("Total", "Rs %.2f".format(purchase.total)))
             body.addView(kv("Paid", "Rs %.2f".format(purchase.paid)))
             body.addView(spacer())
@@ -228,37 +297,95 @@ class HistoryActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener { dialog.dismiss() }
             })
-            footer.addView(Button(this@HistoryActivity).apply {
-                text = "Edit"
-                setTextColor(Color.WHITE)
-                background = roundedBackground("#1565C0", 12)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setOnClickListener {
-                    dialog.dismiss()
-                    startActivity(
-                        Intent(this@HistoryActivity, PurchaseActivity::class.java)
-                            .putExtra(PurchaseActivity.EXTRA_BILL_NO, billNo)
-                    )
-                }
-            })
-            footer.addView(Button(this@HistoryActivity).apply {
-                text = "Delete (Reverse)"
-                setTextColor(Color.WHITE)
-                background = roundedBackground("#C62828", 12)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setOnClickListener {
-                    AlertDialog.Builder(this@HistoryActivity)
-                        .setTitle("Purchase delete karen?")
-                        .setMessage("Stock aur cash record wapas revert ho jayenge. Ye action undo nahi ho sakta.")
-                        .setPositiveButton("Delete") { _, _ ->
-                            deletePurchase(billNo)
-                            dialog.dismiss()
-                        }
-                        .setNegativeButton("Cancel", null)
-                        .show()
-                }
-            })
+
+            if (!isReturned) {
+                footer.addView(Button(this@HistoryActivity).apply {
+                    text = "Edit"
+                    setTextColor(Color.WHITE)
+                    background = roundedBackground("#1565C0", 12)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setOnClickListener {
+                        dialog.dismiss()
+                        startActivity(
+                            Intent(this@HistoryActivity, PurchaseActivity::class.java)
+                                .putExtra(PurchaseActivity.EXTRA_BILL_NO, billNo)
+                        )
+                    }
+                })
+                footer.addView(Button(this@HistoryActivity).apply {
+                    text = "↩ Return"
+                    setTextColor(Color.WHITE)
+                    background = roundedBackground("#EF6C00", 12)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setOnClickListener {
+                        AlertDialog.Builder(this@HistoryActivity)
+                            .setTitle("Purchase return karen?")
+                            .setMessage("Stock wapas kam ho jayega aur supplier ka udhaar adjust ho jayega. Record History mein 'Returned' ke tor par reh jayega.")
+                            .setPositiveButton("Return") { _, _ ->
+                                returnPurchase(billNo)
+                                dialog.dismiss()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                })
+                footer.addView(Button(this@HistoryActivity).apply {
+                    text = "Delete"
+                    setTextColor(Color.WHITE)
+                    background = roundedBackground("#C62828", 12)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setOnClickListener {
+                        AlertDialog.Builder(this@HistoryActivity)
+                            .setTitle("Purchase delete karen?")
+                            .setMessage("Stock aur cash record wapas revert ho jayenge. Ye action undo nahi ho sakta.")
+                            .setPositiveButton("Delete") { _, _ ->
+                                deletePurchase(billNo)
+                                dialog.dismiss()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                })
+            }
             dialog.show()
+        }
+    }
+
+    /** Reverses stock/balance like delete, but keeps the purchase record and marks it as returned. */
+    private fun returnPurchase(billNo: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@HistoryActivity)
+            val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
+            if (purchase.status == "returned") {
+                Toast.makeText(this@HistoryActivity, "Ye purchase pehle hi return ho chuki hai", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val items = db.purchaseDao().itemsForBill(billNo)
+
+            // Stock wapas kam karo (jitna khareeda tha)
+            for (it in items) {
+                db.productDao().decrease(it.barcode, it.qty)
+                db.returnDao().insert(
+                    ReturnLine(
+                        reference = billNo,
+                        type = "purchase",
+                        barcode = it.barcode,
+                        qty = it.qty,
+                        amount = it.amount
+                    )
+                )
+            }
+
+            // Agar supplier ka udhar tha to wo wapas kam karo
+            if (purchase.supplierId != null && purchase.paid < purchase.total) {
+                db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
+            }
+
+            db.cashTransactionDao().deleteByReference(billNo)
+            db.purchaseDao().markReturned(billNo)
+
+            Toast.makeText(this@HistoryActivity, "Purchase return ho gayi, stock revert ho gaya", Toast.LENGTH_LONG).show()
+            loadPurchases()
         }
     }
 
@@ -316,6 +443,22 @@ class HistoryActivity : AppCompatActivity() {
         return outer
     }
 
+    private fun returnedBanner() = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(16, 10, 16, 10)
+        background = roundedBackground("#FFEBEE", 10)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(0, 0, 0, 12) }
+        addView(TextView(this@HistoryActivity).apply {
+            text = "↩ RETURNED"
+            textSize = 12.5f
+            setTextColor(Color.parseColor("#C62828"))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+    }
+
     private fun kv(label: String, value: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, 4, 0, 4)
@@ -349,21 +492,36 @@ class HistoryActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 16)
     }
 
-    private fun row(title: String, subtitle: String, amount: Double, date: String, color: String, onClick: () -> Unit): LinearLayout {
+    private fun row(title: String, subtitle: String, amount: Double, date: String, color: String, returned: Boolean, onClick: () -> Unit): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 14, 16, 14)
             setOnClickListener { onClick() }
 
-            val topRow = LinearLayout(this@HistoryActivity).apply { orientation = LinearLayout.HORIZONTAL }
-            topRow.addView(TextView(this@HistoryActivity).apply {
+            val topRow = LinearLayout(this@HistoryActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val titleCol = LinearLayout(this@HistoryActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            titleCol.addView(TextView(this@HistoryActivity).apply {
                 text = title
                 textSize = 15f
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
+            if (returned) {
+                titleCol.addView(TextView(this@HistoryActivity).apply {
+                    text = "  RETURNED"
+                    textSize = 10f
+                    setTextColor(Color.WHITE)
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBackground("#C62828", 8)
+                    setPadding(12, 4, 12, 4)
+                })
+            }
+            topRow.addView(titleCol)
             topRow.addView(TextView(this@HistoryActivity).apply {
                 text = "Rs %.2f".format(amount)
-                setTextColor(Color.parseColor(color))
+                setTextColor(if (returned) Color.GRAY else Color.parseColor(color))
                 textSize = 15f
             })
             addView(topRow)
