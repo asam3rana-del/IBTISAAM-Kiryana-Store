@@ -46,7 +46,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var newPasswordField: EditText
     private lateinit var printerStatusText: TextView
     private lateinit var printerStatusDot: TextView
-    private lateinit var fingerprintSwitch: Switch
+    private lateinit var loginMethodGroup: RadioGroup
+    private lateinit var passwordOnlyRadio: RadioButton
+    private lateinit var fingerprintOnlyRadio: RadioButton
+    private lateinit var bothRadio: RadioButton
 
     // Shop Information fields
     private lateinit var shopNameField: EditText
@@ -207,44 +210,42 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(backupCard)
         root.addView(spacer(18))
 
-        // ---- Security (Fingerprint Lock) ----
-        val securityCard = sectionCard("🔐", "Security")
-        val fpRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, "#FAFAFF", 14)
-            setPadding(18, 10, 18, 10)
-        }
-        val fpLabelCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        fpLabelCol.addView(TextView(this).apply {
-            text = "👆  Fingerprint Login"
-            textSize = 13.5f
+        // ---- Security (Login Method) ----
+        val securityCard = sectionCard("🔐", "Security — Login Method")
+
+        loginMethodGroup = RadioGroup(this).apply { orientation = LinearLayout.VERTICAL }
+        passwordOnlyRadio = RadioButton(this).apply {
+            text = "🔑  Password Only"
             setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        fpLabelCol.addView(TextView(this).apply {
-            text = "On = Password + Fingerprint required\nOff = Password only"
-            textSize = 11f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(0, 4, 0, 0)
-        })
-        fingerprintSwitch = Switch(this).apply {
-            setOnCheckedChangeListener { _, isChecked ->
-                lifecycleScope.launch {
-                    val db = PosDatabase.get(this@SettingsActivity)
-                    db.appSettingDao().set(AppSetting("fingerprint_enabled", if (isChecked) "1" else "0"))
-                }
+        }
+        fingerprintOnlyRadio = RadioButton(this).apply {
+            text = "👆  Fingerprint Only"
+            setTextColor(Color.parseColor(textDark))
+        }
+        bothRadio = RadioButton(this).apply {
+            text = "🔑👆  Both (Password + Fingerprint)"
+            setTextColor(Color.parseColor(textDark))
+        }
+        loginMethodGroup.addView(passwordOnlyRadio)
+        loginMethodGroup.addView(fingerprintOnlyRadio)
+        loginMethodGroup.addView(bothRadio)
+        securityCard.addView(loginMethodGroup)
+
+        loginMethodGroup.setOnCheckedChangeListener { _, checkedId ->
+            val method = when (checkedId) {
+                fingerprintOnlyRadio.id -> "fingerprint"
+                bothRadio.id -> "both"
+                else -> "password"
+            }
+            lifecycleScope.launch {
+                val db = PosDatabase.get(this@SettingsActivity)
+                db.appSettingDao().set(AppSetting("login_method", method))
             }
         }
-        fpRow.addView(fpLabelCol)
-        fpRow.addView(fingerprintSwitch)
-        securityCard.addView(fpRow)
+
         root.addView(securityCard)
         root.addView(spacer(18))
-        loadFingerprintSetting()
+        loadLoginMethodSetting()
 
         // ---- Change Username / Password ----
         val loginCard = sectionCard("🔑", "Change Login (Username / Password)")
@@ -459,11 +460,14 @@ class SettingsActivity : AppCompatActivity() {
 
     // ================= SECURITY (FINGERPRINT TOGGLE) =================
 
-    private fun loadFingerprintSetting() {
+    private fun loadLoginMethodSetting() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
-            val enabled = db.appSettingDao().get("fingerprint_enabled")?.value == "1"
-            fingerprintSwitch.isChecked = enabled
+            when (db.appSettingDao().get("login_method")?.value ?: "password") {
+                "fingerprint" -> fingerprintOnlyRadio.isChecked = true
+                "both" -> bothRadio.isChecked = true
+                else -> passwordOnlyRadio.isChecked = true
+            }
         }
     }
 
