@@ -321,9 +321,9 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun applyFloatingSheetLayout() {
         val screenWidth = resources.displayMetrics.widthPixels
-        window.setGravity(Gravity.END)
+        window.setGravity(Gravity.START)
         window.setLayout(
-            (screenWidth * 0.35).toInt(),
+            (screenWidth * 0.80).toInt(),
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         // windowAnimationStyle from the theme handles slide-in; no extra call needed here.
