@@ -26,6 +26,7 @@
         <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
         <activity android:name=".ui.PartyActivity" />
         <activity android:name=".ui.UserManagementActivity" />
+        <activity android:name=".ui.PartyReportsActivity" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
