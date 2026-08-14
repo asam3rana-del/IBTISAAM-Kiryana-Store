@@ -13,6 +13,7 @@ data class SupplierPurchaseTotal(val supplierName:String,val total:Double)
 data class SaleWithCustomer(val invoice:String,val customerName:String,val total:Double,val paymentMethod:String,val createdAt:Long)
 data class CustomerSalesTotal(val customerName:String,val total:Double)
 data class DailyProfit(val day:String,val profit:Double)
+data class PartyItemReport(val product:String,val totalAmount:Double,val totalQty:Int)
 
 @Entity(tableName="units")
 data class UnitType(@PrimaryKey val name:String)
@@ -267,6 +268,164 @@ interface ProductDao {
 
     @Query("DELETE FROM sales WHERE invoice=:invoice")
     suspend fun deleteSale(invoice:String)
+
+    // ---- Profit (sale price - cost) ----
+    @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
+    suspend fun profitBetween(start:Long,end:Long):Double
+    @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch') as day, COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
+    suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
+
+    // ---- Item-wise report for a single customer (used by Party Report by Item) ----
+    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId GROUP BY si.product ORDER BY totalAmount DESC")
+    suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
+}
+
+@Dao interface ExpenseDao {
+    @Insert suspend fun insert(e:Expense)
+    @Query("SELECT COALESCE(SUM(amount),0) FROM expenses") suspend fun total():Double
+    @Query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE createdAt BETWEEN :start AND :end")
+    suspend fun totalBetween(start:Long,end:Long):Double
+}
+
+@Dao interface HeldDao {
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun hold(h:HeldBill)
+    @Query("SELECT * FROM held_bills ORDER BY createdAt DESC") fun all():Flow<List<HeldBill>>
+    @Delete suspend fun delete(h:HeldBill)
+}
+
+@Dao interface PaymentDao {
+    @Insert suspend fun insert(p:Payment)
+    @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double
+    @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE method=:method AND createdAt BETWEEN :start AND :end")
+    suspend fun totalByMethodBetween(method:String,start:Long,end:Long):Double
+    @Query("DELETE FROM payments WHERE reference=:ref")
+    suspend fun deleteByReference(ref:String)
+}
+
+@Dao interface PurchaseDao {
+    @Insert suspend fun purchase(p:Purchase)
+    @Insert suspend fun items(items:List<PurchaseItem>)
+    @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
+    @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end")
+    suspend fun totalBetween(start:Long,end:Long):Double
+    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt FROM purchases ORDER BY createdAt DESC LIMIT 100")
+    suspend fun allPurchases():List<PurchaseWithSupplier>
+
+    @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC")
+    suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
+
+    @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1")
+    suspend fun findPurchase(bill:String):Purchase?
+
+    @Query("SELECT * FROM purchase_items WHERE billNo=:bill")
+    suspend fun itemsForBill(bill:String):List<PurchaseItem>
+
+    @Query("DELETE FROM purchase_items WHERE billNo=:bill")
+    suspend fun deleteItems(bill:String)
+
+    @Query("DELETE FROM purchases WHERE billNo=:bill")
+    suspend fun deletePurchase(bill:String)
+
+    // ---- Item-wise report for a single supplier (used by Party Report by Item) ----
+    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId GROUP BY p.name ORDER BY totalAmount DESC")
+    suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
+}
+
+@Dao interface ReturnDao {
+    @Insert suspend fun insert(r:ReturnLine)
+    @Query("SELECT COALESCE(SUM(amount),0) FROM returns WHERE type=:type") suspend fun totalByType(type:String):Double
+}
+
+@Dao interface UserDao {
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(u:User)
+    @Query("SELECT * FROM users WHERE username=:u AND active=1 LIMIT 1") suspend fun find(u:String):User?
+    @Query("SELECT * FROM users ORDER BY username") fun all():Flow<List<User>>
+    @Query("DELETE FROM users WHERE username=:u") suspend fun delete(u:String)
+}
+
+@Dao interface AuditDao { @Insert suspend fun insert(a:Audit) }
+
+@Dao interface CashTransactionDao {
+    @Insert suspend fun insert(t:CashTransaction)
+    @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
+    @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end")
+    suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
+
+    @Query("DELETE FROM cash_transactions WHERE reference=:ref")
+    suspend fun deleteByReference(ref:String)
+}
+
+@Dao interface CashRegisterDao {
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(r:CashRegister)
+    @Query("SELECT * FROM cash_register WHERE date=:date LIMIT 1") suspend fun find(date:String):CashRegister?
+    @Query("SELECT * FROM cash_register ORDER BY date DESC") fun all():Flow<List<CashRegister>>
+}
+
+@Dao interface AppSettingDao {
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun set(s:AppSetting)
+    @Query("SELECT * FROM app_settings WHERE key=:key LIMIT 1") suspend fun get(key:String):AppSetting?
+    @Query("SELECT * FROM app_settings") fun all():Flow<List<AppSetting>>
+}
+
+// v13 -> v14: purchase_items gains a `unit` column (which unit — main or
+// secondary — a purchase line was bought in). Existing rows default to ''
+// and are treated as "unknown unit" by the UI, which falls back to the
+// product's current default unit for display. No data is lost.
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE purchase_items ADD COLUMN unit TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+// v14 -> v15: customers and suppliers gain an `openingBalance` column (their
+// previous due before the app started tracking balances). Existing rows
+// default to 0.0, so nobody's current running balance changes.
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE customers ADD COLUMN openingBalance REAL NOT NULL DEFAULT 0.0")
+        database.execSQL("ALTER TABLE suppliers ADD COLUMN openingBalance REAL NOT NULL DEFAULT 0.0")
+    }
+}
+
+@Database(
+    entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
+        Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
+        Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
+        CashRegister::class,AppSetting::class],
+    version=15, exportSchema=false
+)
+abstract class PosDatabase:RoomDatabase(){
+    abstract fun productDao():ProductDao
+    abstract fun customerDao():CustomerDao
+    abstract fun supplierDao():SupplierDao
+    abstract fun saleDao():SaleDao
+    abstract fun expenseDao():ExpenseDao
+    abstract fun paymentDao():PaymentDao
+    abstract fun purchaseDao():PurchaseDao
+    abstract fun returnDao():ReturnDao
+    abstract fun userDao():UserDao
+    abstract fun auditDao():AuditDao
+    abstract fun heldDao():HeldDao
+    abstract fun unitDao():UnitDao
+    abstract fun categoryDao():CategoryDao
+    abstract fun cashTransactionDao():CashTransactionDao
+    abstract fun cashRegisterDao():CashRegisterDao
+    abstract fun appSettingDao():AppSettingDao
+    companion object{
+        @Volatile private var INSTANCE:PosDatabase?=null
+        fun get(c:Context)=INSTANCE?: synchronized(this){
+            INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15)
+                .fallbackToDestructiveMigration()
+                .build().also{INSTANCE=it}
+        }
+        fun closeInstance() {
+            INSTANCE?.close()
+            INSTANCE = null
+        }
+    }
+}
+n deleteSale(invoice:String)
 
     // ---- Profit (sale price - cost) ----
     @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
