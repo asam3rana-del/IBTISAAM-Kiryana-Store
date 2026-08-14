@@ -155,6 +155,11 @@ class ReportsActivity : AppCompatActivity() {
             val topProducts = db.saleDao().topProducts(rangeStart, rangeEnd)
             val dailySales = db.saleDao().dailySales(rangeStart, rangeEnd)
 
+            // ---- Profit & Loss inputs ----
+            val cogs = db.saleDao().cogsBetween(rangeStart, rangeEnd)
+            val grossProfit = totalSales - cogs
+            val netProfit = grossProfit - totalExpenses
+
             resultsBox.removeAllViews()
 
             resultsBox.addView(summaryCard("💰", "Total Sales", "Rs %.2f".format(totalSales), "#1565C0", "#E3F2FD"))
@@ -164,6 +169,18 @@ class ReportsActivity : AppCompatActivity() {
             resultsBox.addView(summaryCard("🧮", "Number of Sales", "$saleCount", "#6A1B9A", "#F3E5F5"))
 
             resultsBox.addView(spacer(10))
+
+            resultsBox.addView(
+                profitLossCard(
+                    revenue = totalSales,
+                    cogs = cogs,
+                    grossProfit = grossProfit,
+                    expenses = totalExpenses,
+                    netProfit = netProfit
+                )
+            )
+
+            resultsBox.addView(spacer(14))
 
             resultsBox.addView(listCard("Top Products", topProducts.isEmpty(), "Is period mein koi sale nahi hui") { box ->
                 topProducts.forEach { tp -> box.addView(rowText(tp.product, "${tp.totalQty} sold")) }
@@ -220,6 +237,87 @@ class ReportsActivity : AppCompatActivity() {
                 setPadding(0, 4, 0, 0)
             })
             addView(textCol)
+        }
+    }
+
+    /**
+     * Profit & Loss statement card:
+     *   Sales Revenue
+     *   (-) Cost of Goods Sold
+     *   = Gross Profit
+     *   (-) Operating Expenses
+     *   = Net Profit / Loss
+     */
+    private fun profitLossCard(
+        revenue: Double,
+        cogs: Double,
+        grossProfit: Double,
+        expenses: Double,
+        netProfit: Double
+    ): LinearLayout {
+        val netColor = if (netProfit >= 0) "#2E7D32" else "#C62828"
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22, 20, 22, 20)
+            background = roundedBg(cardWhite, 20)
+            elevation = 4f
+
+            val titleRow = LinearLayout(this@ReportsActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 0, 0, 14)
+            }
+            titleRow.addView(TextView(this@ReportsActivity).apply {
+                text = "📊  "
+                textSize = 15f
+            })
+            titleRow.addView(TextView(this@ReportsActivity).apply {
+                text = "Profit & Loss Statement"
+                textSize = 15f
+                setTextColor(Color.parseColor(textDark))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(titleRow)
+
+            addView(plRow("Sales Revenue", revenue, textDark, bold = false))
+            addView(plRow("(-) Cost of Goods Sold", cogs, "#C62828", bold = false, isDeduction = true))
+            addView(plDivider())
+            addView(plRow("Gross Profit", grossProfit, "#1565C0", bold = true))
+            addView(spacer(4))
+            addView(plRow("(-) Operating Expenses", expenses, "#C62828", bold = false, isDeduction = true))
+            addView(plDivider())
+            addView(plRow(if (netProfit >= 0) "Net Profit" else "Net Loss", netProfit, netColor, bold = true, big = true))
+        }
+    }
+
+    private fun plRow(label: String, amount: Double, colorHex: String, bold: Boolean, isDeduction: Boolean = false, big: Boolean = false): LinearLayout {
+        val displayAmount = if (isDeduction) "Rs %.2f".format(amount) else "Rs %.2f".format(amount)
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 6, 0, 6)
+            addView(TextView(this@ReportsActivity).apply {
+                text = label
+                textSize = if (big) 15f else 13.5f
+                setTextColor(if (bold) Color.parseColor(textDark) else Color.parseColor(textMuted))
+                if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@ReportsActivity).apply {
+                text = displayAmount
+                textSize = if (big) 16f else 13.5f
+                setTextColor(Color.parseColor(colorHex))
+                setTypeface(typeface, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                gravity = Gravity.END
+            })
+        }
+    }
+
+    private fun plDivider(): View {
+        return View(this).apply {
+            setBackgroundColor(Color.parseColor("#EDEEF5"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
+                setMargins(0, 8, 0, 8)
+            }
         }
     }
 
