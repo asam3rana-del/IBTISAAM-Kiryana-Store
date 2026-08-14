@@ -276,7 +276,7 @@ class CashActivity : AppCompatActivity() {
                 }
                 val fmt = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
                 for (t in list.take(50)) {
-                    val color = if (t.type == "IN") green else red
+                    val color = Color.parseColor(if (t.type == "IN") green else red)
                     val sign = if (t.type == "IN") "+" else "-"
                     listContainer.addView(LinearLayout(this@CashActivity).apply {
                         orientation = LinearLayout.VERTICAL
