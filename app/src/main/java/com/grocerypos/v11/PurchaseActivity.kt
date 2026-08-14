@@ -14,11 +14,16 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 data class PurchaseLine(
     val itemName: String,
@@ -102,7 +107,7 @@ class PurchaseActivity : AppCompatActivity() {
             )
         }
         header.addView(TextView(this).apply {
-            text = "🧾"
+            text = "\uD83E\uDDFE"
             textSize = 22f
             gravity = Gravity.CENTER
             background = ovalBg(cardWhite)
@@ -131,7 +136,7 @@ class PurchaseActivity : AppCompatActivity() {
             textSize = 12f
             setTextColor(Color.WHITE)
             setPadding(28, 14, 28, 14)
-            background = roundedBg("#5058B5", 30) // translucent-ish chip on gradient
+            background = roundedBg("#5058B5", 30)
             setOnClickListener {
                 startActivity(Intent(this@PurchaseActivity, PurchaseHistoryActivity::class.java))
             }
@@ -146,7 +151,7 @@ class PurchaseActivity : AppCompatActivity() {
         // ================= DATE (elevated card, left aligned) =================
         val dateBox = premiumCard()
         dateBox.setOnClickListener { openDatePicker() }
-        dateBox.addView(cardLabel("Date", blue, "📅"))
+        dateBox.addView(cardLabel("Date", blue, "\uD83D\uDCC5"))
         val dateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         dateValueText = TextView(this).apply {
             text = formatDate(purchaseDateMillis)
@@ -156,7 +161,7 @@ class PurchaseActivity : AppCompatActivity() {
             setPadding(4, 6, 0, 0)
         }
         dateRow.addView(dateValueText)
-        dateRow.addView(TextView(this).apply { text = "▾"; textSize = 15f; setTextColor(Color.parseColor(blue)) })
+        dateRow.addView(TextView(this).apply { text = "\u25BE"; textSize = 15f; setTextColor(Color.parseColor(blue)) })
         dateBox.addView(dateRow)
         root.addView(dateBox)
         root.addView(spacer(0))
@@ -165,23 +170,24 @@ class PurchaseActivity : AppCompatActivity() {
         val firmBox = premiumCard().apply { setPadding(22, 14, 22, 14) }
         val firmRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         firmRow.addView(TextView(this).apply {
-            text = "🏬  "
+            text = "\uD83C\uDFEC  "
             textSize = 16f
         })
         firmRow.addView(TextView(this).apply {
+            // TODO: replace with your actual store/firm name, or bind to a firms table if you support more than one
             text = "IBTISAAM Kiryana Store"
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        firmRow.addView(TextView(this).apply { text = "▾"; textSize = 15f; setTextColor(Color.parseColor(labelGray)) })
+        firmRow.addView(TextView(this).apply { text = "\u25BE"; textSize = 15f; setTextColor(Color.parseColor(labelGray)) })
         firmBox.addView(firmRow)
         root.addView(firmBox)
         root.addView(spacer(16))
 
         // ================= PARTY NAME (elevated card, + inline) =================
         val partyBox = premiumCard()
-        partyBox.addView(cardLabel("Party (Supplier)", green, "👤"))
+        partyBox.addView(cardLabel("Party (Supplier)", green, "\uD83D\uDC64"))
         val partyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         partyName = AutoCompleteTextView(this).apply {
             hint = "Party Name (Supplier) *"
@@ -264,6 +270,8 @@ class PurchaseActivity : AppCompatActivity() {
         itemBox.addView(itemName)
         itemEntrySection.addView(itemBox)
 
+        // Unit / Secondary Unit toggle — shows which unit this line is being
+        // purchased in as soon as a known product is picked.
         unitToggleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             visibility = View.GONE
@@ -463,20 +471,9 @@ class PurchaseActivity : AppCompatActivity() {
         ).apply { setMargins(0, 0, 0, 12) }
     }
 
-    /** Kept for any external callers still referencing the old name/shape. */
+    /** Kept for backward compatibility with any code still calling the old name. */
     private fun outlinedBox() = premiumCard()
 
     /** A lighter-weight field wrapper used inside the item-entry card. */
     private fun innerField() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(18, 10, 18, 10)
-        background = GradientDrawable().apply {
-            setColor(Color.parseColor("#F7F7FB"))
-            cornerRadius = 10f
-        }
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(0, 0, 0, 0) }
-    }
-
-    private fun cardLabel(text: String, colorHex: String, icon: String) = LinearLa
+        orientation = Linear
