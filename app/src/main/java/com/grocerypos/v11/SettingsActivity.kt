@@ -57,8 +57,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var phoneField: EditText
     private lateinit var addressField: EditText
     private lateinit var footerField: EditText
-    private lateinit var currencyField: EditText
-    private lateinit var taxField: EditText
+    private lateinit var headerShopNameText: TextView
 
     private val BT_PERMISSION_REQUEST_CODE = 501
 
@@ -108,12 +107,17 @@ class SettingsActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
         })
-        headerCol.addView(TextView(this).apply {
-            text = "IBTISAAM Kiryana Store"
+        // NOTE: this used to be a hardcoded string, which is why editing the shop name in
+        // Shop Information never appeared to change anything in the software — this label
+        // never re-read the saved value. It now starts blank and is populated/refreshed
+        // from the DB in loadShopSettings()/saveShopSettings() below.
+        headerShopNameText = TextView(this).apply {
+            text = ""
             textSize = 11.5f
             setTextColor(Color.parseColor("#D8D3FF"))
             setPadding(0, 4, 0, 0)
-        })
+        }
+        headerCol.addView(headerShopNameText)
         header.addView(headerCol)
         root.addView(header)
 
@@ -144,18 +148,6 @@ class SettingsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
-        currencyField = EditText(this).apply {
-            hint = "Currency"
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-        }
-        taxField = EditText(this).apply {
-            hint = "Tax %"
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-        }
 
         shopCard.addView(fieldBox("🏬", shopNameField))
         shopCard.addView(spacer(10))
@@ -164,10 +156,6 @@ class SettingsActivity : AppCompatActivity() {
         shopCard.addView(fieldBox("📍", addressField))
         shopCard.addView(spacer(10))
         shopCard.addView(fieldBox("🧾", footerField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(fieldBox("💱", currencyField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(fieldBox("📊", taxField))
         shopCard.addView(spacer(10))
 
         shopCard.addView(primaryButton("💾  SAVE SETTINGS", primary, primaryDark) { saveShopSettings() })
@@ -465,24 +453,26 @@ class SettingsActivity : AppCompatActivity() {
     private fun loadShopSettings() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
-            shopNameField.setText(db.appSettingDao().get("shop_name")?.value ?: "")
+            val savedName = db.appSettingDao().get("shop_name")?.value ?: ""
+            shopNameField.setText(savedName)
             phoneField.setText(db.appSettingDao().get("shop_phone")?.value ?: "")
             addressField.setText(db.appSettingDao().get("shop_address")?.value ?: "")
             footerField.setText(db.appSettingDao().get("receipt_footer")?.value ?: "")
-            currencyField.setText(db.appSettingDao().get("currency")?.value ?: "")
-            taxField.setText(db.appSettingDao().get("tax_percent")?.value ?: "")
+            headerShopNameText.text = savedName
         }
     }
 
     private fun saveShopSettings() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
-            db.appSettingDao().set(AppSetting("shop_name", shopNameField.text.toString().trim()))
+            val newName = shopNameField.text.toString().trim()
+            db.appSettingDao().set(AppSetting("shop_name", newName))
             db.appSettingDao().set(AppSetting("shop_phone", phoneField.text.toString().trim()))
             db.appSettingDao().set(AppSetting("shop_address", addressField.text.toString().trim()))
             db.appSettingDao().set(AppSetting("receipt_footer", footerField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("currency", currencyField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("tax_percent", taxField.text.toString().trim()))
+            // Reflect the new name immediately in this screen's header instead of waiting
+            // for a re-open of Settings.
+            headerShopNameText.text = newName
             Toast.makeText(this@SettingsActivity, "Settings saved", Toast.LENGTH_SHORT).show()
         }
     }
