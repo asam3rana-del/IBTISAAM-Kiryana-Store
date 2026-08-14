@@ -300,7 +300,7 @@ class SettingsActivity : AppCompatActivity() {
         // ---- Category & Units ----
         val catUnitCard = sectionCard("🗂️", "Category & Units")
         catUnitCard.addView(secondaryButton("🗂️  VIEW CATEGORY & UNIT DETAILS", purple) {
-            startActivity(Intent(this@SettingsActivity, CategoryUnitDetailsActivity::class.java))
+            startActivity(Intent(this@SettingsActivity, CategoryUnitsActivity::class.java))
         })
         root.addView(catUnitCard)
         root.addView(spacer(18))
