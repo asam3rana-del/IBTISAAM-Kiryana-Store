@@ -275,11 +275,15 @@ interface ProductDao {
     @Query("UPDATE sales SET status='returned' WHERE invoice=:invoice")
     suspend fun markReturned(invoice:String)
 
-    // ---- Profit (sale price - cost) ----
+    // ---- Profit (sale price - cost), per line item ----
     @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
     suspend fun profitBetween(start:Long,end:Long):Double
     @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch') as day, COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
     suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
+
+    // ---- Cost of Goods Sold for a period — used by the Profit & Loss report ----
+    @Query("SELECT COALESCE(SUM(si.cost*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
+    suspend fun cogsBetween(start:Long,end:Long):Double
 
     // ---- Item-wise report for a single customer (used by Party Report by Item) ----
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId GROUP BY si.product ORDER BY totalAmount DESC")
