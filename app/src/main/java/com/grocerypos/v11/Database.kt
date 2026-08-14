@@ -8,9 +8,9 @@ import kotlinx.coroutines.flow.Flow
 
 data class DailySales(val day:String,val total:Double)
 data class TopProduct(val product:String,val totalQty:Int)
-data class PurchaseWithSupplier(val billNo:String,val supplierName:String,val total:Double,val createdAt:Long)
+data class PurchaseWithSupplier(val billNo:String,val supplierName:String,val total:Double,val createdAt:Long,val status:String)
 data class SupplierPurchaseTotal(val supplierName:String,val total:Double)
-data class SaleWithCustomer(val invoice:String,val customerName:String,val total:Double,val paymentMethod:String,val createdAt:Long)
+data class SaleWithCustomer(val invoice:String,val customerName:String,val total:Double,val paymentMethod:String,val createdAt:Long,val status:String)
 data class CustomerSalesTotal(val customerName:String,val total:Double)
 data class DailyProfit(val day:String,val profit:Double)
 data class PartyItemReport(val product:String,val totalAmount:Double,val totalQty:Int)
@@ -70,7 +70,8 @@ data class Sale(
     val paid:Double,
     val paymentMethod:String,       // cash / bank
     val saleType:String="retail",   // retail / wholesale
-    val createdAt:Long=System.currentTimeMillis()
+    val createdAt:Long=System.currentTimeMillis(),
+    val status:String="active"      // added — "active" or "returned"
 )
 
 @Entity(tableName="sale_items")
@@ -105,7 +106,8 @@ data class Purchase(
     val paid:Double,
     val createdAt:Long=System.currentTimeMillis(),
     val subtotal:Double=0.0,   // added
-    val discount:Double=0.0    // added
+    val discount:Double=0.0,   // added
+    val status:String="active" // added — "active" or "returned"
 )
 
 @Entity(tableName="purchase_items")
@@ -251,7 +253,7 @@ interface ProductDao {
     suspend fun dailySales(start:Long,end:Long):List<DailySales>
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
     suspend fun topProducts(start:Long,end:Long):List<TopProduct>
-    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt FROM sales ORDER BY createdAt DESC LIMIT 100")
+    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC LIMIT 100")
     suspend fun allSales():List<SaleWithCustomer>
 
     @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC")
@@ -268,6 +270,10 @@ interface ProductDao {
 
     @Query("DELETE FROM sales WHERE invoice=:invoice")
     suspend fun deleteSale(invoice:String)
+
+    // ---- Return: keep the record, just mark its status ----
+    @Query("UPDATE sales SET status='returned' WHERE invoice=:invoice")
+    suspend fun markReturned(invoice:String)
 
     // ---- Profit (sale price - cost) ----
     @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
@@ -308,7 +314,7 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end")
     suspend fun totalBetween(start:Long,end:Long):Double
-    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt FROM purchases ORDER BY createdAt DESC LIMIT 100")
+    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC LIMIT 100")
     suspend fun allPurchases():List<PurchaseWithSupplier>
 
     @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC")
@@ -326,6 +332,10 @@ interface ProductDao {
     @Query("DELETE FROM purchases WHERE billNo=:bill")
     suspend fun deletePurchase(bill:String)
 
+    // ---- Return: keep the record, just mark its status ----
+    @Query("UPDATE purchases SET status='returned' WHERE billNo=:bill")
+    suspend fun markReturned(bill:String)
+
     // ---- Item-wise report for a single supplier (used by Party Report by Item) ----
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId GROUP BY p.name ORDER BY totalAmount DESC")
     suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
@@ -334,6 +344,10 @@ interface ProductDao {
 @Dao interface ReturnDao {
     @Insert suspend fun insert(r:ReturnLine)
     @Query("SELECT COALESCE(SUM(amount),0) FROM returns WHERE type=:type") suspend fun totalByType(type:String):Double
+    @Query("SELECT COALESCE(SUM(amount),0) FROM returns WHERE type=:type AND createdAt BETWEEN :start AND :end")
+    suspend fun totalByTypeBetween(type:String,start:Long,end:Long):Double
+    @Query("SELECT * FROM returns WHERE reference=:reference")
+    suspend fun forReference(reference:String):List<ReturnLine>
 }
 
 @Dao interface UserDao {
@@ -387,12 +401,24 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+// v15 -> v16: sales and purchases gain a `status` column ("active" or
+// "returned"). Existing rows default to 'active', so nothing already
+// recorded is affected. This backs the new Sale Return / Purchase Return
+// feature in HistoryActivity — a returned bill stays in the history for
+// reporting instead of being deleted.
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE sales ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+        database.execSQL("ALTER TABLE purchases ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class],
-    version=15, exportSchema=false
+    version=16, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -415,7 +441,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                 .fallbackToDestructiveMigration()
                 .build().also{INSTANCE=it}
         }
