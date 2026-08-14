@@ -69,14 +69,12 @@ class SettingsActivity : AppCompatActivity() {
         setTheme(R.style.Theme_SettingsSheet)
         super.onCreate(b)
 
-        // ---- Make this appear as a side drawer (dashboard rahega peeche visible) ----
+        // NOTE: window.setLayout()/setGravity() are called AFTER setContentView() below,
+        // wrapped in decorView.post{}. On several OEM skins (Samsung/MIUI/etc.), calling
+        // setLayout() before setContentView() gets silently overridden back to full-screen
+        // once content is attached — that was the cause of Settings covering the whole
+        // dashboard instead of opening as a floating side sheet.
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.parseColor("#66000000")))
-        window.setGravity(Gravity.END)
-        val screenWidth = resources.displayMetrics.widthPixels
-        window.setLayout(
-            (screenWidth * 0.82).toInt(),
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -312,6 +310,23 @@ class SettingsActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
             addView(root)
         })
+
+        // ================= APPLY FLOATING SIDE-SHEET SIZE (must run AFTER setContentView) =================
+        // Some OEM skins reset window.setLayout() if it's called before the content view is
+        // attached, which is why Settings was opening full-screen instead of as a side sheet.
+        // Doing it here — and once more inside decorView.post{} — makes sure it always sticks.
+        applyFloatingSheetLayout()
+        window.decorView.post { applyFloatingSheetLayout() }
+    }
+
+    private fun applyFloatingSheetLayout() {
+        val screenWidth = resources.displayMetrics.widthPixels
+        window.setGravity(Gravity.END)
+        window.setLayout(
+            (screenWidth * 0.82).toInt(),
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        // windowAnimationStyle from the theme handles slide-in; no extra call needed here.
     }
 
     private fun doLogout() {
