@@ -2,6 +2,7 @@ package com.grocerypos.v11.ui
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
@@ -18,6 +19,12 @@ class LoginActivity : AppCompatActivity() {
 
     private lateinit var loggedInUser: User
 
+    private lateinit var u: EditText
+    private lateinit var p: EditText
+    private lateinit var btn: Button
+    private lateinit var fingerprintBtn: Button
+    private lateinit var hint: TextView
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
@@ -25,10 +32,14 @@ class LoginActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 60, 40, 30)
         }
-        val u = EditText(this).apply { hint = "Username" }
-        val p = EditText(this).apply { hint = "Password"; inputType = 0x81 }
-        val btn = Button(this).apply { text = "LOGIN" }
-        val hint = TextView(this).apply {
+        u = EditText(this).apply { hint = "Username" }
+        p = EditText(this).apply { hint = "Password"; inputType = 0x81 }
+        btn = Button(this).apply { text = "LOGIN" }
+        fingerprintBtn = Button(this).apply {
+            text = "🔓  UNLOCK WITH FINGERPRINT"
+            visibility = View.GONE
+        }
+        hint = TextView(this).apply {
             textSize = 12f
             setPadding(0, 20, 0, 0)
         }
@@ -37,6 +48,7 @@ class LoginActivity : AppCompatActivity() {
         l.addView(u)
         l.addView(p)
         l.addView(btn)
+        l.addView(fingerprintBtn)
         l.addView(hint)
         setContentView(l)
 
@@ -51,6 +63,7 @@ class LoginActivity : AppCompatActivity() {
                 db.appSettingDao().set(AppSetting("admin_seeded", "1"))
                 hint.text = "Pehli baar? Username: admin   Password: admin123\n(Settings mein jaake baad mein badal sakte hain)"
             }
+            applyLoginMethod(db)
         }
 
         btn.setOnClickListener {
@@ -59,43 +72,88 @@ class LoginActivity : AppCompatActivity() {
                 val user = db.userDao().find(u.text.toString().trim())
                 if (user != null && user.passwordHash == p.text.toString()) {
                     loggedInUser = user
-                    // Password sahi hai — ab fingerprint mangenge (extra security layer)
-                    requireFingerprintThenProceed()
+                    db.appSettingDao().set(AppSetting("last_username", user.username))
+
+                    val method = db.appSettingDao().get("login_method")?.value ?: "password"
+                    if (method == "both") {
+                        requireFingerprintThenProceed()
+                    } else {
+                        completeLogin()
+                    }
                 } else {
                     Toast.makeText(this@LoginActivity, "Invalid login", Toast.LENGTH_SHORT).show()
                 }
             }
         }
-    }
 
-    /** Password ke baad fingerprint verify karta hai — sirf tab jab Settings mein "Fingerprint Login" switch ON ho. */
-    private fun requireFingerprintThenProceed() {
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@LoginActivity)
-            val fingerprintEnabled = db.appSettingDao().get("fingerprint_enabled")?.value == "1"
-
-            if (!fingerprintEnabled) {
-                // Settings mein fingerprint off hai — sirf password se login
-                completeLogin()
-                return@launch
+        fingerprintBtn.setOnClickListener {
+            lifecycleScope.launch {
+                val db = PosDatabase.get(this@LoginActivity)
+                val lastUsername = db.appSettingDao().get("last_username")?.value
+                if (lastUsername.isNullOrEmpty()) {
+                    Toast.makeText(this@LoginActivity, "Pehli dafa password se login karein", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val user = db.userDao().find(lastUsername)
+                if (user == null) {
+                    Toast.makeText(this@LoginActivity, "User nahi mila, password se login karein", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                loggedInUser = user
+                showBiometricPrompt()
             }
-
-            val biometricManager = BiometricManager.from(this@LoginActivity)
-            val canAuthenticate = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-
-            if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
-                // Is device par fingerprint hardware/enrollment nahi hai — normal login se aage badhein
-                Toast.makeText(this@LoginActivity, "Fingerprint set nahi hai is device par, password se login ho raha hai", Toast.LENGTH_SHORT).show()
-                completeLogin()
-                return@launch
-            }
-
-            showBiometricPrompt()
         }
     }
 
-    private fun showBiometricPrompt() {
+    /** Settings mein select kiye gaye login_method ke hisab se screen ke elements dikhata/chupata hai. */
+    private suspend fun applyLoginMethod(db: com.grocerypos.v11.PosDatabase) {
+        val method = db.appSettingDao().get("login_method")?.value ?: "password"
+        val lastUsername = db.appSettingDao().get("last_username")?.value
 
+        when (method) {
+            "fingerprint" -> {
+                if (lastUsername.isNullOrEmpty()) {
+                    // Kabhi login nahi hua — pehli dafa password lena zaroori hai
+                    u.visibility = View.VISIBLE
+                    p.visibility = View.VISIBLE
+                    btn.visibility = View.VISIBLE
+                    fingerprintBtn.visibility = View.GONE
+                } else {
+                    u.visibility = View.GONE
+                    p.visibility = View.GONE
+                    btn.visibility = View.GONE
+                    fingerprintBtn.visibility = View.VISIBLE
+                }
+            }
+            "both" -> {
+                u.visibility = View.VISIBLE
+                p.visibility = View.VISIBLE
+                btn.visibility = View.VISIBLE
+                fingerprintBtn.visibility = View.GONE
+            }
+            else -> { // "password"
+                u.visibility = View.VISIBLE
+                p.visibility = View.VISIBLE
+                btn.visibility = View.VISIBLE
+                fingerprintBtn.visibility = View.GONE
+            }
+        }
+    }
+
+    /** "Both" mode mein password ke baad fingerprint bhi verify karta hai. */
+    private fun requireFingerprintThenProceed() {
+        val biometricManager = BiometricManager.from(this)
+        val canAuthenticate = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+
+        if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+            Toast.makeText(this, "Fingerprint set nahi hai is device par, password se login ho raha hai", Toast.LENGTH_SHORT).show()
+            completeLogin()
+            return
+        }
+        showBiometricPrompt()
+    }
+
+    private fun showBiometricPrompt() {
         val executor = ContextCompat.getMainExecutor(this)
         val biometricPrompt = BiometricPrompt(
             this, executor,
