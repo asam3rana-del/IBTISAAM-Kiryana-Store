@@ -37,6 +37,8 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
+            android:icon="@mipmap/ic_launcher"
+android:roundIcon="@mipmap/ic_launcher_round"
         </provider>
     </application>
 </manifest>
