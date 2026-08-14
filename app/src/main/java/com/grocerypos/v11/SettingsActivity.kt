@@ -64,6 +64,14 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
+        // ---- Make this appear as a bottom sheet ----
+        window.setGravity(Gravity.BOTTOM)
+        val screenHeight = resources.displayMetrics.heightPixels
+        window.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            (screenHeight * 0.88).toInt()
+        )
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 48, 24, 24)
