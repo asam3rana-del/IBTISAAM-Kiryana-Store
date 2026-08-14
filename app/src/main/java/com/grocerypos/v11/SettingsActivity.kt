@@ -64,12 +64,13 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
-        // ---- Make this appear as a bottom sheet ----
-        window.setGravity(Gravity.BOTTOM)
-        val screenHeight = resources.displayMetrics.heightPixels
+        // ---- Make this appear as a side drawer (dashboard rahega peeche visible) ----
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.parseColor("#66000000")))
+        window.setGravity(Gravity.END)
+        val screenWidth = resources.displayMetrics.widthPixels
         window.setLayout(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            (screenHeight * 0.88).toInt()
+            (screenWidth * 0.82).toInt(),
+            ViewGroup.LayoutParams.MATCH_PARENT
         )
 
         val root = LinearLayout(this).apply {
