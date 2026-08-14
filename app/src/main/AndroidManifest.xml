@@ -1,19 +1,44 @@
-`AndroidManifest.xml` ek alag file hai `build.gradle` se — dono cheezein Android project mein alag kaam karti hain:
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
-- **`AndroidManifest.xml`** — permissions, activities register karta hai (ye humne abhi fix ki thi)
-- **`build.gradle` (app level)** — libraries/dependencies add karne ke liye (jaise ab fingerprint wali library)
+    <application
+        android:theme="@style/Theme.GroceryPOS"
+        android:label="IBTISAAM TRADERS POS"
+        android:allowBackup="true"
+        android:supportsRtl="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
 
-Agar aap manifest file dobara dekhna chahte hain, wo maine pehle hi upar bana kar di thi — [yahan se dekh sakte hain](#) ya main dobara bhej deta hoon:
+        <activity android:name=".ui.SettingsActivity" />
+        <activity android:name=".ui.LoginActivity" />
+        <activity android:name=".ui.ProductActivity" />
+        <activity android:name=".ui.ReportsActivity" />
+        <activity android:name=".ui.PurchaseActivity" />
+        <activity android:name=".ui.SaleActivity" />
+        <activity android:name=".ui.CashActivity" />
+        <activity android:name=".ui.HistoryActivity" />
+        <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
+        <activity android:name=".ui.PartyActivity" />
+        <activity android:name=".ui.UserManagementActivity" />
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
 
-**`build.gradle` GitHub par kaise dhoondein:**
-
-1. Repo kholein `IBTISAAM-Kiryana-Store`
-2. `app` folder par tap karein
-3. Us mein `build.gradle` (ya `build.gradle.kts`) file dikhegi — usko open karein
-4. `dependencies { ... }` block ke andar ye line paste karein:
-```
-implementation "androidx.biometric:biometric:1.1.0"
-```
-5. Commit karein
-
-Agar `app` folder mein ye file nahi mil rahi, screenshot bhej dein — main dikha doonga kahan hai.
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>
