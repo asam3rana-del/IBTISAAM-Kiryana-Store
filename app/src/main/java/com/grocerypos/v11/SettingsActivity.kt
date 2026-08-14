@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -45,6 +46,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var newPasswordField: EditText
     private lateinit var printerStatusText: TextView
     private lateinit var printerStatusDot: TextView
+    private lateinit var fingerprintSwitch: Switch
 
     // Shop Information fields
     private lateinit var shopNameField: EditText
@@ -205,6 +207,45 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(backupCard)
         root.addView(spacer(18))
 
+        // ---- Security (Fingerprint Lock) ----
+        val securityCard = sectionCard("🔐", "Security")
+        val fpRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = strokedBg(border, "#FAFAFF", 14)
+            setPadding(18, 10, 18, 10)
+        }
+        val fpLabelCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        fpLabelCol.addView(TextView(this).apply {
+            text = "👆  Fingerprint Login"
+            textSize = 13.5f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        fpLabelCol.addView(TextView(this).apply {
+            text = "On = Password + Fingerprint required\nOff = Password only"
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 4, 0, 0)
+        })
+        fingerprintSwitch = Switch(this).apply {
+            setOnCheckedChangeListener { _, isChecked ->
+                lifecycleScope.launch {
+                    val db = PosDatabase.get(this@SettingsActivity)
+                    db.appSettingDao().set(AppSetting("fingerprint_enabled", if (isChecked) "1" else "0"))
+                }
+            }
+        }
+        fpRow.addView(fpLabelCol)
+        fpRow.addView(fingerprintSwitch)
+        securityCard.addView(fpRow)
+        root.addView(securityCard)
+        root.addView(spacer(18))
+        loadFingerprintSetting()
+
         // ---- Change Username / Password ----
         val loginCard = sectionCard("🔑", "Change Login (Username / Password)")
 
@@ -229,14 +270,14 @@ class SettingsActivity : AppCompatActivity() {
             setHintTextColor(Color.parseColor(textGray))
             setTextColor(Color.parseColor(textDark))
             background = null
-            inputType = 0x81
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
 
         loginCard.addView(fieldBox("👤", currentUsernameField, muted = true))
         loginCard.addView(spacer(10))
         loginCard.addView(fieldBox("✏️", newUsernameField))
         loginCard.addView(spacer(10))
-        loginCard.addView(fieldBox("🔒", newPasswordField))
+        loginCard.addView(passwordFieldBox(newPasswordField))
         loginCard.addView(spacer(14))
         loginCard.addView(primaryButton("✓  UPDATE LOGIN", primary, primaryDark) { updateLogin(loggedInUsername) })
         root.addView(loginCard)
@@ -299,6 +340,35 @@ class SettingsActivity : AppCompatActivity() {
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         addView(field)
+    }
+
+    /** Same as fieldBox but adds a tappable eye icon to show/hide the password text. */
+    private fun passwordFieldBox(field: EditText) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = strokedBg(border, "#FAFAFF", 12)
+        setPadding(18, 4, 18, 4)
+        addView(TextView(this@SettingsActivity).apply { text = "🔒  "; textSize = 14f })
+        (field.parent as? ViewGroup)?.removeView(field)
+        field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        addView(field)
+
+        val toggle = TextView(this@SettingsActivity).apply {
+            text = "👁"
+            textSize = 16f
+            setPadding(16, 0, 8, 0)
+            var visible = false
+            setOnClickListener {
+                visible = !visible
+                field.inputType = if (visible)
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                else
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                field.setSelection(field.text.length)
+                text = if (visible) "🙈" else "👁"
+            }
+        }
+        addView(toggle)
     }
 
     private fun primaryButton(label: String, colorHex: String, colorDarkHex: String, onClick: () -> Unit) = Button(this).apply {
@@ -384,6 +454,16 @@ class SettingsActivity : AppCompatActivity() {
             db.appSettingDao().set(AppSetting("currency", currencyField.text.toString().trim()))
             db.appSettingDao().set(AppSetting("tax_percent", taxField.text.toString().trim()))
             Toast.makeText(this@SettingsActivity, "Settings saved", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ================= SECURITY (FINGERPRINT TOGGLE) =================
+
+    private fun loadFingerprintSetting() {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SettingsActivity)
+            val enabled = db.appSettingDao().get("fingerprint_enabled")?.value == "1"
+            fingerprintSwitch.isChecked = enabled
         }
     }
 
