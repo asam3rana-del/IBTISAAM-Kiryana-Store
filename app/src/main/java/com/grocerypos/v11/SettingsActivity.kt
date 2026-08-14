@@ -323,7 +323,7 @@ class SettingsActivity : AppCompatActivity() {
         val screenWidth = resources.displayMetrics.widthPixels
         window.setGravity(Gravity.END)
         window.setLayout(
-            (screenWidth * 0.82).toInt(),
+            (screenWidth * 0.35).toInt(),
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         // windowAnimationStyle from the theme handles slide-in; no extra call needed here.
