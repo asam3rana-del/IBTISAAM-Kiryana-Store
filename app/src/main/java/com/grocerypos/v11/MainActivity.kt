@@ -69,6 +69,7 @@ class MainActivity : AppCompatActivity() {
         val headerText = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         headerText.addView(TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
@@ -94,6 +95,36 @@ class MainActivity : AppCompatActivity() {
             })
         })
         header.addView(headerText)
+
+        // ---- Settings gear icon (top-right, premium chip) ----
+        header.addView(FrameLayout(this).apply {
+            val size = (44 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            elevation = 6f
+            val chipBg = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                colors = intArrayOf(Color.parseColor("#5C6BC0"), Color.parseColor("#3949AB"))
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                orientation = GradientDrawable.Orientation.TL_BR
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.parseColor("#7986CB"))
+            }
+            isClickable = true
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(60),
+                chipBg,
+                null
+            )
+            addView(TextView(this@MainActivity).apply {
+                text = "⚙️"
+                textSize = 20f
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            })
+            setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+        })
+
         root.addView(header)
 
         // ================= scrollable body =================
@@ -146,8 +177,7 @@ class MainActivity : AppCompatActivity() {
                 Tile("🧾", "Purchases", "#EF6C00", "#FFF3E0") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
                 Tile("📊", "Reports", "#6A1B9A", "#F3E5F5") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
-                Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
-                Tile("⚙️", "Settings", "#37474F", "#ECEFF1") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+                Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) }
             )
             "manager" -> listOf(
                 Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
