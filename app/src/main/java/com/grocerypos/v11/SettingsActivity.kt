@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.User
 import com.grocerypos.v11.util.BackupHelper
 import com.grocerypos.v11.util.PrinterHelper
@@ -62,6 +63,10 @@ class SettingsActivity : AppCompatActivity() {
     private val BT_PERMISSION_REQUEST_CODE = 501
 
     override fun onCreate(b: Bundle?) {
+        // Force-apply the drawer/dialog theme here in code — this guarantees the floating
+        // style is used even if the manifest's android:theme override doesn't resolve
+        // (build variant issue, manifest merge, etc). Must be called BEFORE super.onCreate().
+        setTheme(R.style.Theme_SettingsSheet)
         super.onCreate(b)
 
         // ---- Make this appear as a side drawer (dashboard rahega peeche visible) ----
