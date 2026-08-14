@@ -13,7 +13,9 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
 
-        <activity android:name=".ui.SettingsActivity" />
+        <activity
+            android:name=".ui.SettingsActivity"
+            android:theme="@style/Theme.SettingsSheet" />
         <activity android:name=".ui.LoginActivity" />
         <activity android:name=".ui.ProductActivity" />
         <activity android:name=".ui.ReportsActivity" />
