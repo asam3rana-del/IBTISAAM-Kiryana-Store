@@ -68,17 +68,33 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    /** Password ke baad fingerprint verify karta hai; agar device par fingerprint set hi nahi hai to seedha login continue kar deta hai. */
+    /** Password ke baad fingerprint verify karta hai — sirf tab jab Settings mein "Fingerprint Login" switch ON ho. */
     private fun requireFingerprintThenProceed() {
-        val biometricManager = BiometricManager.from(this)
-        val canAuthenticate = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@LoginActivity)
+            val fingerprintEnabled = db.appSettingDao().get("fingerprint_enabled")?.value == "1"
 
-        if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
-            // Is device par fingerprint hardware/enrollment nahi hai — normal login se aage badhein
-            Toast.makeText(this, "Fingerprint set nahi hai is device par, password se login ho raha hai", Toast.LENGTH_SHORT).show()
-            completeLogin()
-            return
+            if (!fingerprintEnabled) {
+                // Settings mein fingerprint off hai — sirf password se login
+                completeLogin()
+                return@launch
+            }
+
+            val biometricManager = BiometricManager.from(this@LoginActivity)
+            val canAuthenticate = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+
+            if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+                // Is device par fingerprint hardware/enrollment nahi hai — normal login se aage badhein
+                Toast.makeText(this@LoginActivity, "Fingerprint set nahi hai is device par, password se login ho raha hai", Toast.LENGTH_SHORT).show()
+                completeLogin()
+                return@launch
+            }
+
+            showBiometricPrompt()
         }
+    }
+
+    private fun showBiometricPrompt() {
 
         val executor = ContextCompat.getMainExecutor(this)
         val biometricPrompt = BiometricPrompt(
