@@ -300,7 +300,15 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun doLogout() {
         getSharedPreferences("session", MODE_PRIVATE).edit().clear().apply()
-        startActivity(Intent(this@SettingsActivity, LoginActivity::class.java))
+        // NOTE: Settings opens on top of MainActivity without finishing it, so a plain finish()
+        // here only removed SettingsActivity — MainActivity stayed underneath in the back stack.
+        // That let a logged-out user press Back from LoginActivity and land straight back in
+        // MainActivity without re-authenticating. FLAG_ACTIVITY_NEW_TASK + FLAG_ACTIVITY_CLEAR_TASK
+        // wipes the whole task (including MainActivity) so LoginActivity is all that's left.
+        val intent = Intent(this@SettingsActivity, LoginActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        startActivity(intent)
         finish()
     }
 
