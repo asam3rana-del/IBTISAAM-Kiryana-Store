@@ -152,11 +152,12 @@ class PartyReportsActivity : AppCompatActivity() {
     private fun showReportMenu(isCustomer: Boolean, id: Long, name: String, opening: Double) {
         AlertDialog.Builder(this)
             .setTitle(name)
-            .setItems(arrayOf("📦 Party Report by Item", "📜 Party Statement", "🧾 Sale/Purchase by Party")) { _, which ->
+            .setItems(arrayOf("📦 Party Report by Item", "📜 Party Statement", "🧾 Sale/Purchase by Party", "📊 Profit & Loss")) { _, which ->
                 when (which) {
                     0 -> showItemReport(isCustomer, id, name)
                     1 -> showStatement(isCustomer, id, name, opening)
                     2 -> showTransactions(isCustomer, id, name)
+                    3 -> showPartyPL(isCustomer, id, name)
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -305,6 +306,75 @@ class PartyReportsActivity : AppCompatActivity() {
                 }
                 body.addView(plDivider())
                 body.addView(rowText("Total", "Rs %.2f".format(totalAmt)))
+            }
+
+            AlertDialog.Builder(this@PartyReportsActivity)
+                .setView(content)
+                .setPositiveButton("Close", null)
+                .show()
+        }
+    }
+
+    // ================= 4) Profit & Loss =================
+    // Customer: real profit (revenue - cost) from every item they've bought.
+    // Supplier: no "profit" concept — show a purchase spend summary instead.
+    private fun showPartyPL(isCustomer: Boolean, id: Long, name: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyReportsActivity)
+            val content = reportContainer(if (isCustomer) "Profit & Loss — $name" else "Purchase Summary — $name")
+            val body = content.getChildAt(1) as LinearLayout
+
+            if (isCustomer) {
+                val sales = db.saleDao().salesByCustomer(id)
+                if (sales.isEmpty()) {
+                    body.addView(emptyText("Koi sale nahi hui"))
+                } else {
+                    var revenue = 0.0
+                    var cost = 0.0
+                    sales.forEach { s ->
+                        db.saleDao().itemsForInvoice(s.invoice).forEach { it ->
+                            revenue += it.amount
+                            cost += it.cost * it.qty
+                        }
+                    }
+                    val profit = revenue - cost
+                    val profitColor = if (profit >= 0) "#2E7D32" else "#C62828"
+
+                    body.addView(rowText("Total Sales (bills)", "${sales.size}"))
+                    body.addView(rowText("Revenue", "Rs %.2f".format(revenue)))
+                    body.addView(rowText("Cost of Goods", "Rs %.2f".format(cost)))
+                    body.addView(plDivider())
+                    body.addView(rowText(if (profit >= 0) "Net Profit" else "Net Loss", "Rs %.2f".format(profit)).apply {
+                        (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
+                        (getChildAt(1) as TextView).setTextColor(Color.parseColor(profitColor))
+                    })
+                }
+            } else {
+                val purchases = db.purchaseDao().purchasesBySupplier(id)
+                if (purchases.isEmpty()) {
+                    body.addView(emptyText("Koi purchase nahi hui"))
+                } else {
+                    val totalBills = purchases.size
+                    val totalAmount = purchases.sumOf { it.total }
+                    val totalPaid = purchases.sumOf { it.paid }
+                    val totalDue = totalAmount - totalPaid
+
+                    body.addView(rowText("Total Bills", "$totalBills"))
+                    body.addView(rowText("Total Purchased", "Rs %.2f".format(totalAmount)))
+                    body.addView(rowText("Total Paid", "Rs %.2f".format(totalPaid)))
+                    body.addView(plDivider())
+                    body.addView(rowText("Outstanding Due", "Rs %.2f".format(totalDue)).apply {
+                        (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
+                        (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (totalDue > 0) "#C62828" else "#2E7D32"))
+                    })
+                    body.addView(spacer(8))
+                    body.addView(TextView(this@PartyReportsActivity).apply {
+                        text = "Note: Suppliers ka apna 'profit' nahi hota — ye khareed ka summary hai."
+                        textSize = 11.5f
+                        setTextColor(Color.parseColor(textMuted))
+                        setPadding(0, 6, 0, 0)
+                    })
+                }
             }
 
             AlertDialog.Builder(this@PartyReportsActivity)
