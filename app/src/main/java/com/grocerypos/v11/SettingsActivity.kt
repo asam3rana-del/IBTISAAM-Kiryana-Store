@@ -57,24 +57,13 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var shopNameField: EditText
     private lateinit var phoneField: EditText
     private lateinit var addressField: EditText
-    private lateinit var footerField: EditText
-    private lateinit var currencyField: EditText
-    private lateinit var taxField: EditText
 
     private val BT_PERMISSION_REQUEST_CODE = 501
 
     override fun onCreate(b: Bundle?) {
-        // Force-apply the drawer/dialog theme here in code — this guarantees the floating
-        // style is used even if the manifest's android:theme override doesn't resolve
-        // (build variant issue, manifest merge, etc). Must be called BEFORE super.onCreate().
         setTheme(R.style.Theme_SettingsSheet)
         super.onCreate(b)
 
-        // NOTE: window.setLayout()/setGravity() are called AFTER setContentView() below,
-        // wrapped in decorView.post{}. On several OEM skins (Samsung/MIUI/etc.), calling
-        // setLayout() before setContentView() gets silently overridden back to full-screen
-        // once content is attached — that was the cause of Settings covering the whole
-        // dashboard instead of opening as a floating side sheet.
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.parseColor("#66000000")))
 
         val root = LinearLayout(this).apply {
@@ -139,36 +128,12 @@ class SettingsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
-        footerField = EditText(this).apply {
-            hint = "Receipt Footer"
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-        }
-        currencyField = EditText(this).apply {
-            hint = "Currency"
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-        }
-        taxField = EditText(this).apply {
-            hint = "Tax %"
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-        }
 
         shopCard.addView(fieldBox("🏬", shopNameField))
         shopCard.addView(spacer(10))
         shopCard.addView(fieldBox("📞", phoneField))
         shopCard.addView(spacer(10))
         shopCard.addView(fieldBox("📍", addressField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(fieldBox("🧾", footerField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(fieldBox("💱", currencyField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(fieldBox("📊", taxField))
         shopCard.addView(spacer(10))
 
         shopCard.addView(primaryButton("💾  SAVE SETTINGS", primary, primaryDark) { saveShopSettings() })
@@ -320,10 +285,6 @@ class SettingsActivity : AppCompatActivity() {
             addView(root)
         })
 
-        // ================= APPLY FLOATING SIDE-SHEET SIZE (must run AFTER setContentView) =================
-        // Some OEM skins reset window.setLayout() if it's called before the content view is
-        // attached, which is why Settings was opening full-screen instead of as a side sheet.
-        // Doing it here — and once more inside decorView.post{} — makes sure it always sticks.
         applyFloatingSheetLayout()
         window.decorView.post { applyFloatingSheetLayout() }
     }
@@ -335,7 +296,6 @@ class SettingsActivity : AppCompatActivity() {
             (screenWidth * 0.80).toInt(),
             ViewGroup.LayoutParams.MATCH_PARENT
         )
-        // windowAnimationStyle from the theme handles slide-in; no extra call needed here.
     }
 
     private fun doLogout() {
@@ -381,7 +341,6 @@ class SettingsActivity : AppCompatActivity() {
         addView(field)
     }
 
-    /** Same as fieldBox but adds a tappable eye icon to show/hide the password text. */
     private fun passwordFieldBox(field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -456,7 +415,6 @@ class SettingsActivity : AppCompatActivity() {
         cornerRadius = radius.toFloat()
     }
 
-    /** Adds a soft elevation/shadow to a view that has a rounded background (API 21+). */
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             view.elevation = dp * resources.displayMetrics.density
@@ -477,21 +435,20 @@ class SettingsActivity : AppCompatActivity() {
             shopNameField.setText(db.appSettingDao().get("shop_name")?.value ?: "")
             phoneField.setText(db.appSettingDao().get("shop_phone")?.value ?: "")
             addressField.setText(db.appSettingDao().get("shop_address")?.value ?: "")
-            footerField.setText(db.appSettingDao().get("receipt_footer")?.value ?: "")
-            currencyField.setText(db.appSettingDao().get("currency")?.value ?: "")
-            taxField.setText(db.appSettingDao().get("tax_percent")?.value ?: "")
         }
     }
 
     private fun saveShopSettings() {
+        val name = shopNameField.text.toString().trim()
+        if (name.isEmpty()) {
+            Toast.makeText(this, "Shop Name zaroori hai", Toast.LENGTH_SHORT).show()
+            return
+        }
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
-            db.appSettingDao().set(AppSetting("shop_name", shopNameField.text.toString().trim()))
+            db.appSettingDao().set(AppSetting("shop_name", name))
             db.appSettingDao().set(AppSetting("shop_phone", phoneField.text.toString().trim()))
             db.appSettingDao().set(AppSetting("shop_address", addressField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("receipt_footer", footerField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("currency", currencyField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("tax_percent", taxField.text.toString().trim()))
             Toast.makeText(this@SettingsActivity, "Settings saved", Toast.LENGTH_SHORT).show()
         }
     }
