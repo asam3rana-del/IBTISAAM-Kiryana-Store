@@ -112,7 +112,7 @@ class SaleActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         headerTextCol.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this, "🧾  New Sale", "🧾  نئی سیل")
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "🧾  New Sale", "🧾  نئی سیل")
             textSize = 20f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
