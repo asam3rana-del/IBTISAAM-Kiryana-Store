@@ -167,6 +167,10 @@ class ReportsActivity : AppCompatActivity() {
             val topProducts = db.saleDao().topProducts(rangeStart, rangeEnd)
             val dailySales = db.saleDao().dailySales(rangeStart, rangeEnd)
 
+            // ---- Returns for this period ----
+            val totalSaleReturns = db.returnDao().totalByTypeBetween("sale", rangeStart, rangeEnd)
+            val totalPurchaseReturns = db.returnDao().totalByTypeBetween("purchase", rangeStart, rangeEnd)
+
             // ---- Profit & Loss inputs ----
             val cogs = db.saleDao().cogsBetween(rangeStart, rangeEnd)
             val grossProfit = totalSales - cogs
@@ -178,6 +182,8 @@ class ReportsActivity : AppCompatActivity() {
             resultsBox.addView(summaryCard("📈", "Total Profit", "Rs %.2f".format(totalProfit), "#2E7D32", "#E8F5E9"))
             resultsBox.addView(summaryCard("🧾", "Total Purchases", "Rs %.2f".format(totalPurchases), "#EF6C00", "#FFF3E0"))
             resultsBox.addView(summaryCard("💸", "Total Expenses", "Rs %.2f".format(totalExpenses), "#C62828", "#FFEBEE"))
+            resultsBox.addView(summaryCard("↩", "Sale Returns", "Rs %.2f".format(totalSaleReturns), "#AD1457", "#FCE4EC"))
+            resultsBox.addView(summaryCard("↩", "Purchase Returns", "Rs %.2f".format(totalPurchaseReturns), "#00695C", "#E0F2F1"))
             resultsBox.addView(summaryCard("🧮", "Number of Sales", "$saleCount", "#6A1B9A", "#F3E5F5"))
 
             resultsBox.addView(spacer(10))
