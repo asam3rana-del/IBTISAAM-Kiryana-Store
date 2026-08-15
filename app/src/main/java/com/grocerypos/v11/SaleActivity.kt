@@ -2,6 +2,7 @@ package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
 import android.app.DatePickerDialog
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
@@ -813,10 +814,30 @@ class SaleActivity : AppCompatActivity() {
                 )
             }
 
-            Toast.makeText(this@SaleActivity, "Sale saved: $invoice", Toast.LENGTH_LONG).show()
+            // ---- Open the receipt-style Bill Preview instead of just finishing ----
+            val itemsEncoded = lines.joinToString("\u0002") {
+                listOf(it.itemName, formatQty(it.qty), it.unit, it.unitPrice, it.amount).joinToString("\u0003")
+            }
+            val previewIntent = Intent(this@SaleActivity, BillPreviewActivity::class.java).apply {
+                putExtra(BillPreviewActivity.EXTRA_TYPE, "sale")
+                putExtra(BillPreviewActivity.EXTRA_REFERENCE, invoice)
+                putExtra(BillPreviewActivity.EXTRA_PARTY_NAME, customer?.name ?: enteredCustomer)
+                putExtra(BillPreviewActivity.EXTRA_PARTY_LABEL, "Customer")
+                putExtra(BillPreviewActivity.EXTRA_DATE_MILLIS, saleDateMillis)
+                putExtra(BillPreviewActivity.EXTRA_SUBTOTAL, subtotal)
+                putExtra(BillPreviewActivity.EXTRA_DISCOUNT, discount)
+                putExtra(BillPreviewActivity.EXTRA_TOTAL, total)
+                putExtra(BillPreviewActivity.EXTRA_PAID, paid)
+                putExtra(BillPreviewActivity.EXTRA_PAYMENT_METHOD, method)
+                putExtra(BillPreviewActivity.EXTRA_ITEMS_ENCODED, itemsEncoded)
+            }
+            startActivity(previewIntent)
             finish()
         }
     }
+
+    private fun formatQty(v: Double): String =
+        if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
     private fun holdBill() {
         if (lines.isEmpty()) {
