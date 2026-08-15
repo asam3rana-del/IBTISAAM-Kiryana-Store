@@ -1,44 +1,36 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+<application
+    android:theme="@style/Theme.GroceryPOS"
+    android:label="IBTISAAM TRADERS POS"
+    android:allowBackup="true"
+    android:supportsRtl="true">
 
-    <application
-        android:theme="@style/Theme.GroceryPOS"
-        android:label="IBTISAAM TRADERS POS"
-        android:allowBackup="true"
-        android:supportsRtl="true">
+    <activity android:name=".ui.SettingsActivity" />
+    <activity android:name=".ui.LoginActivity" />
+    <activity android:name=".ui.ProductActivity" />
+    <activity android:name=".ui.ItemsActivity" />
+    <activity android:name=".ui.ReportsActivity" />
+    <activity android:name=".ui.PurchaseActivity" />
+    <activity android:name=".ui.SaleActivity" />
+    <activity android:name=".ui.CashActivity" />
+    <activity android:name=".ui.HistoryActivity" />
+    <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
+    <activity android:name=".ui.PartyActivity" />
+    <activity android:name=".ui.PartyReportsActivity" />
+    <activity android:name=".ui.UserManagementActivity" />
+    <activity android:name=".MainActivity" android:exported="true">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent-filter>
+    </activity>
 
-        <activity android:name=".ui.SettingsActivity" />
-        <activity android:name=".ui.LoginActivity" />
-        <activity android:name=".ui.ProductActivity" />
-        <activity android:name=".ui.ItemsActivity" />
-        <activity android:name=".ui.ReportsActivity" />
-        <activity android:name=".ui.PurchaseActivity" />
-        <activity android:name=".ui.SaleActivity" />
-        <activity android:name=".ui.CashActivity" />
-        <activity android:name=".ui.HistoryActivity" />
-        <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
-        <activity android:name=".ui.PartyActivity" />
-        <activity android:name=".ui.PartyReportsActivity" />
-        <activity android:name=".ui.UserManagementActivity" />
-        <activity android:name=".MainActivity" android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity>
-
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
-    </application>
-</manifest>
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.fileprovider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+        <meta-data
+            android:name="android.support.FILE_PROVIDER_PATHS"
+            android:resource="@xml/file_paths" />
+    </provider>
+</application>
