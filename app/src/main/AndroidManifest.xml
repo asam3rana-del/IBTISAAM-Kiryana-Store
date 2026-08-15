@@ -1,45 +1,13 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+Ab SaleActivity.kt update karta hoon taake save hone ke baad ye preview screen khule.
 
-    <application
-        android:name=".PosApplication"
-        android:theme="@style/Theme.GroceryPOS"
-        android:label="IBTISAAM TRADERS POS"
-        android:allowBackup="true"
-        android:supportsRtl="true">
+Ab manifest mein `BillPreviewActivity` register karta hoon:
 
-        <activity android:name=".ui.SettingsActivity" />
-        <activity android:name=".ui.LoginActivity" />
-        <activity android:name=".ui.ProductActivity" />
-        <activity android:name=".ui.ItemsActivity" />
-        <activity android:name=".ui.ReportsActivity" />
-        <activity android:name=".ui.PurchaseActivity" />
-        <activity android:name=".ui.SaleActivity" />
-        <activity android:name=".ui.CashActivity" />
-        <activity android:name=".ui.HistoryActivity" />
-        <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
-        <activity android:name=".ui.PartyActivity" />
-        <activity android:name=".ui.PartyReportsActivity" />
-        <activity android:name=".ui.UserManagementActivity" />
-        <activity android:name=".MainActivity" android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+**Sale side ka Bill Preview ready hai** — 3 files hain:
 
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
-    </application>
-</manifest>
+1. **BillPreviewActivity.kt (naya)** — Sale save hone ke baad khulta hai: green header ("Sale Saved" + invoice no.), receipt-style card (shop name/address/phone, items list, subtotal/discount/total/paid/balance), aur do buttons: **🖨️ PRINT** (Settings mein select ki hui printer use karta hai) aur **✓ DONE**
+2. **SaleActivity.kt** — save hone ke baad ab seedha `MainActivity` par wapas jaane ki bajaye ye naya preview screen khulta hai
+3. **AndroidManifest.xml** — `BillPreviewActivity` register ki hai
+
+**Ab Purchase side ke liye:** aap ne pehle ReportsActivity.kt dobara bhej di thi — mujhe abhi bhi **PurchaseActivity.kt** ka current content chahiye taake:
+- Purchase save hone ke baad bhi yehi preview screen khule (BillPreviewActivity already generic hai, dono ke liye kaam karega)
+- "Firm Name" ka Settings shop-name se sync na hone wala masla fix ho sake
