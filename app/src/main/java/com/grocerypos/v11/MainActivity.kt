@@ -66,6 +66,38 @@ class MainActivity : AppCompatActivity() {
                 cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 36f, 36f, 36f, 36f)
             }
         }
+
+        // ---- Settings gear icon (now on the LEFT, premium chip) ----
+        header.addView(FrameLayout(this).apply {
+            val size = (44 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                setMargins(0, 0, 18, 0)
+            }
+            elevation = 6f
+            val chipBg = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                colors = intArrayOf(Color.parseColor("#5C6BC0"), Color.parseColor("#3949AB"))
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                orientation = GradientDrawable.Orientation.TL_BR
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.parseColor("#7986CB"))
+            }
+            isClickable = true
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(60),
+                chipBg,
+                null
+            )
+            addView(TextView(this@MainActivity).apply {
+                text = "⚙️"
+                textSize = 20f
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            })
+            setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+        })
+
         header.addView(avatarCircle("IK", 58, "#FFFFFF", "#3949AB"))
         val headerText = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -97,35 +129,6 @@ class MainActivity : AppCompatActivity() {
             })
         })
         header.addView(headerText)
-
-        // ---- Settings gear icon (top-right, premium chip) ----
-        header.addView(FrameLayout(this).apply {
-            val size = (44 * resources.displayMetrics.density).toInt()
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            elevation = 6f
-            val chipBg = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                colors = intArrayOf(Color.parseColor("#5C6BC0"), Color.parseColor("#3949AB"))
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
-                setStroke((1 * resources.displayMetrics.density).toInt(), Color.parseColor("#7986CB"))
-            }
-            isClickable = true
-            background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(60),
-                chipBg,
-                null
-            )
-            addView(TextView(this@MainActivity).apply {
-                text = "⚙️"
-                textSize = 20f
-                gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
-                )
-            })
-            setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
-        })
 
         root.addView(header)
 
