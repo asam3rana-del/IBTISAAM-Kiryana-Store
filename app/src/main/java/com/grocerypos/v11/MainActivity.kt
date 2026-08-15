@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var todaySaleValue: TextView
     private var todayProfitValue: TextView? = null
     private var role: String = "cashier"
+    private lateinit var shopNameHeader: TextView
 
     private val bgColor = "#F3F4F9"
     private val cardWhite = "#FFFFFF"
@@ -71,12 +72,13 @@ class MainActivity : AppCompatActivity() {
             setPadding(20, 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        headerText.addView(TextView(this).apply {
+        shopNameHeader = TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
             textSize = 19f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
+        }
+        headerText.addView(shopNameHeader)
         headerText.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -216,11 +218,20 @@ class MainActivity : AppCompatActivity() {
         setContentView(scroll)
 
         loadDashboard()
+        loadShopName()
     }
 
     override fun onResume() {
         super.onResume()
         loadDashboard()
+        loadShopName()
+    }
+
+    private fun loadShopName() {
+        lifecycleScope.launch {
+            val savedName = PosDatabase.get(this@MainActivity).appSettingDao().get("shop_name")?.value
+            if (!savedName.isNullOrBlank()) shopNameHeader.text = savedName
+        }
     }
 
     private fun doLogout() {
@@ -231,7 +242,6 @@ class MainActivity : AppCompatActivity() {
 
     private data class Tile(val emoji: String, val label: String, val accentHex: String, val tintHex: String, val onClick: () -> Unit)
 
-    // ---- premium white card tile with a colored icon "chip" (gradient + shadow + ripple + border) ----
     private fun premiumMenuTile(tile: Tile): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -294,7 +304,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- premium stat card: white bg, gradient icon chip, big bold value ----
     private fun premiumStatCard(emoji: String, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -392,7 +401,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- rounded background with a subtle border stroke for premium card look ----
     private fun roundedBackgroundBordered(colorHex: String, cornerRadius: Int, strokeColorHex: String = "#EDEFF5"): GradientDrawable {
         return GradientDrawable().apply {
             setColor(Color.parseColor(colorHex))
@@ -401,7 +409,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- helper: lighten a hex color for gradient's light edge ----
     private fun lighten(hex: String, factor: Float): Int {
         val base = Color.parseColor(hex)
         val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt()
