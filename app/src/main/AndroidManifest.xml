@@ -14,6 +14,7 @@
         <activity android:name=".ui.SettingsActivity" />
         <activity android:name=".ui.LoginActivity" />
         <activity android:name=".ui.ProductActivity" />
+        <activity android:name=".ui.ItemsActivity" />
         <activity android:name=".ui.ReportsActivity" />
         <activity android:name=".ui.PurchaseActivity" />
         <activity android:name=".ui.SaleActivity" />
