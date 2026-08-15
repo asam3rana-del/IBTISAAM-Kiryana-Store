@@ -1,8 +1,16 @@
 package com.grocerypos.v11.ui
 
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
+import android.text.InputType
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
@@ -17,6 +25,17 @@ import kotlinx.coroutines.launch
 
 class LoginActivity : AppCompatActivity() {
 
+    // ================= PREMIUM COLOR PALETTE =================
+    private val gradientTop = "#1A237E"
+    private val gradientBottom = "#3949AB"
+    private val cardBg = "#FFFFFF"
+    private val primary = "#4A3AFF"
+    private val primaryDark = "#3527D6"
+    private val green = "#1FA971"
+    private val textDark = "#1A1A2E"
+    private val textGray = "#8A8A9E"
+    private val border = "#E7E5F3"
+
     private lateinit var loggedInUser: User
 
     private lateinit var u: EditText
@@ -28,29 +47,120 @@ class LoginActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
-        val l = LinearLayout(this).apply {
+        val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 60, 40, 30)
-        }
-        u = EditText(this).apply { hint = "Username" }
-        p = EditText(this).apply { hint = "Password"; inputType = 0x81 }
-        btn = Button(this).apply { text = "LOGIN" }
-        fingerprintBtn = Button(this).apply {
-            text = "🔓  UNLOCK WITH FINGERPRINT"
-            visibility = View.GONE
-        }
-        hint = TextView(this).apply {
-            textSize = 12f
-            setPadding(0, 20, 0, 0)
+            gravity = Gravity.CENTER
+            setPadding(36, 60, 36, 60)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(gradientTop), Color.parseColor(gradientBottom))
+            )
         }
 
-        l.addView(TextView(this).apply { text = "Grocery POS V13"; textSize = 26f; setPadding(0,0,0,24) })
-        l.addView(u)
-        l.addView(p)
-        l.addView(btn)
-        l.addView(fingerprintBtn)
-        l.addView(hint)
-        setContentView(l)
+        // ================= LOGO / APP TITLE =================
+        outer.addView(circleIcon("🏪", "#FFFFFF", "#3949AB", 84))
+        outer.addView(spacer(20))
+        outer.addView(TextView(this).apply {
+            text = "IBTISAAM Kiryana Store"
+            textSize = 21f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        outer.addView(TextView(this).apply {
+            text = "Point of Sale"
+            textSize = 12.5f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#C5CAE9"))
+            setPadding(0, 6, 0, 0)
+        })
+        outer.addView(spacer(34))
+
+        // ================= LOGIN CARD =================
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(30, 34, 30, 30)
+            background = roundedBg(cardBg, 24)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            applyElevation(this, 14f)
+        }
+
+        card.addView(TextView(this).apply {
+            text = "Welcome Back"
+            textSize = 17f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        card.addView(TextView(this).apply {
+            text = "Login karke jaari rakhein"
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 4, 0, 22)
+        })
+
+        u = EditText(this).apply {
+            hint = "Username"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+        }
+        card.addView(fieldBox("👤", u))
+        card.addView(spacer(14))
+
+        p = EditText(this).apply {
+            hint = "Password"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        card.addView(passwordFieldBox(p))
+        card.addView(spacer(22))
+
+        btn = Button(this).apply {
+            text = "🔓  LOGIN"
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            isAllCaps = false
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            ).apply { cornerRadius = 16f }
+            setPadding(0, 28, 0, 28)
+            applyElevation(this, 6f)
+        }
+        card.addView(btn)
+        card.addView(spacer(14))
+
+        fingerprintBtn = Button(this).apply {
+            text = "🔓  UNLOCK WITH FINGERPRINT"
+            setTextColor(Color.parseColor(green))
+            textSize = 13.5f
+            isAllCaps = false
+            setTypeface(typeface, Typeface.BOLD)
+            background = strokedBg(green, "#FFFFFF", 16)
+            setPadding(0, 24, 0, 24)
+            visibility = View.GONE
+        }
+        card.addView(fingerprintBtn)
+
+        hint = TextView(this).apply {
+            textSize = 11.5f
+            setTextColor(Color.parseColor(textGray))
+            gravity = Gravity.CENTER
+            setPadding(0, 18, 0, 0)
+        }
+        card.addView(hint)
+
+        outer.addView(card)
+
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor(gradientTop))
+            addView(outer, ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT))
+        })
 
         // ---- First-time setup: create a default admin login if none exists yet ----
         lifecycleScope.launch {
@@ -194,5 +304,85 @@ class LoginActivity : AppCompatActivity() {
         Toast.makeText(this, "Welcome ${loggedInUser.displayName}", Toast.LENGTH_SHORT).show()
         startActivity(Intent(this@LoginActivity, MainActivity::class.java))
         finish()
+    }
+
+    // ================= UI HELPERS =================
+    private fun fieldBox(icon: String, field: EditText) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = strokedBg(border, "#FAFAFF", 12)
+        setPadding(18, 4, 18, 4)
+        addView(TextView(this@LoginActivity).apply { text = "$icon  "; textSize = 14f })
+        (field.parent as? ViewGroup)?.removeView(field)
+        field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        addView(field)
+    }
+
+    /** Same as fieldBox but adds a tappable eye icon to show/hide the password text. */
+    private fun passwordFieldBox(field: EditText) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = strokedBg(border, "#FAFAFF", 12)
+        setPadding(18, 4, 18, 4)
+        addView(TextView(this@LoginActivity).apply { text = "🔒  "; textSize = 14f })
+        (field.parent as? ViewGroup)?.removeView(field)
+        field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        addView(field)
+
+        val toggle = TextView(this@LoginActivity).apply {
+            text = "👁"
+            textSize = 16f
+            setPadding(16, 0, 8, 0)
+            var visible = false
+            setOnClickListener {
+                visible = !visible
+                field.inputType = if (visible)
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                else
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                field.setSelection(field.text.length)
+                text = if (visible) "🙈" else "👁"
+            }
+        }
+        addView(toggle)
+    }
+
+    private fun circleIcon(label: String, colorHex: String, textColorHex: String, sizeDp: Int) = FrameLayout(this).apply {
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(px, px).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(colorHex))
+        }
+        applyElevation(this, 10f)
+        addView(TextView(this@LoginActivity).apply {
+            text = label
+            textSize = 32f
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        })
+    }
+
+    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
+        setColor(Color.parseColor(colorHex))
+        cornerRadius = radius.toFloat()
+    }
+
+    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
+        setColor(Color.parseColor(fillHex))
+        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
+        cornerRadius = radius.toFloat()
+    }
+
+    private fun applyElevation(view: View, dp: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            view.elevation = dp * resources.displayMetrics.density
+            view.outlineProvider = ViewOutlineProvider.BACKGROUND
+        }
+    }
+
+    private fun spacer(heightDp: Int) = View(this).apply {
+        val px = (heightDp * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
 }
