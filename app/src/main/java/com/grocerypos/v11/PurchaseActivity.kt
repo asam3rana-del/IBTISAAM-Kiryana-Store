@@ -36,7 +36,9 @@ data class PurchaseLine(
     val amount: Double,
     val mainUnit: String,
     val secondaryUnit: String,
-    val secondaryUnitQty: Double
+    val secondaryUnitQty: Double,
+    val tertiaryUnit: String,
+    val tertiaryUnitQty: Double
 )
 
 private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
@@ -554,7 +556,6 @@ class PurchaseActivity : AppCompatActivity() {
         setColor(Color.parseColor(colorHex))
     }
 
-    /** Adds a soft elevation/shadow to a view that has a rounded background (API 21+). */
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             view.elevation = dp * resources.displayMetrics.density
@@ -634,7 +635,9 @@ class PurchaseActivity : AppCompatActivity() {
                         amount = pi.amount,
                         mainUnit = product?.unit ?: "",
                         secondaryUnit = product?.secondaryUnit ?: "",
-                        secondaryUnitQty = product?.secondaryUnitQty ?: 0.0
+                        secondaryUnitQty = product?.secondaryUnitQty ?: 0.0,
+                        tertiaryUnit = product?.tertiaryUnit ?: "",
+                        tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0
                     )
                 )
             }
@@ -677,7 +680,7 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Item entry logic ----
+    // ---- Item entry logic (supports 3 unit tiers) ----
     private fun onItemPicked(pickedName: String) {
         val product = products.find { it.name.equals(pickedName, ignoreCase = true) } ?: return
         selectedProduct = product
@@ -687,11 +690,21 @@ class PurchaseActivity : AppCompatActivity() {
         if (product.secondaryUnit.isNotBlank() && product.secondaryUnit != product.unit) {
             unitOptions.add(product.secondaryUnit)
         }
+        if (product.tertiaryUnit.isNotBlank() && !unitOptions.contains(product.tertiaryUnit)) {
+            unitOptions.add(product.tertiaryUnit)
+        }
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
         buildUnitChips(unitOptions, product.unit)
 
-        if (unitOptions.size > 1 && product.secondaryUnitQty > 0) {
-            conversionInfo.text = "🔁  1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}"
+        val conversionParts = mutableListOf<String>()
+        if (product.secondaryUnit.isNotBlank() && product.secondaryUnitQty > 0) {
+            conversionParts.add("1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}")
+        }
+        if (product.tertiaryUnit.isNotBlank() && product.tertiaryUnitQty > 0) {
+            conversionParts.add("1 ${product.secondaryUnit} = ${product.tertiaryUnitQty} ${product.tertiaryUnit}")
+        }
+        if (conversionParts.isNotEmpty()) {
+            conversionInfo.text = "🔁  " + conversionParts.joinToString("   •   ")
             conversionInfo.visibility = View.VISIBLE
         } else {
             conversionInfo.visibility = View.GONE
@@ -766,7 +779,9 @@ class PurchaseActivity : AppCompatActivity() {
             amount = q * r,
             mainUnit = product.unit,
             secondaryUnit = product.secondaryUnit,
-            secondaryUnitQty = product.secondaryUnitQty
+            secondaryUnitQty = product.secondaryUnitQty,
+            tertiaryUnit = product.tertiaryUnit,
+            tertiaryUnitQty = product.tertiaryUnitQty
         )
         lines.add(line)
         renderItemsList()
@@ -844,7 +859,7 @@ class PurchaseActivity : AppCompatActivity() {
             .show()
     }
 
-    // ---- Save ----
+    // ---- Save (with 3-tier unit -> main-unit conversion for stock & unitCost) ----
     private fun savePurchase() {
         val party = partyName.text.toString().trim()
         if (party.isEmpty()) { partyName.error = "Required"; return }
@@ -866,6 +881,7 @@ class PurchaseActivity : AppCompatActivity() {
 
             val original = originalPurchase
             if (original != null) {
+                // originalItems.qty is already stored in main-unit terms, so this reversal is safe as-is.
                 originalItems.forEach { db.productDao().decrease(it.barcode, it.qty) }
                 val originalOutstanding = original.total - original.paid
                 if (original.supplierId != null && originalOutstanding > 0) {
@@ -888,13 +904,24 @@ class PurchaseActivity : AppCompatActivity() {
                 )
             )
 
+            // ---- Convert each line's qty/rate into main-unit terms before storing/adding stock ----
+            fun conversionFactor(line: PurchaseLine): Double = when {
+                line.unit == line.secondaryUnit && line.secondaryUnitQty > 0 -> line.secondaryUnitQty
+                line.unit == line.tertiaryUnit && line.tertiaryUnitQty > 0 ->
+                    if (line.secondaryUnitQty > 0) line.secondaryUnitQty * line.tertiaryUnitQty else line.tertiaryUnitQty
+                else -> 1.0
+            }
+
             db.purchaseDao().items(
                 lines.map { line ->
+                    val factor = conversionFactor(line)
+                    val mainUnitQty = line.qty / factor
+                    val unitCostPerMainUnit = line.rate * factor
                     PurchaseItem(
                         billNo = billNo,
                         barcode = line.barcode ?: "",
-                        qty = line.qty.roundToInt(),
-                        unitCost = line.rate,
+                        qty = mainUnitQty.roundToInt(),
+                        unitCost = unitCostPerMainUnit,
                         amount = line.amount,
                         unit = line.unit
                     )
@@ -902,7 +929,9 @@ class PurchaseActivity : AppCompatActivity() {
             )
 
             lines.forEach { line ->
-                line.barcode?.let { db.productDao().increase(it, line.qty.roundToInt()) }
+                val factor = conversionFactor(line)
+                val mainUnitQty = line.qty / factor
+                line.barcode?.let { db.productDao().increase(it, mainUnitQty.roundToInt()) }
             }
 
             val outstanding = grandTotal - amountPaid
