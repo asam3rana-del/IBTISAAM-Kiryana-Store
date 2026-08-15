@@ -9,13 +9,9 @@
         android:theme="@style/Theme.GroceryPOS"
         android:label="IBTISAAM TRADERS POS"
         android:allowBackup="true"
-        android:supportsRtl="true"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round">
+        android:supportsRtl="true">
 
-        <activity
-            android:name=".ui.SettingsActivity"
-            android:theme="@style/Theme.SettingsSheet" />
+        <activity android:name=".ui.SettingsActivity" />
         <activity android:name=".ui.LoginActivity" />
         <activity android:name=".ui.ProductActivity" />
         <activity android:name=".ui.ReportsActivity" />
@@ -25,10 +21,8 @@
         <activity android:name=".ui.HistoryActivity" />
         <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
         <activity android:name=".ui.PartyActivity" />
-        <activity android:name=".ui.UserManagementActivity" />
         <activity android:name=".ui.PartyReportsActivity" />
-        <activity android:name=".ui.CategoriesUnitsActivity" android:exported="false" />
-        <activity android:name=".ui.ItemsActivity" android:exported="false" />
+        <activity android:name=".ui.UserManagementActivity" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
