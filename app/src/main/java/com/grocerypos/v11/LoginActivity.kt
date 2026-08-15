@@ -159,7 +159,7 @@ class LoginActivity : AppCompatActivity() {
 
         setContentView(ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(gradientTop))
-            addView(outer, ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT))
+            addView(outer, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         })
 
         // ---- First-time setup: create a default admin login if none exists yet ----
