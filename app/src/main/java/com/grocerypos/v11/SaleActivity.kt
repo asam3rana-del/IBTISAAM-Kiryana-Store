@@ -37,7 +37,9 @@ data class SaleLine(
     val amount: Double,
     val mainUnit: String,
     val secondaryUnit: String,
-    val secondaryUnitQty: Double
+    val secondaryUnitQty: Double,
+    val tertiaryUnit: String,
+    val tertiaryUnitQty: Double
 )
 
 class SaleActivity : AppCompatActivity() {
@@ -150,7 +152,7 @@ class SaleActivity : AppCompatActivity() {
         root.addView(dateBox)
         root.addView(spacer(12))
 
-        // ================= FIRM NAME (now loaded from saved Shop Info) =================
+        // ================= FIRM NAME (loaded from saved Shop Info) =================
         val firmBox = outlinedBox().apply {
             background = strokedBg(border, "#F7F6FE", 14)
         }
@@ -607,11 +609,13 @@ class SaleActivity : AppCompatActivity() {
             .show()
     }
 
+    // ---- Item selection & auto price (now supports 3 unit tiers) ----
     private fun onItemPicked(name: String) {
         val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
         selectedProduct = product
-        val unitChoices = if (product.secondaryUnit.isNotEmpty())
-            listOf(product.unit, product.secondaryUnit) else listOf(product.unit)
+        val unitChoices = mutableListOf(product.unit)
+        if (product.secondaryUnit.isNotEmpty()) unitChoices.add(product.secondaryUnit)
+        if (product.tertiaryUnit.isNotEmpty()) unitChoices.add(product.tertiaryUnit)
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
         refillAutoPrice()
     }
@@ -621,9 +625,34 @@ class SaleActivity : AppCompatActivity() {
         val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
         val basePrice = if (isWholesale) product.wholesalePrice else product.salePrice
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val isSecondary = chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0
-        val price = if (isSecondary) basePrice / product.secondaryUnitQty else basePrice
-        unitPrice.setText(if (price > 0) "%.2f".format(price) else "")
+
+        val price = when {
+            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
+                basePrice / product.secondaryUnitQty
+            chosenUnit == product.tertiaryUnit && product.tertiaryUnitQty > 0 -> {
+                if (product.secondaryUnitQty > 0)
+                    basePrice / (product.secondaryUnitQty * product.tertiaryUnitQty)
+                else
+                    basePrice / product.tertiaryUnitQty
+            }
+            else -> basePrice
+        }
+        unitPrice.setText(if (price > 0) "%.4f".format(price) else "")
+    }
+
+    /** Converts an entered quantity (in whichever unit was chosen) into main-unit-equivalent. */
+    private fun toMainUnitQty(qtyEntered: Double, chosenUnit: String, product: Product): Double {
+        return when {
+            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
+                qtyEntered / product.secondaryUnitQty
+            chosenUnit == product.tertiaryUnit && product.tertiaryUnitQty > 0 -> {
+                if (product.secondaryUnitQty > 0)
+                    qtyEntered / (product.secondaryUnitQty * product.tertiaryUnitQty)
+                else
+                    qtyEntered / product.tertiaryUnitQty
+            }
+            else -> qtyEntered
+        }
     }
 
     private fun addItem() {
@@ -642,8 +671,7 @@ class SaleActivity : AppCompatActivity() {
         }
 
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val isSecondary = chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0
-        val mainUnitQtyEquivalent = if (isSecondary) q / product.secondaryUnitQty else q
+        val mainUnitQtyEquivalent = toMainUnitQty(q, chosenUnit, product)
 
         if (product.stock < mainUnitQtyEquivalent) {
             Toast.makeText(this, "Stock kam hai (available: ${product.stock} ${product.unit})", Toast.LENGTH_SHORT).show()
@@ -662,7 +690,9 @@ class SaleActivity : AppCompatActivity() {
                 amount = amount,
                 mainUnit = product.unit,
                 secondaryUnit = product.secondaryUnit,
-                secondaryUnitQty = product.secondaryUnitQty
+                secondaryUnitQty = product.secondaryUnitQty,
+                tertiaryUnit = product.tertiaryUnit,
+                tertiaryUnitQty = product.tertiaryUnitQty
             )
         )
         renderItemsList()
@@ -733,6 +763,7 @@ class SaleActivity : AppCompatActivity() {
         if (isCashSale) paidInput.setText("%.2f".format(total))
     }
 
+    // ================= Save =================
     private fun saveSale() {
         if (lines.isEmpty()) {
             Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
@@ -776,25 +807,35 @@ class SaleActivity : AppCompatActivity() {
                 )
             )
 
-            val saleItems = lines.map {
-                val isSecondary = it.secondaryUnit.isNotEmpty() && it.unit == it.secondaryUnit && it.secondaryUnitQty > 0
-                val mainUnitQty = if (isSecondary) it.qty / it.secondaryUnitQty else it.qty
-                val unitPricePerMainUnit = if (isSecondary) it.unitPrice * it.secondaryUnitQty else it.unitPrice
+            val saleItems = lines.map { line ->
+                val conversionFactor = when {
+                    line.unit == line.secondaryUnit && line.secondaryUnitQty > 0 -> line.secondaryUnitQty
+                    line.unit == line.tertiaryUnit && line.tertiaryUnitQty > 0 ->
+                        if (line.secondaryUnitQty > 0) line.secondaryUnitQty * line.tertiaryUnitQty else line.tertiaryUnitQty
+                    else -> 1.0
+                }
+                val mainUnitQty = line.qty / conversionFactor
+                val unitPricePerMainUnit = line.unitPrice * conversionFactor
                 SaleItem(
                     invoice = invoice,
-                    barcode = it.barcode,
-                    product = it.itemName,
+                    barcode = line.barcode,
+                    product = line.itemName,
                     qty = mainUnitQty.roundToInt(),
                     unitPrice = unitPricePerMainUnit,
-                    cost = it.cost,
-                    amount = it.amount
+                    cost = line.cost,
+                    amount = line.amount
                 )
             }
             db.saleDao().items(saleItems)
 
             for (line in lines) {
-                val isSecondary = line.secondaryUnit.isNotEmpty() && line.unit == line.secondaryUnit && line.secondaryUnitQty > 0
-                val mainUnitQty = if (isSecondary) line.qty / line.secondaryUnitQty else line.qty
+                val conversionFactor = when {
+                    line.unit == line.secondaryUnit && line.secondaryUnitQty > 0 -> line.secondaryUnitQty
+                    line.unit == line.tertiaryUnit && line.tertiaryUnitQty > 0 ->
+                        if (line.secondaryUnitQty > 0) line.secondaryUnitQty * line.tertiaryUnitQty else line.tertiaryUnitQty
+                    else -> 1.0
+                }
+                val mainUnitQty = line.qty / conversionFactor
                 db.productDao().decrease(line.barcode, mainUnitQty.roundToInt())
             }
 
@@ -863,8 +904,10 @@ class SaleActivity : AppCompatActivity() {
         ).joinToString("\u0001")
 
         val itemsPart = lines.joinToString("\u0002") {
-            listOf(it.barcode, it.itemName, it.qty, it.unit, it.unitPrice, it.cost, it.amount, it.mainUnit, it.secondaryUnit, it.secondaryUnitQty)
-                .joinToString("\u0003")
+            listOf(
+                it.barcode, it.itemName, it.qty, it.unit, it.unitPrice, it.cost, it.amount,
+                it.mainUnit, it.secondaryUnit, it.secondaryUnitQty, it.tertiaryUnit, it.tertiaryUnitQty
+            ).joinToString("\u0003")
         }
         return header + "\u0004" + itemsPart
     }
@@ -897,7 +940,9 @@ class SaleActivity : AppCompatActivity() {
                             amount = f[6].toDoubleOrNull() ?: 0.0,
                             mainUnit = f[7],
                             secondaryUnit = f[8],
-                            secondaryUnitQty = f[9].toDoubleOrNull() ?: 0.0
+                            secondaryUnitQty = f[9].toDoubleOrNull() ?: 0.0,
+                            tertiaryUnit = f.getOrNull(10) ?: "",
+                            tertiaryUnitQty = f.getOrNull(11)?.toDoubleOrNull() ?: 0.0
                         )
                     )
                 }
