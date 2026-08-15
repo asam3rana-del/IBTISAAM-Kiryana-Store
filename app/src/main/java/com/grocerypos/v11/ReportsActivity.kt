@@ -55,6 +55,18 @@ class ReportsActivity : AppCompatActivity() {
         })
         root.addView(spacer(18))
 
+        root.addView(Button(this).apply {
+            text = "PARTY REPORTS"
+            textSize = 12.5f
+            setTextColor(Color.parseColor("#6A1B9A"))
+            background = strokedBg("#6A1B9A", "#FFFFFF", 16)
+            setPadding(0, 20, 0, 20)
+            setOnClickListener {
+                startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java))
+            }
+        })
+        root.addView(spacer(18))
+
         val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val today = smallButton("Today") { setRangeToday(); loadReport() }
         val week = smallButton("This Week") { setRangeThisWeek(); loadReport() }
