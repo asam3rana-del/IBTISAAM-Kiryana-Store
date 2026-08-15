@@ -239,7 +239,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun doLogout() {
         getSharedPreferences("session", MODE_PRIVATE).edit().clear().apply()
-        startActivity(Intent(this@MainActivity, LoginActivity::class.java))
+        // NOTE: a plain finish() here only removes MainActivity itself. If the user had
+        // navigated deeper (e.g. MainActivity -> SaleActivity -> back -> MainActivity), or if
+        // some other screen is still sitting under this one in the task, that screen would stay
+        // reachable via Back after logging out. FLAG_ACTIVITY_NEW_TASK + FLAG_ACTIVITY_CLEAR_TASK
+        // wipes the whole task so LoginActivity is the only thing left in the back stack.
+        val intent = Intent(this@MainActivity, LoginActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        startActivity(intent)
         finish()
     }
 
