@@ -39,6 +39,18 @@ data class PurchaseLine(
     val secondaryUnitQty: Double
 )
 
+// ---- Unit-conversion helpers: a PurchaseLine may be entered in the secondary unit
+// (e.g. "dozen" while the product's stock is tracked in "pcs"). These convert the
+// entered qty back to the product's main unit before it touches the DB / stock. ----
+private fun PurchaseLine.isSecondary(): Boolean =
+    secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
+
+private fun PurchaseLine.mainUnitQty(): Double =
+    if (isSecondary()) qty / secondaryUnitQty else qty
+
+private fun PurchaseLine.mainUnitRate(): Double =
+    if (isSecondary()) rate * secondaryUnitQty else rate
+
 private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
 
 class PurchaseActivity : AppCompatActivity() {
@@ -477,7 +489,10 @@ class PurchaseActivity : AppCompatActivity() {
         })
 
         unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { updateLineTotal() }
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                refillAutoRate()
+                updateLineTotal()
+            }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
     }
@@ -695,7 +710,6 @@ class PurchaseActivity : AppCompatActivity() {
     private fun onItemPicked(pickedName: String) {
         val product = products.find { it.name.equals(pickedName, ignoreCase = true) } ?: return
         selectedProduct = product
-        rate.setText(product.cost.toString())
 
         val unitOptions = mutableListOf(product.unit)
         if (product.secondaryUnit.isNotBlank() && product.secondaryUnit != product.unit) {
@@ -710,7 +724,19 @@ class PurchaseActivity : AppCompatActivity() {
         } else {
             conversionInfo.visibility = View.GONE
         }
+        refillAutoRate()
         updateLineTotal()
+    }
+
+    // ---- FIX: rate now adjusts to the chosen unit, same as SaleActivity.refillAutoPrice().
+    // Picking the product always suggests the main-unit cost; switching to the secondary
+    // unit divides it by secondaryUnitQty so "price per selected unit" stays correct. ----
+    private fun refillAutoRate() {
+        val product = selectedProduct ?: return
+        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
+        val isSecondary = chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0
+        val r = if (isSecondary) product.cost / product.secondaryUnitQty else product.cost
+        rate.setText(if (r > 0) "%.2f".format(r) else "")
     }
 
     private fun buildUnitChips(options: List<String>, selected: String) {
@@ -741,6 +767,7 @@ class PurchaseActivity : AppCompatActivity() {
                 setOnClickListener {
                     unitSpinner.setSelection(options.indexOf(unitLabel))
                     buildUnitChips(options, unitLabel)
+                    refillAutoRate()
                     updateLineTotal()
                 }
             }
@@ -880,6 +907,8 @@ class PurchaseActivity : AppCompatActivity() {
 
             val original = originalPurchase
             if (original != null) {
+                // originalItems.qty was already saved in main-unit terms (see fix below),
+                // so no re-conversion is needed here — reversing the old stock impact as-is.
                 originalItems.forEach { db.productDao().decrease(it.barcode, it.qty) }
                 val originalOutstanding = original.total - original.paid
                 if (original.supplierId != null && originalOutstanding > 0) {
@@ -902,13 +931,16 @@ class PurchaseActivity : AppCompatActivity() {
                 )
             )
 
+            // ---- FIX: convert secondary-unit qty/rate to main-unit terms before persisting,
+            // mirroring SaleActivity. Previously line.qty was saved (and used to bump stock)
+            // exactly as entered, so buying "1 dozen" only added 1 to stock instead of 12. ----
             db.purchaseDao().items(
                 lines.map { line ->
                     PurchaseItem(
                         billNo = billNo,
                         barcode = line.barcode ?: "",
-                        qty = line.qty.roundToInt(),
-                        unitCost = line.rate,
+                        qty = line.mainUnitQty().roundToInt(),
+                        unitCost = line.mainUnitRate(),
                         amount = line.amount,
                         unit = line.unit
                     )
@@ -916,7 +948,7 @@ class PurchaseActivity : AppCompatActivity() {
             )
 
             lines.forEach { line ->
-                line.barcode?.let { db.productDao().increase(it, line.qty.roundToInt()) }
+                line.barcode?.let { db.productDao().increase(it, line.mainUnitQty().roundToInt()) }
             }
 
             val outstanding = grandTotal - amountPaid
