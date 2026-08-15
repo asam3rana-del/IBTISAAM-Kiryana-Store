@@ -41,17 +41,16 @@ data class SaleLine(
 
 class SaleActivity : AppCompatActivity() {
 
-    // ================= PREMIUM COLOR PALETTE =================
-    private val bg = "#F3F2FA"            // soft lavender-grey background
+    private val bg = "#F3F2FA"
     private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"       // indigo/violet - premium accent
+    private val primary = "#4A3AFF"
     private val primaryDark = "#3527D6"
-    private val green = "#1FA971"         // fresh emerald for cash/success
+    private val green = "#1FA971"
     private val greenDark = "#158A5A"
-    private val red = "#E5484D"           // coral red for credit/remove
+    private val red = "#E5484D"
     private val redDark = "#C93A3E"
-    private val blue = "#2F6FED"          // clean blue for links/actions
-    private val amber = "#F5A524"         // for totals/highlights
+    private val blue = "#2F6FED"
+    private val amber = "#F5A524"
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
     private val border = "#E7E5F3"
@@ -75,6 +74,7 @@ class SaleActivity : AppCompatActivity() {
     private lateinit var paymentSection: LinearLayout
     private lateinit var paidInput: EditText
     private lateinit var paymentMethodSpinner: Spinner
+    private lateinit var firmNameText: TextView
 
     private var customers = listOf<Customer>()
     private var products = listOf<Product>()
@@ -149,7 +149,7 @@ class SaleActivity : AppCompatActivity() {
         root.addView(dateBox)
         root.addView(spacer(12))
 
-        // ================= FIRM NAME =================
+        // ================= FIRM NAME (now loaded from saved Shop Info) =================
         val firmBox = outlinedBox().apply {
             background = strokedBg(border, "#F7F6FE", 14)
         }
@@ -158,12 +158,13 @@ class SaleActivity : AppCompatActivity() {
         firmRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
         val firmCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         firmCol.addView(TextView(this).apply { text = "Firm Name"; textSize = 11.5f; setTextColor(Color.parseColor(textGray)) })
-        firmCol.addView(TextView(this).apply {
+        firmNameText = TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
             textSize = 14.5f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
+        }
+        firmCol.addView(firmNameText)
         firmRow.addView(firmCol)
         firmBox.addView(firmRow)
         root.addView(firmBox)
@@ -429,6 +430,7 @@ class SaleActivity : AppCompatActivity() {
 
         loadCustomers()
         loadProducts()
+        loadFirmName()
         setSaleMode(true)
 
         itemName.setOnItemClickListener { _, _, position, _ ->
@@ -449,6 +451,13 @@ class SaleActivity : AppCompatActivity() {
         saleTypeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { refillAutoPrice() }
             override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+    }
+
+    private fun loadFirmName() {
+        lifecycleScope.launch {
+            val savedName = PosDatabase.get(this@SaleActivity).appSettingDao().get("shop_name")?.value
+            if (!savedName.isNullOrBlank()) firmNameText.text = savedName
         }
     }
 
@@ -516,7 +525,6 @@ class SaleActivity : AppCompatActivity() {
         setColor(Color.parseColor(colorHex))
     }
 
-    /** Adds a soft elevation/shadow to a view that has a rounded background (API 21+). */
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             view.elevation = dp * resources.displayMetrics.density
@@ -546,7 +554,6 @@ class SaleActivity : AppCompatActivity() {
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    // ================= Cash / Credit toggle =================
     private fun setSaleMode(cash: Boolean) {
         isCashSale = cash
         if (cash) {
@@ -564,7 +571,6 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    // ================= Data loading =================
     private fun loadCustomers() {
         lifecycleScope.launch {
             PosDatabase.get(this@SaleActivity).customerDao().all().collectLatest { list ->
@@ -600,7 +606,6 @@ class SaleActivity : AppCompatActivity() {
             .show()
     }
 
-    // ================= Item selection & auto price =================
     private fun onItemPicked(name: String) {
         val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
         selectedProduct = product
@@ -620,7 +625,6 @@ class SaleActivity : AppCompatActivity() {
         unitPrice.setText(if (price > 0) "%.2f".format(price) else "")
     }
 
-    // ================= Add item to bill =================
     private fun addItem() {
         val n = itemName.text.toString().trim()
         val q = qty.text.toString().toDoubleOrNull() ?: 0.0
@@ -728,7 +732,6 @@ class SaleActivity : AppCompatActivity() {
         if (isCashSale) paidInput.setText("%.2f".format(total))
     }
 
-    // ================= Save =================
     private fun saveSale() {
         if (lines.isEmpty()) {
             Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
@@ -815,7 +818,6 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    // ================= Hold Bill =================
     private fun holdBill() {
         if (lines.isEmpty()) {
             Toast.makeText(this, "Add items pehle, phir hold karen", Toast.LENGTH_SHORT).show()
@@ -899,7 +901,6 @@ class SaleActivity : AppCompatActivity() {
         dateValueText.text = formatDate(saleDateMillis)
     }
 
-    // ================= Recall Bill dialog =================
     private fun openRecallDialog() {
         lifecycleScope.launch {
             val held = PosDatabase.get(this@SaleActivity).heldDao().all().first()
