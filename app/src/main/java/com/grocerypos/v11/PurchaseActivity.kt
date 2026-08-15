@@ -83,6 +83,7 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var paidInput: EditText
     private lateinit var paymentMethodSpinner: Spinner
     private lateinit var saveButton: Button
+    private lateinit var firmNameText: TextView
     private var isCashPurchase = true
 
     private var suppliers = listOf<Supplier>()
@@ -159,7 +160,7 @@ class PurchaseActivity : AppCompatActivity() {
         dateBox.addView(dateRow)
         root.addView(dateBox)
 
-        // ================= FIRM NAME =================
+        // ================= FIRM NAME (loaded from saved Shop Info) =================
         val firmBox = premiumCard().apply {
             setPadding(20, 14, 20, 14)
             background = strokedBg(border, "#FFF6EF", 14)
@@ -172,12 +173,13 @@ class PurchaseActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         firmCol.addView(TextView(this).apply { text = "Firm Name"; textSize = 11.5f; setTextColor(Color.parseColor(textMuted)) })
-        firmCol.addView(TextView(this).apply {
+        firmNameText = TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
             textSize = 14.5f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
+        }
+        firmCol.addView(firmNameText)
         firmRow.addView(firmCol)
         firmBox.addView(firmRow)
         root.addView(firmBox)
@@ -458,6 +460,7 @@ class PurchaseActivity : AppCompatActivity() {
         loadSuppliers()
         loadUnits()
         loadProducts()
+        loadFirmName()
         setPurchaseMode(true)
         editBillNo?.let { loadForEdit(it) }
 
@@ -478,6 +481,13 @@ class PurchaseActivity : AppCompatActivity() {
         unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { updateLineTotal() }
             override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+    }
+
+    private fun loadFirmName() {
+        lifecycleScope.launch {
+            val savedName = PosDatabase.get(this@PurchaseActivity).appSettingDao().get("shop_name")?.value
+            if (!savedName.isNullOrBlank()) firmNameText.text = savedName
         }
     }
 
@@ -881,7 +891,6 @@ class PurchaseActivity : AppCompatActivity() {
 
             val original = originalPurchase
             if (original != null) {
-                // originalItems.qty is already stored in main-unit terms, so this reversal is safe as-is.
                 originalItems.forEach { db.productDao().decrease(it.barcode, it.qty) }
                 val originalOutstanding = original.total - original.paid
                 if (original.supplierId != null && originalOutstanding > 0) {
@@ -904,7 +913,6 @@ class PurchaseActivity : AppCompatActivity() {
                 )
             )
 
-            // ---- Convert each line's qty/rate into main-unit terms before storing/adding stock ----
             fun conversionFactor(line: PurchaseLine): Double = when {
                 line.unit == line.secondaryUnit && line.secondaryUnitQty > 0 -> line.secondaryUnitQty
                 line.unit == line.tertiaryUnit && line.tertiaryUnitQty > 0 ->
