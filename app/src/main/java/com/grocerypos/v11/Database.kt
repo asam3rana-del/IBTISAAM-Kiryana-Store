@@ -37,7 +37,9 @@ data class Product(
     val secondaryUnit:String="",
     val secondaryUnitQty:Double=0.0,
     val wholesalePrice:Double=0.0,  // wholesale rate (parchon rate) - added
-    val openingStock:Int=0          // added
+    val openingStock:Int=0,         // added
+    val tertiaryUnit:String="",             // smallest unit, e.g. "grams" or "ml" - added
+    val tertiaryUnitQty:Double=0.0          // 1 secondaryUnit = X tertiaryUnit - added
 )
 
 @Entity(tableName="customers")
@@ -417,12 +419,23 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
     }
 }
 
+// v16 -> v17: products gain a `tertiaryUnit` (smallest unit, e.g. grams/ml)
+// and `tertiaryUnitQty` (how many tertiary units make up 1 secondary unit).
+// Existing rows default to '' / 0.0, meaning "no tertiary unit set" — the UI
+// simply won't offer a third unit choice for those products until set.
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE products ADD COLUMN tertiaryUnit TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE products ADD COLUMN tertiaryUnitQty REAL NOT NULL DEFAULT 0.0")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class],
-    version=16, exportSchema=false
+    version=17, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -445,7 +458,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                 .fallbackToDestructiveMigration()
                 .build().also{INSTANCE=it}
         }
