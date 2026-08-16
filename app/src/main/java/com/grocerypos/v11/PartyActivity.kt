@@ -22,16 +22,17 @@ import java.util.Locale
 
 class PartyActivity : AppCompatActivity() {
 
-    // ---- Palette matched to the Dashboard ----
-    private val bg = "#F4F3FB"
-    private val gradientStart = "#3949AB"
-    private val gradientEnd = "#5C6BC0"
-    private val blue = "#1565C0"
-    private val orange = "#EF6C00"
-    private val green = "#2E7D32"
-    private val red = "#C62828"
+    // ---- Light premium palette ----
+    private val bg = "#FAFAFC"
+    private val gradientStart = "#7C86F5"
+    private val gradientEnd = "#A6ADFF"
+    private val blue = "#5B6EE8"
+    private val orange = "#F5A15C"
+    private val green = "#4CAF50"
+    private val red = "#E57373"
     private val cardWhite = "#FFFFFF"
-    private val labelGray = "#9E9E9E"
+    private val cardBorder = "#EEF0F7"
+    private val labelGray = "#9AA0B4"
 
     private lateinit var tabRow: LinearLayout
     private lateinit var formCard: LinearLayout
@@ -86,7 +87,7 @@ class PartyActivity : AppCompatActivity() {
         headerText.addView(TextView(this).apply {
             text = Loc.t(this@PartyActivity, "Manage parties & view ledgers", "پارٹیز کا انتظام اور کھاتے دیکھیں")
             textSize = 12f
-            setTextColor(Color.parseColor("#D5D8F5"))
+            setTextColor(Color.parseColor("#EDEFFC"))
         })
         header.addView(headerText)
         outer.addView(header)
@@ -181,7 +182,7 @@ class PartyActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         listHeaderRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Tap a party for full history", "مکمل تاریخ کے لیے پارٹی پر ٹیپ کریں")
+            text = Loc.t(this@PartyActivity, "Tap for history · icons to edit/delete", "تاریخ کے لیے ٹیپ کریں · ترمیم/حذف کے آئیکنز")
             textSize = 11f
             setTextColor(Color.parseColor(labelGray))
         })
@@ -212,17 +213,17 @@ class PartyActivity : AppCompatActivity() {
         tabRow.removeAllViews()
         tabRow.addView(Button(this).apply {
             text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "CUSTOMERS", "کسٹمرز")
-            setTextColor(Color.WHITE)
+            setTextColor(if (showingCustomers) Color.WHITE else Color.parseColor("#6B7280"))
             textSize = 12f
-            background = roundedBackground(if (showingCustomers) blue else "#B0B7C3", 24)
+            background = roundedBackground(if (showingCustomers) blue else "#EEF0F7", 24)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
             setOnClickListener { showCustomers() }
         })
         tabRow.addView(Button(this).apply {
             text = "\uD83D\uDCE6  " + Loc.t(this@PartyActivity, "SUPPLIERS", "سپلائرز")
-            setTextColor(Color.WHITE)
+            setTextColor(if (!showingCustomers) Color.WHITE else Color.parseColor("#6B7280"))
             textSize = 12f
-            background = roundedBackground(if (!showingCustomers) orange else "#B0B7C3", 24)
+            background = roundedBackground(if (!showingCustomers) orange else "#EEF0F7", 24)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener { showSuppliers() }
         })
@@ -284,7 +285,13 @@ class PartyActivity : AppCompatActivity() {
                     listContainer.addView(emptyCard(Loc.t(this@PartyActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
                 }
                 for (c in list) {
-                    listContainer.addView(partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64") { openCustomerHistory(c) })
+                    listContainer.addView(
+                        partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64",
+                            onClick = { openCustomerHistory(c) },
+                            onEdit = { editCustomerDialog(c) },
+                            onDelete = { confirmDeleteCustomer(c) }
+                        )
+                    )
                 }
             }
         }
@@ -298,7 +305,13 @@ class PartyActivity : AppCompatActivity() {
                     listContainer.addView(emptyCard(Loc.t(this@PartyActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
                 }
                 for (s in list) {
-                    listContainer.addView(partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6") { openSupplierHistory(s) })
+                    listContainer.addView(
+                        partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6",
+                            onClick = { openSupplierHistory(s) },
+                            onEdit = { editSupplierDialog(s) },
+                            onDelete = { confirmDeleteSupplier(s) }
+                        )
+                    )
                 }
             }
         }
@@ -312,17 +325,23 @@ class PartyActivity : AppCompatActivity() {
         running: Double,
         accentHex: String,
         icon: String,
-        onClick: () -> Unit
+        onClick: () -> Unit,
+        onEdit: () -> Unit,
+        onDelete: () -> Unit
     ): LinearLayout {
         val closing = opening + running
         val outerRow = premiumCard().apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 12)
+        }
+
+        val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 16, 18, 16)
             setOnClickListener { onClick() }
         }
 
-        outerRow.addView(TextView(this).apply {
+        topRow.addView(TextView(this).apply {
             text = icon
             textSize = 18f
             gravity = Gravity.CENTER
@@ -340,6 +359,7 @@ class PartyActivity : AppCompatActivity() {
             text = name
             textSize = 15f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor("#2E3242"))
         })
         if (phone.isNotEmpty()) {
             infoCol.addView(TextView(this).apply {
@@ -362,16 +382,163 @@ class PartyActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(accentHex))
             setPadding(0, 4, 0, 0)
         })
-        outerRow.addView(infoCol)
+        topRow.addView(infoCol)
 
-        outerRow.addView(TextView(this).apply {
+        topRow.addView(TextView(this).apply {
             text = "Rs %.2f".format(closing)
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor(if (closing > 0) red else green))
         })
+        outerRow.addView(topRow)
+
+        // ---- action row: edit / delete ----
+        val actionDivider = View(this).apply {
+            setBackgroundColor(Color.parseColor(cardBorder))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
+                setMargins(0, 12, 0, 8)
+            }
+        }
+        outerRow.addView(actionDivider)
+
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        actionRow.addView(actionChip("\u270F\uFE0F", Loc.t(this@PartyActivity, "Edit", "ترمیم"), accentHex, isDelete = false) { onEdit() })
+        actionRow.addView(spacer(10).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT) })
+        actionRow.addView(actionChip("\uD83D\uDDD1\uFE0F", Loc.t(this@PartyActivity, "Delete", "حذف کریں"), red, isDelete = true) { onDelete() })
+        outerRow.addView(actionRow)
 
         return outerRow
+    }
+
+    private fun actionChip(icon: String, label: String, colorHex: String, isDelete: Boolean, onClick: () -> Unit): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(16, 8, 16, 8)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(if (isDelete) "#FDEDED" else "#EEF0FF"))
+                cornerRadius = 20f
+            }
+            addView(TextView(this@PartyActivity).apply { text = icon; textSize = 12f })
+            addView(TextView(this@PartyActivity).apply {
+                text = "  $label"
+                textSize = 12f
+                setTextColor(Color.parseColor(colorHex))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            setOnClickListener { onClick() }
+        }
+    }
+
+    // ================= Edit dialogs =================
+    private fun editCustomerDialog(c: Customer) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 24, 32, 8)
+        }
+        val nameEdit = EditText(this).apply { setText(c.name); hint = Loc.t(this@PartyActivity, "Name", "نام") }
+        val phoneEdit = EditText(this).apply { setText(c.phone); hint = Loc.t(this@PartyActivity, "Phone", "فون"); inputType = InputType.TYPE_CLASS_PHONE }
+        val limitEdit = EditText(this).apply { setText(c.creditLimit.toString()); hint = Loc.t(this@PartyActivity, "Credit Limit", "کریڈٹ لیمٹ"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
+        val openingEdit = EditText(this).apply { setText(c.openingBalance.toString()); hint = Loc.t(this@PartyActivity, "Opening Balance", "ابتدائی بیلنس"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
+        for (f in listOf(nameEdit, phoneEdit, limitEdit, openingEdit)) {
+            container.addView(f)
+            container.addView(spacer(10))
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Edit Customer", "کسٹمر میں ترمیم کریں"))
+            .setView(container)
+            .setPositiveButton(Loc.t(this, "Save", "محفوظ کریں")) { d, _ ->
+                val newName = nameEdit.text.toString().trim()
+                if (newName.isEmpty()) {
+                    Toast.makeText(this, Loc.t(this, "Name is required", "نام ضروری ہے"), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    val updated = c.copy(
+                        name = newName,
+                        phone = phoneEdit.text.toString().trim(),
+                        creditLimit = limitEdit.text.toString().toDoubleOrNull() ?: c.creditLimit,
+                        openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: c.openingBalance
+                    )
+                    PosDatabase.get(this@PartyActivity).customerDao().update(updated)
+                    Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Updated", "اپ ڈیٹ ہو گیا"), Toast.LENGTH_SHORT).show()
+                }
+                d.dismiss()
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    private fun editSupplierDialog(s: Supplier) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 24, 32, 8)
+        }
+        val nameEdit = EditText(this).apply { setText(s.name); hint = Loc.t(this@PartyActivity, "Name", "نام") }
+        val phoneEdit = EditText(this).apply { setText(s.phone); hint = Loc.t(this@PartyActivity, "Phone", "فون"); inputType = InputType.TYPE_CLASS_PHONE }
+        val openingEdit = EditText(this).apply { setText(s.openingBalance.toString()); hint = Loc.t(this@PartyActivity, "Opening Balance", "ابتدائی بیلنس"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
+        for (f in listOf(nameEdit, phoneEdit, openingEdit)) {
+            container.addView(f)
+            container.addView(spacer(10))
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Edit Supplier", "سپلائر میں ترمیم کریں"))
+            .setView(container)
+            .setPositiveButton(Loc.t(this, "Save", "محفوظ کریں")) { d, _ ->
+                val newName = nameEdit.text.toString().trim()
+                if (newName.isEmpty()) {
+                    Toast.makeText(this, Loc.t(this, "Name is required", "نام ضروری ہے"), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    val updated = s.copy(
+                        name = newName,
+                        phone = phoneEdit.text.toString().trim(),
+                        openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: s.openingBalance
+                    )
+                    PosDatabase.get(this@PartyActivity).supplierDao().update(updated)
+                    Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Updated", "اپ ڈیٹ ہو گیا"), Toast.LENGTH_SHORT).show()
+                }
+                d.dismiss()
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    // ================= Delete confirmations =================
+    private fun confirmDeleteCustomer(c: Customer) {
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Delete Customer", "کسٹمر حذف کریں"))
+            .setMessage(Loc.t(this, "Delete ${c.name}? This cannot be undone.", "${c.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔"))
+            .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { d, _ ->
+                lifecycleScope.launch {
+                    PosDatabase.get(this@PartyActivity).customerDao().delete(c)
+                    Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Deleted", "حذف ہو گیا"), Toast.LENGTH_SHORT).show()
+                }
+                d.dismiss()
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    private fun confirmDeleteSupplier(s: Supplier) {
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Delete Supplier", "سپلائر حذف کریں"))
+            .setMessage(Loc.t(this, "Delete ${s.name}? This cannot be undone.", "${s.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔"))
+            .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { d, _ ->
+                lifecycleScope.launch {
+                    PosDatabase.get(this@PartyActivity).supplierDao().delete(s)
+                    Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Deleted", "حذف ہو گیا"), Toast.LENGTH_SHORT).show()
+                }
+                d.dismiss()
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
     }
 
     // ================= Customer full history =================
@@ -444,7 +611,7 @@ class PartyActivity : AppCompatActivity() {
             setPadding(28, 24, 28, 24)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(colorHex), darken(colorHex))
+                intArrayOf(Color.parseColor(colorHex), lighten(colorHex))
             ).apply {
                 cornerRadii = floatArrayOf(20f, 20f, 20f, 20f, 0f, 0f, 0f, 0f)
             }
@@ -469,7 +636,7 @@ class PartyActivity : AppCompatActivity() {
         val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
         balRow.addView(TextView(this).apply {
             text = Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
-            setTextColor(Color.parseColor("#EAEAFF")); textSize = 11f
+            setTextColor(Color.parseColor("#F2F3FF")); textSize = 11f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         balRow.addView(TextView(this).apply {
@@ -500,7 +667,7 @@ class PartyActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 14, 18, 14)
             background = elevatedCardBg()
-            elevation = 3f
+            elevation = 2f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 10) }
@@ -539,12 +706,12 @@ class PartyActivity : AppCompatActivity() {
 
     // ---- UI helpers ----
 
-    /** Elevated white card matching the dashboard's stat cards. */
+    /** Elevated white card, light premium look with soft border + shadow. */
     private fun premiumCard() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(20, 16, 20, 16)
         background = elevatedCardBg()
-        elevation = 4f
+        elevation = 3f
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, 0, 0, 12) }
@@ -555,8 +722,9 @@ class PartyActivity : AppCompatActivity() {
         orientation = LinearLayout.VERTICAL
         setPadding(18, 10, 18, 10)
         background = GradientDrawable().apply {
-            setColor(Color.parseColor("#F7F7FB"))
+            setColor(Color.parseColor("#F7F8FC"))
             cornerRadius = 10f
+            setStroke(1, Color.parseColor(cardBorder))
         }
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -566,6 +734,7 @@ class PartyActivity : AppCompatActivity() {
     private fun elevatedCardBg() = GradientDrawable().apply {
         setColor(Color.parseColor(cardWhite))
         cornerRadius = 16f
+        setStroke(1, Color.parseColor(cardBorder))
     }
 
     private fun ovalBg(colorHex: String) = GradientDrawable().apply {
@@ -578,11 +747,12 @@ class PartyActivity : AppCompatActivity() {
         this.cornerRadius = cornerRadius.toFloat()
     }
 
-    private fun darken(colorHex: String): Int {
+    private fun lighten(colorHex: String): Int {
         val c = Color.parseColor(colorHex)
         val hsv = FloatArray(3)
         Color.colorToHSV(c, hsv)
-        hsv[2] *= 0.75f
+        hsv[1] *= 0.7f
+        hsv[2] = (hsv[2] * 1.15f).coerceAtMost(1f)
         return Color.HSVToColor(hsv)
     }
 
