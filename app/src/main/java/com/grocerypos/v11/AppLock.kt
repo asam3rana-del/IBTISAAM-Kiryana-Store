@@ -23,6 +23,18 @@ import kotlinx.coroutines.launch
  * trigger a re-lock.
  *
  * Must be registered once from the Application class (see PosApplication).
+ *
+ * FIX — double fingerprint prompt: onActivityStopped used to kick off an ASYNC coroutine to read
+ * `login_method` from the database, then set `pendingReauth = true` whenever that query finished.
+ * If the user left and came straight back before the query finished, the flag would land late and
+ * arm itself in the background — then the very next screen the user opened from *inside* the app
+ * (or MainActivity opening right after a successful login) would incorrectly see pendingReauth
+ * already true and force ANOTHER fingerprint prompt, even though the user never left the app again.
+ * Two changes fix this:
+ *  1. `login_method` is now cached in memory (loaded once at startup, refreshed whenever Settings
+ *     changes it) so the check in onActivityStopped is instant/synchronous — no more race.
+ *  2. LoginActivity itself is excluded from arming pendingReauth, since its own stop/start events
+ *     are part of the lock/unlock flow, not the user leaving the app.
  */
 object AppLock {
 
@@ -31,9 +43,20 @@ object AppLock {
     @Volatile
     private var pendingReauth = false
 
+    // In-memory cache of Settings > Security > Login Method ("password" / "fingerprint" / "both").
+    // Read synchronously wherever needed so re-lock decisions never race with a DB query.
+    @Volatile
+    private var cachedLoginMethod: String = "password"
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun register(app: Application) {
+        // Load the current setting once at startup so the cache is correct from the first
+        // background/foreground cycle onward.
+        scope.launch {
+            cachedLoginMethod = PosDatabase.get(app).appSettingDao().get("login_method")?.value ?: "password"
+        }
+
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
 
             override fun onActivityStarted(activity: Activity) {
@@ -57,14 +80,16 @@ object AppLock {
                 startedCount--
                 if (startedCount <= 0) {
                     startedCount = 0
-                    // Whole app just left the foreground. Check (off the main thread) whether
-                    // the configured login method requires re-auth on next open.
-                    scope.launch {
-                        val method = PosDatabase.get(activity.applicationContext)
-                            .appSettingDao().get("login_method")?.value ?: "password"
-                        if (method == "fingerprint" || method == "both") {
-                            pendingReauth = true
-                        }
+
+                    // LoginActivity stopping is part of the lock/unlock flow itself (e.g. it's
+                    // being replaced by MainActivity right after a successful login) — it is
+                    // never "the user leaving the app", so it must not re-arm pendingReauth.
+                    if (activity is LoginActivity) return
+
+                    // Synchronous — no DB query, no race. The cache is kept fresh by register()'s
+                    // initial load and by SettingsActivity calling updateCachedLoginMethod().
+                    if (cachedLoginMethod == "fingerprint" || cachedLoginMethod == "both") {
+                        pendingReauth = true
                     }
                 }
             }
@@ -75,5 +100,13 @@ object AppLock {
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
             override fun onActivityDestroyed(activity: Activity) {}
         })
+    }
+
+    /**
+     * Call this immediately whenever Settings > Security > Login Method is changed, so the
+     * in-memory cache used by onActivityStopped stays correct without needing a fresh DB read.
+     */
+    fun updateCachedLoginMethod(method: String) {
+        cachedLoginMethod = method
     }
 }
