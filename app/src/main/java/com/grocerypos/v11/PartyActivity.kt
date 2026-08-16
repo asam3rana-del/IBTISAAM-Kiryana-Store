@@ -552,7 +552,8 @@ class PartyActivity : AppCompatActivity() {
                 body.addView(emptyCard(Loc.t(this@PartyActivity, "No sales yet", "ابھی تک کوئی سیل نہیں ہوئی")))
             } else {
                 val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-                for (s in sales) {
+                // ---- Newest first, and no invoice/reference number shown — date is the identifier ----
+                for (s in sales.sortedByDescending { it.createdAt }) {
                     body.addView(historyRow(fmt.format(Date(s.createdAt)), s.total, s.paid, blue))
                 }
             }
@@ -579,7 +580,8 @@ class PartyActivity : AppCompatActivity() {
                 body.addView(emptyCard(Loc.t(this@PartyActivity, "No purchases yet", "ابھی تک کوئی خریداری نہیں ہوئی")))
             } else {
                 val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-                for (p in purchases) {
+                // ---- Newest first, and no bill number shown — date is the identifier ----
+                for (p in purchases.sortedByDescending { it.createdAt }) {
                     body.addView(historyRow(fmt.format(Date(p.createdAt)), p.total, p.paid, orange))
                 }
             }
@@ -662,7 +664,8 @@ class PartyActivity : AppCompatActivity() {
         return outer
     }
 
-    // ---- Invoice / bill number is intentionally never shown here — date is the visible identifier ----
+    // ---- No invoice/bill reference is passed in or shown anymore — just the date,
+    // total, and amount paid. Date is bold since it's now the row's identifier. ----
     private fun historyRow(date: String, total: Double, paid: Double, colorHex: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -677,6 +680,7 @@ class PartyActivity : AppCompatActivity() {
             top.addView(TextView(this@PartyActivity).apply {
                 text = date; textSize = 14f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor("#2E3242"))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             top.addView(TextView(this@PartyActivity).apply {
