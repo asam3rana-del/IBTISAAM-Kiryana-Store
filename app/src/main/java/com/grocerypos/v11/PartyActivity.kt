@@ -553,7 +553,7 @@ class PartyActivity : AppCompatActivity() {
             } else {
                 val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                 for (s in sales) {
-                    body.addView(historyRow(s.invoice, fmt.format(Date(s.createdAt)), s.total, s.paid, blue))
+                    body.addView(historyRow(fmt.format(Date(s.createdAt)), s.total, s.paid, blue))
                 }
             }
 
@@ -580,7 +580,7 @@ class PartyActivity : AppCompatActivity() {
             } else {
                 val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                 for (p in purchases) {
-                    body.addView(historyRow(p.billNo, fmt.format(Date(p.createdAt)), p.total, p.paid, orange))
+                    body.addView(historyRow(fmt.format(Date(p.createdAt)), p.total, p.paid, orange))
                 }
             }
 
@@ -662,7 +662,8 @@ class PartyActivity : AppCompatActivity() {
         return outer
     }
 
-    private fun historyRow(ref: String, date: String, total: Double, paid: Double, colorHex: String): LinearLayout {
+    // ---- Invoice / bill number is intentionally never shown here — date is the visible identifier ----
+    private fun historyRow(date: String, total: Double, paid: Double, colorHex: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 14, 18, 14)
@@ -674,7 +675,7 @@ class PartyActivity : AppCompatActivity() {
 
             val top = LinearLayout(this@PartyActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             top.addView(TextView(this@PartyActivity).apply {
-                text = ref; textSize = 14f
+                text = date; textSize = 14f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
@@ -686,7 +687,7 @@ class PartyActivity : AppCompatActivity() {
             })
             addView(top)
             addView(TextView(this@PartyActivity).apply {
-                text = "$date  •  " + Loc.t(this@PartyActivity, "Paid", "ادا شدہ") + ": Rs %.2f".format(paid)
+                text = Loc.t(this@PartyActivity, "Paid", "ادا شدہ") + ": Rs %.2f".format(paid)
                 textSize = 11f
                 setTextColor(Color.parseColor(labelGray))
                 setPadding(0, 4, 0, 0)
