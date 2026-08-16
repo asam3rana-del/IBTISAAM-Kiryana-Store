@@ -23,6 +23,8 @@ import com.grocerypos.v11.User
 import com.grocerypos.v11.util.BackupHelper
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -172,6 +174,14 @@ class SettingsActivity : AppCompatActivity() {
         backupCard.addView(primaryButton("BACKUP NOW", teal) { onBackupClicked() })
         backupCard.addView(spacer(8))
         backupCard.addView(primaryButton("RESTORE BACKUP", red) { onRestoreClicked() })
+        // FIX: plain-language warning sitting right under the button, always visible —
+        // not just inside a dialog someone might tap through without reading.
+        backupCard.addView(TextView(this).apply {
+            text = "⚠️ Restore purani backup laata hai aur is waqt ka sara naya data (jo backup ke baad add hua) permanently mita deta hai. Sirf tab use karein jab aapko waqai purani state par jaana ho."
+            textSize = 11f
+            setTextColor(Color.parseColor(red))
+            setPadding(4, 10, 4, 0)
+        })
         root.addView(backupCard)
         root.addView(spacer(10))
 
@@ -589,36 +599,81 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * FIX: the list now shows a human-readable date/time (and marks the most
+     * recent one) instead of the raw filename, so it's obvious at a glance
+     * exactly which point in time each backup would roll you back to.
+     */
     private fun onRestoreClicked() {
         val backups = BackupHelper.listBackups(this)
         if (backups.isEmpty()) {
             Toast.makeText(this, "Koi backup nahi mila", Toast.LENGTH_SHORT).show()
             return
         }
-        val names = backups.map { it.name }.toTypedArray()
+        val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+        val labels = backups.mapIndexed { index, file ->
+            val dateLabel = fmt.format(java.util.Date(file.lastModified()))
+            if (index == 0) "$dateLabel  (most recent)" else dateLabel
+        }.toTypedArray()
+
         AlertDialog.Builder(this)
             .setTitle("Select Backup to Restore")
-            .setItems(names) { _, which ->
-                confirmRestore(backups[which])
+            .setItems(labels) { _, which ->
+                confirmRestore(backups[which], labels[which])
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun confirmRestore(file: java.io.File) {
-        AlertDialog.Builder(this)
+    /**
+     * FIX: this used to be a single tap-through "Restore" button, which made it
+     * very easy to accidentally wipe out everything entered after the chosen
+     * backup was taken. It now:
+     *  - spells out in plain language exactly what will be lost
+     *  - requires the person to actively check "I understand" before the
+     *    Restore button becomes tappable, so it can't be dismissed on autopilot
+     */
+    private fun confirmRestore(file: java.io.File, dateLabel: String) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+        }
+        container.addView(TextView(this).apply {
+            text = "Ye backup ($dateLabel) is waqt ke current data ko OVERWRITE kar dega.\n\n" +
+                "Iska matlab: is backup ke baad add ki gayi tamam sales, purchases, aur baaki entries HAMESHA ke liye mit jayengi. Ye wapis nahi hoga."
+            textSize = 13.5f
+            setTextColor(Color.parseColor(textDark))
+        })
+        val checkBox = CheckBox(this).apply {
+            text = "Mujhe samajh aa gaya, aage badhein"
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 28, 0, 0)
+        }
+        container.addView(checkBox)
+
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Restore Backup?")
-            .setMessage("Ye current data ko overwrite kar dega: ${file.name}. Aage badhein?")
-            .setPositiveButton("Restore") { _, _ ->
+            .setView(container)
+            .setPositiveButton("Restore", null) // set below so we can disable-until-checked
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val positiveBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            positiveBtn.isEnabled = false
+            positiveBtn.setTextColor(Color.parseColor(red))
+            checkBox.setOnCheckedChangeListener { _, isChecked -> positiveBtn.isEnabled = isChecked }
+            positiveBtn.setOnClickListener {
                 val ok = BackupHelper.restore(this, file)
                 if (ok) {
                     Toast.makeText(this, "Restore ho gaya. App ko dobara open karein.", Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(this, "Restore fail ho gaya", Toast.LENGTH_SHORT).show()
                 }
+                dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
+        dialog.show()
     }
 
     // ================= LOGIN =================
