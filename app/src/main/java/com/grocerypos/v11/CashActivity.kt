@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -43,7 +44,7 @@ class CashActivity : AppCompatActivity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "Cash In / Cash Out"
+            text = Loc.t(this@CashActivity, "Cash In / Cash Out", "کیش ان / کیش آؤٹ")
             textSize = 21f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -53,8 +54,8 @@ class CashActivity : AppCompatActivity() {
         // ---- Today's totals: premium white cards ----
         val totalsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val inCard = statCard("💰", "Today Cash In", green, "#E8F5E9")
-        val outCard = statCard("💸", "Today Cash Out", red, "#FFEBEE")
+        val inCard = statCard("💰", Loc.t(this, "Today Cash In", "آج کیش ان"), green, "#E8F5E9")
+        val outCard = statCard("💸", Loc.t(this, "Today Cash Out", "آج کیش آؤٹ"), red, "#FFEBEE")
         inTotalText = inCard.second
         outTotalText = outCard.second
 
@@ -68,11 +69,11 @@ class CashActivity : AppCompatActivity() {
 
         // ---- Entry form card ----
         val formCard = cardContainer()
-        formCard.addView(sectionLabel("New Entry"))
+        formCard.addView(sectionLabel(Loc.t(this, "New Entry", "نئی انٹری")))
 
         val amountBox = outlinedBox()
         amount = EditText(this).apply {
-            hint = "Amount"
+            hint = Loc.t(this@CashActivity, "Amount", "رقم")
             background = null
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
@@ -87,13 +88,13 @@ class CashActivity : AppCompatActivity() {
         formCard.addView(methodBox)
 
         val reasonBox = outlinedBox()
-        reason = EditText(this).apply { hint = "Reason / Note (optional)"; background = null }
+        reason = EditText(this).apply { hint = Loc.t(this@CashActivity, "Reason / Note (optional)", "وجہ / نوٹ (اختیاری)"); background = null }
         reasonBox.addView(reason)
         formCard.addView(reasonBox)
 
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
-            text = "CASH IN"
+            text = Loc.t(this@CashActivity, "CASH IN", "کیش ان")
             setTextColor(Color.WHITE)
             background = roundedBg(green, 16)
             setPadding(0, 22, 0, 22)
@@ -101,7 +102,7 @@ class CashActivity : AppCompatActivity() {
             setOnClickListener { saveEntry("IN") }
         })
         btnRow.addView(Button(this).apply {
-            text = "CASH OUT"
+            text = Loc.t(this@CashActivity, "CASH OUT", "کیش آؤٹ")
             setTextColor(Color.WHITE)
             background = roundedBg(red, 16)
             setPadding(0, 22, 0, 22)
@@ -113,7 +114,7 @@ class CashActivity : AppCompatActivity() {
         root.addView(spacer(26))
 
         // ---- Recent transactions ----
-        root.addView(sectionLabelPlain("RECENT TRANSACTIONS"))
+        root.addView(sectionLabelPlain(Loc.t(this, "RECENT TRANSACTIONS", "حالیہ لین دین")))
         root.addView(spacer(10))
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
@@ -223,11 +224,11 @@ class CashActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
 
-    // ---- logic unchanged ----
+    // ---- logic unchanged, just Urdu-aware toasts/labels ----
     private fun saveEntry(type: String) {
         val amt = amount.text.toString().toDoubleOrNull()
         if (amt == null || amt <= 0.0) {
-            Toast.makeText(this, "Sahi amount likhein", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, Loc.t(this, "Enter a valid amount", "صحیح رقم لکھیں"), Toast.LENGTH_SHORT).show()
             return
         }
         val method = methodSpinner.selectedItem?.toString() ?: "cash"
@@ -237,7 +238,7 @@ class CashActivity : AppCompatActivity() {
             PosDatabase.get(this@CashActivity).cashTransactionDao().insert(
                 CashTransaction(type = type, method = method, amount = amt, reason = note)
             )
-            Toast.makeText(this@CashActivity, "Saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@CashActivity, Loc.t(this@CashActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             amount.text.clear()
             reason.text.clear()
             loadTodayTotals()
@@ -269,7 +270,7 @@ class CashActivity : AppCompatActivity() {
                 listContainer.removeAllViews()
                 if (list.isEmpty()) {
                     listContainer.addView(TextView(this@CashActivity).apply {
-                        text = "Koi entry nahi hai"
+                        text = Loc.t(this@CashActivity, "No entries yet", "کوئی انٹری نہیں ہے")
                         setTextColor(Color.parseColor(textMuted))
                         setPadding(8,8,8,8)
                     })
