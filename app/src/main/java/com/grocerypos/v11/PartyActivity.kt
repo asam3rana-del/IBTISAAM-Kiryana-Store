@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Supplier
+import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -77,13 +78,13 @@ class PartyActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         headerText.addView(TextView(this).apply {
-            text = "Customers & Suppliers"
+            text = Loc.t(this@PartyActivity, "Customers & Suppliers", "کسٹمرز اور سپلائرز")
             textSize = 19f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         headerText.addView(TextView(this).apply {
-            text = "Manage parties & view ledgers"
+            text = Loc.t(this@PartyActivity, "Manage parties & view ledgers", "پارٹیز کا انتظام اور کھاتے دیکھیں")
             textSize = 12f
             setTextColor(Color.parseColor("#D5D8F5"))
         })
@@ -104,7 +105,7 @@ class PartyActivity : AppCompatActivity() {
         formCard = premiumCard().apply { setPadding(22, 20, 22, 20) }
 
         sectionAccentText = TextView(this).apply {
-            text = "\uD83D\uDC64  Add Customer"
+            text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "Add Customer", "کسٹمر شامل کریں")
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor(blue))
@@ -113,14 +114,14 @@ class PartyActivity : AppCompatActivity() {
         formCard.addView(sectionAccentText)
 
         val nameBox = innerField()
-        nameField = EditText(this).apply { hint = "Name *"; background = null; textSize = 15f }
+        nameField = EditText(this).apply { hint = Loc.t(this@PartyActivity, "Name *", "نام *"); background = null; textSize = 15f }
         nameBox.addView(nameField)
         formCard.addView(nameBox)
         formCard.addView(spacer(10))
 
         val phoneBox = innerField()
         phoneField = EditText(this).apply {
-            hint = "Phone (optional)"
+            hint = Loc.t(this@PartyActivity, "Phone (optional)", "فون (اختیاری)")
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_PHONE
@@ -131,7 +132,7 @@ class PartyActivity : AppCompatActivity() {
 
         creditLimitBox = innerField()
         creditLimitField = EditText(this).apply {
-            hint = "Credit Limit (optional)"
+            hint = Loc.t(this@PartyActivity, "Credit Limit (optional)", "کریڈٹ لیمٹ (اختیاری)")
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -142,7 +143,7 @@ class PartyActivity : AppCompatActivity() {
 
         val openingBox = innerField()
         openingBalanceField = EditText(this).apply {
-            hint = "Opening Balance (Rs, if any previous due)"
+            hint = Loc.t(this@PartyActivity, "Opening Balance (Rs, if any previous due)", "ابتدائی بیلنس (روپے، اگر کوئی پرانا واجب الادا ہو)")
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -152,7 +153,7 @@ class PartyActivity : AppCompatActivity() {
         formCard.addView(spacer(14))
 
         saveButton = Button(this).apply {
-            text = "SAVE"
+            text = Loc.t(this@PartyActivity, "SAVE", "محفوظ کریں")
             setTextColor(Color.WHITE)
             textSize = 14f
             background = roundedBackground(blue, 14)
@@ -174,13 +175,13 @@ class PartyActivity : AppCompatActivity() {
             textSize = 15f
         })
         listHeaderRow.addView(TextView(this).apply {
-            text = "Party List"
+            text = Loc.t(this@PartyActivity, "Party List", "پارٹی لسٹ")
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         listHeaderRow.addView(TextView(this).apply {
-            text = "Tap a party for full history"
+            text = Loc.t(this@PartyActivity, "Tap a party for full history", "مکمل تاریخ کے لیے پارٹی پر ٹیپ کریں")
             textSize = 11f
             setTextColor(Color.parseColor(labelGray))
         })
@@ -210,7 +211,7 @@ class PartyActivity : AppCompatActivity() {
     private fun buildTabs() {
         tabRow.removeAllViews()
         tabRow.addView(Button(this).apply {
-            text = "\uD83D\uDC64  CUSTOMERS"
+            text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "CUSTOMERS", "کسٹمرز")
             setTextColor(Color.WHITE)
             textSize = 12f
             background = roundedBackground(if (showingCustomers) blue else "#B0B7C3", 24)
@@ -218,7 +219,7 @@ class PartyActivity : AppCompatActivity() {
             setOnClickListener { showCustomers() }
         })
         tabRow.addView(Button(this).apply {
-            text = "\uD83D\uDCE6  SUPPLIERS"
+            text = "\uD83D\uDCE6  " + Loc.t(this@PartyActivity, "SUPPLIERS", "سپلائرز")
             setTextColor(Color.WHITE)
             textSize = 12f
             background = roundedBackground(if (!showingCustomers) orange else "#B0B7C3", 24)
@@ -231,7 +232,7 @@ class PartyActivity : AppCompatActivity() {
         showingCustomers = true
         buildTabs()
         creditLimitBox.visibility = View.VISIBLE
-        sectionAccentText.text = "\uD83D\uDC64  Add Customer"
+        sectionAccentText.text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "Add Customer", "کسٹمر شامل کریں")
         sectionAccentText.setTextColor(Color.parseColor(blue))
         saveButton.background = roundedBackground(blue, 14)
         loadCustomers()
@@ -241,7 +242,7 @@ class PartyActivity : AppCompatActivity() {
         showingCustomers = false
         buildTabs()
         creditLimitBox.visibility = View.GONE
-        sectionAccentText.text = "\uD83D\uDCE6  Add Supplier"
+        sectionAccentText.text = "\uD83D\uDCE6  " + Loc.t(this@PartyActivity, "Add Supplier", "سپلائر شامل کریں")
         sectionAccentText.setTextColor(Color.parseColor(orange))
         saveButton.background = roundedBackground(orange, 14)
         loadSuppliers()
@@ -250,7 +251,7 @@ class PartyActivity : AppCompatActivity() {
     private fun saveParty() {
         val n = nameField.text.toString().trim()
         if (n.isEmpty()) {
-            Toast.makeText(this, "Naam zaroori hai", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, Loc.t(this, "Name is required", "نام ضروری ہے"), Toast.LENGTH_SHORT).show()
             return
         }
         val phone = phoneField.text.toString().trim()
@@ -267,7 +268,7 @@ class PartyActivity : AppCompatActivity() {
                     Supplier(name = n, phone = phone, openingBalance = opening, balance = 0.0)
                 )
             }
-            Toast.makeText(this@PartyActivity, "Saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             nameField.text.clear()
             phoneField.text.clear()
             creditLimitField.text.clear()
@@ -280,7 +281,7 @@ class PartyActivity : AppCompatActivity() {
             PosDatabase.get(this@PartyActivity).customerDao().all().collectLatest { list ->
                 listContainer.removeAllViews()
                 if (list.isEmpty()) {
-                    listContainer.addView(emptyCard("Koi customer nahi hai"))
+                    listContainer.addView(emptyCard(Loc.t(this@PartyActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
                 }
                 for (c in list) {
                     listContainer.addView(partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64") { openCustomerHistory(c) })
@@ -294,7 +295,7 @@ class PartyActivity : AppCompatActivity() {
             PosDatabase.get(this@PartyActivity).supplierDao().all().collectLatest { list ->
                 listContainer.removeAllViews()
                 if (list.isEmpty()) {
-                    listContainer.addView(emptyCard("Koi supplier nahi hai"))
+                    listContainer.addView(emptyCard(Loc.t(this@PartyActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
                 }
                 for (s in list) {
                     listContainer.addView(partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6") { openSupplierHistory(s) })
@@ -349,14 +350,14 @@ class PartyActivity : AppCompatActivity() {
         }
         val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
         balRow.addView(TextView(this).apply {
-            text = "Opening: Rs %.2f".format(opening)
+            text = Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
             textSize = 11f
             setTextColor(Color.parseColor(labelGray))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         infoCol.addView(balRow)
         infoCol.addView(TextView(this).apply {
-            text = "Tap for full history  ›"
+            text = Loc.t(this@PartyActivity, "Tap for full history  ›", "مکمل تاریخ کے لیے ٹیپ کریں  ›")
             textSize = 11f
             setTextColor(Color.parseColor(accentHex))
             setPadding(0, 4, 0, 0)
@@ -381,7 +382,7 @@ class PartyActivity : AppCompatActivity() {
             val body = content.getChildAt(1) as LinearLayout
 
             if (sales.isEmpty()) {
-                body.addView(emptyCard("Koi sale nahi hui abhi tak"))
+                body.addView(emptyCard(Loc.t(this@PartyActivity, "No sales yet", "ابھی تک کوئی سیل نہیں ہوئی")))
             } else {
                 val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                 for (s in sales) {
@@ -391,7 +392,7 @@ class PartyActivity : AppCompatActivity() {
 
             val dialog = AlertDialog.Builder(this@PartyActivity).setView(content).create()
             (content.getChildAt(2) as LinearLayout).addView(Button(this@PartyActivity).apply {
-                text = "Close"
+                text = Loc.t(this@PartyActivity, "Close", "بند کریں")
                 setTextColor(Color.WHITE)
                 background = roundedBackground(blue, 14)
                 setOnClickListener { dialog.dismiss() }
@@ -408,7 +409,7 @@ class PartyActivity : AppCompatActivity() {
             val body = content.getChildAt(1) as LinearLayout
 
             if (purchases.isEmpty()) {
-                body.addView(emptyCard("Koi purchase nahi hui abhi tak"))
+                body.addView(emptyCard(Loc.t(this@PartyActivity, "No purchases yet", "ابھی تک کوئی خریداری نہیں ہوئی")))
             } else {
                 val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                 for (p in purchases) {
@@ -418,7 +419,7 @@ class PartyActivity : AppCompatActivity() {
 
             val dialog = AlertDialog.Builder(this@PartyActivity).setView(content).create()
             (content.getChildAt(2) as LinearLayout).addView(Button(this@PartyActivity).apply {
-                text = "Close"
+                text = Loc.t(this@PartyActivity, "Close", "بند کریں")
                 setTextColor(Color.WHITE)
                 background = roundedBackground(orange, 14)
                 setOnClickListener { dialog.dismiss() }
@@ -467,12 +468,12 @@ class PartyActivity : AppCompatActivity() {
         })
         val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
         balRow.addView(TextView(this).apply {
-            text = "Opening: Rs %.2f".format(opening)
+            text = Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
             setTextColor(Color.parseColor("#EAEAFF")); textSize = 11f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         balRow.addView(TextView(this).apply {
-            text = "Closing: Rs %.2f".format(opening + running)
+            text = Loc.t(this@PartyActivity, "Closing", "اختتامی") + ": Rs %.2f".format(opening + running)
             setTextColor(Color.WHITE); textSize = 12f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
@@ -518,7 +519,7 @@ class PartyActivity : AppCompatActivity() {
             })
             addView(top)
             addView(TextView(this@PartyActivity).apply {
-                text = "$date  •  Paid: Rs %.2f".format(paid)
+                text = "$date  •  " + Loc.t(this@PartyActivity, "Paid", "ادا شدہ") + ": Rs %.2f".format(paid)
                 textSize = 11f
                 setTextColor(Color.parseColor(labelGray))
                 setPadding(0, 4, 0, 0)
