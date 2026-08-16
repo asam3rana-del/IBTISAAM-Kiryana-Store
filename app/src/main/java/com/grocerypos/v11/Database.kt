@@ -14,6 +14,8 @@ data class SaleWithCustomer(val invoice:String,val customerName:String,val total
 data class CustomerSalesTotal(val customerName:String,val total:Double)
 data class DailyProfit(val day:String,val profit:Double)
 data class PartyItemReport(val product:String,val totalAmount:Double,val totalQty:Int)
+data class ItemSaleRecord(val customerName:String,val qty:Int,val unitPrice:Double,val createdAt:Long)
+data class ItemPurchaseRecord(val supplierName:String,val qty:Int,val unitCost:Double,val createdAt:Long)
 
 @Entity(tableName="units")
 data class UnitType(@PrimaryKey val name:String)
@@ -295,6 +297,10 @@ interface ProductDao {
     // ---- Item-wise report for a single customer (used by Party Report by Item) ----
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId GROUP BY si.product ORDER BY totalAmount DESC")
     suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
+
+    // ---- Rate-check: every sale line for a given product, newest first (used by Item Search) ----
+    @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC")
+    suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
 }
 
 @Dao interface ExpenseDao {
@@ -350,6 +356,10 @@ interface ProductDao {
     // ---- Item-wise report for a single supplier (used by Party Report by Item) ----
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId GROUP BY p.name ORDER BY totalAmount DESC")
     suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
+
+    // ---- Rate-check: every purchase line for a given product, newest first (used by Item Search) ----
+    @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC")
+    suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
 }
 
 @Dao interface ReturnDao {
