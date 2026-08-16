@@ -36,20 +36,33 @@ data class PurchaseLine(
     val amount: Double,
     val mainUnit: String,
     val secondaryUnit: String,
-    val secondaryUnitQty: Double
+    val secondaryUnitQty: Double,
+    val tertiaryUnit: String = "",
+    val tertiaryUnitQty: Double = 0.0
 )
 
-// ---- Unit-conversion helpers: a PurchaseLine may be entered in the secondary unit
-// (e.g. "dozen" while the product's stock is tracked in "pcs"). These convert the
-// entered qty back to the product's main unit before it touches the DB / stock. ----
+// ---- Unit-conversion helpers: a PurchaseLine may be entered in the secondary or
+// tertiary unit (e.g. "dozen" or "grams" while the product's stock is tracked in
+// "pcs"). These convert the entered qty back to the product's main unit before it
+// touches the DB / stock. Chain: 1 main = secondaryUnitQty secondary;
+// 1 secondary = tertiaryUnitQty tertiary. ----
 private fun PurchaseLine.isSecondary(): Boolean =
     secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
 
-private fun PurchaseLine.mainUnitQty(): Double =
-    if (isSecondary()) qty / secondaryUnitQty else qty
+private fun PurchaseLine.isTertiary(): Boolean =
+    tertiaryUnit.isNotEmpty() && unit == tertiaryUnit && tertiaryUnitQty > 0 && secondaryUnitQty > 0
 
-private fun PurchaseLine.mainUnitRate(): Double =
-    if (isSecondary()) rate * secondaryUnitQty else rate
+private fun PurchaseLine.mainUnitQty(): Double = when {
+    isTertiary() -> qty / (secondaryUnitQty * tertiaryUnitQty)
+    isSecondary() -> qty / secondaryUnitQty
+    else -> qty
+}
+
+private fun PurchaseLine.mainUnitRate(): Double = when {
+    isTertiary() -> rate * secondaryUnitQty * tertiaryUnitQty
+    isSecondary() -> rate * secondaryUnitQty
+    else -> rate
+}
 
 private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
 
@@ -630,7 +643,9 @@ class PurchaseActivity : AppCompatActivity() {
                         amount = pi.amount,
                         mainUnit = product?.unit ?: "",
                         secondaryUnit = product?.secondaryUnit ?: "",
-                        secondaryUnitQty = product?.secondaryUnitQty ?: 0.0
+                        secondaryUnitQty = product?.secondaryUnitQty ?: 0.0,
+                        tertiaryUnit = product?.tertiaryUnit ?: "",
+                        tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0
                     )
                 )
             }
@@ -674,6 +689,8 @@ class PurchaseActivity : AppCompatActivity() {
     }
 
     // ---- Item entry logic ----
+    // Unit chips now offer up to three tiers: main, secondary, and (if a secondary
+    // chain exists) tertiary — mirroring SaleActivity.
     private fun onItemPicked(pickedName: String) {
         val product = products.find { it.name.equals(pickedName, ignoreCase = true) } ?: return
         selectedProduct = product
@@ -681,28 +698,44 @@ class PurchaseActivity : AppCompatActivity() {
         val unitOptions = mutableListOf(product.unit)
         if (product.secondaryUnit.isNotBlank() && product.secondaryUnit != product.unit) {
             unitOptions.add(product.secondaryUnit)
+            if (product.tertiaryUnit.isNotBlank() && product.tertiaryUnit != product.unit &&
+                product.tertiaryUnit != product.secondaryUnit && product.tertiaryUnitQty > 0) {
+                unitOptions.add(product.tertiaryUnit)
+            }
         }
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
         buildUnitChips(unitOptions, product.unit)
 
-        if (unitOptions.size > 1 && product.secondaryUnitQty > 0) {
-            conversionInfo.text = "1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}"
-            conversionInfo.visibility = View.VISIBLE
-        } else {
-            conversionInfo.visibility = View.GONE
+        conversionInfo.text = buildString {
+            if (unitOptions.contains(product.secondaryUnit) && product.secondaryUnitQty > 0) {
+                append("1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}")
+            }
+            if (unitOptions.contains(product.tertiaryUnit) && product.tertiaryUnitQty > 0) {
+                if (isNotEmpty()) append("   •   ")
+                append("1 ${product.secondaryUnit} = ${product.tertiaryUnitQty} ${product.tertiaryUnit}")
+            }
         }
+        conversionInfo.visibility = if (conversionInfo.text.isNotEmpty()) View.VISIBLE else View.GONE
+
         refillAutoRate()
         updateLineTotal()
     }
 
-    // ---- Rate now adjusts to the chosen unit, same as SaleActivity.refillAutoPrice().
-    // Picking the product always suggests the main-unit cost; switching to the secondary
-    // unit divides it by secondaryUnitQty so "price per selected unit" stays correct. ----
+    // ---- Rate adjusts to the chosen unit, same as SaleActivity.refillAutoPrice().
+    // Picking the product always suggests the main-unit cost; switching to secondary
+    // divides by secondaryUnitQty, and tertiary divides by secondaryUnitQty*tertiaryUnitQty
+    // so "price per selected unit" stays correct at any tier. ----
     private fun refillAutoRate() {
         val product = selectedProduct ?: return
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val isSecondary = chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0
-        val r = if (isSecondary) product.cost / product.secondaryUnitQty else product.cost
+        val r = when {
+            chosenUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
+                product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
+                product.cost / (product.secondaryUnitQty * product.tertiaryUnitQty)
+            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
+                product.cost / product.secondaryUnitQty
+            else -> product.cost
+        }
         rate.setText(if (r > 0) "%.2f".format(r) else "")
     }
 
@@ -768,7 +801,9 @@ class PurchaseActivity : AppCompatActivity() {
             amount = q * r,
             mainUnit = product.unit,
             secondaryUnit = product.secondaryUnit,
-            secondaryUnitQty = product.secondaryUnitQty
+            secondaryUnitQty = product.secondaryUnitQty,
+            tertiaryUnit = product.tertiaryUnit,
+            tertiaryUnitQty = product.tertiaryUnitQty
         )
         lines.add(line)
         renderItemsList()
@@ -890,9 +925,9 @@ class PurchaseActivity : AppCompatActivity() {
                 )
             )
 
-            // ---- Convert secondary-unit qty/rate to main-unit terms before persisting,
-            // mirroring SaleActivity. Previously line.qty was saved (and used to bump stock)
-            // exactly as entered, so buying "1 dozen" only added 1 to stock instead of 12. ----
+            // ---- Convert secondary/tertiary-unit qty & rate to main-unit terms before
+            // persisting, mirroring SaleActivity. mainUnitQty()/mainUnitRate() now handle
+            // both tiers via the extension functions above. ----
             db.purchaseDao().items(
                 lines.map { line ->
                     PurchaseItem(
