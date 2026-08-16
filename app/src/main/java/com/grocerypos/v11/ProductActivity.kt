@@ -26,6 +26,12 @@ import kotlinx.coroutines.launch
 
 class ProductActivity : AppCompatActivity() {
 
+    companion object {
+        /** Pass a product's barcode via this extra to open the form pre-loaded in edit mode
+         *  (used by CategoriesUnitsActivity's per-product Edit button). */
+        const val EXTRA_EDIT_BARCODE = "editBarcode"
+    }
+
     // ================= PREMIUM COLOR PALETTE (matches SaleActivity) =================
     private val bg = "#F3F2FA"
     private val cardBg = "#FFFFFF"
@@ -262,6 +268,15 @@ class ProductActivity : AppCompatActivity() {
         loadCategories()
         loadUnits()
         loadProducts()
+
+        // ---- Deep-link from CategoriesUnitsActivity's Edit button: open pre-loaded in edit mode ----
+        intent.getStringExtra(EXTRA_EDIT_BARCODE)?.let { barcode ->
+            lifecycleScope.launch {
+                PosDatabase.get(this@ProductActivity).productDao().find(barcode)?.let { p ->
+                    loadProductForEdit(p)
+                }
+            }
+        }
     }
 
     // ---- UI helpers ----
@@ -716,6 +731,29 @@ class ProductActivity : AppCompatActivity() {
         scrollView.post { scrollView.smoothScrollTo(0, 0) }
     }
 
+    // ================= Delete a product (with confirmation) =================
+    private fun confirmDeleteProduct(p: Product) {
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Delete Product", "پروڈکٹ حذف کریں"))
+            .setMessage(
+                Loc.t(
+                    this,
+                    "Delete \"${p.name}\"? This cannot be undone.",
+                    "\"${p.name}\" کو حذف کریں؟ یہ واپس نہیں ہو سکتا۔"
+                )
+            )
+            .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { _, _ ->
+                lifecycleScope.launch {
+                    PosDatabase.get(this@ProductActivity).productDao().delete(p)
+                    // If the deleted product was mid-edit in the form, reset the form too.
+                    if (editingProduct?.barcode == p.barcode) clearForm()
+                    Toast.makeText(this@ProductActivity, Loc.t(this@ProductActivity, "Product deleted", "پروڈکٹ حذف ہو گئی"), Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
     private fun saveProduct() {
         val pname = name.text.toString().trim()
         if (pname.isEmpty()) {
@@ -844,19 +882,31 @@ class ProductActivity : AppCompatActivity() {
                             })
                         }
 
-                        // ---- Edit action ----
-                        addView(TextView(this@ProductActivity).apply {
+                        // ---- Edit / Delete actions ----
+                        val actionsRow = LinearLayout(this@ProductActivity).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            setPadding(42, 10, 0, 0)
+                        }
+                        actionsRow.addView(TextView(this@ProductActivity).apply {
                             text = "✏️  " + Loc.t(this@ProductActivity, "Edit", "ترمیم کریں")
                             textSize = 12f
                             setTextColor(Color.WHITE)
                             setTypeface(typeface, android.graphics.Typeface.BOLD)
                             background = roundedBg(primary, 30)
                             setPadding(24, 10, 24, 10)
-                            layoutParams = LinearLayout.LayoutParams(
-                                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                            ).apply { setMargins(42, 10, 0, 0); gravity = Gravity.START }
                             setOnClickListener { loadProductForEdit(p) }
                         })
+                        actionsRow.addView(View(this@ProductActivity).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
+                        actionsRow.addView(TextView(this@ProductActivity).apply {
+                            text = "🗑️  " + Loc.t(this@ProductActivity, "Delete", "حذف کریں")
+                            textSize = 12f
+                            setTextColor(Color.WHITE)
+                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            background = roundedBg(red, 30)
+                            setPadding(24, 10, 24, 10)
+                            setOnClickListener { confirmDeleteProduct(p) }
+                        })
+                        addView(actionsRow)
                     })
                 }
             }
