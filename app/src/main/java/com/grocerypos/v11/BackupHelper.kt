@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
+import androidx.sqlite.db.SimpleSQLiteQuery
 import com.grocerypos.v11.PosDatabase
 import java.io.File
 import java.io.FileInputStream
@@ -38,11 +39,25 @@ object BackupHelper {
      * Copies the current database to the app's Backups folder AND to the
      * public Downloads folder, both with a timestamped name.
      * Returns the app-folder file (used internally for Restore/Share), or null on failure.
+     *
+     * FIX: Room runs in WAL (write-ahead logging) mode by default. Recent writes
+     * (e.g. a purchase just added) live in the "<db>-wal" side file and are only
+     * merged into the main .db file when SQLite performs a checkpoint. Copying
+     * the raw .db file WITHOUT forcing a checkpoint first meant backups could
+     * silently miss the most recent entries — and restoring such a backup would
+     * wipe out anything added after the last checkpoint. We now force a full
+     * checkpoint (via `PRAGMA wal_checkpoint(FULL)`) right before copying, so
+     * the .db file always reflects every committed write at backup time.
      */
     fun backupNow(context: Context): File? {
         return try {
             val dbFile = context.getDatabasePath(DB_NAME)
             if (!dbFile.exists()) return null
+
+            // Force WAL contents to be flushed into the main .db file so the
+            // copy below is guaranteed to include every committed write,
+            // including anything added moments ago.
+            checkpointWal(context)
 
             val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
             val fileName = "IBTISAAM_backup_$stamp.db"
@@ -58,6 +73,20 @@ object BackupHelper {
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    /**
+     * Forces SQLite to write everything currently sitting in the WAL file into
+     * the main database file. Safe to call on the live, open database — it
+     * does not close any connections.
+     */
+    private fun checkpointWal(context: Context) {
+        try {
+            val db = PosDatabase.get(context)
+            db.query(SimpleSQLiteQuery("PRAGMA wal_checkpoint(FULL)")).use { it.moveToFirst() }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
