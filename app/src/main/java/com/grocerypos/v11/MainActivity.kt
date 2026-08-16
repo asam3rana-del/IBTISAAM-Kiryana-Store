@@ -18,6 +18,7 @@ import com.grocerypos.v11.ui.SaleActivity
 import com.grocerypos.v11.ui.ReportsActivity
 import com.grocerypos.v11.ui.CashActivity
 import com.grocerypos.v11.ui.PartyActivity
+import com.grocerypos.v11.ui.ItemSearchActivity
 import kotlinx.coroutines.launch
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -175,6 +176,10 @@ class MainActivity : AppCompatActivity() {
         })
 
         // ================= MENU GRID (role-based, premium tiles) =================
+        // ---- "Item Search" (rate-check screen) is available to every role — a cashier
+        // mid-sale needs to check a rate just as much as an admin does. ----
+        val itemSearchTile = Tile("🔎", "Item Rate\nSearch", "#0F9B8E", "#E0F5F2") { startActivity(Intent(this@MainActivity, ItemSearchActivity::class.java)) }
+
         val tiles: List<Tile> = when (role) {
             "admin" -> listOf(
                 Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
@@ -182,18 +187,21 @@ class MainActivity : AppCompatActivity() {
                 Tile("🧾", "Purchases", "#EF6C00", "#FFF3E0") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
                 Tile("📊", "Reports", "#6A1B9A", "#F3E5F5") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
-                Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) }
+                Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+                itemSearchTile
             )
             "manager" -> listOf(
                 Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
                 Tile("🧾", "Purchases", "#EF6C00", "#FFF3E0") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
                 Tile("📊", "Reports", "#6A1B9A", "#F3E5F5") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
+                itemSearchTile,
                 Tile("🚪", "Logout", "#C62828", "#FFEBEE") { doLogout() }
             )
             else -> listOf(
                 Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
                 Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+                itemSearchTile,
                 Tile("🚪", "Logout", "#C62828", "#FFEBEE") { doLogout() }
             )
         }
