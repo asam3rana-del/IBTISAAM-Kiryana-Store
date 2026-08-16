@@ -150,6 +150,10 @@ class SaleActivity : AppCompatActivity() {
         headerCard.addView(headerTextCol)
 
         val headerActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        headerActions.addView(pillChip("📜 History", "#5C4DFF") {
+            startActivity(Intent(this@SaleActivity, SaleHistoryActivity::class.java))
+        })
+        headerActions.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
         headerActions.addView(pillChip("⏸ Hold", "#5C4DFF") { holdBill() })
         headerActions.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
         headerActions.addView(pillChip("↺ Recall", "#5C4DFF") { openRecallDialog() })
