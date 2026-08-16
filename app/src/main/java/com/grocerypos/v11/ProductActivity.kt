@@ -400,6 +400,38 @@ class ProductActivity : AppCompatActivity() {
         }
     }
 
+    // ================= Universal unit-conversion lookup =================
+    // Known standard conversions between common unit names (case/spacing-insensitive),
+    // regardless of whether the pair sits in the primary→secondary or secondary→tertiary slot.
+    // Returns null for any pair not in this table — those still need manual entry.
+    private fun normalizeUnitName(u: String) = u.trim().lowercase()
+
+    private fun standardUnitQty(fromUnit: String, toUnit: String): Double? {
+        val f = normalizeUnitName(fromUnit)
+        val t = normalizeUnitName(toUnit)
+        val gramNames = setOf("gram", "grams", "g", "gm")
+        val pieceNames = setOf("pcs", "pc", "piece", "pieces")
+        val mlNames = setOf("ml", "milliliter", "millilitre")
+        val kgNames = setOf("kg", "kgs", "kilogram", "kilograms")
+        val litreNames = setOf("litre", "liter", "l", "ltr")
+
+        return when {
+            f == "dozen" && t in pieceNames -> 12.0
+            f == "gross" && t == "dozen" -> 12.0
+            f == "gross" && t in pieceNames -> 144.0
+            f in kgNames && t in gramNames -> 1000.0
+            f in litreNames && t in mlNames -> 1000.0
+            f == "quintal" && t in kgNames -> 100.0
+            f == "ton" && t in kgNames -> 1000.0
+            f == "pao" && t in gramNames -> 250.0
+            f in kgNames && t == "pao" -> 4.0
+            else -> null
+        }
+    }
+
+    private fun trimNum(v: Double): String =
+        if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+
     private fun promptAddCategory() {
         val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
         AlertDialog.Builder(this)
@@ -584,6 +616,42 @@ class ProductActivity : AppCompatActivity() {
         val tertiaryOptions = listOf("None") + units
         tertiarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, tertiaryOptions)
         tertiarySpinner.setSelection(tertiaryOptions.indexOf(selectedTertiaryUnit).coerceAtLeast(0))
+
+        // ---- Universal conversion auto-fill: when a known unit pair is picked (dozen→pcs=12,
+        // kg→gram=1000, etc.), suggest the standard quantity automatically. Only fills an EMPTY
+        // field, so it never overwrites a value the user already typed. ----
+        fun autoFillSecondaryQty() {
+            val p = primarySpinner.selectedItem?.toString() ?: return
+            val s = secondarySpinner.selectedItem?.toString() ?: return
+            if (s == "None") return
+            val std = standardUnitQty(p, s) ?: return
+            if (qtyField.text.toString().isBlank()) qtyField.setText(trimNum(std))
+        }
+        fun autoFillTertiaryQty() {
+            val s = secondarySpinner.selectedItem?.toString() ?: return
+            val t = tertiarySpinner.selectedItem?.toString() ?: return
+            if (s == "None" || t == "None") return
+            val std = standardUnitQty(s, t) ?: return
+            if (tertiaryQtyField.text.toString().isBlank()) tertiaryQtyField.setText(trimNum(std))
+        }
+        primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty() }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                autoFillSecondaryQty()
+                autoFillTertiaryQty()
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty() }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        // Run once immediately for whatever is already preselected (e.g. when editing an existing product).
+        autoFillSecondaryQty()
+        autoFillTertiaryQty()
 
         // ---- Cancel / Save footer ----
         val footer = LinearLayout(this).apply {
