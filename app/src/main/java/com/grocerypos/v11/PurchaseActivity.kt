@@ -75,12 +75,12 @@ class PurchaseActivity : AppCompatActivity() {
     // ================= NAVY + TEAL + WHITE PALETTE =================
     private val bg = "#F4F6F8"
     private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"     // primary brand — header, Save button, Cash-active
+    private val navy = "#0B2545"     // primary brand — header, Save button
     private val teal = "#0F9B8E"     // secondary accent — chips, Add Item, totals, "+" icons
     private val textDark = "#0B2545" // headings/values reuse navy
     private val textMuted = "#7C8798"
     private val border = "#E3E8EE"
-    private val red = "#E5484D"      // functional only — remove / credit-mode
+    private val red = "#E5484D"      // functional only — remove
 
     private lateinit var dateValueText: TextView
     private lateinit var firmNameText: TextView
@@ -96,13 +96,10 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var totalAmountText: TextView
     private lateinit var itemsContainer: LinearLayout
     private lateinit var grandTotalText: TextView
-    private lateinit var cashBtn: Button
-    private lateinit var creditBtn: Button
     private lateinit var paymentSection: LinearLayout
     private lateinit var paidInput: EditText
     private lateinit var paymentMethodSpinner: Spinner
     private lateinit var saveButton: Button
-    private var isCashPurchase = true
 
     private var suppliers = listOf<Supplier>()
     private var products = listOf<Product>()
@@ -214,30 +211,6 @@ class PurchaseActivity : AppCompatActivity() {
         partyRow.addView(circleIcon("+", teal, 30) { promptAddSupplier() })
         partyBox.addView(partyRow)
         root.addView(partyBox)
-        root.addView(spacer(4))
-
-        // ---- Cash / Credit ----
-        val cashCreditToggle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        cashBtn = Button(this).apply {
-            text = "CASH"; textSize = 11.5f; setTextColor(Color.WHITE)
-            isAllCaps = false
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(navy, 20)
-            setPadding(26, 14, 26, 14); minWidth = 0; minHeight = 0
-            setOnClickListener { setPurchaseMode(true) }
-        }
-        creditBtn = Button(this).apply {
-            text = "CREDIT"; textSize = 11.5f; setTextColor(Color.parseColor(textMuted))
-            isAllCaps = false
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg("#EAEDF1", 20)
-            setPadding(26, 14, 26, 14); minWidth = 0; minHeight = 0
-            setOnClickListener { setPurchaseMode(false) }
-        }
-        cashCreditToggle.addView(cashBtn)
-        cashCreditToggle.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
-        cashCreditToggle.addView(creditBtn)
-        root.addView(cashCreditToggle)
         root.addView(spacer(18))
 
         // ================= "Add Items (Optional)" trigger =================
@@ -298,6 +271,10 @@ class PurchaseActivity : AppCompatActivity() {
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_NEXT) { rate.requestFocus(); true } else false
+            }
         }
         qtyBox.addView(qty)
         val unitBox = innerField().apply {
@@ -320,6 +297,13 @@ class PurchaseActivity : AppCompatActivity() {
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            // Bulk entry: pressing Done on the keyboard adds the item immediately —
+            // no need to reach for the ADD ITEM button for every single line when
+            // punching in 10-20 items from one supplier.
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { addItem(); true } else false
+            }
         }
         rateBox.addView(rate)
         itemEntrySection.addView(rateBox)
@@ -385,7 +369,8 @@ class PurchaseActivity : AppCompatActivity() {
         totalCard.addView(grandTotalText)
         root.addView(totalCard)
 
-        // ================= PAYMENT =================
+        // ================= PAYMENT (always visible — no Cash/Credit toggle;
+        // whether it's a credit purchase is inferred from Amount Paid vs Total) =================
         paymentSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val payRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val methodBox = premiumCard().apply {
@@ -456,7 +441,6 @@ class PurchaseActivity : AppCompatActivity() {
         loadUnits()
         loadProducts()
         loadFirmName()
-        setPurchaseMode(true)
         editBillNo?.let { loadForEdit(it) }
 
         itemName.setOnItemClickListener { _, _, position, _ ->
@@ -572,19 +556,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    private fun setPurchaseMode(cash: Boolean) {
-        isCashPurchase = cash
-        if (cash) {
-            cashBtn.background = roundedBg(navy, 20); cashBtn.setTextColor(Color.WHITE)
-            creditBtn.background = roundedBg("#EAEDF1", 20); creditBtn.setTextColor(Color.parseColor(textMuted))
-            paymentSection.visibility = View.VISIBLE
-        } else {
-            creditBtn.background = roundedBg(red, 20); creditBtn.setTextColor(Color.WHITE)
-            cashBtn.background = roundedBg("#EAEDF1", 20); cashBtn.setTextColor(Color.parseColor(textMuted))
-            paymentSection.visibility = View.GONE
-        }
-    }
-
     private fun spacer(heightDp: Int) = View(this).apply {
         val px = (heightDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
@@ -627,7 +598,6 @@ class PurchaseActivity : AppCompatActivity() {
             } ?: ""
             partyName.setText(supplierName)
 
-            setPurchaseMode(purchase.paid > 0)
             paidInput.setText(purchase.paid.toString())
 
             lines.clear()
@@ -719,6 +689,10 @@ class PurchaseActivity : AppCompatActivity() {
 
         refillAutoRate()
         updateLineTotal()
+
+        // Fast bulk entry: jump straight to Quantity after picking the item.
+        qty.setText("")
+        qty.requestFocus()
     }
 
     // ---- Rate adjusts to the chosen unit, same as SaleActivity.refillAutoPrice().
@@ -888,7 +862,9 @@ class PurchaseActivity : AppCompatActivity() {
         }
 
         val grandTotal = lines.sumOf { it.amount }
-        val amountPaid = if (isCashPurchase) (paidInput.text.toString().toDoubleOrNull() ?: grandTotal) else 0.0
+        // No Cash/Credit toggle — it's a credit purchase whenever Amount Paid is less
+        // than the total; leaving it blank means fully on credit (0 paid).
+        val amountPaid = (paidInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, grandTotal)
         val paymentMethod = (paymentMethodSpinner.selectedItem as? String) ?: "Cash"
 
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
