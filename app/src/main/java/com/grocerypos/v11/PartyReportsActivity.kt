@@ -215,6 +215,7 @@ class PartyReportsActivity : AppCompatActivity() {
     }
 
     // ================= 2) Party Statement (running balance) =================
+    // ---- Bill/invoice numbers are intentionally never shown here — date is the visible identifier ----
     private fun showStatement(isCustomer: Boolean, id: Long, name: String, opening: Double) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
@@ -235,7 +236,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 sales.forEach { s ->
                     val outstanding = s.total - s.paid
                     running += outstanding
-                    body.addView(statementRow(s.invoice, fmt.format(Date(s.createdAt)), s.total, running))
+                    body.addView(statementRow(fmt.format(Date(s.createdAt)), s.total, running))
                 }
             } else {
                 val purchases = db.purchaseDao().purchasesBySupplier(id).sortedBy { it.createdAt }
@@ -243,7 +244,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 purchases.forEach { p ->
                     val outstanding = p.total - p.paid
                     running += outstanding
-                    body.addView(statementRow(p.billNo, fmt.format(Date(p.createdAt)), p.total, running))
+                    body.addView(statementRow(fmt.format(Date(p.createdAt)), p.total, running))
                 }
             }
 
@@ -260,13 +261,14 @@ class PartyReportsActivity : AppCompatActivity() {
         }
     }
 
-    private fun statementRow(ref: String, date: String, total: Double, balanceAfter: Double): LinearLayout {
+    private fun statementRow(date: String, total: Double, balanceAfter: Double): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(4, 10, 4, 10)
             val top = LinearLayout(this@PartyReportsActivity).apply { orientation = LinearLayout.HORIZONTAL }
             top.addView(TextView(this@PartyReportsActivity).apply {
-                text = "$ref  •  $date"; textSize = 13f
+                text = date; textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(Color.parseColor(textDark))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
@@ -285,6 +287,7 @@ class PartyReportsActivity : AppCompatActivity() {
     }
 
     // ================= 3) Sale/Purchase by Party (plain transaction list) =================
+    // ---- Bill/invoice numbers are intentionally never shown here — date is the visible identifier ----
     private fun showTransactions(isCustomer: Boolean, id: Long, name: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
@@ -300,7 +303,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 var totalAmt = 0.0
                 sales.forEach { s ->
                     totalAmt += s.total
-                    body.addView(rowText("${s.invoice}  •  ${fmt.format(Date(s.createdAt))}", "Rs %.2f".format(s.total)))
+                    body.addView(rowText(fmt.format(Date(s.createdAt)), "Rs %.2f".format(s.total)))
                 }
                 body.addView(plDivider())
                 body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total", "کل"), "Rs %.2f".format(totalAmt)))
@@ -310,7 +313,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 var totalAmt = 0.0
                 purchases.forEach { p ->
                     totalAmt += p.total
-                    body.addView(rowText("${p.billNo}  •  ${fmt.format(Date(p.createdAt))}", "Rs %.2f".format(p.total)))
+                    body.addView(rowText(fmt.format(Date(p.createdAt)), "Rs %.2f".format(p.total)))
                 }
                 body.addView(plDivider())
                 body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total", "کل"), "Rs %.2f".format(totalAmt)))
