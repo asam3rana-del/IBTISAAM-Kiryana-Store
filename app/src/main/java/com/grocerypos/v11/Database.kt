@@ -201,6 +201,8 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE barcode=:code LIMIT 1")
     suspend fun find(code:String):Product?
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(p:Product)
+    // Deletes by matching every column against the primary key (barcode) — same pattern as HeldDao.delete().
+    @Delete suspend fun delete(p:Product)
     @Query("UPDATE products SET stock=stock-:qty WHERE barcode=:code AND stock>=:qty")
     suspend fun decrease(code:String,qty:Int):Int
     @Query("UPDATE products SET stock=stock+:qty WHERE barcode=:code")
