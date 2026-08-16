@@ -218,6 +218,10 @@ class SettingsActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 val db = PosDatabase.get(this@SettingsActivity)
                 db.appSettingDao().set(AppSetting("login_method", method))
+                // Keep AppLock's in-memory cache in sync immediately — otherwise it would only
+                // pick up this change on the next app restart, and could briefly use a stale
+                // method when deciding whether to force re-authentication.
+                com.grocerypos.v11.AppLock.updateCachedLoginMethod(method)
             }
         }
 
