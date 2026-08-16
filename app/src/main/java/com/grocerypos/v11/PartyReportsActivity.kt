@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Supplier
+import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -44,7 +45,7 @@ class PartyReportsActivity : AppCompatActivity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "Party Reports"
+            text = Loc.t(this@PartyReportsActivity, "Party Reports", "پارٹی رپورٹس")
             textSize = 21f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -53,14 +54,14 @@ class PartyReportsActivity : AppCompatActivity() {
 
         val tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         customersTab = Button(this).apply {
-            text = "CUSTOMERS"
+            text = Loc.t(this@PartyReportsActivity, "CUSTOMERS", "کسٹمرز")
             textSize = 12f
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,8,0) }
             setOnClickListener { showingCustomers = true; refreshTabs(); loadParties() }
         }
         suppliersTab = Button(this).apply {
-            text = "SUPPLIERS"
+            text = Loc.t(this@PartyReportsActivity, "SUPPLIERS", "سپلائرز")
             textSize = 12f
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8,0,0,0) }
@@ -72,7 +73,7 @@ class PartyReportsActivity : AppCompatActivity() {
 
         root.addView(spacer(18))
         root.addView(TextView(this).apply {
-            text = "Party par tap karke report select karein"
+            text = Loc.t(this@PartyReportsActivity, "Tap a party to select a report", "رپورٹ منتخب کرنے کے لیے پارٹی پر ٹیپ کریں")
             textSize = 12f
             setTextColor(Color.parseColor(textMuted))
             setPadding(4, 0, 0, 10)
@@ -102,7 +103,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@PartyReportsActivity)
             if (showingCustomers) {
                 val customers = db.customerDao().all().first()
-                if (customers.isEmpty()) listContainer.addView(emptyText("Koi customer nahi hai"))
+                if (customers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
                 customers.forEach { c ->
                     listContainer.addView(partyRow(c.name, c.balance) {
                         showReportMenu(true, c.id, c.name, c.openingBalance)
@@ -110,7 +111,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 }
             } else {
                 val suppliers = db.supplierDao().all().first()
-                if (suppliers.isEmpty()) listContainer.addView(emptyText("Koi supplier nahi hai"))
+                if (suppliers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
                 suppliers.forEach { s ->
                     listContainer.addView(partyRow(s.name, s.balance) {
                         showReportMenu(false, s.id, s.name, s.openingBalance)
@@ -150,9 +151,15 @@ class PartyReportsActivity : AppCompatActivity() {
 
     // ---- Tap a party -> choose which report ----
     private fun showReportMenu(isCustomer: Boolean, id: Long, name: String, opening: Double) {
+        val options = arrayOf(
+            "📦 " + Loc.t(this, "Party Report by Item", "آئٹم کے لحاظ سے پارٹی رپورٹ"),
+            "📜 " + Loc.t(this, "Party Statement", "پارٹی اسٹیٹمنٹ"),
+            "🧾 " + Loc.t(this, "Sale/Purchase by Party", "پارٹی کے لحاظ سے سیل/خریداری"),
+            "📊 " + Loc.t(this, "Profit & Loss", "منافع اور نقصان")
+        )
         AlertDialog.Builder(this)
             .setTitle(name)
-            .setItems(arrayOf("📦 Party Report by Item", "📜 Party Statement", "🧾 Sale/Purchase by Party", "📊 Profit & Loss")) { _, which ->
+            .setItems(options) { _, which ->
                 when (which) {
                     0 -> showItemReport(isCustomer, id, name)
                     1 -> showStatement(isCustomer, id, name, opening)
@@ -160,7 +167,7 @@ class PartyReportsActivity : AppCompatActivity() {
                     3 -> showPartyPL(isCustomer, id, name)
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
             .show()
     }
 
@@ -193,16 +200,16 @@ class PartyReportsActivity : AppCompatActivity() {
                 map.values.sortedByDescending { it.amount }
             }
 
-            val content = reportContainer("Item Report — $name")
+            val content = reportContainer(Loc.t(this@PartyReportsActivity, "Item Report", "آئٹم رپورٹ") + " — $name")
             val body = content.getChildAt(1) as LinearLayout
             if (items.isEmpty()) {
-                body.addView(emptyText("Koi item nahi mila"))
+                body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No items found", "کوئی آئٹم نہیں ملا")))
             } else {
                 items.forEach { i -> body.addView(rowText(i.product, "${i.qty} × — Rs %.2f".format(i.amount))) }
             }
             AlertDialog.Builder(this@PartyReportsActivity)
                 .setView(content)
-                .setPositiveButton("Close", null)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
                 .show()
         }
     }
@@ -214,17 +221,17 @@ class PartyReportsActivity : AppCompatActivity() {
             val fmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
             var running = opening
 
-            val content = reportContainer("Statement — $name")
+            val content = reportContainer(Loc.t(this@PartyReportsActivity, "Statement", "اسٹیٹمنٹ") + " — $name")
             val body = content.getChildAt(1) as LinearLayout
 
-            body.addView(rowText("Opening Balance", "Rs %.2f".format(opening)).apply {
+            body.addView(rowText(Loc.t(this@PartyReportsActivity, "Opening Balance", "ابتدائی بیلنس"), "Rs %.2f".format(opening)).apply {
                 (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
             })
             body.addView(plDivider())
 
             if (isCustomer) {
                 val sales = db.saleDao().salesByCustomer(id).sortedBy { it.createdAt }
-                if (sales.isEmpty()) body.addView(emptyText("Koi transaction nahi hai"))
+                if (sales.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
                 sales.forEach { s ->
                     val outstanding = s.total - s.paid
                     running += outstanding
@@ -232,7 +239,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 }
             } else {
                 val purchases = db.purchaseDao().purchasesBySupplier(id).sortedBy { it.createdAt }
-                if (purchases.isEmpty()) body.addView(emptyText("Koi transaction nahi hai"))
+                if (purchases.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
                 purchases.forEach { p ->
                     val outstanding = p.total - p.paid
                     running += outstanding
@@ -241,14 +248,14 @@ class PartyReportsActivity : AppCompatActivity() {
             }
 
             body.addView(plDivider())
-            body.addView(rowText("Closing Balance", "Rs %.2f".format(running)).apply {
+            body.addView(rowText(Loc.t(this@PartyReportsActivity, "Closing Balance", "اختتامی بیلنس"), "Rs %.2f".format(running)).apply {
                 (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
                 (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (running > 0) "#C62828" else "#2E7D32"))
             })
 
             AlertDialog.Builder(this@PartyReportsActivity)
                 .setView(content)
-                .setPositiveButton("Close", null)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
                 .show()
         }
     }
@@ -269,7 +276,7 @@ class PartyReportsActivity : AppCompatActivity() {
             })
             addView(top)
             addView(TextView(this@PartyReportsActivity).apply {
-                text = "Balance: Rs %.2f".format(balanceAfter)
+                text = Loc.t(this@PartyReportsActivity, "Balance", "بیلنس") + ": Rs %.2f".format(balanceAfter)
                 textSize = 12f
                 setTextColor(Color.parseColor(if (balanceAfter > 0) "#C62828" else "#2E7D32"))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -283,34 +290,35 @@ class PartyReportsActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@PartyReportsActivity)
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
-            val content = reportContainer(if (isCustomer) "Sales — $name" else "Purchases — $name")
+            val title = if (isCustomer) Loc.t(this@PartyReportsActivity, "Sales", "سیلز") else Loc.t(this@PartyReportsActivity, "Purchases", "خریداریاں")
+            val content = reportContainer("$title — $name")
             val body = content.getChildAt(1) as LinearLayout
 
             if (isCustomer) {
                 val sales = db.saleDao().salesByCustomer(id).sortedByDescending { it.createdAt }
-                if (sales.isEmpty()) body.addView(emptyText("Koi sale nahi hui"))
+                if (sales.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No sales yet", "کوئی سیل نہیں ہوئی")))
                 var totalAmt = 0.0
                 sales.forEach { s ->
                     totalAmt += s.total
                     body.addView(rowText("${s.invoice}  •  ${fmt.format(Date(s.createdAt))}", "Rs %.2f".format(s.total)))
                 }
                 body.addView(plDivider())
-                body.addView(rowText("Total", "Rs %.2f".format(totalAmt)))
+                body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total", "کل"), "Rs %.2f".format(totalAmt)))
             } else {
                 val purchases = db.purchaseDao().purchasesBySupplier(id).sortedByDescending { it.createdAt }
-                if (purchases.isEmpty()) body.addView(emptyText("Koi purchase nahi hui"))
+                if (purchases.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی")))
                 var totalAmt = 0.0
                 purchases.forEach { p ->
                     totalAmt += p.total
                     body.addView(rowText("${p.billNo}  •  ${fmt.format(Date(p.createdAt))}", "Rs %.2f".format(p.total)))
                 }
                 body.addView(plDivider())
-                body.addView(rowText("Total", "Rs %.2f".format(totalAmt)))
+                body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total", "کل"), "Rs %.2f".format(totalAmt)))
             }
 
             AlertDialog.Builder(this@PartyReportsActivity)
                 .setView(content)
-                .setPositiveButton("Close", null)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
                 .show()
         }
     }
@@ -321,13 +329,14 @@ class PartyReportsActivity : AppCompatActivity() {
     private fun showPartyPL(isCustomer: Boolean, id: Long, name: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
-            val content = reportContainer(if (isCustomer) "Profit & Loss — $name" else "Purchase Summary — $name")
+            val title = if (isCustomer) Loc.t(this@PartyReportsActivity, "Profit & Loss", "منافع اور نقصان") else Loc.t(this@PartyReportsActivity, "Purchase Summary", "خریداری کا خلاصہ")
+            val content = reportContainer("$title — $name")
             val body = content.getChildAt(1) as LinearLayout
 
             if (isCustomer) {
                 val sales = db.saleDao().salesByCustomer(id)
                 if (sales.isEmpty()) {
-                    body.addView(emptyText("Koi sale nahi hui"))
+                    body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No sales yet", "کوئی سیل نہیں ہوئی")))
                 } else {
                     var revenue = 0.0
                     var cost = 0.0
@@ -340,11 +349,11 @@ class PartyReportsActivity : AppCompatActivity() {
                     val profit = revenue - cost
                     val profitColor = if (profit >= 0) "#2E7D32" else "#C62828"
 
-                    body.addView(rowText("Total Sales (bills)", "${sales.size}"))
-                    body.addView(rowText("Revenue", "Rs %.2f".format(revenue)))
-                    body.addView(rowText("Cost of Goods", "Rs %.2f".format(cost)))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total Sales (bills)", "کل سیلز (بلز)"), "${sales.size}"))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Revenue", "آمدنی"), "Rs %.2f".format(revenue)))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Cost of Goods", "سامان کی لاگت"), "Rs %.2f".format(cost)))
                     body.addView(plDivider())
-                    body.addView(rowText(if (profit >= 0) "Net Profit" else "Net Loss", "Rs %.2f".format(profit)).apply {
+                    body.addView(rowText(if (profit >= 0) Loc.t(this@PartyReportsActivity, "Net Profit", "خالص منافع") else Loc.t(this@PartyReportsActivity, "Net Loss", "خالص نقصان"), "Rs %.2f".format(profit)).apply {
                         (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
                         (getChildAt(1) as TextView).setTextColor(Color.parseColor(profitColor))
                     })
@@ -352,24 +361,28 @@ class PartyReportsActivity : AppCompatActivity() {
             } else {
                 val purchases = db.purchaseDao().purchasesBySupplier(id)
                 if (purchases.isEmpty()) {
-                    body.addView(emptyText("Koi purchase nahi hui"))
+                    body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی")))
                 } else {
                     val totalBills = purchases.size
                     val totalAmount = purchases.sumOf { it.total }
                     val totalPaid = purchases.sumOf { it.paid }
                     val totalDue = totalAmount - totalPaid
 
-                    body.addView(rowText("Total Bills", "$totalBills"))
-                    body.addView(rowText("Total Purchased", "Rs %.2f".format(totalAmount)))
-                    body.addView(rowText("Total Paid", "Rs %.2f".format(totalPaid)))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total Bills", "کل بلز"), "$totalBills"))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total Purchased", "کل خریداری"), "Rs %.2f".format(totalAmount)))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total Paid", "کل ادائیگی"), "Rs %.2f".format(totalPaid)))
                     body.addView(plDivider())
-                    body.addView(rowText("Outstanding Due", "Rs %.2f".format(totalDue)).apply {
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Outstanding Due", "باقی واجب الادا"), "Rs %.2f".format(totalDue)).apply {
                         (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
                         (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (totalDue > 0) "#C62828" else "#2E7D32"))
                     })
                     body.addView(spacer(8))
                     body.addView(TextView(this@PartyReportsActivity).apply {
-                        text = "Note: Suppliers ka apna 'profit' nahi hota — ye khareed ka summary hai."
+                        text = Loc.t(
+                            this@PartyReportsActivity,
+                            "Note: Suppliers don't have their own 'profit' — this is a purchase summary.",
+                            "نوٹ: سپلائرز کا اپنا منافع نہیں ہوتا — یہ خریداری کا خلاصہ ہے۔"
+                        )
                         textSize = 11.5f
                         setTextColor(Color.parseColor(textMuted))
                         setPadding(0, 6, 0, 0)
@@ -379,7 +392,7 @@ class PartyReportsActivity : AppCompatActivity() {
 
             AlertDialog.Builder(this@PartyReportsActivity)
                 .setView(content)
-                .setPositiveButton("Close", null)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
                 .show()
         }
     }
