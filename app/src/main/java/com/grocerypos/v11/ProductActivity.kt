@@ -52,10 +52,13 @@ class ProductActivity : AppCompatActivity() {
 
     private var units = listOf("pcs", "kg", "box", "dozen")
 
-    // ---- currently chosen unit + secondary unit (set via the "Select Unit" dialog) ----
+    // ---- currently chosen unit + secondary/tertiary unit (set via the "Select Unit" dialog) ----
+    // Chain: 1 primary = secondaryUnitQty secondary; 1 secondary = tertiaryUnitQty tertiary.
     private var selectedPrimaryUnit = "pcs"
     private var selectedSecondaryUnit = "None"
     private var selectedSecondaryQty = 0.0
+    private var selectedTertiaryUnit = "None"
+    private var selectedTertiaryQty = 0.0
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -347,7 +350,10 @@ class ProductActivity : AppCompatActivity() {
             .show()
     }
 
-    // ================= "Add Item Unit" dialog: Primary Unit + Secondary Unit =================
+    // ================= "Add Item Unit" dialog: Primary / Secondary / Tertiary Unit =================
+    // Chain: 1 Primary = secondaryQty Secondary; 1 Secondary = tertiaryQty Tertiary.
+    // Tertiary only makes sense once a Secondary unit is chosen, since it's defined
+    // relative to the Secondary unit, not the Primary one directly.
     private fun openUnitDialog() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -371,10 +377,12 @@ class ProductActivity : AppCompatActivity() {
         })
         content.addView(dialogHeader)
 
+        val scrollableBody = ScrollView(this)
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(28, 26, 28, 8)
         }
+        scrollableBody.addView(body)
 
         // ---- Primary Unit ----
         body.addView(TextView(this).apply {
@@ -425,8 +433,9 @@ class ProductActivity : AppCompatActivity() {
         secondaryRow.addView(smallAddButton {
             promptAddUnitInline { newUnit ->
                 units = (units + newUnit).distinct()
-                secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("None") + units)
-                secondarySpinner.setSelection((listOf("None") + units).indexOf(newUnit))
+                val opts = listOf("None") + units
+                secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, opts)
+                secondarySpinner.setSelection(opts.indexOf(newUnit))
             }
         })
         body.addView(secondaryRow)
@@ -449,8 +458,56 @@ class ProductActivity : AppCompatActivity() {
         }
         qtyBox.addView(qtyField)
         body.addView(qtyBox)
+        body.addView(spacer(20))
 
-        content.addView(body)
+        // ---- Tertiary Unit (smallest tier, defined relative to the Secondary unit) ----
+        body.addView(TextView(this).apply {
+            text = Loc.t(this@ProductActivity, "TERTIARY UNIT (sab se chhoti quantity, optional)", "تیسرا یونٹ (سب سے چھوٹی مقدار، اختیاری)"); textSize = 11.5f
+            setTextColor(Color.parseColor(textGray))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, 8)
+        })
+        val tertiaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val tertiarySpinnerBox = LinearLayout(this).apply {
+            background = strokedBg(border, "#FAFAFF", 12)
+            setPadding(14, 2, 14, 2)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val tertiarySpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        tertiarySpinnerBox.addView(tertiarySpinner)
+        tertiaryRow.addView(tertiarySpinnerBox)
+        tertiaryRow.addView(smallAddButton {
+            promptAddUnitInline { newUnit ->
+                units = (units + newUnit).distinct()
+                val opts = listOf("None") + units
+                tertiarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, opts)
+                tertiarySpinner.setSelection(opts.indexOf(newUnit))
+            }
+        })
+        body.addView(tertiaryRow)
+        body.addView(spacer(16))
+
+        val tertiaryQtyBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = strokedBg(border, "#FAFAFF", 12)
+            setPadding(16, 4, 16, 4)
+        }
+        tertiaryQtyBox.addView(TextView(this).apply { text = "🔁  "; textSize = 14f })
+        val tertiaryQtyField = EditText(this).apply {
+            hint = Loc.t(this@ProductActivity, "1 Secondary Unit = kitne Tertiary Units? (e.g. 1 pcs = 10 grams)", "1 ثانوی یونٹ = کتنے تیسرے یونٹس؟ (مثلاً 1 پیس = 10 گرام)")
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            if (selectedTertiaryQty > 0) setText(selectedTertiaryQty.toString())
+        }
+        tertiaryQtyBox.addView(tertiaryQtyField)
+        body.addView(tertiaryQtyBox)
+
+        content.addView(scrollableBody, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
         // ---- initial adapters + preselect current values ----
         primarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, units)
@@ -458,13 +515,15 @@ class ProductActivity : AppCompatActivity() {
         val secondaryOptions = listOf("None") + units
         secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, secondaryOptions)
         secondarySpinner.setSelection(secondaryOptions.indexOf(selectedSecondaryUnit).coerceAtLeast(0))
+        val tertiaryOptions = listOf("None") + units
+        tertiarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, tertiaryOptions)
+        tertiarySpinner.setSelection(tertiaryOptions.indexOf(selectedTertiaryUnit).coerceAtLeast(0))
 
         // ---- Cancel / Save footer ----
         val footer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(28, 8, 28, 26)
+            setPadding(28, 18, 28, 26)
         }
-        content.addView(spacer(10))
         content.addView(footer)
 
         val dialog = AlertDialog.Builder(this).setView(content).create()
@@ -496,11 +555,22 @@ class ProductActivity : AppCompatActivity() {
                 selectedPrimaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"
                 selectedSecondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"
                 selectedSecondaryQty = qtyField.text.toString().toDoubleOrNull() ?: 0.0
+                selectedTertiaryUnit = tertiarySpinner.selectedItem?.toString() ?: "None"
+                selectedTertiaryQty = tertiaryQtyField.text.toString().toDoubleOrNull() ?: 0.0
 
-                selectUnitBtn.text = if (selectedSecondaryUnit != "None")
-                    "📏 $selectedPrimaryUnit / $selectedSecondaryUnit" else "📏 $selectedPrimaryUnit"
+                // Tertiary is meaningless without a Secondary chain — don't silently keep it.
+                if (selectedSecondaryUnit == "None") {
+                    selectedTertiaryUnit = "None"
+                    selectedTertiaryQty = 0.0
+                }
 
-                updateSecondaryUnitPricing()
+                selectUnitBtn.text = buildString {
+                    append("📏 $selectedPrimaryUnit")
+                    if (selectedSecondaryUnit != "None") append(" / $selectedSecondaryUnit")
+                    if (selectedTertiaryUnit != "None") append(" / $selectedTertiaryUnit")
+                }
+
+                updateUnitConversionToast()
                 dialog.dismiss()
             }
         })
@@ -539,14 +609,16 @@ class ProductActivity : AppCompatActivity() {
     }
 
     // ---- Conversion confirmation: shown briefly (Toast) when the unit dialog is saved, not as a permanent box ----
-    private fun updateSecondaryUnitPricing() {
-        if (selectedSecondaryUnit == "None" || selectedSecondaryQty <= 0.0) return
-
-        Toast.makeText(
-            this,
-            "1 $selectedPrimaryUnit = $selectedSecondaryQty $selectedSecondaryUnit noted",
-            Toast.LENGTH_SHORT
-        ).show()
+    private fun updateUnitConversionToast() {
+        val parts = mutableListOf<String>()
+        if (selectedSecondaryUnit != "None" && selectedSecondaryQty > 0) {
+            parts.add("1 $selectedPrimaryUnit = $selectedSecondaryQty $selectedSecondaryUnit")
+        }
+        if (selectedTertiaryUnit != "None" && selectedTertiaryQty > 0) {
+            parts.add("1 $selectedSecondaryUnit = $selectedTertiaryQty $selectedTertiaryUnit")
+        }
+        if (parts.isEmpty()) return
+        Toast.makeText(this, parts.joinToString("   •   ") + "  noted", Toast.LENGTH_SHORT).show()
     }
 
     private fun saveProduct() {
@@ -568,7 +640,9 @@ class ProductActivity : AppCompatActivity() {
             openingStock = openingQty,
             unit = selectedPrimaryUnit,
             secondaryUnit = if (selectedSecondaryUnit == "None") "" else selectedSecondaryUnit,
-            secondaryUnitQty = selectedSecondaryQty
+            secondaryUnitQty = selectedSecondaryQty,
+            tertiaryUnit = if (selectedTertiaryUnit == "None") "" else selectedTertiaryUnit,
+            tertiaryUnitQty = selectedTertiaryQty
         )
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).productDao().upsert(product)
@@ -588,6 +662,8 @@ class ProductActivity : AppCompatActivity() {
         selectedPrimaryUnit = "pcs"
         selectedSecondaryUnit = "None"
         selectedSecondaryQty = 0.0
+        selectedTertiaryUnit = "None"
+        selectedTertiaryQty = 0.0
         selectUnitBtn.text = "📏 " + Loc.t(this, "Select Unit", "یونٹ منتخب کریں")
 
         if (categorySpinner.adapter != null && categorySpinner.adapter.count > 0) {
@@ -644,6 +720,17 @@ class ProductActivity : AppCompatActivity() {
                             setTypeface(typeface, android.graphics.Typeface.BOLD)
                             setPadding(42, 0, 0, 0)
                         })
+                        if (p.secondaryUnit.isNotEmpty()) {
+                            addView(TextView(this@ProductActivity).apply {
+                                text = buildString {
+                                    append("📏 1 ${p.unit} = ${p.secondaryUnitQty} ${p.secondaryUnit}")
+                                    if (p.tertiaryUnit.isNotEmpty()) append("   •   1 ${p.secondaryUnit} = ${p.tertiaryUnitQty} ${p.tertiaryUnit}")
+                                }
+                                textSize = 11.5f
+                                setTextColor(Color.parseColor(textGray))
+                                setPadding(42, 4, 0, 0)
+                            })
+                        }
                     })
                 }
             }
