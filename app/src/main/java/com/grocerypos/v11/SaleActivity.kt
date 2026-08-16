@@ -37,8 +37,32 @@ data class SaleLine(
     val amount: Double,
     val mainUnit: String,
     val secondaryUnit: String,
-    val secondaryUnitQty: Double
+    val secondaryUnitQty: Double,
+    val tertiaryUnit: String = "",
+    val tertiaryUnitQty: Double = 0.0
 )
+
+// ---- Unit-conversion helpers: a SaleLine may be entered in the secondary or tertiary
+// unit (e.g. "grams" while the product's stock is tracked in "pcs"). These convert the
+// entered qty/price back to the product's main unit before it touches the DB / stock.
+// Chain: 1 main = secondaryUnitQty secondary; 1 secondary = tertiaryUnitQty tertiary. ----
+private fun SaleLine.isSecondary(): Boolean =
+    secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
+
+private fun SaleLine.isTertiary(): Boolean =
+    tertiaryUnit.isNotEmpty() && unit == tertiaryUnit && tertiaryUnitQty > 0 && secondaryUnitQty > 0
+
+private fun SaleLine.mainUnitQty(): Double = when {
+    isTertiary() -> qty / (secondaryUnitQty * tertiaryUnitQty)
+    isSecondary() -> qty / secondaryUnitQty
+    else -> qty
+}
+
+private fun SaleLine.mainUnitPrice(): Double = when {
+    isTertiary() -> unitPrice * secondaryUnitQty * tertiaryUnitQty
+    isSecondary() -> unitPrice * secondaryUnitQty
+    else -> unitPrice
+}
 
 class SaleActivity : AppCompatActivity() {
 
@@ -607,11 +631,18 @@ class SaleActivity : AppCompatActivity() {
             .show()
     }
 
+    // ---- Item selection: unit choices now include the tertiary tier too, provided a
+    // secondary unit exists (tertiary is defined relative to secondary, not primary). ----
     private fun onItemPicked(name: String) {
         val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
         selectedProduct = product
-        val unitChoices = if (product.secondaryUnit.isNotEmpty())
-            listOf(product.unit, product.secondaryUnit) else listOf(product.unit)
+        val unitChoices = mutableListOf(product.unit)
+        if (product.secondaryUnit.isNotEmpty()) {
+            unitChoices.add(product.secondaryUnit)
+            if (product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0) {
+                unitChoices.add(product.tertiaryUnit)
+            }
+        }
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
         refillAutoPrice()
     }
@@ -621,11 +652,18 @@ class SaleActivity : AppCompatActivity() {
         val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
         val basePrice = if (isWholesale) product.wholesalePrice else product.salePrice
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val isSecondary = chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0
-        val price = if (isSecondary) basePrice / product.secondaryUnitQty else basePrice
+        val price = when {
+            chosenUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
+                product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
+                basePrice / (product.secondaryUnitQty * product.tertiaryUnitQty)
+            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
+                basePrice / product.secondaryUnitQty
+            else -> basePrice
+        }
         unitPrice.setText(if (price > 0) "%.2f".format(price) else "")
     }
 
+    // ================= Add item to bill =================
     private fun addItem() {
         val n = itemName.text.toString().trim()
         val q = qty.text.toString().toDoubleOrNull() ?: 0.0
@@ -642,8 +680,14 @@ class SaleActivity : AppCompatActivity() {
         }
 
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val isSecondary = chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0
-        val mainUnitQtyEquivalent = if (isSecondary) q / product.secondaryUnitQty else q
+        val mainUnitQtyEquivalent = when {
+            chosenUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
+                product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
+                q / (product.secondaryUnitQty * product.tertiaryUnitQty)
+            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
+                q / product.secondaryUnitQty
+            else -> q
+        }
 
         if (product.stock < mainUnitQtyEquivalent) {
             Toast.makeText(this, "Stock kam hai (available: ${product.stock} ${product.unit})", Toast.LENGTH_SHORT).show()
@@ -662,7 +706,9 @@ class SaleActivity : AppCompatActivity() {
                 amount = amount,
                 mainUnit = product.unit,
                 secondaryUnit = product.secondaryUnit,
-                secondaryUnitQty = product.secondaryUnitQty
+                secondaryUnitQty = product.secondaryUnitQty,
+                tertiaryUnit = product.tertiaryUnit,
+                tertiaryUnitQty = product.tertiaryUnitQty
             )
         )
         renderItemsList()
@@ -733,6 +779,7 @@ class SaleActivity : AppCompatActivity() {
         if (isCashSale) paidInput.setText("%.2f".format(total))
     }
 
+    // ================= Save =================
     private fun saveSale() {
         if (lines.isEmpty()) {
             Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
@@ -776,16 +823,15 @@ class SaleActivity : AppCompatActivity() {
                 )
             )
 
+            // ---- Convert every line to main-unit terms (handles secondary AND tertiary
+            // tiers) before it touches sale_items / stock. ----
             val saleItems = lines.map {
-                val isSecondary = it.secondaryUnit.isNotEmpty() && it.unit == it.secondaryUnit && it.secondaryUnitQty > 0
-                val mainUnitQty = if (isSecondary) it.qty / it.secondaryUnitQty else it.qty
-                val unitPricePerMainUnit = if (isSecondary) it.unitPrice * it.secondaryUnitQty else it.unitPrice
                 SaleItem(
                     invoice = invoice,
                     barcode = it.barcode,
                     product = it.itemName,
-                    qty = mainUnitQty.roundToInt(),
-                    unitPrice = unitPricePerMainUnit,
+                    qty = it.mainUnitQty().roundToInt(),
+                    unitPrice = it.mainUnitPrice(),
                     cost = it.cost,
                     amount = it.amount
                 )
@@ -793,9 +839,7 @@ class SaleActivity : AppCompatActivity() {
             db.saleDao().items(saleItems)
 
             for (line in lines) {
-                val isSecondary = line.secondaryUnit.isNotEmpty() && line.unit == line.secondaryUnit && line.secondaryUnitQty > 0
-                val mainUnitQty = if (isSecondary) line.qty / line.secondaryUnitQty else line.qty
-                db.productDao().decrease(line.barcode, mainUnitQty.roundToInt())
+                db.productDao().decrease(line.barcode, line.mainUnitQty().roundToInt())
             }
 
             if (customer != null && paid < total) {
@@ -854,6 +898,9 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
+    // ---- Encoding includes the tertiary tier now (fields 10 & 11). Old held bills
+    // saved before this change only have 10 fields per line — decodeHold() below
+    // defaults tertiary to "" / 0.0 for those via getOrNull, so they still recall fine. ----
     private fun encodeHold(): String {
         val header = listOf(
             customerName.text.toString(),
@@ -863,8 +910,10 @@ class SaleActivity : AppCompatActivity() {
         ).joinToString("\u0001")
 
         val itemsPart = lines.joinToString("\u0002") {
-            listOf(it.barcode, it.itemName, it.qty, it.unit, it.unitPrice, it.cost, it.amount, it.mainUnit, it.secondaryUnit, it.secondaryUnitQty)
-                .joinToString("\u0003")
+            listOf(
+                it.barcode, it.itemName, it.qty, it.unit, it.unitPrice, it.cost, it.amount,
+                it.mainUnit, it.secondaryUnit, it.secondaryUnitQty, it.tertiaryUnit, it.tertiaryUnitQty
+            ).joinToString("\u0003")
         }
         return header + "\u0004" + itemsPart
     }
@@ -897,7 +946,9 @@ class SaleActivity : AppCompatActivity() {
                             amount = f[6].toDoubleOrNull() ?: 0.0,
                             mainUnit = f[7],
                             secondaryUnit = f[8],
-                            secondaryUnitQty = f[9].toDoubleOrNull() ?: 0.0
+                            secondaryUnitQty = f[9].toDoubleOrNull() ?: 0.0,
+                            tertiaryUnit = f.getOrNull(10) ?: "",
+                            tertiaryUnitQty = f.getOrNull(11)?.toDoubleOrNull() ?: 0.0
                         )
                     )
                 }
