@@ -59,15 +59,15 @@ class PurchaseActivity : AppCompatActivity() {
         const val EXTRA_BILL_NO = "billNo"
     }
 
-    // ================= SIMPLE PREMIUM PALETTE — one accent color, mostly neutral =================
-    private val bg = "#F7F7FA"
+    // ================= NAVY + TEAL + WHITE PALETTE =================
+    private val bg = "#F4F6F8"
     private val cardWhite = "#FFFFFF"
-    private val textDark = "#1A1A2E"
-    private val textMuted = "#8F93A6"
-    private val border = "#EAEAF0"
-    private val orange = "#F5730B"   // single brand accent for Purchase
-    private val green = "#1FA971"    // money-positive emphasis only
-    private val red = "#E5484D"      // remove / credit-mode only
+    private val navy = "#0B2545"     // primary brand — header, Save button, Cash-active
+    private val teal = "#0F9B8E"     // secondary accent — chips, Add Item, totals, "+" icons
+    private val textDark = "#0B2545" // headings/values reuse navy
+    private val textMuted = "#7C8798"
+    private val border = "#E3E8EE"
+    private val red = "#E5484D"      // functional only — remove / credit-mode
 
     private lateinit var dateValueText: TextView
     private lateinit var firmNameText: TextView
@@ -112,12 +112,12 @@ class PurchaseActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= HEADER (flat, single accent) =================
+        // ================= HEADER (flat navy, teal chip) =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(26, 22, 22, 22)
-            background = roundedBg(orange, 20)
+            background = roundedBg(navy, 20)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 18) }
@@ -136,7 +136,7 @@ class PurchaseActivity : AppCompatActivity() {
         headerCol.addView(TextView(this).apply {
             text = "Stock In / Supplier Billing"
             textSize = 11f
-            setTextColor(Color.parseColor("#FFE1C7"))
+            setTextColor(Color.parseColor("#9FB4CC"))
             setPadding(0, 3, 0, 0)
         })
         header.addView(headerCol)
@@ -161,7 +161,7 @@ class PurchaseActivity : AppCompatActivity() {
         dateRow.addView(TextView(this).apply {
             text = "\u203A"
             textSize = 18f
-            setTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(teal))
         })
         dateBox.addView(dateRow)
         root.addView(dateBox)
@@ -198,7 +198,7 @@ class PurchaseActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         partyRow.addView(partyName)
-        partyRow.addView(circleIcon("+", orange, 30) { promptAddSupplier() })
+        partyRow.addView(circleIcon("+", teal, 30) { promptAddSupplier() })
         partyBox.addView(partyRow)
         root.addView(partyBox)
         root.addView(spacer(4))
@@ -209,7 +209,7 @@ class PurchaseActivity : AppCompatActivity() {
             text = "CASH"; textSize = 11.5f; setTextColor(Color.WHITE)
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(orange, 20)
+            background = roundedBg(navy, 20)
             setPadding(26, 14, 26, 14); minWidth = 0; minHeight = 0
             setOnClickListener { setPurchaseMode(true) }
         }
@@ -217,7 +217,7 @@ class PurchaseActivity : AppCompatActivity() {
             text = "CREDIT"; textSize = 11.5f; setTextColor(Color.parseColor(textMuted))
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg("#EEEEF2", 20)
+            background = roundedBg("#EAEDF1", 20)
             setPadding(26, 14, 26, 14); minWidth = 0; minHeight = 0
             setOnClickListener { setPurchaseMode(false) }
         }
@@ -230,11 +230,11 @@ class PurchaseActivity : AppCompatActivity() {
         // ================= "Add Items (Optional)" trigger =================
         val addItemsBox = premiumCard()
         val addItemsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        addItemsRow.addView(circleIcon("+", orange, 30))
+        addItemsRow.addView(circleIcon("+", teal, 30))
         addItemsTrigger = TextView(this).apply {
             text = "  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Add Items (Optional)", "آئٹمز شامل کریں (اختیاری)")
             textSize = 14.5f
-            setTextColor(Color.parseColor(orange))
+            setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         addItemsRow.addView(addItemsTrigger)
@@ -314,7 +314,7 @@ class PurchaseActivity : AppCompatActivity() {
         conversionInfo = TextView(this).apply {
             text = ""
             textSize = 12f
-            setTextColor(Color.parseColor(orange))
+            setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(6, 10, 0, 0)
             visibility = View.GONE
@@ -325,7 +325,7 @@ class PurchaseActivity : AppCompatActivity() {
             text = "Total Amount: Rs 0.00"
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor(green))
+            setTextColor(Color.parseColor(teal))
             setPadding(6, 10, 0, 10)
         }
         itemEntrySection.addView(totalAmountText)
@@ -340,7 +340,7 @@ class PurchaseActivity : AppCompatActivity() {
             textSize = 14f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(orange, 14)
+            background = roundedBg(teal, 14)
             setPadding(0, 24, 0, 24)
             setOnClickListener { addItem() }
         })
@@ -350,7 +350,7 @@ class PurchaseActivity : AppCompatActivity() {
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(itemsContainer)
 
-        // ================= GRAND TOTAL (flat card, not a gradient block) =================
+        // ================= GRAND TOTAL (flat card, teal value) =================
         val totalCard = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -366,7 +366,7 @@ class PurchaseActivity : AppCompatActivity() {
         grandTotalText = TextView(this).apply {
             text = "Rs 0.00"
             textSize = 19f
-            setTextColor(Color.parseColor(green))
+            setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         totalCard.addView(grandTotalText)
@@ -402,14 +402,14 @@ class PurchaseActivity : AppCompatActivity() {
         paymentSection.addView(payRow)
         root.addView(paymentSection)
 
-        // ================= SAVE (fixed bottom bar, flat accent color) =================
+        // ================= SAVE (fixed bottom bar, flat navy) =================
         saveButton = Button(this).apply {
             text = if (editBillNo != null) com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "UPDATE PURCHASE", "خریداری اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SAVE PURCHASE", "خریداری محفوظ کریں")
             setTextColor(Color.WHITE)
             textSize = 15.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(orange, 16)
+            background = roundedBg(navy, 16)
             setPadding(0, 26, 0, 26)
             setOnClickListener { savePurchase() }
             applyElevation(this, 4f)
@@ -493,13 +493,13 @@ class PurchaseActivity : AppCompatActivity() {
     private fun innerField() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(18, 12, 18, 12)
-        background = strokedBg(border, "#FAFAFC", 12)
+        background = strokedBg(border, "#FAFBFC", 12)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, 0, 0, 12) }
     }
 
-    /** Small uppercase muted micro-label — replaces the old icon+text label row. */
+    /** Small uppercase muted micro-label. */
     private fun labelRow(label: String) = TextView(this).apply {
         text = label.uppercase()
         textSize = 10.5f
@@ -512,7 +512,7 @@ class PurchaseActivity : AppCompatActivity() {
     private fun pillChip(label: String, onClick: () -> Unit) = TextView(this).apply {
         this.text = label
         textSize = 12.5f
-        setTextColor(Color.parseColor(orange))
+        setTextColor(Color.parseColor(navy))
         setTypeface(typeface, android.graphics.Typeface.BOLD)
         background = roundedBg(cardWhite, 30)
         setPadding(24, 12, 24, 12)
@@ -562,12 +562,12 @@ class PurchaseActivity : AppCompatActivity() {
     private fun setPurchaseMode(cash: Boolean) {
         isCashPurchase = cash
         if (cash) {
-            cashBtn.background = roundedBg(orange, 20); cashBtn.setTextColor(Color.WHITE)
-            creditBtn.background = roundedBg("#EEEEF2", 20); creditBtn.setTextColor(Color.parseColor(textMuted))
+            cashBtn.background = roundedBg(navy, 20); cashBtn.setTextColor(Color.WHITE)
+            creditBtn.background = roundedBg("#EAEDF1", 20); creditBtn.setTextColor(Color.parseColor(textMuted))
             paymentSection.visibility = View.VISIBLE
         } else {
             creditBtn.background = roundedBg(red, 20); creditBtn.setTextColor(Color.WHITE)
-            cashBtn.background = roundedBg("#EEEEF2", 20); cashBtn.setTextColor(Color.parseColor(textMuted))
+            cashBtn.background = roundedBg("#EAEDF1", 20); cashBtn.setTextColor(Color.parseColor(textMuted))
             paymentSection.visibility = View.GONE
         }
     }
@@ -720,8 +720,8 @@ class PurchaseActivity : AppCompatActivity() {
                 textSize = 13f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(28, 12, 28, 12)
-                setTextColor(if (isSelected) Color.WHITE else Color.parseColor(orange))
-                background = if (isSelected) roundedBg(orange, 30) else strokedBg(orange, cardWhite, 30)
+                setTextColor(if (isSelected) Color.WHITE else Color.parseColor(teal))
+                background = if (isSelected) roundedBg(teal, 30) else strokedBg(teal, cardWhite, 30)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(if (index == 0) 0 else 8, 0, 0, 0) }
@@ -797,7 +797,7 @@ class PurchaseActivity : AppCompatActivity() {
             row.addView(TextView(this).apply {
                 text = "Rs %.2f".format(line.amount)
                 textSize = 13.5f
-                setTextColor(Color.parseColor(green))
+                setTextColor(Color.parseColor(teal))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(12, 0, 12, 0)
             })
