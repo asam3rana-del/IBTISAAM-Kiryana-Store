@@ -36,10 +36,10 @@ data class Product(
     val unitNote:String="",
     val secondaryUnit:String="",
     val secondaryUnitQty:Double=0.0,
-    val wholesalePrice:Double=0.0,  // wholesale rate (parchon rate) - added
-    val openingStock:Int=0,         // added
-    val tertiaryUnit:String="",             // smallest unit, e.g. "grams" or "ml" - added
-    val tertiaryUnitQty:Double=0.0          // 1 secondaryUnit = X tertiaryUnit - added
+    val wholesalePrice:Double=0.0,  // wholesale rate (parchon rate)
+    val openingStock:Int=0,
+    val tertiaryUnit:String="",             // smallest unit, e.g. "grams" or "ml"
+    val tertiaryUnitQty:Double=0.0          // 1 secondaryUnit = X tertiaryUnit
 )
 
 @Entity(tableName="customers")
@@ -48,7 +48,7 @@ data class Customer(
     val name:String,
     val phone:String="",
     val creditLimit:Double=0.0,
-    val openingBalance:Double=0.0,  // added — previous due before app tracking started
+    val openingBalance:Double=0.0,  // previous due before app tracking started
     val balance:Double=0.0
 )
 
@@ -57,7 +57,7 @@ data class Supplier(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val name:String,
     val phone:String="",
-    val openingBalance:Double=0.0,  // added — previous due before app tracking started
+    val openingBalance:Double=0.0,  // previous due before app tracking started
     val balance:Double=0.0
 )
 
@@ -73,7 +73,7 @@ data class Sale(
     val paymentMethod:String,       // cash / bank
     val saleType:String="retail",   // retail / wholesale
     val createdAt:Long=System.currentTimeMillis(),
-    val status:String="active"      // added — "active" or "returned"
+    val status:String="active"      // "active" or "returned"
 )
 
 @Entity(tableName="sale_items")
@@ -107,9 +107,9 @@ data class Purchase(
     val total:Double,
     val paid:Double,
     val createdAt:Long=System.currentTimeMillis(),
-    val subtotal:Double=0.0,   // added
-    val discount:Double=0.0,   // added
-    val status:String="active" // added — "active" or "returned"
+    val subtotal:Double=0.0,
+    val discount:Double=0.0,
+    val status:String="active" // "active" or "returned"
 )
 
 @Entity(tableName="purchase_items")
@@ -120,7 +120,7 @@ data class PurchaseItem(
     val qty:Int,
     val unitCost:Double,
     val amount:Double,
-    val unit:String=""   // added — which unit (main/secondary) this line was purchased in
+    val unit:String=""   // which unit (main/secondary) this line was purchased in
 )
 
 @Entity(tableName="returns")
@@ -201,7 +201,6 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE barcode=:code LIMIT 1")
     suspend fun find(code:String):Product?
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(p:Product)
-    // Deletes by matching every column against the primary key (barcode) — same pattern as HeldDao.delete().
     @Delete suspend fun delete(p:Product)
     @Query("UPDATE products SET stock=stock-:qty WHERE barcode=:code AND stock>=:qty")
     suspend fun decrease(code:String,qty:Int):Int
@@ -411,7 +410,7 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
 
 // v15 -> v16: sales and purchases gain a `status` column ("active" or
 // "returned"). Existing rows default to 'active', so nothing already
-// recorded is affected. This backs the new Sale Return / Purchase Return
+// recorded is affected. This backs the Sale Return / Purchase Return
 // feature in HistoryActivity — a returned bill stays in the history for
 // reporting instead of being deleted.
 val MIGRATION_15_16 = object : Migration(15, 16) {
@@ -461,7 +460,15 @@ abstract class PosDatabase:RoomDatabase(){
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
                 .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
-                .fallbackToDestructiveMigration()
+                // FIX: fallbackToDestructiveMigration() removed.
+                // That call told Room "if you hit a schema version you don't
+                // have a migration path for, silently DROP and recreate every
+                // table" — which is exactly what was wiping all purchase/sale
+                // entries on reopen whenever a migration path was missing or
+                // mismatched. Without it, a missing migration now throws a
+                // clear IllegalStateException instead of deleting data, so
+                // any future schema change failure surfaces as a crash you
+                // can fix, not silent data loss.
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() {
