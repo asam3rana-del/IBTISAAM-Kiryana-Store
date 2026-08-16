@@ -26,6 +26,7 @@
         <activity android:name=".ui.CashActivity" />
         <activity android:name=".ui.HistoryActivity" />
         <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
+        <activity android:name=".ui.SaleHistoryActivity" android:exported="false" />
         <activity android:name=".ui.PartyActivity" />
         <activity android:name=".ui.UserManagementActivity" />
         <activity android:name=".ui.PartyReportsActivity" />
