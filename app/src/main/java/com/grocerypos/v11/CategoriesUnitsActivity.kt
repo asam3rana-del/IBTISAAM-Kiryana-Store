@@ -25,7 +25,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Shows every Category, and inside each category, every Product that belongs to it —
- * with its Primary Unit, Secondary Unit, and the conversion (1 Unit = X Secondary Units).
+ * with its Primary Unit, Secondary Unit, Tertiary Unit, and the conversions between them
+ * (1 Primary = X Secondary, 1 Secondary = X Tertiary).
  * Each product row also offers Edit (deep-links into ProductActivity's edit form) and Delete.
  */
 class CategoriesUnitsActivity : AppCompatActivity() {
@@ -185,10 +186,18 @@ class CategoriesUnitsActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
 
-        val unitLine = if (p.secondaryUnit.isNotBlank() && p.secondaryUnitQty > 0)
-            "📏 " + Loc.t(this@CategoriesUnitsActivity, "Unit", "یونٹ") + ": ${p.unit}  •  🔁 1 ${p.unit} = ${formatQty(p.secondaryUnitQty)} ${p.secondaryUnit}"
-        else
-            "📏 " + Loc.t(this@CategoriesUnitsActivity, "Unit", "یونٹ") + ": ${p.unit}"
+        // ---- FIX: now shows all 3 tiers — Primary, Secondary, and Tertiary
+        // (smallest quantity, e.g. grams/ml) — instead of stopping at Secondary.
+        // Chain: 1 Primary = secondaryUnitQty Secondary; 1 Secondary = tertiaryUnitQty Tertiary.
+        val unitLine = buildString {
+            append("📏 " + Loc.t(this@CategoriesUnitsActivity, "Unit", "یونٹ") + ": ${p.unit}")
+            if (p.secondaryUnit.isNotBlank() && p.secondaryUnitQty > 0) {
+                append("  •  🔁 1 ${p.unit} = ${formatQty(p.secondaryUnitQty)} ${p.secondaryUnit}")
+                if (p.tertiaryUnit.isNotBlank() && p.tertiaryUnitQty > 0) {
+                    append("  •  🔁 1 ${p.secondaryUnit} = ${formatQty(p.tertiaryUnitQty)} ${p.tertiaryUnit}")
+                }
+            }
+        }
 
         addView(TextView(this@CategoriesUnitsActivity).apply {
             text = unitLine
