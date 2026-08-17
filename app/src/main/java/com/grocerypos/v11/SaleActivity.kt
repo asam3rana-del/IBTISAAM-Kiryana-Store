@@ -70,6 +70,9 @@ private fun SaleLine.mainUnitPrice(): Double = when {
 class SaleActivity : AppCompatActivity() {
 
     companion object {
+        // ---- NEW: lets other screens (PartyDashboardActivity, PartyTransactionActivity)
+        // open an existing sale for viewing/editing by invoice number. ----
+        const val EXTRA_INVOICE = "invoice"
         private const val PREFS_NAME = "sale_draft_prefs"
         private const val KEY_DRAFT = "draft_json"
     }
@@ -109,6 +112,9 @@ class SaleActivity : AppCompatActivity() {
     private lateinit var paidInput: EditText
     private lateinit var paymentMethodSpinner: Spinner
     private lateinit var firmNameText: TextView
+    // ---- NEW: made into lateinit vars (were built inline) so Delete can sit beside Save. ----
+    private lateinit var saveButton: Button
+    private lateinit var deleteButton: Button
 
     private var customers = listOf<Customer>()
     private var products = listOf<Product>()
@@ -116,6 +122,12 @@ class SaleActivity : AppCompatActivity() {
     private var selectedProduct: Product? = null
     private var isCashSale = true
     private var saleDateMillis = System.currentTimeMillis()
+
+    // ---- NEW: edit-mode state — set when this screen was opened to view/edit an
+    // existing sale rather than create a new one. ----
+    private var editInvoice: String? = null
+    private var originalSale: Sale? = null
+    private var originalItems: List<SaleItem> = emptyList()
 
     // ---- tracks the last-entered unit price converted to a "per MAIN unit" price, so
     // switching the unit spinner (e.g. kg -> bag) auto-converts the price proportionally
@@ -127,12 +139,14 @@ class SaleActivity : AppCompatActivity() {
     // ---- draft persistence: guards against process death (e.g. fingerprint prompt,
     // switching apps, or the OS killing the app in the background) wiping out an
     // in-progress sale that hasn't been saved/held yet. Separate from the explicit
-    // "Hold" feature, which is a manual, user-initiated save. ----
+    // "Hold" feature, which is a manual, user-initiated save. Only relevant for a
+    // brand-new sale — edit mode loads its own data via loadForEdit(). ----
     private var suppressDraftSave = false
     private var draftRestored = false
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        editInvoice = intent.getStringExtra(EXTRA_INVOICE)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -156,7 +170,7 @@ class SaleActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         headerTextCol.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "New Sale", "نئی سیل")
+            text = if (editInvoice != null) com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Edit Sale", "سیل میں ترمیم") else com.grocerypos.v11.util.Loc.t(this@SaleActivity, "New Sale", "نئی سیل")
             textSize = 18.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -450,9 +464,9 @@ class SaleActivity : AppCompatActivity() {
         root.addView(paymentSection)
         root.addView(spacer(18))
 
-        // ================= SAVE =================
-        root.addView(Button(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "SAVE SALE", "سیل محفوظ کریں")
+        // ================= SAVE + DELETE =================
+        saveButton = Button(this).apply {
+            text = if (editInvoice != null) com.grocerypos.v11.util.Loc.t(this@SaleActivity, "UPDATE SALE", "سیل اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@SaleActivity, "SAVE SALE", "سیل محفوظ کریں")
             setTextColor(Color.WHITE)
             textSize = 15.5f
             isAllCaps = false
@@ -461,7 +475,25 @@ class SaleActivity : AppCompatActivity() {
             setPadding(0, 26, 0, 26)
             setOnClickListener { saveSale() }
             applyElevation(this, 8f)
-        })
+        }
+        // ---- NEW: Delete — only shown in edit mode. Reverses stock + customer balance
+        // + the cash-in record before removing the bill, mirroring PurchaseActivity. ----
+        deleteButton = Button(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "DELETE", "حذف کریں")
+            setTextColor(Color.WHITE)
+            textSize = 15.5f
+            isAllCaps = false
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = roundedBg(red, 16)
+            setPadding(0, 26, 0, 26)
+            visibility = if (editInvoice != null) View.VISIBLE else View.GONE
+            setOnClickListener { confirmDeleteSale() }
+            applyElevation(this, 8f)
+        }
+        val saveDeleteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        saveDeleteRow.addView(saveButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) })
+        saveDeleteRow.addView(deleteButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply { setMargins(8, 0, 0, 0) })
+        root.addView(saveDeleteRow)
         root.addView(spacer(40))
 
         setContentView(ScrollView(this).apply {
@@ -473,6 +505,8 @@ class SaleActivity : AppCompatActivity() {
         loadProducts()
         loadFirmName()
         setSaleMode(true)
+        // ---- NEW: if opened for an existing invoice, load it into the form. ----
+        editInvoice?.let { loadForEdit(it) }
 
         itemName.setOnItemClickListener { _, _, position, _ ->
             val name = itemName.adapter.getItem(position).toString()
@@ -511,16 +545,20 @@ class SaleActivity : AppCompatActivity() {
 
         // ---- Restore an unsaved draft. Recovers in-progress entries lost when the OS
         // killed the app in the background (fingerprint unlock, app switch, low memory)
-        // before the user could tap Save or Hold. ----
-        restoreDraftIfAny()
+        // before the user could tap Save or Hold. Skipped in edit mode — loadForEdit()
+        // above already populated the form from the DB. ----
+        if (editInvoice == null) {
+            restoreDraftIfAny()
+        }
     }
 
     override fun onPause() {
         super.onPause()
         // Snapshot whatever is currently on screen so a process death while backgrounded
         // doesn't wipe out an in-progress sale. Cleared once the sale is actually saved
-        // (see saveSale()) or explicitly held (see holdBill()/clearAll()).
-        if (!suppressDraftSave) {
+        // (see saveSale()) or explicitly held (see holdBill()/clearAll()). Skipped in
+        // edit mode — edits reload from the DB via loadForEdit(), not the draft.
+        if (editInvoice == null && !suppressDraftSave) {
             saveDraft()
         }
     }
@@ -660,6 +698,59 @@ class SaleActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val savedName = PosDatabase.get(this@SaleActivity).appSettingDao().get("shop_name")?.value
             if (!savedName.isNullOrBlank()) firmNameText.text = savedName
+        }
+    }
+
+    // ---- NEW: load an existing sale into the form for viewing/editing. Fetches
+    // customers/products directly (instead of relying on the `customers`/`products`
+    // class vars) so it doesn't race with loadCustomers()/loadProducts(), which are
+    // async Flow collectors started just before this is called. ----
+    private fun loadForEdit(invoice: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SaleActivity)
+            val sale = db.saleDao().findSale(invoice) ?: return@launch
+            val items = db.saleDao().itemsForInvoice(invoice)
+            originalSale = sale
+            originalItems = items
+
+            saleDateMillis = sale.createdAt
+            dateValueText.text = formatDate(saleDateMillis)
+
+            val custList = db.customerDao().all().first()
+            val custName = sale.customerId?.let { id -> custList.find { it.id == id }?.name } ?: ""
+            customerName.setText(custName)
+
+            saleTypeSpinner.setSelection(if (sale.saleType == "wholesale") 1 else 0)
+            setSaleMode(sale.paymentMethod != "credit")
+            discountInput.setText(if (sale.discount > 0) "%.2f".format(sale.discount) else "")
+            paidInput.setText(if (sale.paid > 0) "%.2f".format(sale.paid) else "")
+            val methodIndex = if (sale.paymentMethod.equals("bank", ignoreCase = true)) 1 else 0
+            paymentMethodSpinner.setSelection(methodIndex)
+
+            val prodList = db.productDao().all().first()
+            lines.clear()
+            items.forEach { si ->
+                val product = prodList.find { it.barcode == si.barcode }
+                lines.add(
+                    SaleLine(
+                        barcode = si.barcode,
+                        itemName = si.product,
+                        qty = si.qty.toDouble(),
+                        unit = product?.unit ?: "",
+                        unitPrice = si.unitPrice,
+                        cost = si.cost,
+                        amount = si.amount,
+                        mainUnit = product?.unit ?: "",
+                        secondaryUnit = product?.secondaryUnit ?: "",
+                        secondaryUnitQty = product?.secondaryUnitQty ?: 0.0,
+                        tertiaryUnit = product?.tertiaryUnit ?: "",
+                        tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0
+                    )
+                )
+            }
+            renderItemsList()
+            updateTotals()
+            deleteButton.visibility = View.VISIBLE
         }
     }
 
@@ -938,7 +1029,7 @@ class SaleActivity : AppCompatActivity() {
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
         itemName.requestFocus()
 
-        saveDraft()
+        if (editInvoice == null) saveDraft()
     }
 
     private fun renderItemsList() {
@@ -983,7 +1074,7 @@ class SaleActivity : AppCompatActivity() {
                         lines.removeAt(index)
                         renderItemsList()
                         updateTotals()
-                        saveDraft()
+                        if (editInvoice == null) saveDraft()
                     }
                 })
             })
@@ -1018,10 +1109,27 @@ class SaleActivity : AppCompatActivity() {
         val method = if (isCashSale) (paymentMethodSpinner.selectedItem?.toString() ?: "Cash") else "credit"
         var customer = customers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
         val saleType = if (saleTypeSpinner.selectedItem?.toString() == "Wholesale") "wholesale" else "retail"
-        val invoice = "INV" + System.currentTimeMillis().toString()
+        // ---- CHANGE: reuse the invoice being edited, if any, instead of always
+        // generating a fresh one. ----
+        val invoice = editInvoice ?: ("INV" + System.currentTimeMillis().toString())
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
+
+            // ---- NEW: if editing, reverse the ORIGINAL bill's stock + customer-balance
+            // effect first (before re-validating stock against the new lines), then
+            // delete its old rows — mirrors PurchaseActivity's edit/update flow. ----
+            val original = originalSale
+            if (original != null) {
+                originalItems.forEach { db.productDao().increase(it.barcode, it.qty) }
+                val originalOutstanding = original.total - original.paid
+                if (original.customerId != null && originalOutstanding > 0) {
+                    db.customerDao().addBalance(original.customerId, -originalOutstanding)
+                }
+                db.saleDao().deleteItems(invoice)
+                db.saleDao().deleteSale(invoice)
+                db.cashTransactionDao().deleteByReference(invoice)
+            }
 
             // ---- FIX: re-validate stock right before committing, against the LATEST
             // DB values (not the possibly-stale `products` list snapshot from whenever
@@ -1109,6 +1217,13 @@ class SaleActivity : AppCompatActivity() {
             // doesn't try to restore an already-saved sale.
             suppressDraftSave = true
             clearDraft()
+            editInvoice = invoice
+
+            Toast.makeText(
+                this@SaleActivity,
+                if (original != null) "Sale updated" else "Sale saved",
+                Toast.LENGTH_SHORT
+            ).show()
 
             // ---- Open the receipt-style Bill Preview instead of just finishing ----
             val itemsEncoded = lines.joinToString("\u0002") {
@@ -1128,6 +1243,38 @@ class SaleActivity : AppCompatActivity() {
                 putExtra(BillPreviewActivity.EXTRA_ITEMS_ENCODED, itemsEncoded)
             }
             startActivity(previewIntent)
+            finish()
+        }
+    }
+
+    // ---- NEW: Delete (edit mode only) — reverses stock + customer balance + the cash-in
+    // record, then removes the bill. Mirrors PurchaseActivity.confirmDeletePurchase(). ----
+    private fun confirmDeleteSale() {
+        val invoice = editInvoice ?: return
+        AlertDialog.Builder(this)
+            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Delete Sale", "سیل حذف کریں"))
+            .setMessage(com.grocerypos.v11.util.Loc.t(this, "This will remove the bill and reverse its stock and customer balance effect. Continue?", "یہ بل حذف کر دے گا اور اس کا اسٹاک اور کسٹمر بیلنس پر اثر واپس کر دے گا۔ جاری رکھیں؟"))
+            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Delete", "حذف کریں")) { _, _ -> deleteSale(invoice) }
+            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ"), null)
+            .show()
+    }
+
+    private fun deleteSale(invoice: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SaleActivity)
+            val sale = originalSale ?: db.saleDao().findSale(invoice) ?: return@launch
+            val items = originalItems.ifEmpty { db.saleDao().itemsForInvoice(invoice) }
+
+            items.forEach { db.productDao().increase(it.barcode, it.qty) }
+            val outstanding = sale.total - sale.paid
+            if (sale.customerId != null && outstanding > 0) {
+                db.customerDao().addBalance(sale.customerId, -outstanding)
+            }
+            db.saleDao().deleteItems(invoice)
+            db.saleDao().deleteSale(invoice)
+            db.cashTransactionDao().deleteByReference(invoice)
+
+            Toast.makeText(this@SaleActivity, "Sale deleted", Toast.LENGTH_SHORT).show()
             finish()
         }
     }
@@ -1208,7 +1355,7 @@ class SaleActivity : AppCompatActivity() {
         }
         renderItemsList()
         updateTotals()
-        saveDraft()
+        if (editInvoice == null) saveDraft()
     }
 
     private fun clearAll() {
