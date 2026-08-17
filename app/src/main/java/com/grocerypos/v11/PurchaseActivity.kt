@@ -1,6 +1,7 @@
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -13,6 +14,8 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
@@ -21,22 +24,25 @@ import com.grocerypos.v11.PurchaseItem
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 /**
  * "Purchase" entry/edit screen backed by the real PurchaseDao/ProductDao/SupplierDao —
+ * Date / Firm Name / Party Balance / Party Name section, a collapsible "Billed Items" header,
  * numbered line-item cards ("#N  Name  Rs price" + "Item Subtotal  qty unit x rate = Rs total"),
- * a totals strip (Total Disc / Total Tax Amt / Total Qty / Subtotal), an "+ Add Items" button,
- * a Charges section (Shipping + Discount), and a bottom bar with Delete / Save / overflow-menu,
- * matching the reference screenshot.
+ * a totals strip (Total Disc / Total Qty / Subtotal), an "+ Add Items" button, a Charges
+ * section (Shipping + Discount), and a bottom bar with Delete / Save / overflow-menu.
  *
  * Start it for a NEW purchase with a plain Intent. Start it to EDIT an existing purchase by
  * putting the bill number under EXTRA_BILL_NO:
  *   startActivity(Intent(this, PurchaseActivity::class.java).putExtra(PurchaseActivity.EXTRA_BILL_NO, billNo))
  *
  * Schema notes (com.grocerypos.v11.PosDatabase, v17):
- *  - PurchaseItem has no per-line discount/tax column, so "Total Disc" is driven by the
- *    header-level Purchase.discount field (the Discount charge below) and "Total Tax Amt"
- *    has no backing column at all — it always shows 0.00 until a schema migration adds one.
+ *  - PurchaseItem has no per-line discount column, so "Total Disc" is driven by the
+ *    header-level Purchase.discount field (the Discount charge below).
  *  - Purchase has no dedicated "shipping" column. Shipping is added into the saved `total`
  *    and `subtotal` only; it is NOT persisted as its own field. Add a migration + column if
  *    you need it reported separately later.
@@ -64,11 +70,13 @@ class PurchaseActivity : AppCompatActivity() {
     private val textDark = "#2E3242"
     private val divider = "#E7E9F2"
 
-    private lateinit var supplierValue: TextView
-    private lateinit var billNoValue: TextView
+    private lateinit var dateValue: TextView
+    private lateinit var firmNameValue: TextView
+    private lateinit var partyBalanceValue: TextView
+    private lateinit var partyNameValue: TextView
+    private lateinit var billedItemsChevron: TextView
     private lateinit var itemsContainer: LinearLayout
     private lateinit var totalDiscValue: TextView
-    private lateinit var totalTaxValue: TextView
     private lateinit var totalQtyValue: TextView
     private lateinit var subtotalValue: TextView
     private lateinit var shippingField: EditText
@@ -96,6 +104,10 @@ class PurchaseActivity : AppCompatActivity() {
     /** Snapshot of barcode -> qty as originally loaded, so Save can correctly adjust stock deltas. */
     private var originalQtyByBarcode: Map<String, Double> = emptyMap()
 
+    private var selectedDateMillis: Long = System.currentTimeMillis()
+    private var itemsExpanded = true
+    private val dateFmt = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
@@ -115,8 +127,10 @@ class PurchaseActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-        root.addView(buildSupplierAndBillInfo())
+        root.addView(buildDateAndFirmSection())
         root.addView(sectionDivider())
+        root.addView(buildPartySection())
+        root.addView(buildBilledItemsHeader())
 
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(itemsContainer)
@@ -148,10 +162,15 @@ class PurchaseActivity : AppCompatActivity() {
             allProducts = collectFirst { db.productDao().all() }
             allSuppliers = collectFirst { db.supplierDao().all() }
 
+            val savedName = db.appSettingDao().get("business_name")?.value
+            if (!savedName.isNullOrBlank()) firmNameValue.text = savedName
+
             if (editing) {
                 val purchase = db.purchaseDao().findPurchase(billNo)
                 val existingItems = db.purchaseDao().itemsForBill(billNo)
                 selectedSupplier = allSuppliers.find { it.id == purchase?.supplierId }
+                selectedDateMillis = purchase?.createdAt ?: System.currentTimeMillis()
+                dateValue.text = dateFmt.format(Date(selectedDateMillis))
                 lineItems.clear()
                 for (pi in existingItems) {
                     val product = allProducts.find { it.barcode == pi.barcode }
@@ -174,8 +193,7 @@ class PurchaseActivity : AppCompatActivity() {
                 deleteBtn.visibility = View.GONE
             }
 
-            billNoValue.text = billNo
-            updateSupplierLabel()
+            updatePartyDisplay()
             renderLineItems()
         }
     }
@@ -201,8 +219,16 @@ class PurchaseActivity : AppCompatActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 46, 20, 22)
+            setPadding(20, 20, 20, 22)
             setBackgroundColor(Color.parseColor(cardWhite))
+
+            // Push the header below the status bar / camera cutout on edge-to-edge devices -
+            // a fixed top padding alone gets hidden under the cutout on notched/punch-hole phones.
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()).top
+                view.setPadding(view.paddingLeft, 20 + topInset, view.paddingRight, view.paddingBottom)
+                insets
+            }
 
             addView(TextView(this@PurchaseActivity).apply {
                 text = "\u2190"
@@ -232,75 +258,200 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ================= SUPPLIER + BILL INFO =================
-    private fun buildSupplierAndBillInfo(): LinearLayout {
+    // ================= DATE + FIRM NAME =================
+    private fun buildDateAndFirmSection(): LinearLayout {
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor(cardWhite))
+        }
+
+        val dateRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 14, 20, 14)
+            isClickable = true
+            setOnClickListener { showDatePicker() }
+        }
+        dateRow.addView(TextView(this).apply {
+            text = Loc.t(this@PurchaseActivity, "Date", "\u062A\u0627\u0631\u06CC\u062E")
+            textSize = 12f
+            setTextColor(Color.parseColor(labelGray))
+        })
+        val dateValueRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        dateValue = TextView(this).apply {
+            text = dateFmt.format(Date(selectedDateMillis))
+            textSize = 15f
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 4, 8, 0)
+        }
+        dateValueRow.addView(dateValue)
+        dateValueRow.addView(TextView(this).apply {
+            text = "\u25BE"
+            textSize = 13f
+            setTextColor(Color.parseColor(labelGray))
+        })
+        dateRow.addView(dateValueRow)
+        wrap.addView(dateRow)
+        wrap.addView(hairline())
+
+        val firmRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 16, 20, 16)
+        }
+        firmRow.addView(TextView(this).apply {
+            text = Loc.t(this@PurchaseActivity, "Firm Name: ", "\u0641\u0631\u0645 \u0646\u06CC\u0645: ")
+            textSize = 13.5f
+            setTextColor(Color.parseColor(labelGray))
+        })
+        firmNameValue = TextView(this).apply {
+            text = Loc.t(this@PurchaseActivity, "My Store", "\u0645\u06CC\u0631\u06CC \u062F\u06A9\u0627\u0646")
+            textSize = 14f
+            setTextColor(Color.parseColor(textDark))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        firmRow.addView(firmNameValue)
+        firmRow.addView(TextView(this).apply {
+            text = "\u25BE"
+            textSize = 13f
+            setTextColor(Color.parseColor(labelGray))
+        })
+        wrap.addView(firmRow)
+
+        return wrap
+    }
+
+    private fun showDatePicker() {
+        val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
+        DatePickerDialog(
+            this,
+            { _, year, month, day ->
+                cal.set(year, month, day)
+                selectedDateMillis = cal.timeInMillis
+                dateValue.text = dateFmt.format(Date(selectedDateMillis))
+            },
+            cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    // ================= PARTY BALANCE + PARTY NAME =================
+    private fun buildPartySection(): LinearLayout {
         val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 18, 20, 18)
             setBackgroundColor(Color.parseColor(cardWhite))
         }
 
-        val supplierRow = LinearLayout(this).apply {
+        val balanceRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(16, 14, 16, 14)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(cardBg))
-                cornerRadius = 10f
-                setStroke(1, Color.parseColor(cardBorder))
-            }
-            setOnClickListener { showSupplierPicker() }
+            gravity = Gravity.END
         }
-        supplierRow.addView(TextView(this).apply {
-            text = Loc.t(this@PurchaseActivity, "Supplier", "\u0633\u067E\u0644\u0627\u0626\u0631")
+        balanceRow.addView(TextView(this).apply {
+            text = Loc.t(this@PurchaseActivity, "Party Balance: ", "\u067E\u0627\u0631\u0679\u06CC \u0628\u06CC\u0644\u06CC\u0646\u0633: ")
             textSize = 12.5f
             setTextColor(Color.parseColor(labelGray))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        supplierValue = TextView(this).apply {
-            text = Loc.t(this@PurchaseActivity, "Cash Purchase \u203A", "\u0646\u0642\u062F \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u203A")
-            textSize = 13.5f
-            setTextColor(Color.parseColor(blue))
+        partyBalanceValue = TextView(this).apply {
+            text = "Rs 0.00"
+            textSize = 12.5f
+            setTextColor(Color.parseColor(red))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        supplierRow.addView(supplierValue)
-        wrap.addView(supplierRow)
+        balanceRow.addView(partyBalanceValue)
+        wrap.addView(balanceRow)
+        wrap.addView(spacer(6))
 
-        wrap.addView(spacer(10))
-
-        val billRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        billRow.addView(TextView(this).apply {
-            text = Loc.t(this@PurchaseActivity, "Bill No: ", "\u0628\u0644 \u0646\u0645\u0628\u0631: ")
+        wrap.addView(TextView(this).apply {
+            text = Loc.t(this@PurchaseActivity, "Party Name*", "\u067E\u0627\u0631\u0679\u06CC \u0646\u06CC\u0645*")
             textSize = 12f
             setTextColor(Color.parseColor(labelGray))
+            setPadding(4, 0, 0, 6)
         })
-        billNoValue = TextView(this).apply {
-            text = billNo
-            textSize = 12f
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        val partyBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(16, 16, 16, 16)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadius = 8f
+                setStroke(2, Color.parseColor(cardBorder))
+            }
+            isClickable = true
+            setOnClickListener { showPartyPicker() }
         }
-        billRow.addView(billNoValue)
-        wrap.addView(billRow)
+        partyNameValue = TextView(this).apply {
+            text = Loc.t(this@PurchaseActivity, "Cash Purchase", "\u0646\u0642\u062F \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC")
+            textSize = 16f
+            setTextColor(Color.parseColor(textDark))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        partyBox.addView(partyNameValue)
+        wrap.addView(partyBox)
 
         return wrap
     }
 
-    private fun updateSupplierLabel() {
+    private fun updatePartyDisplay() {
         val s = selectedSupplier
-        supplierValue.text = if (s != null) "${s.name} \u203A" else Loc.t(this, "Cash Purchase \u203A", "\u0646\u0642\u062F \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u203A")
+        if (s != null) {
+            partyNameValue.text = s.name
+            val closing = s.openingBalance + s.balance
+            partyBalanceValue.text = "Rs %.2f".format(kotlin.math.abs(closing))
+            partyBalanceValue.setTextColor(Color.parseColor(if (closing > 0) red else "#4CAF50"))
+        } else {
+            partyNameValue.text = Loc.t(this, "Cash Purchase", "\u0646\u0642\u062F \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC")
+            partyBalanceValue.text = "Rs 0.00"
+            partyBalanceValue.setTextColor(Color.parseColor(labelGray))
+        }
     }
 
-    private fun showSupplierPicker() {
+    private fun showPartyPicker() {
         val names = mutableListOf(Loc.t(this, "Cash Purchase (no supplier)", "\u0646\u0642\u062F \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC (\u0628\u063A\u06CC\u0631 \u0633\u067E\u0644\u0627\u0626\u0631)"))
         names.addAll(allSuppliers.map { it.name })
         AlertDialog.Builder(this)
-            .setTitle(Loc.t(this, "Select Supplier", "\u0633\u067E\u0644\u0627\u0626\u0631 \u0645\u0646\u062A\u062E\u0628 \u06A9\u0631\u06CC\u06BA"))
+            .setTitle(Loc.t(this, "Select Party", "\u067E\u0627\u0631\u0679\u06CC \u0645\u0646\u062A\u062E\u0628 \u06A9\u0631\u06CC\u06BA"))
             .setItems(names.toTypedArray()) { _, which ->
                 selectedSupplier = if (which == 0) null else allSuppliers[which - 1]
-                updateSupplierLabel()
+                updatePartyDisplay()
             }
             .show()
+    }
+
+    // ================= BILLED ITEMS (collapsible header) =================
+    private fun buildBilledItemsHeader(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 16, 20, 16)
+            setBackgroundColor(Color.parseColor(blue))
+            isClickable = true
+            setOnClickListener { toggleBilledItems() }
+
+            billedItemsChevron = TextView(this@PurchaseActivity).apply {
+                text = "\u25BE"
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                setPadding(0, 0, 12, 0)
+            }
+            addView(billedItemsChevron)
+
+            addView(TextView(this@PurchaseActivity).apply {
+                text = Loc.t(this@PurchaseActivity, "Billed Items", "\u0628\u0644\u062F \u0634\u062F\u06C1 \u0622\u0626\u0679\u0645\u0632")
+                textSize = 14.5f
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+        }
+    }
+
+    private fun toggleBilledItems() {
+        itemsExpanded = !itemsExpanded
+        itemsContainer.visibility = if (itemsExpanded) View.VISIBLE else View.GONE
+        billedItemsChevron.text = if (itemsExpanded) "\u25BE" else "\u25B8"
+    }
+
+    private fun hairline() = View(this).apply {
+        setBackgroundColor(Color.parseColor(divider))
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
     }
 
     // ================= LINE ITEMS =================
@@ -502,29 +653,19 @@ class PurchaseActivity : AppCompatActivity() {
 
         val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val discPair = totalLabelValue(Loc.t(this, "Total Disc", "\u0679\u0648\u0679\u0644 \u0688\u0633\u06A9\u0627\u0624\u0646\u0679"))
-        val taxPair = totalLabelValue(Loc.t(this, "Total Tax Amt", "\u0679\u0648\u0679\u0644 \u0679\u06CC\u06A9\u0633"))
+        val qtyPair = totalLabelValue(Loc.t(this, "Total Qty", "\u0679\u0648\u0679\u0644 \u0645\u0642\u062F\u0627\u0631"))
         totalDiscValue = discPair.second
-        totalTaxValue = taxPair.second
+        totalQtyValue = qtyPair.second
         discPair.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        taxPair.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        qtyPair.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         row1.addView(discPair.first)
-        row1.addView(taxPair.first)
+        row1.addView(qtyPair.first)
         wrap.addView(row1)
         wrap.addView(spacer(10))
 
-        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val qtyPair = totalLabelValue(Loc.t(this, "Total Qty", "\u0679\u0648\u0679\u0644 \u0645\u0642\u062F\u0627\u0631"))
         val subPair = totalLabelValue(Loc.t(this, "Subtotal", "\u0633\u0628 \u0679\u0648\u0679\u0644"))
-        totalQtyValue = qtyPair.second
         subtotalValue = subPair.second
-        qtyPair.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        subPair.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        row2.addView(qtyPair.first)
-        row2.addView(subPair.first)
-        wrap.addView(row2)
-
-        // Total Tax Amt has no backing schema column (see class doc) — always shows 0.00.
-        totalTaxValue.text = "0.00"
+        wrap.addView(subPair.first)
 
         return wrap
     }
@@ -660,6 +801,14 @@ class PurchaseActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(cardWhite))
             elevation = 10f
 
+            // Keep the bar clear of the phone's gesture/navigation bar on edge-to-edge devices -
+            // without this, the bottom ~16-48px of the bar renders underneath the system nav bar.
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val navBarInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+                view.setPadding(view.paddingLeft, 4, view.paddingRight, 4 + navBarInset)
+                insets
+            }
+
             deleteBtn = TextView(this@PurchaseActivity).apply {
                 text = Loc.t(this@PurchaseActivity, "Delete", "\u0688\u06CC\u0644\u06CC\u0679")
                 textSize = 15f
@@ -739,6 +888,7 @@ class PurchaseActivity : AppCompatActivity() {
                 supplierId = selectedSupplier?.id,
                 total = total,
                 paid = paid,
+                createdAt = selectedDateMillis,
                 subtotal = subtotal,
                 discount = discount
             )
