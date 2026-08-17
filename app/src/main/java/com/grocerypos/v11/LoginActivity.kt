@@ -18,6 +18,7 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.AppSetting
+import com.grocerypos.v11.MainActivity
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.User
 import kotlinx.coroutines.launch
@@ -46,6 +47,36 @@ class LoginActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
+        // FIX: "No Password" login method now short-circuits straight into the app —
+        // this has to happen before any UI is built, otherwise the login card would
+        // flash on screen for a moment even when no login is required.
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@LoginActivity)
+            val method = db.appSettingDao().get("login_method")?.value ?: "password"
+            if (method == "none") {
+                goToMain()
+                return@launch
+            }
+            buildUi()
+            // First-time setup: create a default admin login if none exists yet
+            val seeded = db.appSettingDao().get("admin_seeded")
+            if (seeded == null) {
+                db.userDao().upsert(
+                    User(username = "admin", displayName = "Admin", role = "admin", passwordHash = "admin123", active = true)
+                )
+                db.appSettingDao().set(AppSetting("admin_seeded", "1"))
+                hint.text = "Pehli baar? Username: admin   Password: admin123\n(Settings mein jaake baad mein badal sakte hain)"
+            }
+            applyLoginMethod(db)
+        }
+    }
+
+    private fun goToMain() {
+        startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+        finish()
+    }
+
+    private fun buildUi() {
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -134,6 +165,9 @@ class LoginActivity : AppCompatActivity() {
         card.addView(btn)
         card.addView(spacer(14))
 
+        // "SHOW" fallback button — kept visible (not GONE) whenever fingerprint mode is
+        // active so the person always has a manual way to re-open the prompt if the
+        // auto-triggered one is dismissed, cancelled, or fails.
         fingerprintBtn = Button(this).apply {
             text = "🔓  UNLOCK WITH FINGERPRINT"
             setTextColor(Color.parseColor(green))
@@ -161,20 +195,6 @@ class LoginActivity : AppCompatActivity() {
             addView(outer, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         })
 
-        // ---- First-time setup: create a default admin login if none exists yet ----
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@LoginActivity)
-            val seeded = db.appSettingDao().get("admin_seeded")
-            if (seeded == null) {
-                db.userDao().upsert(
-                    User(username = "admin", displayName = "Admin", role = "admin", passwordHash = "admin123", active = true)
-                )
-                db.appSettingDao().set(AppSetting("admin_seeded", "1"))
-                hint.text = "Pehli baar? Username: admin   Password: admin123\n(Settings mein jaake baad mein badal sakte hain)"
-            }
-            applyLoginMethod(db)
-        }
-
         btn.setOnClickListener {
             lifecycleScope.launch {
                 val db = PosDatabase.get(this@LoginActivity)
@@ -196,21 +216,7 @@ class LoginActivity : AppCompatActivity() {
         }
 
         fingerprintBtn.setOnClickListener {
-            lifecycleScope.launch {
-                val db = PosDatabase.get(this@LoginActivity)
-                val lastUsername = db.appSettingDao().get("last_username")?.value
-                if (lastUsername.isNullOrEmpty()) {
-                    Toast.makeText(this@LoginActivity, "Pehli dafa password se login karein", Toast.LENGTH_LONG).show()
-                    return@launch
-                }
-                val user = db.userDao().find(lastUsername)
-                if (user == null) {
-                    Toast.makeText(this@LoginActivity, "User nahi mila, password se login karein", Toast.LENGTH_LONG).show()
-                    return@launch
-                }
-                loggedInUser = user
-                showBiometricPrompt()
-            }
+            lifecycleScope.launch { triggerFingerprintUnlock() }
         }
     }
 
@@ -232,6 +238,9 @@ class LoginActivity : AppCompatActivity() {
                     p.visibility = View.GONE
                     btn.visibility = View.GONE
                     fingerprintBtn.visibility = View.VISIBLE
+                    // FIX: auto-detect — the biometric prompt now opens by itself as soon as
+                    // this screen appears, instead of waiting for a manual button tap.
+                    triggerFingerprintUnlock()
                 }
             }
             "both" -> {
@@ -247,6 +256,23 @@ class LoginActivity : AppCompatActivity() {
                 fingerprintBtn.visibility = View.GONE
             }
         }
+    }
+
+    /** Looks up the last logged-in user and opens the biometric prompt for them. */
+    private suspend fun triggerFingerprintUnlock() {
+        val db = PosDatabase.get(this@LoginActivity)
+        val lastUsername = db.appSettingDao().get("last_username")?.value
+        if (lastUsername.isNullOrEmpty()) {
+            Toast.makeText(this@LoginActivity, "Pehli dafa password se login karein", Toast.LENGTH_LONG).show()
+            return
+        }
+        val user = db.userDao().find(lastUsername)
+        if (user == null) {
+            Toast.makeText(this@LoginActivity, "User nahi mila, password se login karein", Toast.LENGTH_LONG).show()
+            return
+        }
+        loggedInUser = user
+        showBiometricPrompt()
     }
 
     /** "Both" mode mein password ke baad fingerprint bhi verify karta hai. */
@@ -274,6 +300,8 @@ class LoginActivity : AppCompatActivity() {
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
+                    // Prompt was cancelled/failed to open — the manual fallback button
+                    // stays visible so the person can retry without getting stuck.
                     Toast.makeText(this@LoginActivity, "Fingerprint verify nahi hua: $errString", Toast.LENGTH_LONG).show()
                 }
 
@@ -301,12 +329,7 @@ class LoginActivity : AppCompatActivity() {
             .putString("role", loggedInUser.role)
             .apply()
         Toast.makeText(this, "Welcome ${loggedInUser.displayName}", Toast.LENGTH_SHORT).show()
-        // Dashboard (Customers & Suppliers home screen) is now the app's home after login,
-        // replacing MainActivity here. PartyDashboardActivity itself handles the role-based
-        // main menu (Products, Reports, Cash In/Out, Item Search, Settings, Logout) via its
-        // hamburger icon.
-        startActivity(Intent(this@LoginActivity, PartyDashboardActivity::class.java))
-        finish()
+        goToMain()
     }
 
     // ================= UI HELPERS =================
