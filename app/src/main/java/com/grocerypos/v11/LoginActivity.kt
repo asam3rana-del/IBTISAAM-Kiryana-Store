@@ -18,7 +18,6 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.AppSetting
-import com.grocerypos.v11.MainActivity
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.User
 import kotlinx.coroutines.launch
@@ -302,7 +301,11 @@ class LoginActivity : AppCompatActivity() {
             .putString("role", loggedInUser.role)
             .apply()
         Toast.makeText(this, "Welcome ${loggedInUser.displayName}", Toast.LENGTH_SHORT).show()
-        startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+        // Dashboard (Customers & Suppliers home screen) is now the app's home after login,
+        // replacing MainActivity here. PartyDashboardActivity itself handles the role-based
+        // main menu (Products, Reports, Cash In/Out, Item Search, Settings, Logout) via its
+        // hamburger icon.
+        startActivity(Intent(this@LoginActivity, PartyDashboardActivity::class.java))
         finish()
     }
 
