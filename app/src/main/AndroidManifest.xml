@@ -29,7 +29,8 @@
         <activity android:name=".ui.SaleHistoryActivity" />
         <activity android:name=".ui.ItemSearchActivity" />
         <activity android:name=".ui.PartyActivity" />
-        <activity android:name=".ui.UserManagementActivity" />
+        
+        <a<activity android:name=".ui.PartyDashboardActivity" />ctivity android:name=".ui.UserManagementActivity" />
         <activity android:name=".ui.PartyReportsActivity" />
         <activity android:name=".ui.CategoriesUnitsActivity" android:exported="false" />
         <activity android:name=".ui.ItemsActivity" android:exported="false" />
