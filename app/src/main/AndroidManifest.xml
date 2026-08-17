@@ -21,8 +21,12 @@
         <activity android:name=".ui.LoginActivity" />
         <activity android:name=".ui.ProductActivity" />
         <activity android:name=".ui.ReportsActivity" />
-        <activity android:name=".ui.PurchaseActivity" />
-        <activity android:name=".ui.SaleActivity" />
+        <activity
+            android:name=".ui.PurchaseActivity"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".ui.SaleActivity"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.CashActivity" />
         <activity android:name=".ui.HistoryActivity" />
         <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
