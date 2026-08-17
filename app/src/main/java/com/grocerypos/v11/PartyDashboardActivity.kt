@@ -100,13 +100,22 @@ class PartyDashboardActivity : AppCompatActivity() {
         root.addView(spacer(90)) // keep list clear of the floating bottom bar
 
         val scrollArea = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            // This view's real parent is the FrameLayout "stack" below, so it needs
+            // FrameLayout.LayoutParams here, not LinearLayout.LayoutParams - the previous
+            // LinearLayout params (with weight) were silently ignored inside a FrameLayout,
+            // which collapsed this ScrollView to zero height and hid all the middle content.
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+            )
             addView(root)
         }
 
         val stack = FrameLayout(this).apply {
             addView(scrollArea)
             addView(buildBottomBar())
+            // "stack" itself sits inside "outer" (a LinearLayout), so it needs weight=1
+            // here to actually fill the remaining space below the header.
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         outer.addView(stack)
 
