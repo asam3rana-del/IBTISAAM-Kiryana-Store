@@ -81,9 +81,9 @@ class SettingsActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(cardBg))
         }
 
-        // ---- Parties ----
+        // ---- Parties (real) ----
         list.addView(menuRow("👥", "Parties", showNew = true, showChevron = true) {
-            comingSoon("Parties")
+            startActivity(Intent(this@SettingsActivity, PartyDashboardActivity::class.java))
         })
 
         // ---- Items (real) ----
@@ -91,44 +91,44 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@SettingsActivity, ItemsActivity::class.java))
         })
 
-        // ---- Business Dashboard ----
+        // ---- Business Dashboard (no screen yet) ----
         list.addView(menuRow("⊞", "Business Dashboard") {
             comingSoon("Business Dashboard")
         })
 
-        // ---- Reports ----
+        // ---- Reports (real) ----
         list.addView(menuRow("📈", "Reports") {
-            comingSoon("Reports")
+            startActivity(Intent(this@SettingsActivity, ReportsActivity::class.java))
         })
 
-        // ---- Sale ----
+        // ---- Sale (real) ----
         list.addView(menuRow("🧾", "Sale", showChevron = true) {
-            comingSoon("Sale")
+            startActivity(Intent(this@SettingsActivity, SaleActivity::class.java))
         })
 
-        // ---- Purchase (opens if it exists in the app, otherwise Coming Soon) ----
+        // ---- Purchase (real) ----
         list.addView(menuRow("🛒", "Purchase", showChevron = true) {
-            tryOpenActivity("com.grocerypos.v11.ui.PurchaseActivity", "Purchase")
+            startActivity(Intent(this@SettingsActivity, PurchaseActivity::class.java))
         })
 
-        // ---- Expense (opens if it exists in the app, otherwise Coming Soon) ----
+        // ---- Expense (no screen yet — reflection fallback kept in case it's added later) ----
         list.addView(menuRow("💼", "Expense", trailingText = "+") {
             tryOpenActivity("com.grocerypos.v11.ui.ExpenseActivity", "Expense")
         })
 
-        // ---- Cash & Bank ----
+        // ---- Cash & Bank (real) ----
         list.addView(menuRow("🏦", "Cash & Bank", showChevron = true) {
-            comingSoon("Cash & Bank")
+            startActivity(Intent(this@SettingsActivity, CashActivity::class.java))
         })
 
-        // ---- My Online Store ----
+        // ---- My Online Store (no screen yet) ----
         list.addView(menuRow("🏬", "My Online Store", showNew = true) {
             comingSoon("My Online Store")
         })
 
         list.addView(divider())
 
-        // ---- Sync & Share ----
+        // ---- Sync & Share (no screen yet) ----
         list.addView(menuRow("🔄", "Sync & Share") {
             comingSoon("Sync & Share")
         })
@@ -153,7 +153,7 @@ class SettingsActivity : AppCompatActivity() {
 
         list.addView(divider())
 
-        // ---- Plans & Pricing ----
+        // ---- Plans & Pricing (no screen yet) ----
         list.addView(menuRow("🏷️", "Plans & Pricing") {
             comingSoon("Plans & Pricing")
         })
@@ -180,7 +180,9 @@ class SettingsActivity : AppCompatActivity() {
         Toast.makeText(this, "$label — Coming Soon", Toast.LENGTH_SHORT).show()
     }
 
-    /** Opens the given activity by class name if it exists in the app; falls back to a "Coming Soon" toast otherwise. */
+    /** Opens the given activity by class name if it exists in the app; falls back to a "Coming Soon" toast otherwise.
+     *  Kept only for features that don't have a real screen yet (e.g. Expense) — anything confirmed to exist
+     *  (Parties, Items, Reports, Sale, Purchase, Cash & Bank) is launched directly above instead. */
     private fun tryOpenActivity(activityClassName: String, label: String) {
         try {
             val clazz = Class.forName(activityClassName)
@@ -477,7 +479,8 @@ class SettingsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             textSize = 13.5f
         }
-        // NEW: "No Password" — app opens straight to the dashboard, no login screen at all.
+        // "No Password" — app opens straight to the dashboard, no login screen at all
+        // (see LoginActivity.onCreate — it checks this setting before building any UI).
         noPasswordRadio = RadioButton(this).apply {
             text = "No Password (App won't lock)"
             setTextColor(Color.parseColor(textDark))
