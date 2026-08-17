@@ -186,7 +186,7 @@ class PurchaseActivity : AppCompatActivity() {
         try {
             flowProvider().collect {
                 result = it
-                throw StopCollecting
+                throw StopCollecting()
             }
         } catch (e: StopCollecting) {
             // expected — we only wanted the first emission
