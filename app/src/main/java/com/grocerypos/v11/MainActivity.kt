@@ -17,7 +17,7 @@ import com.grocerypos.v11.ui.PurchaseActivity
 import com.grocerypos.v11.ui.SaleActivity
 import com.grocerypos.v11.ui.ReportsActivity
 import com.grocerypos.v11.ui.CashActivity
-import com.grocerypos.v11.ui.PartyActivity
+import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
 import kotlinx.coroutines.launch
 import java.io.PrintWriter
@@ -180,6 +180,12 @@ class MainActivity : AppCompatActivity() {
         // mid-sale needs to check a rate just as much as an admin does. ----
         val itemSearchTile = Tile("🔎", "Item Rate\nSearch", "#0F9B8E", "#E0F5F2") { startActivity(Intent(this@MainActivity, ItemSearchActivity::class.java)) }
 
+        // ---- "Customers & Suppliers" now opens the new PartyDashboardActivity (You'll
+        // Get / You'll Give summary + Parties/Transactions/Items tabs) instead of jumping
+        // straight into the old add/edit PartyActivity screen. PartyActivity is still used
+        // internally (New Party button, row tap -> edit/history), nothing there changed. ----
+        val partiesTile = Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
+
         val tiles: List<Tile> = when (role) {
             "admin" -> listOf(
                 Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
@@ -187,7 +193,7 @@ class MainActivity : AppCompatActivity() {
                 Tile("🧾", "Purchases", "#EF6C00", "#FFF3E0") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
                 Tile("📊", "Reports", "#6A1B9A", "#F3E5F5") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
-                Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+                partiesTile,
                 itemSearchTile
             )
             "manager" -> listOf(
@@ -200,7 +206,7 @@ class MainActivity : AppCompatActivity() {
             else -> listOf(
                 Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
-                Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyActivity::class.java)) },
+                partiesTile,
                 itemSearchTile,
                 Tile("🚪", "Logout", "#C62828", "#FFEBEE") { doLogout() }
             )
