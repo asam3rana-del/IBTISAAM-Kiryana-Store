@@ -167,44 +167,71 @@ class MainActivity : AppCompatActivity() {
         body.addView(statsRow)
         body.addView(spacer(30))
 
+        // ================= QUICK ACTIONS: SALE + PURCHASE (big cards) =================
         body.addView(TextView(this).apply {
-            text = "QUICK ACCESS"
+            text = "QUICK ACTIONS"
             textSize = 12.5f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(4, 0, 0, 14)
         })
 
-        // ================= MENU GRID (role-based, premium tiles) =================
-        // ---- "Item Search" (rate-check screen) is available to every role — a cashier
-        // mid-sale needs to check a rate just as much as an admin does. ----
+        val saleQuick = QuickAction("🛒", "Sale", "Start a new sale", "#2E7D32", "#E8F5E9") {
+            startActivity(Intent(this@MainActivity, SaleActivity::class.java))
+        }
+        // Cashiers don't have purchase access in the original menu — keep that rule.
+        val purchaseQuick: QuickAction? = if (role == "admin" || role == "manager") {
+            QuickAction("🧾", "Purchase", "Record a purchase", "#EF6C00", "#FFF3E0") {
+                startActivity(Intent(this@MainActivity, PurchaseActivity::class.java))
+            }
+        } else null
+
+        val quickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        if (purchaseQuick != null) {
+            val saleView = premiumQuickActionCard(saleQuick).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 9, 0) }
+            }
+            val purchaseView = premiumQuickActionCard(purchaseQuick).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9, 0, 0, 0) }
+            }
+            quickRow.addView(saleView)
+            quickRow.addView(purchaseView)
+        } else {
+            val saleView = premiumQuickActionCard(saleQuick).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            }
+            quickRow.addView(saleView)
+        }
+        body.addView(quickRow)
+        body.addView(spacer(30))
+
+        body.addView(TextView(this).apply {
+            text = "MORE"
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(4, 0, 0, 14)
+        })
+
+        // ================= MENU GRID (role-based, premium tiles) — Sale & Purchase removed, now above =================
         val itemSearchTile = Tile("🔎", "Item Rate\nSearch", "#0F9B8E", "#E0F5F2") { startActivity(Intent(this@MainActivity, ItemSearchActivity::class.java)) }
 
-        // ---- "Customers & Suppliers" now opens the new PartyDashboardActivity (You'll
-        // Get / You'll Give summary + Parties/Transactions/Items tabs) instead of jumping
-        // straight into the old add/edit PartyActivity screen. PartyActivity is still used
-        // internally (New Party button, row tap -> edit/history), nothing there changed. ----
         val partiesTile = Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
 
         val tiles: List<Tile> = when (role) {
             "admin" -> listOf(
-                Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
                 Tile("📦", "Products", "#1565C0", "#E3F2FD") { startActivity(Intent(this@MainActivity, ProductActivity::class.java)) },
-                Tile("🧾", "Purchases", "#EF6C00", "#FFF3E0") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
                 Tile("📊", "Reports", "#6A1B9A", "#F3E5F5") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
                 partiesTile,
                 itemSearchTile
             )
             "manager" -> listOf(
-                Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
-                Tile("🧾", "Purchases", "#EF6C00", "#FFF3E0") { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) },
                 Tile("📊", "Reports", "#6A1B9A", "#F3E5F5") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
                 itemSearchTile,
                 Tile("🚪", "Logout", "#C62828", "#FFEBEE") { doLogout() }
             )
             else -> listOf(
-                Tile("🛒", "New Sale", "#2E7D32", "#E8F5E9") { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F", "#E0F7FA") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
                 partiesTile,
                 itemSearchTile,
@@ -266,6 +293,70 @@ class MainActivity : AppCompatActivity() {
     }
 
     private data class Tile(val emoji: String, val label: String, val accentHex: String, val tintHex: String, val onClick: () -> Unit)
+    private data class QuickAction(val emoji: String, val title: String, val subtitle: String, val accentHex: String, val tintHex: String, val onClick: () -> Unit)
+
+    // ---- Big "hero" style card for Sale / Purchase ----
+    private fun premiumQuickActionCard(action: QuickAction): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(20, 30, 20, 26)
+            elevation = 10f
+
+            val ripple = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.parseColor(action.accentHex)).withAlpha(50),
+                roundedGradientCard(action.accentHex, action.tintHex, 26),
+                roundedGradientCard(action.accentHex, action.tintHex, 26)
+            )
+            background = ripple
+            isClickable = true
+
+            addView(FrameLayout(this@MainActivity).apply {
+                val size = (66 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size)
+                elevation = 10f
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.WHITE)
+                }
+                addView(TextView(this@MainActivity).apply {
+                    text = action.emoji
+                    textSize = 28f
+                    gravity = Gravity.CENTER
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                })
+            })
+
+            addView(TextView(this@MainActivity).apply {
+                text = action.title
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER
+                setPadding(0, 16, 0, 4)
+            })
+
+            addView(TextView(this@MainActivity).apply {
+                text = action.subtitle
+                textSize = 11.5f
+                setTextColor(Color.parseColor("#F0F0F0"))
+                gravity = Gravity.CENTER
+            })
+
+            setOnClickListener { action.onClick() }
+        }
+    }
+
+    private fun roundedGradientCard(accentHex: String, tintHex: String, cornerRadius: Int): GradientDrawable {
+        return GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor(accentHex), darken(accentHex, 0.22f))
+        ).apply {
+            this.cornerRadius = cornerRadius.toFloat()
+        }
+    }
 
     private fun premiumMenuTile(tile: Tile): LinearLayout {
         return LinearLayout(this).apply {
@@ -439,6 +530,14 @@ class MainActivity : AppCompatActivity() {
         val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt()
         val g = (Color.green(base) + (255 - Color.green(base)) * factor).toInt()
         val b = (Color.blue(base) + (255 - Color.blue(base)) * factor).toInt()
+        return Color.rgb(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
+    }
+
+    private fun darken(hex: String, factor: Float): Int {
+        val base = Color.parseColor(hex)
+        val r = (Color.red(base) * (1 - factor)).toInt()
+        val g = (Color.green(base) * (1 - factor)).toInt()
+        val b = (Color.blue(base) * (1 - factor)).toInt()
         return Color.rgb(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
     }
 
