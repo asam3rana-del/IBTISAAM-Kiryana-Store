@@ -28,12 +28,14 @@ import java.util.Locale
 
 class SettingsActivity : AppCompatActivity() {
 
-    // ================= NAVY + TEAL + WHITE PALETTE (matches Purchase) =================
+    // ================= PALETTE =================
     private val bg = "#F4F6F8"
     private val cardBg = "#FFFFFF"
-    private val navy = "#0B2545"     // primary actions, active tab, headings
-    private val teal = "#0F9B8E"     // secondary actions / accents
-    private val red = "#E5484D"      // functional only — logout, restore, disconnected
+    private val navy = "#0B2545"
+    private val headerBlue = "#1565C0"     // drawer header background
+    private val teal = "#0F9B8E"
+    private val red = "#E5484D"
+    private val badgeRed = "#E53950"
     private val textDark = "#0B2545"
     private val textGray = "#7C8798"
     private val border = "#E3E8EE"
@@ -47,6 +49,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var passwordOnlyRadio: RadioButton
     private lateinit var fingerprintOnlyRadio: RadioButton
     private lateinit var bothRadio: RadioButton
+    private lateinit var noPasswordRadio: RadioButton
 
     // Shop Information fields
     private lateinit var shopNameField: EditText
@@ -59,52 +62,342 @@ class SettingsActivity : AppCompatActivity() {
     private val BT_PERMISSION_REQUEST_CODE = 501
 
     override fun onCreate(b: Bundle?) {
-        // Force-apply the drawer/dialog theme here in code — this guarantees the floating
-        // style is used even if the manifest's android:theme override doesn't resolve
-        // (build variant issue, manifest merge, etc). Must be called BEFORE super.onCreate().
         setTheme(R.style.Theme_SettingsSheet)
         super.onCreate(b)
 
-        // NOTE: window.setLayout()/setGravity() are called AFTER setContentView() below,
-        // wrapped in decorView.post{}. On several OEM skins (Samsung/MIUI/etc.), calling
-        // setLayout() before setContentView() gets silently overridden back to full-screen
-        // once content is attached — that was the cause of Settings covering the whole
-        // dashboard instead of opening as a floating side sheet.
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.parseColor("#66000000")))
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(22, 40, 22, 22)
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= HEADER (flat navy, compact) =================
+        // ================= DRAWER-STYLE HEADER =================
+        root.addView(buildHeader())
+
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 8, 0, 8)
+            setBackgroundColor(Color.parseColor(cardBg))
+        }
+
+        // ---- Parties ----
+        list.addView(menuRow("👥", "Parties", showNew = true, showChevron = true) {
+            comingSoon("Parties")
+        })
+
+        // ---- Items (real) ----
+        list.addView(menuRow("📋", "Items", showNew = true) {
+            startActivity(Intent(this@SettingsActivity, ItemsActivity::class.java))
+        })
+
+        // ---- Business Dashboard ----
+        list.addView(menuRow("⊞", "Business Dashboard") {
+            comingSoon("Business Dashboard")
+        })
+
+        // ---- Reports ----
+        list.addView(menuRow("📈", "Reports") {
+            comingSoon("Reports")
+        })
+
+        // ---- Sale ----
+        list.addView(menuRow("🧾", "Sale", showChevron = true) {
+            comingSoon("Sale")
+        })
+
+        // ---- Purchase (opens if it exists in the app, otherwise Coming Soon) ----
+        list.addView(menuRow("🛒", "Purchase", showChevron = true) {
+            tryOpenActivity("com.grocerypos.v11.ui.PurchaseActivity", "Purchase")
+        })
+
+        // ---- Expense (opens if it exists in the app, otherwise Coming Soon) ----
+        list.addView(menuRow("💼", "Expense", trailingText = "+") {
+            tryOpenActivity("com.grocerypos.v11.ui.ExpenseActivity", "Expense")
+        })
+
+        // ---- Cash & Bank ----
+        list.addView(menuRow("🏦", "Cash & Bank", showChevron = true) {
+            comingSoon("Cash & Bank")
+        })
+
+        // ---- My Online Store ----
+        list.addView(menuRow("🏬", "My Online Store", showNew = true) {
+            comingSoon("My Online Store")
+        })
+
+        list.addView(divider())
+
+        // ---- Sync & Share ----
+        list.addView(menuRow("🔄", "Sync & Share") {
+            comingSoon("Sync & Share")
+        })
+
+        // ---- Settings (expandable — holds all the real settings sections) ----
+        val settingsContent = buildSettingsContent()
+        settingsContent.visibility = View.GONE
+        val settingsRow = expandableMenuRow("⚙️", "Settings", showNew = true, target = settingsContent)
+        list.addView(settingsRow)
+        list.addView(settingsContent)
+
+        // ---- Backup/Restore (expandable) ----
+        val backupContent = buildBackupContent()
+        backupContent.visibility = View.GONE
+        val backupRow = expandableMenuRow(
+            "🗄️", "Backup/Restore",
+            subtitle = "Auto backup not enabled.",
+            target = backupContent
+        )
+        list.addView(backupRow)
+        list.addView(backupContent)
+
+        list.addView(divider())
+
+        // ---- Plans & Pricing ----
+        list.addView(menuRow("🏷️", "Plans & Pricing") {
+            comingSoon("Plans & Pricing")
+        })
+
+        list.addView(divider())
+
+        // ---- Logout ----
+        list.addView(menuRow("🚪", "Logout", textColorHex = red) {
+            doLogout()
+        })
+
+        root.addView(ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            addView(list)
+        })
+
+        setContentView(root)
+
+        applyFloatingSheetLayout()
+        window.decorView.post { applyFloatingSheetLayout() }
+    }
+
+    private fun comingSoon(label: String) {
+        Toast.makeText(this, "$label — Coming Soon", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Opens the given activity by class name if it exists in the app; falls back to a "Coming Soon" toast otherwise. */
+    private fun tryOpenActivity(activityClassName: String, label: String) {
+        try {
+            val clazz = Class.forName(activityClassName)
+            startActivity(Intent(this, clazz))
+        } catch (e: ClassNotFoundException) {
+            comingSoon(label)
+        }
+    }
+
+    private fun applyFloatingSheetLayout() {
+        val screenWidth = resources.displayMetrics.widthPixels
+        window.setGravity(Gravity.START)
+        window.setLayout(
+            (screenWidth * 0.80).toInt(),
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+    }
+
+    private fun doLogout() {
+        getSharedPreferences("session", MODE_PRIVATE).edit().clear().apply()
+        startActivity(Intent(this@SettingsActivity, LoginActivity::class.java))
+        finish()
+    }
+
+    // ================= HEADER =================
+    private fun buildHeader(): LinearLayout {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(22, 18, 22, 18)
-            background = roundedBg(navy, 18)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 14) }
-            applyElevation(this, 6f)
+            setBackgroundColor(Color.parseColor(headerBlue))
+            setPadding(20, 44, 20, 22)
         }
-        header.addView(TextView(this).apply {
-            text = "Settings"
-            textSize = 18f
+
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val iconCircle = FrameLayout(this).apply {
+            val px = (52 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+            }
+        }
+        iconCircle.addView(TextView(this).apply {
+            text = "🏪"
+            textSize = 24f
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        })
+        topRow.addView(iconCircle)
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 0, 0, 0)
+        }
+        textCol.addView(TextView(this).apply {
+            text = "IBTISAAM Kiryana Store"
+            textSize = 17f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
         })
-        header.addView(TextView(this).apply {
-            text = "IBTISAAM Kiryana Store"
-            textSize = 11f
-            setTextColor(Color.parseColor("#9FB4CC"))
-            setPadding(0, 3, 0, 0)
+        textCol.addView(TextView(this).apply {
+            text = "Point of Sale"
+            textSize = 12f
+            setTextColor(Color.parseColor("#C9DDF5"))
+            setPadding(0, 2, 0, 0)
         })
-        root.addView(header)
+        topRow.addView(textCol)
+        header.addView(topRow)
 
-        // ================= SHOP INFO =================
+        return header
+    }
+
+    // ================= MENU ROW HELPERS =================
+
+    /** A simple, non-expanding menu row: icon + label (+ optional NEW badge / chevron / trailing text). */
+    private fun menuRow(
+        icon: String,
+        label: String,
+        showNew: Boolean = false,
+        showChevron: Boolean = false,
+        trailingText: String? = null,
+        textColorHex: String = textDark,
+        onClick: () -> Unit
+    ): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 22, 20, 22)
+            isClickable = true
+            isFocusable = true
+        }
+        row.addView(TextView(this).apply {
+            text = icon
+            textSize = 18f
+            setPadding(0, 0, 24, 0)
+        })
+        row.addView(TextView(this).apply {
+            text = label
+            textSize = 14.5f
+            setTextColor(Color.parseColor(textColorHex))
+            setTypeface(typeface, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        if (showNew) {
+            row.addView(newBadge())
+            row.addView(spacerH(10))
+        }
+        if (trailingText != null) {
+            row.addView(TextView(this).apply {
+                text = trailingText
+                textSize = 18f
+                setTextColor(Color.parseColor(textGray))
+            })
+        } else if (showChevron) {
+            row.addView(TextView(this).apply {
+                text = "⌄"
+                textSize = 16f
+                setTextColor(Color.parseColor(textGray))
+            })
+        }
+        row.setOnClickListener { onClick() }
+        return row
+    }
+
+    /** A menu row with an optional subtitle line that expands/collapses a target view when tapped. */
+    private fun expandableMenuRow(
+        icon: String,
+        label: String,
+        showNew: Boolean = false,
+        subtitle: String? = null,
+        target: View
+    ): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 22, 20, 22)
+            isClickable = true
+            isFocusable = true
+        }
+        row.addView(TextView(this).apply {
+            text = icon
+            textSize = 18f
+            setPadding(0, 0, 24, 0)
+        })
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        textCol.addView(TextView(this).apply {
+            text = label
+            textSize = 14.5f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        if (subtitle != null) {
+            textCol.addView(TextView(this).apply {
+                text = subtitle
+                textSize = 11f
+                setTextColor(Color.parseColor(textGray))
+                setPadding(0, 2, 0, 0)
+            })
+        }
+        row.addView(textCol)
+
+        if (showNew) {
+            row.addView(newBadge())
+            row.addView(spacerH(10))
+        }
+
+        val chevron = TextView(this).apply {
+            text = "⌄"
+            textSize = 16f
+            setTextColor(Color.parseColor(textGray))
+        }
+        row.addView(chevron)
+
+        row.setOnClickListener {
+            val expanding = target.visibility != View.VISIBLE
+            target.visibility = if (expanding) View.VISIBLE else View.GONE
+            chevron.text = if (expanding) "⌃" else "⌄"
+        }
+        return row
+    }
+
+    private fun newBadge() = TextView(this).apply {
+        text = "NEW"
+        textSize = 9.5f
+        setTextColor(Color.WHITE)
+        setTypeface(typeface, Typeface.BOLD)
+        setPadding(12, 4, 12, 4)
+        background = roundedBg(badgeRed, 20)
+    }
+
+    private fun divider() = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (1 * resources.displayMetrics.density).toInt())
+        setBackgroundColor(Color.parseColor(border))
+    }
+
+    private fun spacerH(widthDp: Int) = View(this).apply {
+        val px = (widthDp * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(px, 1)
+    }
+
+    // ================= EXPANDABLE "SETTINGS" CONTENT (all the original sections) =================
+    private fun buildSettingsContent(): LinearLayout {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 4, 16, 16)
+            setBackgroundColor(Color.parseColor(bg))
+        }
+
+        // ---- Shop Info ----
         val shopCard = sectionCard("Shop Information")
-
         shopNameField = plainField("Shop Name")
         phoneField = plainField("Phone")
         addressField = plainField("Address")
@@ -124,16 +417,13 @@ class SettingsActivity : AppCompatActivity() {
         shopCard.addView(spacer(8))
         shopCard.addView(fieldBox("Tax %", taxField))
         shopCard.addView(spacer(10))
-
         shopCard.addView(primaryButton("SAVE SETTINGS", navy) { saveShopSettings() })
-        root.addView(shopCard)
-        root.addView(spacer(10))
-
+        container.addView(shopCard)
+        container.addView(spacer(10))
         loadShopSettings()
 
-        // ---- Printer Setup (Bluetooth 58mm) ----
+        // ---- Printer ----
         val printerCard = sectionCard("Printer Setup (58mm Bluetooth)")
-
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -146,7 +436,7 @@ class SettingsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(red))
         }
         statusRow.addView(printerStatusDot)
-        statusRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
+        statusRow.addView(spacerH(10))
         printerStatusText = TextView(this).apply {
             text = "No printer selected"
             textSize = 13f
@@ -166,28 +456,11 @@ class SettingsActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) }
         })
         printerCard.addView(printerBtnRow)
-        root.addView(printerCard)
-        root.addView(spacer(10))
-
-        // ---- Backup & Restore ----
-        val backupCard = sectionCard("Backup & Restore")
-        backupCard.addView(primaryButton("BACKUP NOW", teal) { onBackupClicked() })
-        backupCard.addView(spacer(8))
-        backupCard.addView(primaryButton("RESTORE BACKUP", red) { onRestoreClicked() })
-        // FIX: plain-language warning sitting right under the button, always visible —
-        // not just inside a dialog someone might tap through without reading.
-        backupCard.addView(TextView(this).apply {
-            text = "⚠️ Restore purani backup laata hai aur is waqt ka sara naya data (jo backup ke baad add hua) permanently mita deta hai. Sirf tab use karein jab aapko waqai purani state par jaana ho."
-            textSize = 11f
-            setTextColor(Color.parseColor(red))
-            setPadding(4, 10, 4, 0)
-        })
-        root.addView(backupCard)
-        root.addView(spacer(10))
+        container.addView(printerCard)
+        container.addView(spacer(10))
 
         // ---- Security (Login Method) ----
         val securityCard = sectionCard("Security — Login Method")
-
         loginMethodGroup = RadioGroup(this).apply { orientation = LinearLayout.VERTICAL }
         passwordOnlyRadio = RadioButton(this).apply {
             text = "Password Only"
@@ -204,34 +477,37 @@ class SettingsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             textSize = 13.5f
         }
+        // NEW: "No Password" — app opens straight to the dashboard, no login screen at all.
+        noPasswordRadio = RadioButton(this).apply {
+            text = "No Password (App won't lock)"
+            setTextColor(Color.parseColor(textDark))
+            textSize = 13.5f
+        }
         loginMethodGroup.addView(passwordOnlyRadio)
         loginMethodGroup.addView(fingerprintOnlyRadio)
         loginMethodGroup.addView(bothRadio)
+        loginMethodGroup.addView(noPasswordRadio)
         securityCard.addView(loginMethodGroup)
 
         loginMethodGroup.setOnCheckedChangeListener { _, checkedId ->
             val method = when (checkedId) {
                 fingerprintOnlyRadio.id -> "fingerprint"
                 bothRadio.id -> "both"
+                noPasswordRadio.id -> "none"
                 else -> "password"
             }
             lifecycleScope.launch {
                 val db = PosDatabase.get(this@SettingsActivity)
                 db.appSettingDao().set(AppSetting("login_method", method))
-                // Keep AppLock's in-memory cache in sync immediately — otherwise it would only
-                // pick up this change on the next app restart, and could briefly use a stale
-                // method when deciding whether to force re-authentication.
                 com.grocerypos.v11.AppLock.updateCachedLoginMethod(method)
             }
         }
-
-        root.addView(securityCard)
-        root.addView(spacer(10))
+        container.addView(securityCard)
+        container.addView(spacer(10))
         loadLoginMethodSetting()
 
         // ---- Change Username / Password ----
         val loginCard = sectionCard("Change Login (Username / Password)")
-
         val session = getSharedPreferences("session", MODE_PRIVATE)
         val loggedInUsername = session.getString("username", "") ?: ""
 
@@ -252,10 +528,10 @@ class SettingsActivity : AppCompatActivity() {
         loginCard.addView(passwordFieldBox("New Password", newPasswordField))
         loginCard.addView(spacer(10))
         loginCard.addView(primaryButton("UPDATE LOGIN", navy) { updateLogin(loggedInUsername) })
-        root.addView(loginCard)
-        root.addView(spacer(10))
+        container.addView(loginCard)
+        container.addView(spacer(10))
 
-        // ---- Language (compact tab pair) ----
+        // ---- Language ----
         val languageCard = sectionCard("Language")
         val langRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val englishBtn = tabButton("English") {}
@@ -283,54 +559,38 @@ class SettingsActivity : AppCompatActivity() {
         langRow.addView(urduBtn)
         languageCard.addView(langRow)
         refreshLanguageButtons()
-        root.addView(languageCard)
-        root.addView(spacer(10))
+        container.addView(languageCard)
+        container.addView(spacer(10))
 
-        // ---- Items (Products / Categories / Units) ----
-        val itemsCard = sectionCard("Items")
-        itemsCard.addView(secondaryButton("OPEN ITEMS", teal) {
-            startActivity(Intent(this@SettingsActivity, ItemsActivity::class.java))
-        })
-        root.addView(itemsCard)
-        root.addView(spacer(10))
-
-        // ---- Users & Account ----
+        // ---- Users ----
         val usersCard = sectionCard("Users & Account")
         usersCard.addView(secondaryButton("MANAGE USERS", navy) {
             startActivity(Intent(this@SettingsActivity, UserManagementActivity::class.java))
         })
-        usersCard.addView(spacer(8))
-        usersCard.addView(primaryButton("LOGOUT", red) { doLogout() })
-        root.addView(usersCard)
-        root.addView(spacer(24))
+        container.addView(usersCard)
 
-        setContentView(ScrollView(this).apply {
+        return container
+    }
+
+    // ================= EXPANDABLE "BACKUP/RESTORE" CONTENT =================
+    private fun buildBackupContent(): LinearLayout {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 4, 16, 16)
             setBackgroundColor(Color.parseColor(bg))
-            addView(root)
+        }
+        val backupCard = sectionCard("Backup & Restore")
+        backupCard.addView(primaryButton("BACKUP NOW", teal) { onBackupClicked() })
+        backupCard.addView(spacer(8))
+        backupCard.addView(primaryButton("RESTORE BACKUP", red) { onRestoreClicked() })
+        backupCard.addView(TextView(this).apply {
+            text = "⚠️ Restore purani backup laata hai aur is waqt ka sara naya data (jo backup ke baad add hua) permanently mita deta hai. Sirf tab use karein jab aapko waqai purani state par jaana ho."
+            textSize = 11f
+            setTextColor(Color.parseColor(red))
+            setPadding(4, 10, 4, 0)
         })
-
-        // ================= APPLY FLOATING SIDE-SHEET SIZE (must run AFTER setContentView) =================
-        // Some OEM skins reset window.setLayout() if it's called before the content view is
-        // attached, which is why Settings was opening full-screen instead of as a side sheet.
-        // Doing it here — and once more inside decorView.post{} — makes sure it always sticks.
-        applyFloatingSheetLayout()
-        window.decorView.post { applyFloatingSheetLayout() }
-    }
-
-    private fun applyFloatingSheetLayout() {
-        val screenWidth = resources.displayMetrics.widthPixels
-        window.setGravity(Gravity.START)
-        window.setLayout(
-            (screenWidth * 0.80).toInt(),
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        // windowAnimationStyle from the theme handles slide-in; no extra call needed here.
-    }
-
-    private fun doLogout() {
-        getSharedPreferences("session", MODE_PRIVATE).edit().clear().apply()
-        startActivity(Intent(this@SettingsActivity, LoginActivity::class.java))
-        finish()
+        container.addView(backupCard)
+        return container
     }
 
     // ================= UI HELPERS =================
@@ -340,7 +600,7 @@ class SettingsActivity : AppCompatActivity() {
         background = strokedBg(border, cardBg, 16)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(0, 0, 0, 0) }
+        )
         applyElevation(this, 2f)
         addView(sectionLabel(title))
         addView(spacer(2))
@@ -354,7 +614,6 @@ class SettingsActivity : AppCompatActivity() {
         setPadding(0, 0, 0, 10)
     }
 
-    /** Small uppercase muted micro-label, matching PurchaseActivity's field style. */
     private fun microLabel(label: String) = TextView(this).apply {
         text = label.uppercase()
         textSize = 10f
@@ -382,7 +641,6 @@ class SettingsActivity : AppCompatActivity() {
         addView(field)
     }
 
-    /** Same as fieldBox but adds a tappable text toggle to show/hide the password. */
     private fun passwordFieldBox(label: String, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = strokedBg(border, "#FAFBFC", 12)
@@ -437,7 +695,6 @@ class SettingsActivity : AppCompatActivity() {
         setOnClickListener { onClick() }
     }
 
-    /** Compact segmented-control-style button used for the Language tabs. */
     private fun tabButton(label: String, onClick: () -> Unit) = Button(this).apply {
         text = label
         textSize = 12.5f
@@ -459,7 +716,6 @@ class SettingsActivity : AppCompatActivity() {
         cornerRadius = radius.toFloat()
     }
 
-    /** Adds a soft elevation/shadow to a view that has a rounded background (API 21+). */
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             view.elevation = dp * resources.displayMetrics.density
@@ -473,7 +729,6 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ================= SHOP INFO SAVE/LOAD =================
-
     private fun loadShopSettings() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
@@ -499,21 +754,20 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    // ================= SECURITY (FINGERPRINT TOGGLE) =================
-
+    // ================= SECURITY (LOGIN METHOD) =================
     private fun loadLoginMethodSetting() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
             when (db.appSettingDao().get("login_method")?.value ?: "password") {
                 "fingerprint" -> fingerprintOnlyRadio.isChecked = true
                 "both" -> bothRadio.isChecked = true
+                "none" -> noPasswordRadio.isChecked = true
                 else -> passwordOnlyRadio.isChecked = true
             }
         }
     }
 
     // ================= PRINTER =================
-
     private fun loadPrinterStatus() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
@@ -592,7 +846,6 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ================= BACKUP / RESTORE =================
-
     private fun onBackupClicked() {
         val file = BackupHelper.backupNow(this)
         if (file != null) {
@@ -603,11 +856,6 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * FIX: the list now shows a human-readable date/time (and marks the most
-     * recent one) instead of the raw filename, so it's obvious at a glance
-     * exactly which point in time each backup would roll you back to.
-     */
     private fun onRestoreClicked() {
         val backups = BackupHelper.listBackups(this)
         if (backups.isEmpty()) {
@@ -629,14 +877,6 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    /**
-     * FIX: this used to be a single tap-through "Restore" button, which made it
-     * very easy to accidentally wipe out everything entered after the chosen
-     * backup was taken. It now:
-     *  - spells out in plain language exactly what will be lost
-     *  - requires the person to actively check "I understand" before the
-     *    Restore button becomes tappable, so it can't be dismissed on autopilot
-     */
     private fun confirmRestore(file: java.io.File, dateLabel: String) {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -658,7 +898,7 @@ class SettingsActivity : AppCompatActivity() {
         val dialog = AlertDialog.Builder(this)
             .setTitle("Restore Backup?")
             .setView(container)
-            .setPositiveButton("Restore", null) // set below so we can disable-until-checked
+            .setPositiveButton("Restore", null)
             .setNegativeButton("Cancel", null)
             .create()
 
@@ -681,7 +921,6 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ================= LOGIN =================
-
     private fun updateLogin(currentUsername: String) {
         if (currentUsername.isEmpty()) {
             Toast.makeText(this, "Login session nahi mila, dobara login karein", Toast.LENGTH_SHORT).show()
