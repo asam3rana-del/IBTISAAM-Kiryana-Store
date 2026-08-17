@@ -81,8 +81,8 @@ class PurchaseActivity : AppCompatActivity() {
     // ================= NAVY + TEAL + WHITE PALETTE =================
     private val bg = "#F4F6F8"
     private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"     // primary brand — header, Save button
-    private val teal = "#0F9B8E"     // secondary accent — chips, Add Item, totals, "+" icons
+    private val navy = "#0F9B8E"     // primary brand — header, Save button (swapped with teal)
+    private val teal = "#0B2545"     // secondary accent — chips, Add Item, totals, "+" icons (swapped with navy)
     private val textDark = "#0B2545" // headings/values reuse navy
     private val textMuted = "#7C8798"
     private val border = "#E3E8EE"
@@ -106,14 +106,12 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var billedItemsHeader: LinearLayout
     private lateinit var billedItemsChevron: TextView
     private lateinit var itemsContainer: LinearLayout
-    private lateinit var discountInput: EditText
     private lateinit var grandTotalText: TextView
     private lateinit var paymentSection: LinearLayout
     private lateinit var paidInput: EditText
-    private lateinit var remainingBalanceText: TextView
+    private lateinit var dueAmountText: TextView
     private lateinit var saveButton: Button
     private lateinit var deleteButton: Button
-    private lateinit var editButton: Button
     private lateinit var overflowButton: TextView
     private lateinit var scrollArea: ScrollView
 
@@ -460,7 +458,7 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(itemsContainer)
         root.addView(spacer(14))
 
-        // ================= GRAND TOTAL (flat card, teal value) =================
+        // ================= TOTAL / PAID / DUE — one clean summary card =================
         val totalCard = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -474,7 +472,7 @@ class PurchaseActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         grandTotalText = TextView(this).apply {
-            text = "Rs 0.00"
+            text = "Rs 0"
             textSize = 19f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -482,60 +480,17 @@ class PurchaseActivity : AppCompatActivity() {
         totalCard.addView(grandTotalText)
         root.addView(totalCard)
 
-        // ================= DISCOUNT + DUE — compact half-line, right corner =================
-        val discountDueRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.END
-                setMargins(0, 4, 4, 10)
-            }
-        }
-        discountDueRow.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Discount", "رعایت") + ": Rs "
-            textSize = 11.5f
-            setTextColor(Color.parseColor(textMuted))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        discountInput = EditText(this).apply {
-            hint = "0.00"
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 12f
-            minWidth = (48 * resources.displayMetrics.density).toInt()
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setPadding(0, 0, 0, 0)
-        }
-        discountDueRow.addView(discountInput)
-        discountDueRow.addView(TextView(this).apply {
-            text = "     " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Due", "باقی") + ": "
-            textSize = 11.5f
-            setTextColor(Color.parseColor(textMuted))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        remainingBalanceText = TextView(this).apply {
-            text = "Rs 0.00"
-            textSize = 12f
-            setTextColor(Color.parseColor(navy))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }
-        discountDueRow.addView(remainingBalanceText)
-        root.addView(discountDueRow)
-
-        // ================= PAID AMOUNT — its own dedicated line so it's easy to find
-        // and edit, especially right after updating a purchase (see savePurchase()). No
+        // ---- PAID AMOUNT — its own dedicated card so it's easy to find and edit,
+        // especially right after updating a purchase (see savePurchase()). No
         // Cash/Credit toggle — it's on credit whenever Amount Paid is less than the
-        // total; leaving Paid blank means fully on credit (0 paid). =================
+        // total; leaving Paid blank means fully on credit (0 paid). ----
         paymentSection = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(20, 16, 20, 16)
         }
         paymentSection.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Amount Paid", "ادا شدہ رقم").uppercase()
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Paid Amount", "ادا شدہ رقم").uppercase()
             textSize = 12f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -548,7 +503,7 @@ class PurchaseActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         paidInput = EditText(this).apply {
-            hint = "0.00"
+            hint = "0"
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(navy))
             background = null
@@ -556,15 +511,37 @@ class PurchaseActivity : AppCompatActivity() {
             gravity = Gravity.END
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             minWidth = (90 * resources.displayMetrics.density).toInt()
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            inputType = InputType.TYPE_CLASS_NUMBER
             setPadding(0, 0, 0, 0)
         }
         paymentSection.addView(paidInput)
         root.addView(paymentSection)
+
+        // ---- DUE AMOUNT — read-only, auto-computed (Total − Paid), its own card so it
+        // reads as clearly as Total/Paid instead of being squeezed into a corner. ----
+        val dueCard = premiumCard().apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 16, 20, 16)
+        }
+        dueCard.addView(TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Due Amount", "باقی رقم").uppercase()
+            textSize = 12f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        dueAmountText = TextView(this).apply {
+            text = "Rs 0"
+            textSize = 17f
+            setTextColor(Color.parseColor(navy))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        dueCard.addView(dueAmountText)
+        root.addView(dueCard)
         root.addView(spacer(4))
 
         val totalsWatcher = simpleWatcher { updateGrandTotal() }
-        discountInput.addTextChangedListener(totalsWatcher)
         paidInput.addTextChangedListener(totalsWatcher)
 
         // ================= EDIT + SAVE + DELETE (fixed bottom bar) =================
@@ -590,28 +567,9 @@ class PurchaseActivity : AppCompatActivity() {
             visibility = if (editBillNo != null) View.VISIBLE else View.GONE
             setOnClickListener { confirmDeletePurchase() }
         }
-        // ---- Existing bills open read-only (see setFormLocked below) so a stray tap
-        // can't change a saved purchase; EDIT unlocks the form. Brand-new purchases are
-        // always editable, so this button only appears when editing. ----
-        editButton = Button(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "EDIT", "ترمیم کریں")
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            isAllCaps = false
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(teal, 16)
-            setPadding(0, 26, 0, 26)
-            visibility = if (editBillNo != null) View.VISIBLE else View.GONE
-            setOnClickListener { setFormLocked(false) }
-        }
-
+        // ---- No separate EDIT button: an existing bill opened from History is directly
+        // editable right away, same as a brand-new purchase. ----
         val saveDeleteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        if (editBillNo != null) {
-            saveDeleteRow.addView(
-                editButton,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply { setMargins(0, 0, 8, 0) }
-            )
-        }
         saveDeleteRow.addView(
             saveButton,
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -653,9 +611,6 @@ class PurchaseActivity : AppCompatActivity() {
             addView(scrollArea)
             addView(saveBar)
         })
-
-        // An existing bill opens locked (read-only) until EDIT is tapped.
-        if (editBillNo != null) setFormLocked(true)
 
         loadSuppliers()
         loadUnits()
@@ -753,7 +708,6 @@ class PurchaseActivity : AppCompatActivity() {
 
         val draft = JSONObject().apply {
             put("party", partyName.text.toString())
-            put("discount", discountInput.text.toString())
             put("paid", paidInput.text.toString())
             put("dateMillis", purchaseDateMillis)
             put("pendingItemName", itemName.text.toString())
@@ -782,8 +736,6 @@ class PurchaseActivity : AppCompatActivity() {
                 partyName.setText(party)
                 updateSupplierBalanceDisplay(party)
             }
-            val discount = draft.optString("discount", "")
-            if (discount.isNotBlank()) discountInput.setText(discount)
             val paid = draft.optString("paid", "")
             if (paid.isNotBlank()) paidInput.setText(paid)
             val savedDate = draft.optLong("dateMillis", 0L)
@@ -920,26 +872,6 @@ class PurchaseActivity : AppCompatActivity() {
         billedItemsChevron.text = if (itemsExpanded) "\u25BE" else "\u25B8"
     }
 
-    /** Locks or unlocks the purchase form. Existing bills load locked (read-only) so a
-     *  stray tap can't change a saved purchase — EDIT unlocks it. A brand-new purchase
-     *  is never locked, so this is only ever called when editBillNo != null. */
-    private fun setFormLocked(locked: Boolean) {
-        val enabled = !locked
-        partyName.isEnabled = enabled
-        itemName.isEnabled = enabled
-        qty.isEnabled = enabled
-        rate.isEnabled = enabled
-        unitSpinner.isEnabled = enabled
-        discountInput.isEnabled = enabled
-        paidInput.isEnabled = enabled
-        addItemButton.isEnabled = enabled
-        addItemButton.alpha = if (enabled) 1f else 0.5f
-        itemEntrySection.alpha = if (enabled) 1f else 0.55f
-        saveButton.isEnabled = enabled
-        saveButton.alpha = if (enabled) 1f else 0.5f
-        editButton.visibility = if (locked) View.VISIBLE else View.GONE
-    }
-
     private fun showOverflowMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
         popup.menu.add(com.grocerypos.v11.util.Loc.t(this, "Print", "پرنٹ"))
@@ -1023,8 +955,7 @@ class PurchaseActivity : AppCompatActivity() {
             partyName.setText(supplierName)
             updateSupplierBalanceDisplay(supplierName)
 
-            discountInput.setText(if (purchase.discount > 0) purchase.discount.toString() else "")
-            paidInput.setText(purchase.paid.toString())
+            paidInput.setText(if (purchase.paid > 0) Math.round(purchase.paid).toString() else "")
 
             lines.clear()
             items.forEach { pi ->
@@ -1249,8 +1180,8 @@ class PurchaseActivity : AppCompatActivity() {
     private fun updateLineTotal() {
         val q = qty.text.toString().toDoubleOrNull() ?: 0.0
         val r = rate.text.toString().toDoubleOrNull() ?: 0.0
-        val amount = q * r
-        totalAmountText.text = "Total Amount: Rs %.2f".format(amount)
+        val amount = Math.round(q * r).toDouble()
+        totalAmountText.text = "Total Amount: Rs %.0f".format(amount)
     }
 
     private fun addItem() {
@@ -1277,7 +1208,7 @@ class PurchaseActivity : AppCompatActivity() {
             qty = q,
             unit = unit,
             rate = r,
-            amount = q * r,
+            amount = Math.round(q * r).toDouble(),
             mainUnit = product.unit,
             secondaryUnit = product.secondaryUnit,
             secondaryUnitQty = product.secondaryUnitQty,
@@ -1296,7 +1227,7 @@ class PurchaseActivity : AppCompatActivity() {
         lastMainRate = 0.0
         conversionInfo.visibility = View.GONE
         unitToggleRow.visibility = View.GONE
-        totalAmountText.text = "Total Amount: Rs 0.00"
+        totalAmountText.text = "Total Amount: Rs 0"
         itemName.requestFocus()
 
         if (editBillNo == null) saveDraft()
@@ -1331,7 +1262,7 @@ class PurchaseActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             topRow.addView(TextView(this).apply {
-                text = "Rs %.2f".format(line.amount)
+                text = "Rs %.0f".format(line.amount)
                 textSize = 14.5f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(Color.parseColor(textDark))
@@ -1357,7 +1288,7 @@ class PurchaseActivity : AppCompatActivity() {
                 setPadding(0, 6, 0, 2)
             })
             row.addView(TextView(this).apply {
-                text = "${formatQty(line.qty)} ${line.unit} x ${line.rate} = Rs %.2f".format(line.amount)
+                text = "${formatQty(line.qty)} ${line.unit} x ${line.rate} = Rs %.0f".format(line.amount)
                 textSize = 12.5f
                 setTextColor(Color.parseColor(textMuted))
             })
@@ -1366,17 +1297,16 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    /** Grand total = items subtotal − discount. Remaining balance = grand total − amount paid. */
+    /** Total = items subtotal (rounded to the nearest rupee, no paisas).
+     *  Due = Total − Paid. */
     private fun updateGrandTotal() {
-        val subtotal = lines.sumOf { it.amount }
-        val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
-        val total = (subtotal - discount).coerceAtLeast(0.0)
-        grandTotalText.text = "Rs %.2f".format(total)
+        val total = Math.round(lines.sumOf { it.amount }).toDouble()
+        grandTotalText.text = "Rs %.0f".format(total)
 
-        val paid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
-        val remaining = (total - paid).coerceAtLeast(0.0)
-        remainingBalanceText.text = "Rs %.2f".format(remaining)
-        remainingBalanceText.setTextColor(Color.parseColor(if (remaining > 0) red else teal))
+        val paid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble()
+        val due = (total - paid).coerceAtLeast(0.0)
+        dueAmountText.text = "Rs %.0f".format(due)
+        dueAmountText.setTextColor(Color.parseColor(if (due > 0) red else teal))
     }
 
     // ---- Supplier quick-add ----
@@ -1676,12 +1606,13 @@ class PurchaseActivity : AppCompatActivity() {
             Toast.makeText(this, "Add at least one item, or continue without items", Toast.LENGTH_SHORT).show()
         }
 
+        // Amounts are rounded to the nearest rupee (no paisas) throughout.
         val subtotal = lines.sumOf { it.amount }
-        val discount = (discountInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, subtotal)
-        val grandTotal = (subtotal - discount).coerceAtLeast(0.0)
+        val grandTotal = Math.round(subtotal).toDouble().coerceAtLeast(0.0)
+        val discount = 0.0
         // No Cash/Credit toggle — it's a credit purchase whenever Amount Paid is less
         // than the total; leaving it blank means fully on credit (0 paid).
-        val amountPaid = (paidInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, grandTotal)
+        val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
         val paymentMethod = "Cash"
 
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
@@ -1802,23 +1733,14 @@ class PurchaseActivity : AppCompatActivity() {
 
             editBillNo = billNo
 
-            if (original != null) {
-                // Updating an existing purchase: stay on this screen instead of jumping
-                // to the bill preview, and go straight to Paid Amount so the user can
-                // record any further payment right away.
-                Toast.makeText(this@PurchaseActivity, "Purchase updated", Toast.LENGTH_SHORT).show()
-                deleteButton.visibility = View.VISIBLE
-                scrollArea.post {
-                    scrollArea.smoothScrollTo(0, paymentSection.top)
-                    paidInput.requestFocus()
-                    paidInput.setSelection(paidInput.text.length)
-                    val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-                    imm?.showSoftInput(paidInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-                }
-            } else {
-                Toast.makeText(this@PurchaseActivity, "Purchase saved", Toast.LENGTH_SHORT).show()
-                openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
-            }
+            // Whether this is a new purchase or an update to an existing one, always
+            // go to the Bill Preview after Paid Amount is saved.
+            Toast.makeText(
+                this@PurchaseActivity,
+                if (original != null) "Purchase updated" else "Purchase saved",
+                Toast.LENGTH_SHORT
+            ).show()
+            openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
         }
     }
 
@@ -1828,9 +1750,9 @@ class PurchaseActivity : AppCompatActivity() {
         billNo: String,
         forSaving: Boolean,
         party: String = partyName.text.toString().trim(),
-        grandTotal: Double = lines.sumOf { it.amount } - (discountInput.text.toString().toDoubleOrNull() ?: 0.0),
-        discount: Double = discountInput.text.toString().toDoubleOrNull() ?: 0.0,
-        amountPaid: Double = paidInput.text.toString().toDoubleOrNull() ?: 0.0,
+        grandTotal: Double = Math.round(lines.sumOf { it.amount }).toDouble(),
+        discount: Double = 0.0,
+        amountPaid: Double = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble(),
         paymentMethod: String = "Cash"
     ) {
         val itemsEncoded = lines.joinToString("\u0002") {
