@@ -35,6 +35,15 @@ import kotlinx.coroutines.launch
  *     changes it) so the check in onActivityStopped is instant/synchronous — no more race.
  *  2. LoginActivity itself is excluded from arming pendingReauth, since its own stop/start events
  *     are part of the lock/unlock flow, not the user leaving the app.
+ *
+ * "No Password" login method: Settings > Security now offers a fourth option, "none", which
+ * means the user wants to skip the lock screen entirely. cachedLoginMethod == "none" is treated
+ * the same as "password" below — neither ever arms pendingReauth — so returning to the app from
+ * the background goes straight back to whatever screen was open, no re-authentication prompt.
+ * ("password" itself was already never re-locking on resume; the one-time login at app launch —
+ * checked in MainActivity via the session username — is a separate flow this class doesn't touch.
+ * Fully skipping THAT initial login screen for "none" would need a change inside LoginActivity's
+ * own onCreate, which wasn't available to edit here.)
  */
 object AppLock {
 
@@ -43,7 +52,7 @@ object AppLock {
     @Volatile
     private var pendingReauth = false
 
-    // In-memory cache of Settings > Security > Login Method ("password" / "fingerprint" / "both").
+    // In-memory cache of Settings > Security > Login Method ("none" / "password" / "fingerprint" / "both").
     // Read synchronously wherever needed so re-lock decisions never race with a DB query.
     @Volatile
     private var cachedLoginMethod: String = "password"
@@ -87,7 +96,9 @@ object AppLock {
                     if (activity is LoginActivity) return
 
                     // Synchronous — no DB query, no race. The cache is kept fresh by register()'s
-                    // initial load and by SettingsActivity calling updateCachedLoginMethod().
+                    // initial load and by AppSettingsActivity calling updateCachedLoginMethod().
+                    // "none" (No Password) and "password" both fall through here without arming
+                    // pendingReauth — only "fingerprint"/"both" ever force a re-lock on resume.
                     if (cachedLoginMethod == "fingerprint" || cachedLoginMethod == "both") {
                         pendingReauth = true
                     }
