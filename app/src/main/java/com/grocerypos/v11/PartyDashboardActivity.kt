@@ -11,6 +11,8 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
@@ -372,6 +374,14 @@ class PartyDashboardActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
             )
+        }
+
+        // Keep the bar clear of the phone's gesture/navigation bar on edge-to-edge devices -
+        // without this, the last ~16-48px of the bar renders underneath the system nav bar.
+        ViewCompat.setOnApplyWindowInsetsListener(bar) { view, insets ->
+            val navBarInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+            view.setPadding(view.paddingLeft, 16, view.paddingRight, 16 + navBarInset)
+            insets
         }
 
         bar.addView(TextView(this).apply {
