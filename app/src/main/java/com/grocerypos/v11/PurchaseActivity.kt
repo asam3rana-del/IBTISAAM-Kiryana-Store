@@ -679,7 +679,10 @@ class PurchaseActivity : AppCompatActivity() {
 
         unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                refillAutoQty()
+                // FIX: unit switch should only auto-recalculate Rate (and therefore
+                // Amount) — the typed Quantity number must stay exactly as entered.
+                // refillAutoQty() used to overwrite it here, silently changing the
+                // qty the user typed whenever they switched the unit chip.
                 refillAutoRate()
                 updateLineTotal()
             }
@@ -1232,7 +1235,9 @@ class PurchaseActivity : AppCompatActivity() {
                 setOnClickListener {
                     unitSpinner.setSelection(options.indexOf(unitLabel))
                     buildUnitChips(options, unitLabel)
-                    refillAutoQty()
+                    // FIX: don't auto-change the typed Quantity when the unit chip is
+                    // tapped — only Rate/Amount should recalculate (see onItemSelected
+                    // above for the full explanation).
                     refillAutoRate()
                     updateLineTotal()
                 }
