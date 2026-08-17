@@ -281,14 +281,20 @@ class PurchaseActivity : AppCompatActivity() {
 
         val itemBox = innerField()
         itemBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Item Name", "آئٹم کا نام")))
+        val itemNameRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         itemName = AutoCompleteTextView(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Type to search…", "تلاش کے لیے لکھیں…")
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
             textSize = 15f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        itemBox.addView(itemName)
+        itemNameRow.addView(itemName)
+        // Quick "add product" — lets a purchase item that isn't in Products yet get
+        // saved directly from here, with full Primary/Secondary/Tertiary unit setup.
+        itemNameRow.addView(circleIcon("+", teal, 30) { openAddProductDialog(itemName.text.toString().trim()) })
+        itemBox.addView(itemNameRow)
         itemEntrySection.addView(itemBox)
 
         unitToggleRow = LinearLayout(this).apply {
@@ -423,34 +429,6 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(itemsContainer)
         root.addView(spacer(14))
 
-        // ================= DISCOUNT (compact / smaller) =================
-        val discountBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 8, 16, 8)
-            background = strokedBg(border, cardWhite, 12)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 12) }
-        }
-        discountBox.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Discount", "رعایت").uppercase()
-            textSize = 9.5f
-            setTextColor(Color.parseColor(textMuted))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            letterSpacing = 0.03f
-        })
-        discountInput = EditText(this).apply {
-            hint = "0.00"
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 13f
-            minWidth = (90 * resources.displayMetrics.density).toInt()
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        }
-        discountBox.addView(discountInput)
-        root.addView(discountBox)
-
         // ================= GRAND TOTAL (flat card, teal value) =================
         val totalCard = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
@@ -473,18 +451,38 @@ class PurchaseActivity : AppCompatActivity() {
         totalCard.addView(grandTotalText)
         root.addView(totalCard)
 
-        // ================= PAID AMOUNT + DUE BALANCE — compact, left corner, single half-line =================
+        // ================= DISCOUNT + PAID + DUE — compact, single half-line, right corner =================
         // No Cash/Credit or payment-method toggle — it's on credit whenever Amount Paid
         // is less than the total; leaving Paid blank means fully on credit (0 paid).
         paymentSection = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(4, 4, 0, 14) }
+            ).apply {
+                gravity = Gravity.END
+                setMargins(0, 4, 4, 14)
+            }
         }
         paymentSection.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Paid", "ادا شدہ") + ": Rs "
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Discount", "رعایت") + ": Rs "
+            textSize = 11.5f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        discountInput = EditText(this).apply {
+            hint = "0.00"
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 12f
+            minWidth = (48 * resources.displayMetrics.density).toInt()
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(0, 0, 0, 0)
+        }
+        paymentSection.addView(discountInput)
+        paymentSection.addView(TextView(this).apply {
+            text = "     " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Paid", "ادا شدہ") + ": Rs "
             textSize = 11.5f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -495,7 +493,7 @@ class PurchaseActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
             textSize = 12f
-            minWidth = (56 * resources.displayMetrics.density).toInt()
+            minWidth = (48 * resources.displayMetrics.density).toInt()
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             setPadding(0, 0, 0, 0)
         }
@@ -842,6 +840,13 @@ class PurchaseActivity : AppCompatActivity() {
     // chain exists) tertiary — mirroring SaleActivity.
     private fun onItemPicked(pickedName: String) {
         val product = products.find { it.name.equals(pickedName, ignoreCase = true) } ?: return
+        applyPickedProduct(product)
+    }
+
+    /** Shared by onItemPicked() (existing product chosen from the dropdown) and by
+     *  openAddProductDialog() (brand-new product just created) — sets up unit chips,
+     *  conversion info, and auto-filled rate for whichever product is now selected. */
+    private fun applyPickedProduct(product: Product) {
         selectedProduct = product
 
         val unitOptions = mutableListOf(product.unit)
@@ -984,7 +989,9 @@ class PurchaseActivity : AppCompatActivity() {
 
         val product = selectedProduct ?: products.find { it.name.equals(enteredName, ignoreCase = true) }
         if (product == null) {
-            itemName.error = "Select an existing product, or add it in Products first"
+            // Not an existing product — open the quick "Add Product" dialog (prefilled
+            // with what was typed) instead of blocking the user with an error.
+            openAddProductDialog(enteredName)
             return
         }
 
@@ -1110,6 +1117,196 @@ class PurchaseActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    // ---- Quick "Add Product" from within Purchase: lets the user create a brand-new
+    // product on the spot — with full Primary/Secondary/Tertiary unit setup — when the
+    // item being purchased isn't in the Products list yet, instead of having to leave
+    // this screen and set it up in Product Management first. ----
+    private fun openAddProductDialog(prefillName: String) {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor(cardWhite))
+        }
+        val dialogHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(28, 26, 28, 26)
+            background = roundedBg(navy, 0)
+        }
+        dialogHeader.addView(TextView(this).apply {
+            text = "\u2795  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Add New Product", "نئی پروڈکٹ شامل کریں")
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        content.addView(dialogHeader)
+
+        val scrollableBody = ScrollView(this)
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 26, 28, 8)
+        }
+        scrollableBody.addView(body)
+
+        fun microLabel(text: String) = TextView(this).apply {
+            this.text = text
+            textSize = 11.5f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, 8)
+        }
+
+        // ---- Name ----
+        body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "PRODUCT NAME", "پروڈکٹ کا نام")))
+        val nameField = EditText(this).apply {
+            setText(prefillName)
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, "#FAFBFC", 12)
+            setPadding(18, 16, 18, 16)
+            textSize = 15f
+        }
+        body.addView(nameField)
+        body.addView(spacer(18))
+
+        // ---- Category ----
+        body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "CATEGORY", "کیٹیگری")))
+        val categorySpinnerBox = LinearLayout(this).apply {
+            background = strokedBg(border, "#FAFBFC", 12)
+            setPadding(14, 2, 14, 2)
+        }
+        val categorySpinnerDialog = Spinner(this)
+        categorySpinnerBox.addView(categorySpinnerDialog)
+        body.addView(categorySpinnerBox)
+        body.addView(spacer(20))
+        lifecycleScope.launch {
+            val cats = (listOf("General") + PosDatabase.get(this@PurchaseActivity).categoryDao().all().first().map { it.name }).distinct()
+            categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats)
+        }
+
+        // ---- Primary Unit ----
+        body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "PRIMARY UNIT", "بنیادی یونٹ")))
+        val primarySpinnerBox = LinearLayout(this).apply {
+            background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2)
+        }
+        val primarySpinner = Spinner(this)
+        primarySpinnerBox.addView(primarySpinner)
+        body.addView(primarySpinnerBox)
+        body.addView(spacer(20))
+
+        // ---- Secondary Unit (optional) ----
+        body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SECONDARY UNIT (smaller, optional)", "ثانوی یونٹ (چھوٹی، اختیاری)")))
+        val secondarySpinnerBox = LinearLayout(this).apply {
+            background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2)
+        }
+        val secondarySpinner = Spinner(this)
+        secondarySpinnerBox.addView(secondarySpinner)
+        body.addView(secondarySpinnerBox)
+        body.addView(spacer(16))
+        val secQtyBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            background = strokedBg(border, "#FAFBFC", 12); setPadding(16, 4, 16, 4)
+        }
+        secQtyBox.addView(TextView(this).apply { text = "\uD83D\uDD01  "; textSize = 14f })
+        val secQtyField = EditText(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "1 Primary = how many Secondary? (e.g. 1 bag = 50 kg)", "1 بنیادی = کتنے ثانوی؟ (مثلاً 1 بیگ = 50 کلو)")
+            setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        secQtyBox.addView(secQtyField)
+        body.addView(secQtyBox)
+        body.addView(spacer(20))
+
+        // ---- Tertiary Unit (optional, relative to Secondary) ----
+        body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "TERTIARY UNIT (smallest, optional)", "تیسرا یونٹ (سب سے چھوٹا، اختیاری)")))
+        val tertiarySpinnerBox = LinearLayout(this).apply {
+            background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2)
+        }
+        val tertiarySpinner = Spinner(this)
+        tertiarySpinnerBox.addView(tertiarySpinner)
+        body.addView(tertiarySpinnerBox)
+        body.addView(spacer(16))
+        val terQtyBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            background = strokedBg(border, "#FAFBFC", 12); setPadding(16, 4, 16, 4)
+        }
+        terQtyBox.addView(TextView(this).apply { text = "\uD83D\uDD01  "; textSize = 14f })
+        val terQtyField = EditText(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "1 Secondary = how many Tertiary? (e.g. 1 kg = 10 pcs)", "1 ثانوی = کتنے تیسرے؟ (مثلاً 1 کلو = 10 پیس)")
+            setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        terQtyBox.addView(terQtyField)
+        body.addView(terQtyBox)
+
+        content.addView(scrollableBody, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        primarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
+        val secondaryOptions = listOf("None") + allUnits
+        secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, secondaryOptions)
+        val tertiaryOptions = listOf("None") + allUnits
+        tertiarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, tertiaryOptions)
+
+        val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }
+        content.addView(footer)
+        val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
+
+        footer.addView(TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Cancel", "منسوخ کریں")
+            gravity = Gravity.CENTER; textSize = 14f
+            setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = strokedBg(border, "#FAFBFC", 14)
+            setPadding(0, 22, 0, 22)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
+            setOnClickListener { dialog.dismiss() }
+        })
+        footer.addView(TextView(this).apply {
+            text = "\u2713  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Save", "محفوظ کریں")
+            gravity = Gravity.CENTER; textSize = 14f
+            setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = roundedBg(teal, 14)
+            setPadding(0, 22, 0, 22)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
+            setOnClickListener {
+                val pname = nameField.text.toString().trim()
+                if (pname.isEmpty()) { nameField.error = "Required"; return@setOnClickListener }
+
+                val primaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"
+                var secondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"
+                val secondaryQty = secQtyField.text.toString().toDoubleOrNull() ?: 0.0
+                var tertiaryUnit = tertiarySpinner.selectedItem?.toString() ?: "None"
+                var tertiaryQty = terQtyField.text.toString().toDoubleOrNull() ?: 0.0
+                if (secondaryUnit == "None") { tertiaryUnit = "None"; tertiaryQty = 0.0 }
+
+                val newProduct = Product(
+                    barcode = "P" + System.currentTimeMillis(),
+                    name = pname,
+                    category = categorySpinnerDialog.selectedItem?.toString() ?: "General",
+                    cost = rate.text.toString().toDoubleOrNull() ?: 0.0,
+                    salePrice = 0.0,
+                    wholesalePrice = 0.0,
+                    stock = 0,
+                    openingStock = 0,
+                    unit = primaryUnit,
+                    secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit,
+                    secondaryUnitQty = secondaryQty,
+                    tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit,
+                    tertiaryUnitQty = tertiaryQty
+                )
+                lifecycleScope.launch {
+                    PosDatabase.get(this@PurchaseActivity).productDao().upsert(newProduct)
+                    Toast.makeText(this@PurchaseActivity, com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Product added", "پروڈکٹ شامل ہو گئی"), Toast.LENGTH_SHORT).show()
+
+                    itemName.setText(newProduct.name)
+                    applyPickedProduct(newProduct)
+                    dialog.dismiss()
+                }
+            }
+        })
+
+        dialog.show()
     }
 
     // ---- Delete (edit mode only): reverses stock + supplier balance, then removes the bill ----
