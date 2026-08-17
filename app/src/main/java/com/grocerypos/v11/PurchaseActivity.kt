@@ -1,6 +1,7 @@
 package com.grocerypos.v11.ui
 
 import android.app.DatePickerDialog
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -22,6 +23,8 @@ import com.grocerypos.v11.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -71,6 +74,8 @@ class PurchaseActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_BILL_NO = "billNo"
+        private const val PREFS_NAME = "purchase_draft_prefs"
+        private const val KEY_DRAFT = "draft_json"
     }
 
     // ================= NAVY + TEAL + WHITE PALETTE =================
@@ -123,9 +128,22 @@ class PurchaseActivity : AppCompatActivity() {
     private var lastMainQty: Double = 0.0
     private var suppressQtyWatcher = false
 
+    // ---- same idea for Rate: tracks the last-entered rate converted to a "per MAIN
+    // unit" price, so switching the unit chip auto-converts the rate too (e.g. typing
+    // 10000 while on "bag", where 1 bag = 50 kg, then switching to "kg" auto-fills 200
+    // instead of leaving a stale 10000 under "kg"). ----
+    private var lastMainRate: Double = 0.0
+    private var suppressRateWatcher = false
+
     private var editBillNo: String? = null
     private var originalPurchase: Purchase? = null
     private var originalItems: List<PurchaseItem> = emptyList()
+
+    // ---- draft persistence: guards against process death (e.g. fingerprint prompt,
+    // switching apps, or the OS killing the app in the background) wiping out an
+    // in-progress purchase that hasn't been saved yet. ----
+    private var suppressDraftSave = false
+    private var draftRestored = false
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -381,7 +399,16 @@ class PurchaseActivity : AppCompatActivity() {
             }
             updateLineTotal()
         })
-        rate.addTextChangedListener(simpleWatcher { updateLineTotal() })
+        // ---- Rate watcher records the entered rate converted to a "per MAIN unit"
+        // price, so switching unit chips can auto-convert the rate shown (e.g. 1 bag =
+        // 50 kg, rate 10000 typed on "bag" -> switching to "kg" auto-fills 200). ----
+        rate.addTextChangedListener(simpleWatcher {
+            if (!suppressRateWatcher) {
+                val entered = rate.text.toString().toDoubleOrNull() ?: 0.0
+                lastMainRate = toMainUnitRate(entered)
+            }
+            updateLineTotal()
+        })
 
         itemEntrySection.addView(Button(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "ADD ITEM", "آئٹم شامل کریں")
@@ -563,9 +590,15 @@ class PurchaseActivity : AppCompatActivity() {
             applyElevation(this, 8f)
             addView(saveDeleteRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
+        // ---- Handles both system bars AND the on-screen keyboard (IME). Without the
+        // ime() inset, the keyboard used to sit on top of Save/Delete, making them
+        // unreachable while a field was focused (e.g. right after typing the Rate and
+        // hitting the ADD ITEM flow, or when the keyboard was still up at Save time). ----
         ViewCompat.setOnApplyWindowInsetsListener(saveBar) { view, insets ->
             val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, 18 + sysBars.bottom)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val bottomInset = maxOf(sysBars.bottom, ime.bottom)
+            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, 18 + bottomInset)
             insets
         }
 
@@ -612,6 +645,149 @@ class PurchaseActivity : AppCompatActivity() {
         partyName.addTextChangedListener(simpleWatcher {
             updateSupplierBalanceDisplay(partyName.text.toString().trim())
         })
+
+        // ---- Restore an unsaved draft (new purchase only — edit mode loads its own
+        // data via loadForEdit). This recovers in-progress entries that were lost when
+        // the OS killed the app in the background (fingerprint prompt, app switch,
+        // low memory, etc.) before the user could tap Save. ----
+        if (editBillNo == null) {
+            restoreDraftIfAny()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Snapshot whatever is currently on screen so a process death while backgrounded
+        // (fingerprint unlock, switching to another app, OS reclaiming memory) doesn't
+        // wipe out an in-progress purchase. Only relevant for a brand-new purchase —
+        // edits reload from the DB via loadForEdit(), and once a bill is actually saved
+        // the draft is cleared (see savePurchase()/clearDraft()).
+        if (editBillNo == null && !suppressDraftSave) {
+            saveDraft()
+        }
+    }
+
+    // ---- Draft persistence (SharedPreferences, JSON-encoded) ----
+
+    private fun draftPrefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun saveDraft() {
+        // Nothing worth saving if the form is effectively empty.
+        val hasContent = lines.isNotEmpty() ||
+            partyName.text.toString().isNotBlank() ||
+            itemName.text.toString().isNotBlank() ||
+            qty.text.toString().isNotBlank() ||
+            rate.text.toString().isNotBlank()
+        if (!hasContent) {
+            clearDraft()
+            return
+        }
+
+        val linesArray = JSONArray()
+        lines.forEach { line ->
+            linesArray.put(JSONObject().apply {
+                put("itemName", line.itemName)
+                put("barcode", line.barcode ?: "")
+                put("qty", line.qty)
+                put("unit", line.unit)
+                put("rate", line.rate)
+                put("amount", line.amount)
+                put("mainUnit", line.mainUnit)
+                put("secondaryUnit", line.secondaryUnit)
+                put("secondaryUnitQty", line.secondaryUnitQty)
+                put("tertiaryUnit", line.tertiaryUnit)
+                put("tertiaryUnitQty", line.tertiaryUnitQty)
+            })
+        }
+
+        val draft = JSONObject().apply {
+            put("party", partyName.text.toString())
+            put("discount", discountInput.text.toString())
+            put("paid", paidInput.text.toString())
+            put("dateMillis", purchaseDateMillis)
+            put("pendingItemName", itemName.text.toString())
+            put("pendingQty", qty.text.toString())
+            put("pendingRate", rate.text.toString())
+            put("lines", linesArray)
+        }
+
+        draftPrefs().edit().putString(KEY_DRAFT, draft.toString()).apply()
+    }
+
+    private fun clearDraft() {
+        draftPrefs().edit().remove(KEY_DRAFT).apply()
+    }
+
+    private fun restoreDraftIfAny() {
+        val raw = draftPrefs().getString(KEY_DRAFT, null) ?: return
+        val draft = try { JSONObject(raw) } catch (e: Exception) { null } ?: return
+        if (draftRestored) return
+        draftRestored = true
+        suppressDraftSave = true
+
+        try {
+            val party = draft.optString("party", "")
+            if (party.isNotBlank()) {
+                partyName.setText(party)
+                updateSupplierBalanceDisplay(party)
+            }
+            val discount = draft.optString("discount", "")
+            if (discount.isNotBlank()) discountInput.setText(discount)
+            val paid = draft.optString("paid", "")
+            if (paid.isNotBlank()) paidInput.setText(paid)
+            val savedDate = draft.optLong("dateMillis", 0L)
+            if (savedDate > 0L) {
+                purchaseDateMillis = savedDate
+                dateValueText.text = formatDate(purchaseDateMillis)
+            }
+
+            val linesArray = draft.optJSONArray("lines")
+            if (linesArray != null) {
+                for (i in 0 until linesArray.length()) {
+                    val o = linesArray.getJSONObject(i)
+                    lines.add(
+                        PurchaseLine(
+                            itemName = o.optString("itemName"),
+                            barcode = o.optString("barcode").ifBlank { null },
+                            qty = o.optDouble("qty", 0.0),
+                            unit = o.optString("unit"),
+                            rate = o.optDouble("rate", 0.0),
+                            amount = o.optDouble("amount", 0.0),
+                            mainUnit = o.optString("mainUnit"),
+                            secondaryUnit = o.optString("secondaryUnit"),
+                            secondaryUnitQty = o.optDouble("secondaryUnitQty", 0.0),
+                            tertiaryUnit = o.optString("tertiaryUnit"),
+                            tertiaryUnitQty = o.optDouble("tertiaryUnitQty", 0.0)
+                        )
+                    )
+                }
+                renderItemsList()
+                updateGrandTotal()
+            }
+
+            // Restore whatever was mid-entry in the item-entry row (not yet added as a line).
+            val pendingItemName = draft.optString("pendingItemName", "")
+            if (pendingItemName.isNotBlank()) {
+                itemName.setText(pendingItemName)
+                val match = products.find { it.name.equals(pendingItemName, ignoreCase = true) }
+                if (match != null) applyPickedProduct(match)
+            }
+            val pendingQty = draft.optString("pendingQty", "")
+            if (pendingQty.isNotBlank()) qty.setText(pendingQty)
+            val pendingRate = draft.optString("pendingRate", "")
+            if (pendingRate.isNotBlank()) rate.setText(pendingRate)
+            updateLineTotal()
+
+            if (lines.isNotEmpty() || pendingItemName.isNotBlank()) {
+                Toast.makeText(
+                    this,
+                    com.grocerypos.v11.util.Loc.t(this, "Restored your unsaved purchase draft", "آپ کا غیر محفوظ شدہ ڈرافٹ بحال کر دیا گیا"),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } finally {
+            suppressDraftSave = false
+        }
     }
 
     /** Keeps the "Firm Name" card in sync with Settings > Shop Information > Shop Name. */
@@ -872,6 +1048,7 @@ class PurchaseActivity : AppCompatActivity() {
         conversionInfo.visibility = if (conversionInfo.text.isNotEmpty()) View.VISIBLE else View.GONE
 
         lastMainQty = 0.0
+        lastMainRate = 0.0
         refillAutoRate()
         updateLineTotal()
 
@@ -921,22 +1098,48 @@ class PurchaseActivity : AppCompatActivity() {
         suppressQtyWatcher = false
     }
 
-    // ---- Rate adjusts to the chosen unit, same as SaleActivity.refillAutoPrice().
-    // Picking the product always suggests the main-unit cost; switching to secondary
-    // divides by secondaryUnitQty, and tertiary divides by secondaryUnitQty*tertiaryUnitQty
-    // so "price per selected unit" stays correct at any tier. ----
+    // ---- Converts an entered "price per currently-selected unit" to a "price per
+    // MAIN unit", and back — mirrors toMainUnitQty()/fromMainUnitQty() but inverted
+    // (price scales the opposite way qty does: smaller unit -> smaller price). ----
+    private fun toMainUnitRate(entered: Double): Double {
+        val product = selectedProduct ?: return entered
+        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
+        return when {
+            chosenUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
+                product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
+                entered * product.secondaryUnitQty * product.tertiaryUnitQty
+            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
+                entered * product.secondaryUnitQty
+            else -> entered
+        }
+    }
+
+    private fun fromMainUnitRate(mainRate: Double, chosenUnit: String): Double {
+        val product = selectedProduct ?: return mainRate
+        return when {
+            chosenUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
+                product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
+                mainRate / (product.secondaryUnitQty * product.tertiaryUnitQty)
+            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
+                mainRate / product.secondaryUnitQty
+            else -> mainRate
+        }
+    }
+
+    // ---- Rate adjusts to the chosen unit. Picking the product suggests the main-unit
+    // cost as a starting point; but once the user types their OWN rate (e.g. 10000 for
+    // 1 bag), lastMainRate takes over so switching units converts proportionally from
+    // what was actually entered, instead of snapping back to the product's saved cost.
+    // Example: 1 bag = 50 kg, user types 10000 while on "bag" -> switching to "kg"
+    // auto-fills 200 (10000 / 50), and switching back to "bag" restores 10000. ----
     private fun refillAutoRate() {
         val product = selectedProduct ?: return
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val r = when {
-            chosenUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
-                product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
-                product.cost / (product.secondaryUnitQty * product.tertiaryUnitQty)
-            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
-                product.cost / product.secondaryUnitQty
-            else -> product.cost
-        }
+        val base = if (lastMainRate > 0) lastMainRate else product.cost
+        val r = fromMainUnitRate(base, chosenUnit)
+        suppressRateWatcher = true
         rate.setText(if (r > 0) "%.2f".format(r) else "")
+        suppressRateWatcher = false
     }
 
     private fun buildUnitChips(options: List<String>, selected: String) {
@@ -1017,10 +1220,13 @@ class PurchaseActivity : AppCompatActivity() {
         rate.setText("")
         selectedProduct = null
         lastMainQty = 0.0
+        lastMainRate = 0.0
         conversionInfo.visibility = View.GONE
         unitToggleRow.visibility = View.GONE
         totalAmountText.text = "Total Amount: Rs 0.00"
         itemName.requestFocus()
+
+        if (editBillNo == null) saveDraft()
     }
 
     /** Renders the numbered "#1, #2, …" Billed Items cards — matches the reference
@@ -1066,6 +1272,7 @@ class PurchaseActivity : AppCompatActivity() {
                     lines.removeAt(index)
                     renderItemsList()
                     updateGrandTotal()
+                    if (editBillNo == null) saveDraft()
                 }
             })
             row.addView(topRow)
@@ -1435,6 +1642,11 @@ class PurchaseActivity : AppCompatActivity() {
                     )
                 )
             }
+
+            // Bill is safely persisted now — clear the recovery draft so a future launch
+            // doesn't try to restore an already-saved purchase.
+            suppressDraftSave = true
+            clearDraft()
 
             Toast.makeText(
                 this@PurchaseActivity,
