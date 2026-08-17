@@ -28,7 +28,11 @@ data class Product(
     @PrimaryKey val barcode:String,
     val name:String,
     val category:String="",
-    val cost:Double=0.0,            // purchase rate
+    val cost:Double=0.0,            // purchase rate — now a WEIGHTED AVERAGE cost, kept
+                                     // in sync automatically every time a Purchase is saved
+                                     // (see PurchaseActivity.savePurchase()). Manually editing
+                                     // it in ProductActivity still works and is respected as
+                                     // the starting point until the next purchase recalculates it.
     val salePrice:Double=0.0,       // retail sale rate
     val stock:Int=0,
     val reorderLevel:Int=0,
@@ -204,10 +208,32 @@ interface ProductDao {
     suspend fun find(code:String):Product?
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(p:Product)
     @Delete suspend fun delete(p:Product)
+
+    // ---- Guarded decrease: used for SALES only. Refuses to go below zero (returns 0
+    // rows affected if insufficient stock) — the caller (SaleActivity) MUST check the
+    // return value and re-validate stock right before committing, since this silently
+    // no-ops instead of throwing when stock is insufficient. ----
     @Query("UPDATE products SET stock=stock-:qty WHERE barcode=:code AND stock>=:qty")
     suspend fun decrease(code:String,qty:Int):Int
+
+    // ---- Unguarded decrease: used ONLY to reverse a purchase's stock effect (delete or
+    // edit a purchase). A purchase's added stock may have already been partly/fully sold
+    // by the time it's reversed, so this is allowed to push stock below zero — that
+    // negative value is a true signal that the item was oversold and needs attention,
+    // rather than being silently swallowed like decrease() would do. ----
+    @Query("UPDATE products SET stock=stock-:qty WHERE barcode=:code")
+    suspend fun decreaseForce(code:String,qty:Int)
+
     @Query("UPDATE products SET stock=stock+:qty WHERE barcode=:code")
     suspend fun increase(code:String,qty:Int)
+
+    // ---- Updates the product's weighted-average cost after a purchase. Called from
+    // PurchaseActivity right after increase(), using the stock/cost snapshot from BEFORE
+    // that increase (so the math below is: old stock @ old cost, plus new qty @ new
+    // purchase rate). ----
+    @Query("UPDATE products SET cost=:newCost WHERE barcode=:code")
+    suspend fun updateCost(code:String,newCost:Double)
+
     @Query("UPDATE products SET unit=:unit WHERE barcode=:code")
     suspend fun updateUnit(code:String,unit:String)
     @Query("SELECT * FROM products WHERE stock<=reorderLevel ORDER BY name")
@@ -258,7 +284,14 @@ interface ProductDao {
     suspend fun totalSalesBetween(start:Long,end:Long):Double
     @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end")
     suspend fun countBetween(start:Long,end:Long):Int
-    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
+
+    // ---- FIX: added 'localtime' modifier. Without it, strftime grouped rows by their
+    // UTC calendar date while the Today/This Week/This Month filters in ReportsActivity
+    // use the device's LOCAL calendar date — a sale made between midnight and ~5am
+    // Pakistan time was landing in the previous day's UTC bucket, so Daily Sales/Daily
+    // Profit could show it on the wrong day even though the summary totals (which use
+    // rangeStart/rangeEnd directly, not this grouping) were already correct. ----
+    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
     suspend fun dailySales(start:Long,end:Long):List<DailySales>
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
     suspend fun topProducts(start:Long,end:Long):List<TopProduct>
@@ -287,7 +320,8 @@ interface ProductDao {
     // ---- Profit (sale price - cost), per line item ----
     @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
     suspend fun profitBetween(start:Long,end:Long):Double
-    @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch') as day, COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
+    // ---- FIX: same 'localtime' fix as dailySales() above. ----
+    @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch','localtime') as day, COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
     suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
 
     // ---- Cost of Goods Sold for a period — used by the Profit & Loss report ----
@@ -301,6 +335,13 @@ interface ProductDao {
     // ---- Rate-check: every sale line for a given product, newest first (used by Item Search) ----
     @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC")
     suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
+
+    // ---- Total quantity of a given product already sold across ALL active sales.
+    // Used by SaleActivity to validate stock against the WHOLE cart (all lines of the
+    // same product added so far), not just the DB's stock snapshot from before the
+    // cart was built. ----
+    @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')")
+    suspend fun totalActiveQtySold(barcode:String):Int
 }
 
 @Dao interface ExpenseDao {
@@ -474,15 +515,6 @@ abstract class PosDatabase:RoomDatabase(){
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
                 .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
-                // FIX: fallbackToDestructiveMigration() removed.
-                // That call told Room "if you hit a schema version you don't
-                // have a migration path for, silently DROP and recreate every
-                // table" — which is exactly what was wiping all purchase/sale
-                // entries on reopen whenever a migration path was missing or
-                // mismatched. Without it, a missing migration now throws a
-                // clear IllegalStateException instead of deleting data, so
-                // any future schema change failure surfaces as a crash you
-                // can fix, not silent data loss.
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() {
