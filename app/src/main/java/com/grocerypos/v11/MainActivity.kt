@@ -19,6 +19,8 @@ import com.grocerypos.v11.ui.ReportsActivity
 import com.grocerypos.v11.ui.CashActivity
 import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -31,10 +33,16 @@ class MainActivity : AppCompatActivity() {
     private var role: String = "cashier"
     private lateinit var shopNameHeader: TextView
 
+    // ---- Customers & Suppliers mini-summary (embedded on this dashboard) ----
+    private lateinit var youllGetValue: TextView
+    private lateinit var youllGiveValue: TextView
+
     private val bgColor = "#F3F4F9"
     private val cardWhite = "#FFFFFF"
     private val textDark = "#1A1D2E"
     private val textMuted = "#8A8FA3"
+    private val partyGreen = "#2E7D32"
+    private val partyRed = "#C62828"
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -167,6 +175,10 @@ class MainActivity : AppCompatActivity() {
         body.addView(statsRow)
         body.addView(spacer(30))
 
+        // ================= CUSTOMERS & SUPPLIERS (embedded summary) =================
+        body.addView(buildCustomerSupplierSection())
+        body.addView(spacer(30))
+
         // ================= QUICK ACTIONS: SALE + PURCHASE (big cards) =================
         body.addView(TextView(this).apply {
             text = "QUICK ACTIONS"
@@ -263,12 +275,84 @@ class MainActivity : AppCompatActivity() {
 
         loadDashboard()
         loadShopName()
+        loadPartySummary()
     }
 
     override fun onResume() {
         super.onResume()
         loadDashboard()
         loadShopName()
+        loadPartySummary()
+    }
+
+    // ================= CUSTOMERS & SUPPLIERS SECTION =================
+    private fun buildCustomerSupplierSection(): LinearLayout {
+        val section = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(4, 0, 0, 14)
+        }
+        titleRow.addView(TextView(this).apply {
+            text = "CUSTOMERS & SUPPLIERS"
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        titleRow.addView(TextView(this).apply {
+            text = "View All ›"
+            textSize = 12f
+            setTextColor(Color.parseColor("#3949AB"))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setOnClickListener { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
+        })
+        section.addView(titleRow)
+
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        val getCardParts = premiumStatCard("↓", "You'll Get", partyGreen, "#E8F5E9")
+        val giveCardParts = premiumStatCard("↑", "You'll Give", partyRed, "#FFEBEE")
+        youllGetValue = getCardParts.second
+        youllGiveValue = giveCardParts.second
+
+        val getCardView = getCardParts.first.apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 9, 0) }
+            isClickable = true
+            setOnClickListener { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
+        }
+        val giveCardView = giveCardParts.first.apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9, 0, 0, 0) }
+            isClickable = true
+            setOnClickListener { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
+        }
+
+        row.addView(getCardView)
+        row.addView(giveCardView)
+        section.addView(row)
+
+        return section
+    }
+
+    /** Mirrors PartyDashboardActivity's own You'll Get / You'll Give calculation, so both screens always agree. */
+    private fun loadPartySummary() {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@MainActivity)
+            combine(db.customerDao().all(), db.supplierDao().all()) { customers, suppliers ->
+                Pair(customers, suppliers)
+            }.collectLatest { (customers, suppliers) ->
+                val customerClosings = customers.map { it.openingBalance + it.balance }
+                val supplierClosings = suppliers.map { it.openingBalance + it.balance }
+                val allClosings = customerClosings + supplierClosings
+
+                val youllGet = allClosings.filter { it <= 0 }.sumOf { -it }
+                val youllGive = allClosings.filter { it > 0 }.sumOf { it }
+
+                youllGetValue.text = "Rs %.2f".format(youllGet)
+                youllGiveValue.text = "Rs %.2f".format(youllGive)
+            }
+        }
     }
 
     private fun loadShopName() {
