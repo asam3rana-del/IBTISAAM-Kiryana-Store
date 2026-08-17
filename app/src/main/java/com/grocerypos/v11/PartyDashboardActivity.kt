@@ -21,15 +21,19 @@ import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Home-screen style dashboard: "You'll Get / You'll Give" summary cards + Parties /
  * Transactions / Items tabs + searchable party list + bottom Add Purchase / Add Sale bar.
  *
- * This is a NEW, separate screen - it does not touch PartyActivity.kt. Wire it up wherever
- * you want (e.g. point MainActivity's "Customers & Suppliers" tile here instead of
- * PartyActivity, or add a fresh tile for it). It reuses PartyActivity for the actual
- * add/edit/delete forms and full history, so nothing is duplicated.
+ * This is now the app's HOME screen (opened right after login). It reuses PartyActivity
+ * for the actual add/edit/delete forms and full history, so nothing is duplicated. The
+ * hamburger (☰) icon in the header opens a menu with the rest of the app's features
+ * (Products, Reports, Cash In/Out, Item Rate Search, Settings, Logout) since this screen
+ * no longer has a "back to MainActivity" to fall back on.
  *
  * NOTE: Add this to AndroidManifest.xml under <application> before running it:
  *   <activity android:name=".ui.PartyDashboardActivity" />
@@ -62,6 +66,7 @@ class PartyDashboardActivity : AppCompatActivity() {
     private var activeTab = Tab.PARTIES
     private var filterMode = FilterMode.ALL
     private var allItems: List<PartyItem> = emptyList()
+    private var role: String = "cashier"
 
     private enum class Tab { PARTIES, TRANSACTIONS, ITEMS }
     private enum class FilterMode { ALL, CUSTOMERS, SUPPLIERS }
@@ -77,6 +82,14 @@ class PartyDashboardActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+
+        val session = getSharedPreferences("session", MODE_PRIVATE)
+        if (session.getString("username", null) == null) {
+            startActivity(Intent(this@PartyDashboardActivity, LoginActivity::class.java))
+            finish()
+            return
+        }
+        role = session.getString("role", "cashier") ?: "cashier"
 
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -147,7 +160,7 @@ class PartyDashboardActivity : AppCompatActivity() {
                 textSize = 20f
                 setTextColor(Color.WHITE)
                 setPadding(4, 0, 20, 0)
-                setOnClickListener { finish() }
+                setOnClickListener { showMainMenu() }
             })
 
             addView(TextView(this@PartyDashboardActivity).apply {
@@ -174,6 +187,41 @@ class PartyDashboardActivity : AppCompatActivity() {
                 setOnClickListener { shareSummary() }
             })
         }
+    }
+
+    // ================= MAIN MENU (this screen is now HOME, so it hosts app-wide navigation) =================
+    private fun showMainMenu() {
+        val options = mutableListOf(
+            Loc.t(this, "Products", "\u067E\u0631\u0648\u0688\u06A9\u0679\u0633"),
+            Loc.t(this, "Reports", "\u0631\u067E\u0648\u0631\u0679\u0633"),
+            Loc.t(this, "Cash In/Out", "\u06A9\u06CC\u0634 \u0627\u0646/\u0622\u0624\u0679"),
+            Loc.t(this, "Item Rate Search", "\u0622\u0626\u0679\u0645 \u0631\u06CC\u0679 \u0633\u0631\u0686"),
+            Loc.t(this, "Settings", "\u0633\u06CC\u0679\u0646\u06AF\u0632"),
+            Loc.t(this, "Logout", "\u0644\u0627\u06AF \u0622\u0624\u0679")
+        )
+        AlertDialog.Builder(this)
+            .setItems(options.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> startActivity(Intent(this, ProductActivity::class.java))
+                    1 -> startActivity(Intent(this, ReportsActivity::class.java))
+                    2 -> startActivity(Intent(this, CashActivity::class.java))
+                    3 -> startActivity(Intent(this, ItemSearchActivity::class.java))
+                    4 -> startActivity(Intent(this, SettingsActivity::class.java))
+                    5 -> doLogout()
+                }
+            }
+            .show()
+    }
+
+    private fun doLogout() {
+        getSharedPreferences("session", MODE_PRIVATE).edit().clear().apply()
+        // Wipe the whole task so nothing deeper in the back stack is reachable via Back
+        // after logging out - same pattern MainActivity used to use.
+        val intent = Intent(this, LoginActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        startActivity(intent)
+        finish()
     }
 
     private fun shareSummary() {
@@ -439,7 +487,7 @@ class PartyDashboardActivity : AppCompatActivity() {
             .show()
     }
 
-    // ================= DATA LOAD =================
+    // ================= DATA LOAD (Parties tab / summary cards) =================
     private fun loadParties() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyDashboardActivity)
@@ -487,8 +535,8 @@ class PartyDashboardActivity : AppCompatActivity() {
         listContainer.removeAllViews()
         when (activeTab) {
             Tab.PARTIES -> renderPartyList()
-            Tab.TRANSACTIONS -> listContainer.addView(placeholderCard(Loc.t(this, "Transactions view - hook this up to SaleDao/PurchaseDao when ready", "\u0644\u06CC\u0646 \u062F\u06CC\u0646 \u06A9\u0627 \u0645\u0646\u0638\u0631 - \u0628\u0639\u062F \u0645\u06CC\u06BA \u0633\u06CC\u0644/\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0688\u06CC\u0679\u0627 \u0633\u06D2 \u062C\u0648\u0691\u06CC\u06BA")))
-            Tab.ITEMS -> listContainer.addView(placeholderCard(Loc.t(this, "Items view - hook this up to your ItemDao when ready", "\u0622\u0626\u0679\u0645\u0632 \u06A9\u0627 \u0645\u0646\u0638\u0631 - \u0628\u0639\u062F \u0645\u06CC\u06BA \u0622\u0626\u0679\u0645 \u0688\u06CC\u0679\u0627 \u0633\u06D2 \u062C\u0648\u0691\u06CC\u06BA")))
+            Tab.TRANSACTIONS -> renderTransactionsList()
+            Tab.ITEMS -> renderItemsList()
         }
     }
 
@@ -569,6 +617,158 @@ class PartyDashboardActivity : AppCompatActivity() {
                 setPadding(0, 2, 0, 0)
             })
             addView(amountCol)
+        }
+    }
+
+    // ================= TRANSACTIONS TAB =================
+    // Merges recent sales + purchases into one date-sorted feed so the user can see
+    // everything that's happened across all parties without leaving the dashboard.
+    private fun renderTransactionsList() {
+        listContainer.removeAllViews()
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyDashboardActivity)
+            val sales = db.saleDao().allSales()
+            val purchases = db.purchaseDao().allPurchases()
+
+            data class Row(val partyName: String, val amount: Double, val createdAt: Long, val isSale: Boolean, val status: String)
+            val merged = mutableListOf<Row>()
+            sales.forEach { merged.add(Row(it.customerName, it.total, it.createdAt, true, it.status)) }
+            purchases.forEach { merged.add(Row(it.supplierName, it.total, it.createdAt, false, it.status)) }
+            val sorted = merged.sortedByDescending { it.createdAt }.take(100)
+
+            // Bail out quietly if the tab was switched away while this was loading.
+            if (activeTab != Tab.TRANSACTIONS) return@launch
+
+            if (sorted.isEmpty()) {
+                listContainer.addView(placeholderCard(Loc.t(this@PartyDashboardActivity, "No transactions yet", "\u0627\u0628\u06BE\u06CC \u062A\u06A9 \u06A9\u0648\u0626\u06CC \u0644\u06CC\u0646 \u062F\u06CC\u0646 \u0646\u06C1\u06CC\u06BA \u06C1\u06D2")))
+                return@launch
+            }
+
+            val fmt = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+            for (row in sorted) {
+                listContainer.addView(transactionRow(row.partyName, row.amount, fmt.format(Date(row.createdAt)), row.isSale, row.status))
+            }
+        }
+    }
+
+    private fun transactionRow(partyName: String, amount: Double, dateText: String, isSale: Boolean, status: String): LinearLayout {
+        val accent = if (isSale) green else orange
+        val typeLabel = if (isSale) Loc.t(this, "Sale", "\u0633\u06CC\u0644") else Loc.t(this, "Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC")
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 14, 18, 14)
+            background = elevatedCardBg()
+            elevation = 2f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 10) }
+
+            addView(TextView(this@PartyDashboardActivity).apply {
+                text = if (isSale) "\uD83D\uDED2" else "\uD83E\uDDFE"
+                textSize = 16f
+                gravity = Gravity.CENTER
+                background = ovalBg(accent)
+                width = (38 * resources.displayMetrics.density).toInt()
+                height = (38 * resources.displayMetrics.density).toInt()
+            })
+
+            val infoCol = LinearLayout(this@PartyDashboardActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(16, 0, 12, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            infoCol.addView(TextView(this@PartyDashboardActivity).apply {
+                text = partyName
+                textSize = 14.5f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor("#2E3242"))
+            })
+            infoCol.addView(TextView(this@PartyDashboardActivity).apply {
+                text = "$typeLabel \u00B7 $dateText" + if (status == "returned") "  \u2022  " + Loc.t(this@PartyDashboardActivity, "Returned", "\u0648\u0627\u067E\u0633") else ""
+                textSize = 11f
+                setTextColor(Color.parseColor(if (status == "returned") red else labelGray))
+            })
+            addView(infoCol)
+
+            addView(TextView(this@PartyDashboardActivity).apply {
+                text = "Rs %.2f".format(amount)
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(accent))
+            })
+        }
+    }
+
+    // ================= ITEMS TAB =================
+    // Combines all-time sold vs purchased totals per product so the user gets a quick
+    // "what's moving" view without opening full Reports.
+    private fun renderItemsList() {
+        listContainer.removeAllViews()
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyDashboardActivity)
+            val soldTotals = db.saleDao().allTimeItemTotals()
+            val purchasedTotals = db.purchaseDao().allTimeItemTotals()
+
+            data class Combined(var product: String, var soldQty: Int = 0, var soldAmt: Double = 0.0, var purQty: Int = 0, var purAmt: Double = 0.0)
+            val map = LinkedHashMap<String, Combined>()
+            soldTotals.forEach {
+                val c = map.getOrPut(it.product) { Combined(it.product) }
+                c.soldQty = it.totalQty; c.soldAmt = it.totalAmount
+            }
+            purchasedTotals.forEach {
+                val c = map.getOrPut(it.product) { Combined(it.product) }
+                c.purQty = it.totalQty; c.purAmt = it.totalAmount
+            }
+            val combined = map.values.sortedByDescending { it.soldAmt }
+
+            if (activeTab != Tab.ITEMS) return@launch
+
+            if (combined.isEmpty()) {
+                listContainer.addView(placeholderCard(Loc.t(this@PartyDashboardActivity, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")))
+                return@launch
+            }
+
+            for (c in combined) {
+                listContainer.addView(itemRow(c.product, c.soldQty, c.soldAmt, c.purQty, c.purAmt))
+            }
+        }
+    }
+
+    private fun itemRow(product: String, soldQty: Int, soldAmt: Double, purQty: Int, purAmt: Double): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 14, 18, 14)
+            background = elevatedCardBg()
+            elevation = 2f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 10) }
+
+            addView(TextView(this@PartyDashboardActivity).apply {
+                text = product
+                textSize = 14.5f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor("#2E3242"))
+            })
+
+            val row = LinearLayout(this@PartyDashboardActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 8, 0, 0)
+            }
+            row.addView(TextView(this@PartyDashboardActivity).apply {
+                text = Loc.t(this@PartyDashboardActivity, "Sold", "\u0641\u0631\u0648\u062E\u062A") + ": $soldQty \u00B7 Rs %.2f".format(soldAmt)
+                textSize = 12f
+                setTextColor(Color.parseColor(green))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(TextView(this@PartyDashboardActivity).apply {
+                text = Loc.t(this@PartyDashboardActivity, "Purchased", "\u062E\u0631\u06CC\u062F\u0627") + ": $purQty \u00B7 Rs %.2f".format(purAmt)
+                textSize = 12f
+                setTextColor(Color.parseColor(orange))
+            })
+            addView(row)
         }
     }
 
