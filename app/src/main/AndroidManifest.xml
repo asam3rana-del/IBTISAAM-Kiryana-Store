@@ -36,6 +36,7 @@
         <activity android:name=".ui.PartyDashboardActivity" android:exported="false" />
         <activity android:name=".ui.UserManagementActivity" />
         <activity android:name=".ui.PartyReportsActivity" />
+        <activity android:name=".ui.PartyTransactionActivity" android:exported="false" />
         <activity android:name=".ui.CategoriesUnitsActivity" android:exported="false" />
         <activity android:name=".ui.ItemsActivity" android:exported="false" />
         <activity android:name=".ui.BillPreviewActivity" android:exported="false" />
