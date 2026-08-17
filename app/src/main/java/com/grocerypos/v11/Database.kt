@@ -342,6 +342,11 @@ interface ProductDao {
     // cart was built. ----
     @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')")
     suspend fun totalActiveQtySold(barcode:String):Int
+
+    // ---- All-time qty/amount sold per product, across every customer. Used by
+    // PartyDashboardActivity's "Items" tab to show a sold-vs-purchased summary. ----
+    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si GROUP BY si.product ORDER BY totalAmount DESC")
+    suspend fun allTimeItemTotals():List<PartyItemReport>
 }
 
 @Dao interface ExpenseDao {
@@ -401,6 +406,11 @@ interface ProductDao {
     // ---- Rate-check: every purchase line for a given product, newest first (used by Item Search) ----
     @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC")
     suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
+
+    // ---- All-time qty/amount purchased per product, across every supplier. Used by
+    // PartyDashboardActivity's "Items" tab to show a sold-vs-purchased summary. ----
+    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN products p ON pi.barcode=p.barcode GROUP BY p.name ORDER BY totalAmount DESC")
+    suspend fun allTimeItemTotals():List<PartyItemReport>
 }
 
 @Dao interface ReturnDao {
