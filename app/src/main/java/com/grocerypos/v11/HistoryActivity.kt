@@ -98,7 +98,10 @@ class HistoryActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val sale = db.saleDao().findSale(invoice) ?: return@launch; if (sale.status == "returned") return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
-            for (it in items) { db.productDao().increase(it.barcode, it.qty); db.returnDao().insert(ReturnLine(invoice, "sale", it.barcode, it.qty.toDouble(), it.amount)) }
+            for (it in items) {
+                db.productDao().increase(it.barcode, it.qty)
+                db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
+            }
             if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
             db.cashTransactionDao().deleteByReference(invoice); db.saleDao().markReturned(invoice); loadSales()
         }
@@ -141,7 +144,10 @@ class HistoryActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch; if (purchase.status == "returned") return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
-            for (item in items) { db.productDao().decreaseForce(item.barcode, item.qty.toInt().coerceAtLeast(1)); db.returnDao().insert(ReturnLine(billNo, "purchase", item.barcode, item.qty, item.amount)) }
+            for (item in items) {
+                db.productDao().decreaseForce(item.barcode, item.qty.toInt().coerceAtLeast(1))
+                db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = item.qty, amount = item.amount))
+            }
             if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
             db.cashTransactionDao().deleteByReference(billNo); db.purchaseDao().markReturned(billNo); loadPurchases()
         }
