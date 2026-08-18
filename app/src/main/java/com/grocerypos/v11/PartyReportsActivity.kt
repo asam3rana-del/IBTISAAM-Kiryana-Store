@@ -33,7 +33,7 @@ class PartyReportsActivity : AppCompatActivity() {
     private lateinit var suppliersTab: Button
     private var showingCustomers = true
 
-    data class ItemAgg(val product: String, val qty: Int, val amount: Double)
+    data class ItemAgg(val product: String, val qty: Double, val amount: Double)
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -181,8 +181,8 @@ class PartyReportsActivity : AppCompatActivity() {
                 sales.forEach { s ->
                     db.saleDao().itemsForInvoice(s.invoice).forEach { it ->
                         val ex = map[it.product]
-                        map[it.product] = if (ex == null) ItemAgg(it.product, it.qty, it.amount)
-                        else ItemAgg(it.product, ex.qty + it.qty, ex.amount + it.amount)
+                        map[it.product] = if (ex == null) ItemAgg(it.product, it.qty.toDouble(), it.amount)
+                        else ItemAgg(it.product, ex.qty + it.qty.toDouble(), ex.amount + it.amount)
                     }
                 }
                 map.values.sortedByDescending { it.amount }
@@ -193,8 +193,8 @@ class PartyReportsActivity : AppCompatActivity() {
                     db.purchaseDao().itemsForBill(p.billNo).forEach { it ->
                         val productName = db.productDao().find(it.barcode)?.name ?: it.barcode
                         val ex = map[productName]
-                        map[productName] = if (ex == null) ItemAgg(productName, it.qty, it.amount)
-                        else ItemAgg(productName, ex.qty + it.qty, ex.amount + it.amount)
+                        map[productName] = if (ex == null) ItemAgg(productName, it.qty.toDouble(), it.amount)
+                        else ItemAgg(productName, ex.qty + it.qty.toDouble(), ex.amount + it.amount)
                     }
                 }
                 map.values.sortedByDescending { it.amount }
@@ -205,7 +205,7 @@ class PartyReportsActivity : AppCompatActivity() {
             if (items.isEmpty()) {
                 body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No items found", "کوئی آئٹم نہیں ملا")))
             } else {
-                items.forEach { i -> body.addView(rowText(i.product, "${i.qty} × — Rs %.2f".format(i.amount))) }
+                items.forEach { i -> body.addView(rowText(i.product, "${formatQty(i.qty)} × — Rs %.2f".format(i.amount))) }
             }
             AlertDialog.Builder(this@PartyReportsActivity)
                 .setView(content)
@@ -472,4 +472,6 @@ class PartyReportsActivity : AppCompatActivity() {
         val px = (heightDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
+
+    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 }
