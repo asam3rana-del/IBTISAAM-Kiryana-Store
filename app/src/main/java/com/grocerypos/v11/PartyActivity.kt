@@ -1,14 +1,21 @@
 package com.grocerypos.v11.ui
 
+import android.Manifest
 import android.app.AlertDialog
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
@@ -47,8 +54,23 @@ class PartyActivity : AppCompatActivity() {
 
     private var showingCustomers = true
 
+    // ---- Contact picker launchers ----
+    private lateinit var contactPickerLauncher: ActivityResultLauncher<Void?>
+    private lateinit var contactPermissionLauncher: ActivityResultLauncher<String>
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+
+        contactPickerLauncher = registerForActivityResult(ActivityResultContracts.PickContact()) { uri ->
+            uri?.let { fetchPhoneFromContact(it) }
+        }
+        contactPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                contactPickerLauncher.launch(null)
+            } else {
+                Toast.makeText(this, Loc.t(this, "Contacts permission denied", "رابطوں کی اجازت مسترد"), Toast.LENGTH_SHORT).show()
+            }
+        }
 
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -120,14 +142,25 @@ class PartyActivity : AppCompatActivity() {
         formCard.addView(nameBox)
         formCard.addView(spacer(10))
 
-        val phoneBox = innerField()
+        // ---- Phone field row: EditText + contact-picker icon button ----
+        val phoneBox = innerField().apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         phoneField = EditText(this).apply {
             hint = Loc.t(this@PartyActivity, "Phone (optional)", "فون (اختیاری)")
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_PHONE
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         phoneBox.addView(phoneField)
+        phoneBox.addView(TextView(this).apply {
+            text = "\uD83D\uDC64\u200D\uD83D\uDCDE"
+            textSize = 18f
+            setPadding(12, 0, 4, 0)
+            setOnClickListener { openContactPicker() }
+        })
         formCard.addView(phoneBox)
         formCard.addView(spacer(10))
 
@@ -206,6 +239,58 @@ class PartyActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (showingCustomers) loadCustomers() else loadSuppliers()
+    }
+
+    // ================= Contact picker =================
+    private fun openContactPicker() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            contactPickerLauncher.launch(null)
+        } else {
+            contactPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+        }
+    }
+
+    private fun fetchPhoneFromContact(contactUri: Uri) {
+        val cursor = contentResolver.query(contactUri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val idIdx = it.getColumnIndex(ContactsContract.Contacts._ID)
+                val hasPhoneIdx = it.getColumnIndex(ContactsContract.Contacts.HAS_PHONE_NUMBER)
+                val nameIdx = it.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
+                val contactId = if (idIdx >= 0) it.getString(idIdx) else null
+                val contactName = if (nameIdx >= 0) it.getString(nameIdx) else null
+
+                if (contactId != null && hasPhoneIdx >= 0 && it.getInt(hasPhoneIdx) > 0) {
+                    val phoneCursor = contentResolver.query(
+                        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                        null,
+                        "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                        arrayOf(contactId),
+                        null
+                    )
+                    phoneCursor?.use { pc ->
+                        if (pc.moveToFirst()) {
+                            val numIdx = pc.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                            val number = if (numIdx >= 0) pc.getString(numIdx) else null
+                            if (number != null) {
+                                phoneField.setText(number.replace(Regex("[^0-9+]"), ""))
+                            }
+                            if (nameField.text.isNullOrBlank() && !contactName.isNullOrBlank()) {
+                                nameField.setText(contactName)
+                            }
+                        }
+                    }
+                } else {
+                    Toast.makeText(
+                        this,
+                        Loc.t(this, "No phone number for this contact", "اس رابطے کا کوئی نمبر نہیں"),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
     }
 
     // ================= Tabs =================
