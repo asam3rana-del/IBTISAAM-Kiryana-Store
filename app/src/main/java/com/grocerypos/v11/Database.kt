@@ -15,9 +15,6 @@ data class CustomerSalesTotal(val customerName:String,val total:Double)
 data class DailyProfit(val day:String,val profit:Double)
 data class PartyItemReport(val product:String,val totalAmount:Double,val totalQty:Int)
 data class ItemSaleRecord(val customerName:String,val qty:Int,val unitPrice:Double,val createdAt:Long)
-// ---- FIX (Issue 1): qty changed Int -> Double. This mirrors PurchaseItem.qty below so
-// the Item Search "rate check" screen shows the true fractional qty that was purchased
-// instead of a value that no longer matches what's stored (e.g. 0.04 carton, not 0). ----
 data class ItemPurchaseRecord(val supplierName:String,val qty:Double,val unitCost:Double,val createdAt:Long)
 
 @Entity(tableName="units")
@@ -31,12 +28,8 @@ data class Product(
     @PrimaryKey val barcode:String,
     val name:String,
     val category:String="",
-    val cost:Double=0.0,            // purchase rate — now a WEIGHTED AVERAGE cost, kept
-                                     // in sync automatically every time a Purchase is saved
-                                     // (see PurchaseActivity.savePurchase()). Manually editing
-                                     // it in ProductActivity still works and is respected as
-                                     // the starting point until the next purchase recalculates it.
-    val salePrice:Double=0.0,       // retail sale rate
+    val cost:Double=0.0,
+    val salePrice:Double=0.0,
     val stock:Int=0,
     val reorderLevel:Int=0,
     val expiry:String="",
@@ -45,10 +38,10 @@ data class Product(
     val unitNote:String="",
     val secondaryUnit:String="",
     val secondaryUnitQty:Double=0.0,
-    val wholesalePrice:Double=0.0,  // wholesale rate (parchon rate)
+    val wholesalePrice:Double=0.0,
     val openingStock:Int=0,
-    val tertiaryUnit:String="",             // smallest unit, e.g. "grams" or "ml"
-    val tertiaryUnitQty:Double=0.0          // 1 secondaryUnit = X tertiaryUnit
+    val tertiaryUnit:String="",
+    val tertiaryUnitQty:Double=0.0
 )
 
 @Entity(tableName="customers")
@@ -57,7 +50,7 @@ data class Customer(
     val name:String,
     val phone:String="",
     val creditLimit:Double=0.0,
-    val openingBalance:Double=0.0,  // previous due before app tracking started
+    val openingBalance:Double=0.0,
     val balance:Double=0.0
 )
 
@@ -66,7 +59,7 @@ data class Supplier(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val name:String,
     val phone:String="",
-    val openingBalance:Double=0.0,  // previous due before app tracking started
+    val openingBalance:Double=0.0,
     val balance:Double=0.0
 )
 
@@ -79,10 +72,10 @@ data class Sale(
     val tax:Double,
     val total:Double,
     val paid:Double,
-    val paymentMethod:String,       // cash / bank
-    val saleType:String="retail",   // retail / wholesale
+    val paymentMethod:String,
+    val saleType:String="retail",
     val createdAt:Long=System.currentTimeMillis(),
-    val status:String="active"      // "active" or "returned"
+    val status:String="active"
 )
 
 @Entity(tableName="sale_items")
@@ -104,7 +97,7 @@ data class Payment(
     val partyType:String,
     val partyId:Long?,
     val amount:Double,
-    val method:String,              // cash / bank
+    val method:String,
     val note:String="",
     val createdAt:Long=System.currentTimeMillis()
 )
@@ -118,7 +111,7 @@ data class Purchase(
     val createdAt:Long=System.currentTimeMillis(),
     val subtotal:Double=0.0,
     val discount:Double=0.0,
-    val status:String="active" // "active" or "returned"
+    val status:String="active"
 )
 
 @Entity(tableName="purchase_items")
@@ -126,27 +119,19 @@ data class PurchaseItem(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val billNo:String,
     val barcode:String,
-    // ---- FIX (Issue 1): qty changed Int -> Double. Root cause of the "2nd/3rd unit
-    // amount galat ho jana" bug was that a fractional main-unit quantity (e.g. 2 Outer
-    // out of 50/Carton = 0.04 Carton) was being roundToInt()'d down to 0 before being
-    // stored here — silently corrupting both the saved qty and the stock update.
-    // Storing the true fractional value fixes the corruption at the source; the
-    // qty-conversion / rounding logic in PurchaseActivity.savePurchase() still needs to
-    // be updated to stop calling roundToInt() and pass this Double straight through —
-    // I need that file to make that half of the fix. ----
     val qty:Double,
     val unitCost:Double,
     val amount:Double,
-    val unit:String=""   // which unit (main/secondary) this line was purchased in
+    val unit:String=""
 )
 
 @Entity(tableName="returns")
 data class ReturnLine(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val reference:String,
-    val type:String,                // "sale" or "purchase"
+    val type:String,
     val barcode:String,
-    val qty:Int,
+    val qty:Double,
     val amount:Double,
     val createdAt:Long=System.currentTimeMillis()
 )
@@ -186,22 +171,20 @@ data class HeldBill(
     val createdAt:Long=System.currentTimeMillis()
 )
 
-// Manual cash in / cash out entries (not tied to a sale or purchase)
 @Entity(tableName="cash_transactions")
 data class CashTransaction(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
-    val type:String,        // "IN" or "OUT"
-    val method:String,      // "cash" or "bank"
+    val type:String,
+    val method:String,
     val amount:Double,
     val reason:String="",
     val reference:String="",
     val createdAt:Long=System.currentTimeMillis()
 )
 
-// One row per business day: opening/closing cash & bank balances
 @Entity(tableName="cash_register")
 data class CashRegister(
-    @PrimaryKey val date:String,   // yyyy-MM-dd
+    @PrimaryKey val date:String,
     val openingCash:Double=0.0,
     val closingCash:Double=0.0,
     val openingBank:Double=0.0,
@@ -209,7 +192,6 @@ data class CashRegister(
     val closed:Boolean=false
 )
 
-// Generic key-value store for app settings (language, printer, backup, etc.)
 @Entity(tableName="app_settings")
 data class AppSetting(@PrimaryKey val key:String, val value:String)
 
@@ -219,32 +201,14 @@ interface ProductDao {
     suspend fun find(code:String):Product?
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(p:Product)
     @Delete suspend fun delete(p:Product)
-
-    // ---- Guarded decrease: used for SALES only. Refuses to go below zero (returns 0
-    // rows affected if insufficient stock) — the caller (SaleActivity) MUST check the
-    // return value and re-validate stock right before committing, since this silently
-    // no-ops instead of throwing when stock is insufficient. ----
     @Query("UPDATE products SET stock=stock-:qty WHERE barcode=:code AND stock>=:qty")
     suspend fun decrease(code:String,qty:Int):Int
-
-    // ---- Unguarded decrease: used ONLY to reverse a purchase's stock effect (delete or
-    // edit a purchase). A purchase's added stock may have already been partly/fully sold
-    // by the time it's reversed, so this is allowed to push stock below zero — that
-    // negative value is a true signal that the item was oversold and needs attention,
-    // rather than being silently swallowed like decrease() would do. ----
     @Query("UPDATE products SET stock=stock-:qty WHERE barcode=:code")
     suspend fun decreaseForce(code:String,qty:Int)
-
     @Query("UPDATE products SET stock=stock+:qty WHERE barcode=:code")
     suspend fun increase(code:String,qty:Int)
-
-    // ---- Updates the product's weighted-average cost after a purchase. Called from
-    // PurchaseActivity right after increase(), using the stock/cost snapshot from BEFORE
-    // that increase (so the math below is: old stock @ old cost, plus new qty @ new
-    // purchase rate). ----
     @Query("UPDATE products SET cost=:newCost WHERE barcode=:code")
     suspend fun updateCost(code:String,newCost:Double)
-
     @Query("UPDATE products SET unit=:unit WHERE barcode=:code")
     suspend fun updateUnit(code:String,unit:String)
     @Query("SELECT * FROM products WHERE stock<=reorderLevel ORDER BY name")
@@ -292,62 +256,30 @@ interface ProductDao {
     @Insert suspend fun items(items:List<SaleItem>)
     @Query("SELECT COUNT(*) FROM sales") suspend fun count():Int
     @Query("SELECT COALESCE(SUM(total),0) FROM sales") suspend fun totalSales():Double
-    @Query("SELECT COALESCE(SUM(total),0) FROM sales WHERE createdAt BETWEEN :start AND :end")
-    suspend fun totalSalesBetween(start:Long,end:Long):Double
-    @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end")
-    suspend fun countBetween(start:Long,end:Long):Int
-
-    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
-    suspend fun dailySales(start:Long,end:Long):List<DailySales>
-    @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
-    suspend fun topProducts(start:Long,end:Long):List<TopProduct>
-    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC LIMIT 100")
-    suspend fun allSales():List<SaleWithCustomer>
-
-    @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC")
-    suspend fun salesByCustomer(customerId:Long):List<Sale>
-
-    @Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1")
-    suspend fun findSale(invoice:String):Sale?
-
-    @Query("SELECT * FROM sale_items WHERE invoice=:invoice")
-    suspend fun itemsForInvoice(invoice:String):List<SaleItem>
-
-    @Query("DELETE FROM sale_items WHERE invoice=:invoice")
-    suspend fun deleteItems(invoice:String)
-
-    @Query("DELETE FROM sales WHERE invoice=:invoice")
-    suspend fun deleteSale(invoice:String)
-
-    @Query("UPDATE sales SET status='returned' WHERE invoice=:invoice")
-    suspend fun markReturned(invoice:String)
-
-    @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
-    suspend fun profitBetween(start:Long,end:Long):Double
-    @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch','localtime') as day, COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
-    suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
-
-    @Query("SELECT COALESCE(SUM(si.cost*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
-    suspend fun cogsBetween(start:Long,end:Long):Double
-
-    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId GROUP BY si.product ORDER BY totalAmount DESC")
-    suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
-
-    @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC")
-    suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
-
-    @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')")
-    suspend fun totalActiveQtySold(barcode:String):Int
-
-    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si GROUP BY si.product ORDER BY totalAmount DESC")
-    suspend fun allTimeItemTotals():List<PartyItemReport>
+    @Query("SELECT COALESCE(SUM(total),0) FROM sales WHERE createdAt BETWEEN :start AND :end") suspend fun totalSalesBetween(start:Long,end:Long):Double
+    @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end") suspend fun countBetween(start:Long,end:Long):Int
+    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day") suspend fun dailySales(start:Long,end:Long):List<DailySales>
+    @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5") suspend fun topProducts(start:Long,end:Long):List<TopProduct>
+    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC LIMIT 100") suspend fun allSales():List<SaleWithCustomer>
+    @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun salesByCustomer(customerId:Long):List<Sale>
+    @Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1") suspend fun findSale(invoice:String):Sale?
+    @Query("SELECT * FROM sale_items WHERE invoice=:invoice") suspend fun itemsForInvoice(invoice:String):List<SaleItem>
+    @Query("DELETE FROM sale_items WHERE invoice=:invoice") suspend fun deleteItems(invoice:String)
+    @Query("DELETE FROM sales WHERE invoice=:invoice") suspend fun deleteSale(invoice:String)
+    @Query("UPDATE sales SET status='returned' WHERE invoice=:invoice") suspend fun markReturned(invoice:String)
+    @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end") suspend fun profitBetween(start:Long,end:Long):Double
+    @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch','localtime') as day, COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day") suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
+    @Query("SELECT COALESCE(SUM(si.cost*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end") suspend fun cogsBetween(start:Long,end:Long):Double
+    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId GROUP BY si.product ORDER BY totalAmount DESC") suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
+    @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC") suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
+    @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')") suspend fun totalActiveQtySold(barcode:String):Int
+    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si GROUP BY si.product ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
 }
 
 @Dao interface ExpenseDao {
     @Insert suspend fun insert(e:Expense)
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses") suspend fun total():Double
-    @Query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE createdAt BETWEEN :start AND :end")
-    suspend fun totalBetween(start:Long,end:Long):Double
+    @Query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE createdAt BETWEEN :start AND :end") suspend fun totalBetween(start:Long,end:Long):Double
 }
 
 @Dao interface HeldDao {
@@ -359,56 +291,32 @@ interface ProductDao {
 @Dao interface PaymentDao {
     @Insert suspend fun insert(p:Payment)
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double
-    @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE method=:method AND createdAt BETWEEN :start AND :end")
-    suspend fun totalByMethodBetween(method:String,start:Long,end:Long):Double
-    @Query("DELETE FROM payments WHERE reference=:ref")
-    suspend fun deleteByReference(ref:String)
+    @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE method=:method AND createdAt BETWEEN :start AND :end") suspend fun totalByMethodBetween(method:String,start:Long,end:Long):Double
+    @Query("DELETE FROM payments WHERE reference=:ref") suspend fun deleteByReference(ref:String)
 }
 
 @Dao interface PurchaseDao {
     @Insert suspend fun purchase(p:Purchase)
     @Insert suspend fun items(items:List<PurchaseItem>)
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
-    @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end")
-    suspend fun totalBetween(start:Long,end:Long):Double
-    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC LIMIT 100")
-    suspend fun allPurchases():List<PurchaseWithSupplier>
-
-    @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC")
-    suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
-
-    @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1")
-    suspend fun findPurchase(bill:String):Purchase?
-
-    @Query("SELECT * FROM purchase_items WHERE billNo=:bill")
-    suspend fun itemsForBill(bill:String):List<PurchaseItem>
-
-    @Query("DELETE FROM purchase_items WHERE billNo=:bill")
-    suspend fun deleteItems(bill:String)
-
-    @Query("DELETE FROM purchases WHERE billNo=:bill")
-    suspend fun deletePurchase(bill:String)
-
-    @Query("UPDATE purchases SET status='returned' WHERE billNo=:bill")
-    suspend fun markReturned(bill:String)
-
-    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId GROUP BY p.name ORDER BY totalAmount DESC")
-    suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
-
-    @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC")
-    suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
-
-    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN products p ON pi.barcode=p.barcode GROUP BY p.name ORDER BY totalAmount DESC")
-    suspend fun allTimeItemTotals():List<PartyItemReport>
+    @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end") suspend fun totalBetween(start:Long,end:Long):Double
+    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC LIMIT 100") suspend fun allPurchases():List<PurchaseWithSupplier>
+    @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC") suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
+    @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1") suspend fun findPurchase(bill:String):Purchase?
+    @Query("SELECT * FROM purchase_items WHERE billNo=:bill") suspend fun itemsForBill(bill:String):List<PurchaseItem>
+    @Query("DELETE FROM purchase_items WHERE billNo=:bill") suspend fun deleteItems(bill:String)
+    @Query("DELETE FROM purchases WHERE billNo=:bill") suspend fun deletePurchase(bill:String)
+    @Query("UPDATE purchases SET status='returned' WHERE billNo=:bill") suspend fun markReturned(bill:String)
+    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId GROUP BY p.name ORDER BY totalAmount DESC") suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
+    @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC") suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
+    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN products p ON pi.barcode=p.barcode GROUP BY p.name ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
 }
 
 @Dao interface ReturnDao {
     @Insert suspend fun insert(r:ReturnLine)
     @Query("SELECT COALESCE(SUM(amount),0) FROM returns WHERE type=:type") suspend fun totalByType(type:String):Double
-    @Query("SELECT COALESCE(SUM(amount),0) FROM returns WHERE type=:type AND createdAt BETWEEN :start AND :end")
-    suspend fun totalByTypeBetween(type:String,start:Long,end:Long):Double
-    @Query("SELECT * FROM returns WHERE reference=:reference")
-    suspend fun forReference(reference:String):List<ReturnLine>
+    @Query("SELECT COALESCE(SUM(amount),0) FROM returns WHERE type=:type AND createdAt BETWEEN :start AND :end") suspend fun totalByTypeBetween(type:String,start:Long,end:Long):Double
+    @Query("SELECT * FROM returns WHERE reference=:reference") suspend fun forReference(reference:String):List<ReturnLine>
 }
 
 @Dao interface UserDao {
@@ -423,11 +331,8 @@ interface ProductDao {
 @Dao interface CashTransactionDao {
     @Insert suspend fun insert(t:CashTransaction)
     @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
-    @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end")
-    suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
-
-    @Query("DELETE FROM cash_transactions WHERE reference=:ref")
-    suspend fun deleteByReference(ref:String)
+    @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end") suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
+    @Query("DELETE FROM cash_transactions WHERE reference=:ref") suspend fun deleteByReference(ref:String)
 }
 
 @Dao interface CashRegisterDao {
@@ -447,52 +352,34 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
         database.execSQL("ALTER TABLE purchase_items ADD COLUMN unit TEXT NOT NULL DEFAULT ''")
     }
 }
-
 val MIGRATION_14_15 = object : Migration(14, 15) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE customers ADD COLUMN openingBalance REAL NOT NULL DEFAULT 0.0")
         database.execSQL("ALTER TABLE suppliers ADD COLUMN openingBalance REAL NOT NULL DEFAULT 0.0")
     }
 }
-
 val MIGRATION_15_16 = object : Migration(15, 16) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE sales ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
         database.execSQL("ALTER TABLE purchases ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
     }
 }
-
 val MIGRATION_16_17 = object : Migration(16, 17) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE products ADD COLUMN tertiaryUnit TEXT NOT NULL DEFAULT ''")
         database.execSQL("ALTER TABLE products ADD COLUMN tertiaryUnitQty REAL NOT NULL DEFAULT 0.0")
     }
 }
-
-// v17 -> v18: purchase_items.qty changes from INTEGER to REAL (Int -> Double in Kotlin).
-// SQLite can't ALTER a column's type in place, so the table is rebuilt: create a new
-// table with qty REAL, copy existing rows across (old integer qtys convert losslessly
-// to REAL, e.g. 5 -> 5.0), drop the old table, rename the new one into place. No data
-// is lost; existing whole-number purchase quantities are unaffected.
 val MIGRATION_17_18 = object : Migration(17, 18) {
     override fun migrate(database: SupportSQLiteDatabase) {
-        database.execSQL("""
-            CREATE TABLE purchase_items_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                billNo TEXT NOT NULL,
-                barcode TEXT NOT NULL,
-                qty REAL NOT NULL,
-                unitCost REAL NOT NULL,
-                amount REAL NOT NULL,
-                unit TEXT NOT NULL DEFAULT ''
-            )
-        """.trimIndent())
-        database.execSQL("""
-            INSERT INTO purchase_items_new (id, billNo, barcode, qty, unitCost, amount, unit)
-            SELECT id, billNo, barcode, qty, unitCost, amount, unit FROM purchase_items
-        """.trimIndent())
+        database.execSQL("CREATE TABLE purchase_items_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, billNo TEXT NOT NULL, barcode TEXT NOT NULL, qty REAL NOT NULL, unitCost REAL NOT NULL, amount REAL NOT NULL, unit TEXT NOT NULL DEFAULT '')")
+        database.execSQL("INSERT INTO purchase_items_new (id, billNo, barcode, qty, unitCost, amount, unit) SELECT id, billNo, barcode, qty, unitCost, amount, unit FROM purchase_items")
         database.execSQL("DROP TABLE purchase_items")
         database.execSQL("ALTER TABLE purchase_items_new RENAME TO purchase_items")
+        database.execSQL("CREATE TABLE returns_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference TEXT NOT NULL, type TEXT NOT NULL, barcode TEXT NOT NULL, qty REAL NOT NULL, amount REAL NOT NULL, createdAt INTEGER NOT NULL)")
+        database.execSQL("INSERT INTO returns_new (id, reference, type, barcode, qty, amount, createdAt) SELECT id, reference, type, barcode, qty, amount, createdAt FROM returns")
+        database.execSQL("DROP TABLE returns")
+        database.execSQL("ALTER TABLE returns_new RENAME TO returns")
     }
 }
 
@@ -527,9 +414,6 @@ abstract class PosDatabase:RoomDatabase(){
                 .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                 .build().also{INSTANCE=it}
         }
-        fun closeInstance() {
-            INSTANCE?.close()
-            INSTANCE = null
-        }
+        fun closeInstance() { INSTANCE?.close(); INSTANCE = null }
     }
 }
