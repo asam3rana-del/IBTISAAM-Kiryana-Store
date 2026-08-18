@@ -101,6 +101,7 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var unitSpinner: Spinner
     private lateinit var unitToggleRow: LinearLayout
     private lateinit var rate: EditText
+    private lateinit var amountInput: EditText
     private lateinit var conversionInfo: TextView
     private lateinit var totalAmountText: TextView
     private lateinit var addItemButton: Button
@@ -136,6 +137,12 @@ class PurchaseActivity : AppCompatActivity() {
     // instead of leaving a stale 10000 under "kg"). ----
     private var lastMainRate: Double = 0.0
     private var suppressRateWatcher = false
+
+    // ---- "Total Amount" quick-entry: lets the user type the total price for the
+    // whole line (e.g. 2500 for 2 cartons) instead of manually dividing on a
+    // calculator to work out the per-unit Rate (e.g. 1250). Typing here back-computes
+    // Rate = Amount / Qty. Guarded the same way as Qty/Rate to avoid update loops. ----
+    private var suppressAmountWatcher = false
 
     private var editBillNo: String? = null
     private var originalPurchase: Purchase? = null
@@ -405,6 +412,26 @@ class PurchaseActivity : AppCompatActivity() {
         rateBox.addView(rate)
         itemEntrySection.addView(rateBox)
 
+        // ---- Total Amount quick-entry (see suppressAmountWatcher note above). Typing
+        // a total here (e.g. 2500 for 2 CTN) auto-fills Rate (1250) — no calculator
+        // needed for bulk purchases. ----
+        val amountBox = innerField()
+        amountBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Total Amount (optional — auto-fills Rate)", "کل رقم (اختیاری — خودکار ریٹ)")))
+        amountInput = EditText(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "e.g. 2500 for this quantity", "مثلاً اس مقدار کے لیے 2500")
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { addItem(); true } else false
+            }
+        }
+        amountBox.addView(amountInput)
+        itemEntrySection.addView(amountBox)
+
         conversionInfo = TextView(this).apply {
             text = ""
             textSize = 12f
@@ -440,6 +467,24 @@ class PurchaseActivity : AppCompatActivity() {
             if (!suppressRateWatcher) {
                 val entered = rate.text.toString().toDoubleOrNull() ?: 0.0
                 lastMainRate = toMainUnitRate(entered)
+            }
+            updateLineTotal()
+        })
+        // ---- Total Amount watcher: back-computes Rate = Amount / Qty whenever the
+        // user types a total directly, so bulk entries (e.g. "2 CTN for 2500") don't
+        // need a separate calculator to work out the per-unit Rate. ----
+        amountInput.addTextChangedListener(simpleWatcher {
+            if (!suppressAmountWatcher) {
+                val amt = amountInput.text.toString().toDoubleOrNull()
+                val q = qty.text.toString().toDoubleOrNull() ?: 0.0
+                if (amt != null && amt >= 0 && q > 0) {
+                    val computedRate = amt / q
+                    suppressRateWatcher = true
+                    rate.setText(if (computedRate > 0) formatMoney(computedRate) else "")
+                    rate.setSelection(rate.text.length)
+                    suppressRateWatcher = false
+                    lastMainRate = toMainUnitRate(computedRate)
+                }
             }
             updateLineTotal()
         })
@@ -961,6 +1006,9 @@ class PurchaseActivity : AppCompatActivity() {
     private fun formatQty(v: Double): String =
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
+    private fun formatMoney(v: Double): String =
+        if (v == v.toLong().toDouble()) v.toLong().toString() else "%.2f".format(v)
+
     private fun openDatePicker() {
         val cal = Calendar.getInstance().apply { timeInMillis = purchaseDateMillis }
         DatePickerDialog(this, { _, y, m, d ->
@@ -1084,6 +1132,9 @@ class PurchaseActivity : AppCompatActivity() {
 
         lastMainQty = 0.0
         lastMainRate = 0.0
+        suppressAmountWatcher = true
+        amountInput.setText("")
+        suppressAmountWatcher = false
         refillAutoRate()
         updateLineTotal()
 
@@ -1215,6 +1266,15 @@ class PurchaseActivity : AppCompatActivity() {
         val r = rate.text.toString().toDoubleOrNull() ?: 0.0
         val amount = Math.round(q * r).toDouble()
         totalAmountText.text = "Total Amount: Rs %.0f".format(amount)
+
+        // Mirror Qty x Rate into the "Total Amount" quick-entry field, but only while
+        // the user isn't actively typing into it themselves (see amountInput watcher
+        // above, which does the reverse: Amount -> Rate).
+        if (::amountInput.isInitialized && !amountInput.hasFocus()) {
+            suppressAmountWatcher = true
+            amountInput.setText(if (amount > 0) formatMoney(amount) else "")
+            suppressAmountWatcher = false
+        }
     }
 
     private fun addItem() {
@@ -1248,6 +1308,30 @@ class PurchaseActivity : AppCompatActivity() {
             tertiaryUnit = product.tertiaryUnit,
             tertiaryUnitQty = product.tertiaryUnitQty
         )
+
+        // FIX ("Galat figure" with Secondary/Tertiary units, e.g. 1 CTN = 50 Outer,
+        // 1 Outer = 10 Dabbi): stock is tracked in whole main units, so a
+        // Secondary/Tertiary quantity that converts to less than half a main unit
+        // rounds DOWN to 0 when saved (see savePurchase() -> roundToInt()). That used
+        // to silently add the item to the bill without increasing stock or updating
+        // the weighted-average cost — a wrong figure with no warning. Block it here
+        // with a clear message instead.
+        val mainQtyPreview = line.mainUnitQty()
+        if (mainQtyPreview < 0.5) {
+            android.app.AlertDialog.Builder(this)
+                .setTitle(com.grocerypos.v11.util.Loc.t(this, "Quantity Too Small", "مقدار بہت کم ہے"))
+                .setMessage(
+                    com.grocerypos.v11.util.Loc.t(
+                        this,
+                        "${formatQty(q)} $unit is too small to convert into a whole ${product.unit} for stock — it would round down to 0. Increase the quantity, or pick a bigger unit.",
+                        "$unit ${formatQty(q)} کو ${product.unit} میں تبدیل کرنا ممکن نہیں (اسٹاک میں 0 بن جائے گا)۔ مقدار بڑھائیں یا بڑا یونٹ منتخب کریں۔"
+                    )
+                )
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "OK", "ٹھیک ہے"), null)
+                .show()
+            return
+        }
+
         lines.add(line)
         renderItemsList()
         updateGrandTotal()
@@ -1255,6 +1339,9 @@ class PurchaseActivity : AppCompatActivity() {
         itemName.setText("")
         qty.setText("")
         rate.setText("")
+        suppressAmountWatcher = true
+        amountInput.setText("")
+        suppressAmountWatcher = false
         selectedProduct = null
         lastMainQty = 0.0
         lastMainRate = 0.0
@@ -1307,8 +1394,17 @@ class PurchaseActivity : AppCompatActivity() {
     // everywhere else too (other products, the main Item Entry unit chips, etc.) —
     // not just for the product currently being created. ----
     private fun promptAddUnitInline(onAdded: (String) -> Unit) {
+        // FIX (3rd-tier unit "+" hidden behind keyboard): dismiss whatever keyboard is
+        // currently up (e.g. from the Secondary/Tertiary qty field in the parent
+        // dialog) before opening this one — otherwise the two overlap and the "Add"
+        // button here can end up hidden behind the keyboard, forcing the user to
+        // manually close it first.
+        currentFocus?.let { focused ->
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            imm?.hideSoftInputFromWindow(focused.windowToken, 0)
+        }
         val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
-        android.app.AlertDialog.Builder(this)
+        val unitDialog = android.app.AlertDialog.Builder(this)
             .setTitle(com.grocerypos.v11.util.Loc.t(this, "New Unit", "نیا یونٹ"))
             .setView(input)
             .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Add", "شامل کریں")) { _, _ ->
@@ -1320,7 +1416,11 @@ class PurchaseActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .show()
+            .create()
+        // FIX: without ADJUST_RESIZE this small dialog can also sit partly under the
+        // keyboard on some devices/text sizes — resize so "Add"/"Cancel" stay reachable.
+        unitDialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        unitDialog.show()
     }
 
     /** Handles the JSON result returned by BillScanActivity after the user reviews and
@@ -1483,7 +1583,7 @@ class PurchaseActivity : AppCompatActivity() {
     // ---- Supplier quick-add ----
     private fun promptAddSupplier() {
         val input = EditText(this).apply { hint = "Supplier name"; setPadding(32, 24, 32, 24) }
-        android.app.AlertDialog.Builder(this)
+        val supplierDialog = android.app.AlertDialog.Builder(this)
             .setTitle("Add Supplier")
             .setView(input)
             .setPositiveButton("Add") { _, _ ->
@@ -1497,7 +1597,9 @@ class PurchaseActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+        supplierDialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        supplierDialog.show()
     }
 
     // ---- Quick "Add Product" from within Purchase: lets the user create a brand-new
@@ -1718,6 +1820,13 @@ class PurchaseActivity : AppCompatActivity() {
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }
         content.addView(footer)
         val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
+        // FIX (3rd-tier unit "+" hidden behind keyboard): without ADJUST_RESIZE the
+        // dialog didn't shrink when the keyboard opened, so fields below the one being
+        // typed in — e.g. the Tertiary Unit "+" button, right after typing the
+        // Secondary qty — ended up hidden behind the keyboard, forcing the user to
+        // manually dismiss the keyboard first just to reach it. Resizing keeps
+        // everything reachable through the ScrollView while the keyboard is up.
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         footer.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Cancel", "منسوخ کریں")
@@ -1936,112 +2045,4 @@ class PurchaseActivity : AppCompatActivity() {
                         unit = line.unit
                     )
                 }
-            )
-
-            // FIX: for each line, snapshot the product's stock+cost BEFORE increasing
-            // stock, then after increasing, write back a weighted-average cost:
-            //   newCost = (oldStock * oldCost + purchasedQty * purchaseRate) / (oldStock + purchasedQty)
-            // Without this, Product.cost stayed frozen at whatever was typed once in
-            // Add/Edit Product, so Sale's profit calculation didn't reflect real
-            // purchase rates over time.
-            lines.forEach { line ->
-                val barcode = line.barcode ?: return@forEach
-                val before = db.productDao().find(barcode)
-                val purchasedQty = line.mainUnitQty().roundToInt()
-
-                db.productDao().increase(barcode, purchasedQty)
-
-                if (before != null && purchasedQty > 0) {
-                    val oldStock = before.stock
-                    val oldCost = before.cost
-                    val purchaseRate = line.mainUnitRate()
-                    val newCost = if (oldStock <= 0) {
-                        purchaseRate
-                    } else {
-                        ((oldStock * oldCost) + (purchasedQty * purchaseRate)) / (oldStock + purchasedQty)
-                    }
-                    db.productDao().updateCost(barcode, newCost)
-                }
-            }
-
-            val outstanding = grandTotal - amountPaid
-            if (supplierId != null && outstanding > 0) {
-                db.supplierDao().addBalance(supplierId!!, outstanding)
-            }
-            if (supplierId != null && amountPaid > 0) {
-                db.paymentDao().insert(
-                    Payment(
-                        reference = billNo,
-                        partyType = "supplier",
-                        partyId = supplierId,
-                        amount = amountPaid,
-                        method = paymentMethod,
-                        note = if (original != null) "Purchase payment (edited)" else "Purchase payment"
-                    )
-                )
-            }
-
-            // FIX: record the cash that actually left the register for this purchase —
-            // previously nothing logged this, so Cash Register / Reports never reflected
-            // money paid out to suppliers.
-            if (amountPaid > 0) {
-                db.cashTransactionDao().insert(
-                    CashTransaction(
-                        type = "OUT",
-                        method = paymentMethod.lowercase(),
-                        amount = amountPaid,
-                        reason = "Purchase",
-                        reference = billNo
-                    )
-                )
-            }
-
-            // Bill is safely persisted now — clear the recovery draft so a future launch
-            // doesn't try to restore an already-saved purchase.
-            suppressDraftSave = true
-            clearDraft()
-
-            editBillNo = billNo
-
-            // Whether this is a new purchase or an update to an existing one, always
-            // go to the Bill Preview after Paid Amount is saved.
-            Toast.makeText(
-                this@PurchaseActivity,
-                if (original != null) "Purchase updated" else "Purchase saved",
-                Toast.LENGTH_SHORT
-            ).show()
-            openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
-        }
-    }
-
-    // ---- Open the receipt-style Bill Preview. Used both right after Save, and from the
-    // 3-dot Print/Share menu for an already-saved bill. ----
-    private fun openBillPreview(
-        billNo: String,
-        forSaving: Boolean,
-        party: String = partyName.text.toString().trim(),
-        grandTotal: Double = Math.round(lines.sumOf { it.amount }).toDouble(),
-        discount: Double = 0.0,
-        amountPaid: Double = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble(),
-        paymentMethod: String = "Cash"
-    ) {
-        val itemsEncoded = lines.joinToString("\u0002") {
-            listOf(it.itemName, formatQty(it.qty), it.unit, it.rate, it.amount).joinToString("\u0003")
-        }
-        val previewIntent = Intent(this, BillPreviewActivity::class.java).apply {
-            putExtra(BillPreviewActivity.EXTRA_TYPE, "purchase")
-            putExtra(BillPreviewActivity.EXTRA_REFERENCE, billNo)
-            putExtra(BillPreviewActivity.EXTRA_PARTY_NAME, party)
-            putExtra(BillPreviewActivity.EXTRA_PARTY_LABEL, "Supplier")
-            putExtra(BillPreviewActivity.EXTRA_DATE_MILLIS, purchaseDateMillis)
-            putExtra(BillPreviewActivity.EXTRA_SUBTOTAL, grandTotal + discount)
-            putExtra(BillPreviewActivity.EXTRA_DISCOUNT, discount)
-            putExtra(BillPreviewActivity.EXTRA_TOTAL, grandTotal)
-            putExtra(BillPreviewActivity.EXTRA_PAID, amountPaid)
-            putExtra(BillPreviewActivity.EXTRA_PAYMENT_METHOD, paymentMethod)
-            putExtra(BillPreviewActivity.EXTRA_ITEMS_ENCODED, itemsEncoded)
-        }
-        startActivity(previewIntent)
-        if (forSaving) finish()
-    }
-}
+      
