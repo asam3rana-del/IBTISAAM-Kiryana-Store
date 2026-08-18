@@ -364,8 +364,8 @@ class HistoryActivity : AppCompatActivity() {
 
             // Stock wapas kam karo (jitna khareeda tha)
             for (it in items) {
-                db.productDao().decrease(it.barcode, it.qty)
-                db.returnDao().insert(
+            in returnPurchase()
+            db.productDao().decrease(it.barcode, it.qty.toInt())
                     ReturnLine(
                         reference = billNo,
                         type = "purchase",
@@ -397,8 +397,8 @@ class HistoryActivity : AppCompatActivity() {
 
             // Stock wapas kam karo (jitna khareeda tha)
             for (it in items) {
-                db.productDao().decrease(it.barcode, it.qty)
-            }
+            in deletePurchase()
+db.productDao().decrease(it.barcode, it.qty.toInt())
 
             // Agar supplier ka udhar tha to wo wapas kam karo
             if (purchase.supplierId != null && purchase.paid < purchase.total) {
