@@ -1266,67 +1266,119 @@ class PurchaseActivity : AppCompatActivity() {
         if (editBillNo == null) saveDraft()
     }
 
+    // ---- Universal unit-conversion lookup (mirrors ProductActivity): known standard
+    // conversions between common unit names (case/spacing-insensitive), regardless of
+    // whether the pair sits in the primary→secondary or secondary→tertiary slot.
+    // Returns null for any pair not in this table — those still need manual entry.
+    // Used by openAddProductDialog() below to auto-suggest the secondary/tertiary
+    // conversion quantity (e.g. dozen -> pcs = 12, kg -> gram = 1000). ----
+    private fun normalizeUnitName(u: String) = u.trim().lowercase()
+
+    private fun standardUnitQty(fromUnit: String, toUnit: String): Double? {
+        val f = normalizeUnitName(fromUnit)
+        val t = normalizeUnitName(toUnit)
+        val gramNames = setOf("gram", "grams", "g", "gm")
+        val pieceNames = setOf("pcs", "pc", "piece", "pieces")
+        val mlNames = setOf("ml", "milliliter", "millilitre")
+        val kgNames = setOf("kg", "kgs", "kilogram", "kilograms")
+        val litreNames = setOf("litre", "liter", "l", "ltr")
+
+        return when {
+            f == "dozen" && t in pieceNames -> 12.0
+            f == "gross" && t == "dozen" -> 12.0
+            f == "gross" && t in pieceNames -> 144.0
+            f in kgNames && t in gramNames -> 1000.0
+            f in litreNames && t in mlNames -> 1000.0
+            f == "quintal" && t in kgNames -> 100.0
+            f == "ton" && t in kgNames -> 1000.0
+            f == "pao" && t in gramNames -> 250.0
+            f in kgNames && t == "pao" -> 4.0
+            else -> null
+        }
+    }
+
+    private fun trimNum(v: Double): String =
+        if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+
     /** Handles the JSON result returned by BillScanActivity after the user reviews and
      *  confirms detected {name, qty, rate} rows. Each name is matched against existing
-     *  Products (exact match first, then a loose contains-match) so unit-conversion
-     *  info stays correct; anything that doesn't match an existing product is skipped
-     *  and reported back so the user can add it manually (via the "+" next to Item
-     *  Name) or create the product first. */
+     *  Products (exact match first, then a loose contains-match). Anything that does
+     *  NOT match an existing product is copied into the purchase window exactly as if
+     *  it had been added manually: a bare-bones product (pcs unit, no conversions) is
+     *  auto-created on the spot so the scanned line lands directly in Billed Items,
+     *  fully editable — nothing from a scan is silently dropped anymore. */
     private fun handleScannedItems(json: String) {
         val arr = try { JSONArray(json) } catch (e: Exception) { return }
-        var addedCount = 0
-        val unmatched = mutableListOf<String>()
 
-        for (i in 0 until arr.length()) {
-            val o = arr.getJSONObject(i)
-            val scannedName = o.optString("name").trim()
-            val scannedQty = o.optDouble("qty", 0.0)
-            val scannedRate = o.optDouble("rate", 0.0)
-            if (scannedName.isEmpty() || scannedQty <= 0) {
-                if (scannedName.isNotEmpty()) unmatched.add(scannedName)
-                continue
-            }
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PurchaseActivity)
+            var matchedCount = 0
+            var autoCreatedCount = 0
 
-            val product = products.find { it.name.equals(scannedName, ignoreCase = true) }
-                ?: products.find { it.name.contains(scannedName, ignoreCase = true) || scannedName.contains(it.name, ignoreCase = true) }
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val scannedName = o.optString("name").trim()
+                val scannedQty = o.optDouble("qty", 0.0)
+                val scannedRate = o.optDouble("rate", 0.0)
+                if (scannedName.isEmpty() || scannedQty <= 0) continue
 
-            if (product == null) {
-                unmatched.add(scannedName)
-                continue
-            }
+                var product = products.find { it.name.equals(scannedName, ignoreCase = true) }
+                    ?: products.find { it.name.contains(scannedName, ignoreCase = true) || scannedName.contains(it.name, ignoreCase = true) }
 
-            lines.add(
-                PurchaseLine(
-                    itemName = product.name,
-                    barcode = product.barcode,
-                    qty = scannedQty,
-                    unit = product.unit,
-                    rate = scannedRate,
-                    amount = Math.round(scannedQty * scannedRate).toDouble(),
-                    mainUnit = product.unit,
-                    secondaryUnit = product.secondaryUnit,
-                    secondaryUnitQty = product.secondaryUnitQty,
-                    tertiaryUnit = product.tertiaryUnit,
-                    tertiaryUnitQty = product.tertiaryUnitQty
+                // No match at all — copy it into the purchase exactly as scanned, same as
+                // if the user had typed it manually and it were a brand-new item: auto-create
+                // a bare-bones product (pcs, no conversions) so the line can be added right away.
+                if (product == null) {
+                    val newProduct = Product(
+                        barcode = "P" + System.currentTimeMillis() + i,
+                        name = scannedName,
+                        category = "General",
+                        cost = scannedRate,
+                        salePrice = 0.0,
+                        wholesalePrice = 0.0,
+                        stock = 0,
+                        openingStock = 0,
+                        unit = "pcs",
+                        secondaryUnit = "",
+                        secondaryUnitQty = 0.0,
+                        tertiaryUnit = "",
+                        tertiaryUnitQty = 0.0
+                    )
+                    db.productDao().upsert(newProduct)
+                    product = newProduct
+                    autoCreatedCount++
+                }
+
+                lines.add(
+                    PurchaseLine(
+                        itemName = product.name,
+                        barcode = product.barcode,
+                        qty = scannedQty,
+                        unit = product.unit,
+                        rate = scannedRate,
+                        amount = Math.round(scannedQty * scannedRate).toDouble(),
+                        mainUnit = product.unit,
+                        secondaryUnit = product.secondaryUnit,
+                        secondaryUnitQty = product.secondaryUnitQty,
+                        tertiaryUnit = product.tertiaryUnit,
+                        tertiaryUnitQty = product.tertiaryUnitQty
+                    )
                 )
-            )
-            addedCount++
-        }
-
-        if (addedCount > 0) {
-            renderItemsList()
-            updateGrandTotal()
-            if (editBillNo == null) saveDraft()
-        }
-
-        val message = buildString {
-            append(if (addedCount > 0) "$addedCount items added from scan" else "Koi item match nahi hua")
-            if (unmatched.isNotEmpty()) {
-                append(". Not found in Products: ")
-                append(unmatched.joinToString(", "))
+                matchedCount++
             }
+
+            if (matchedCount > 0) {
+                renderItemsList()
+                updateGrandTotal()
+                if (editBillNo == null) saveDraft()
+            }
+
+            val message = buildString {
+                append("$matchedCount items added from scan")
+                if (autoCreatedCount > 0) append(" ($autoCreatedCount new products auto-created)")
+            }
+            Toast.makeText(this@PurchaseActivity, message, Toast.LENGTH_LONG).show()
         }
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     /** Renders the numbered "#1, #2, …" Billed Items cards — matches the reference
@@ -1554,6 +1606,40 @@ class PurchaseActivity : AppCompatActivity() {
         secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, secondaryOptions)
         val tertiaryOptions = listOf("None") + allUnits
         tertiarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, tertiaryOptions)
+
+        // ---- Universal conversion auto-fill (mirrors ProductActivity's unit dialog):
+        // when a known unit pair is picked (dozen->pcs=12, kg->gram=1000, etc.), suggest
+        // the standard quantity automatically. Only fills an EMPTY field, so it never
+        // overwrites a value the user already typed. ----
+        fun autoFillSecondaryQty() {
+            val p = primarySpinner.selectedItem?.toString() ?: return
+            val s = secondarySpinner.selectedItem?.toString() ?: return
+            if (s == "None") return
+            val std = standardUnitQty(p, s) ?: return
+            if (secQtyField.text.toString().isBlank()) secQtyField.setText(trimNum(std))
+        }
+        fun autoFillTertiaryQty() {
+            val s = secondarySpinner.selectedItem?.toString() ?: return
+            val t = tertiarySpinner.selectedItem?.toString() ?: return
+            if (s == "None" || t == "None") return
+            val std = standardUnitQty(s, t) ?: return
+            if (terQtyField.text.toString().isBlank()) terQtyField.setText(trimNum(std))
+        }
+        primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty() }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                autoFillSecondaryQty()
+                autoFillTertiaryQty()
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty() }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
 
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }
         content.addView(footer)
