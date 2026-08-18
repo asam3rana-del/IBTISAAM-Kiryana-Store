@@ -56,6 +56,15 @@ dependencies {
     // Free, on-device OCR for the "Scan Bill" purchase feature — no API key, no
     // internet required, no per-request cost.
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // ML Kit Document Scanner — powers the "Scan Document" button in BillScanActivity.
+    // Auto-detects the bill's edges, corrects perspective/skew, and cleans up
+    // shadows/glare before OCR runs, which meaningfully improves item/qty/rate read
+    // accuracy over a plain camera photo. Also on-device, free, and brings its own
+    // built-in camera flow (no CAMERA permission needed).
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+    // Needed for GoogleApiAvailability / ConnectionResult (the Play Services check
+    // before launching the Document Scanner).
+    implementation("com.google.android.gms:play-services-base:18.5.0")
     implementation("androidx.camera:camera-core:1.4.1")
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
