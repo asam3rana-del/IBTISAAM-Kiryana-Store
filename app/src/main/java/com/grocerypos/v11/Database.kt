@@ -246,6 +246,10 @@ interface ProductDao {
 
 @Dao interface UnitDao {
     @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insert(u:UnitType)
+    // ---- Added: ItemsActivity's Units tab lets the user delete a unit from the list
+    // (confirmDeleteUnit() calls unitDao().delete(u)). Room can generate this directly
+    // from the entity since UnitType's primary key (name) is enough to identify the row. ----
+    @Delete suspend fun delete(u:UnitType)
     @Query("SELECT * FROM units ORDER BY name") fun all():Flow<List<UnitType>>
 }
 
