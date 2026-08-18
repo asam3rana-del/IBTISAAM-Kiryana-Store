@@ -24,6 +24,8 @@ import com.grocerypos.v11.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -827,22 +829,29 @@ class PurchaseActivity : AppCompatActivity() {
             val linesArray = draft.optJSONArray("lines")
             if (linesArray != null) {
                 for (i in 0 until linesArray.length()) {
-                    val o = linesArray.getJSONObject(i)
-                    lines.add(
-                        PurchaseLine(
-                            itemName = o.optString("itemName"),
-                            barcode = o.optString("barcode").ifBlank { null },
-                            qty = o.optDouble("qty", 0.0),
-                            unit = o.optString("unit"),
-                            rate = o.optDouble("rate", 0.0),
-                            amount = o.optDouble("amount", 0.0),
-                            mainUnit = o.optString("mainUnit"),
-                            secondaryUnit = o.optString("secondaryUnit"),
-                            secondaryUnitQty = o.optDouble("secondaryUnitQty", 0.0),
-                            tertiaryUnit = o.optString("tertiaryUnit"),
-                            tertiaryUnitQty = o.optDouble("tertiaryUnitQty", 0.0)
+                    // FIX: one malformed draft row used to throw and abort the whole
+                    // restore (and could crash onCreate if not caught above). Skip just
+                    // the bad row instead of losing/crashing the entire draft.
+                    try {
+                        val o = linesArray.getJSONObject(i)
+                        lines.add(
+                            PurchaseLine(
+                                itemName = o.optString("itemName"),
+                                barcode = o.optString("barcode").ifBlank { null },
+                                qty = o.optDouble("qty", 0.0),
+                                unit = o.optString("unit"),
+                                rate = o.optDouble("rate", 0.0),
+                                amount = o.optDouble("amount", 0.0),
+                                mainUnit = o.optString("mainUnit"),
+                                secondaryUnit = o.optString("secondaryUnit"),
+                                secondaryUnitQty = o.optDouble("secondaryUnitQty", 0.0),
+                                tertiaryUnit = o.optString("tertiaryUnit"),
+                                tertiaryUnitQty = o.optDouble("tertiaryUnitQty", 0.0)
+                            )
                         )
-                    )
+                    } catch (e: Exception) {
+                        Log.e("PurchaseActivity", "restoreDraftIfAny: skipping bad line $i", e)
+                    }
                 }
                 renderItemsList()
                 updateGrandTotal()
@@ -1023,45 +1032,68 @@ class PurchaseActivity : AppCompatActivity() {
     // ---- Load an existing bill into the form for editing ----
     private fun loadForEdit(bill: String) {
         lifecycleScope.launch {
-            val db = PosDatabase.get(this@PurchaseActivity)
-            val purchase = db.purchaseDao().findPurchase(bill) ?: return@launch
-            val items = db.purchaseDao().itemsForBill(bill)
-            originalPurchase = purchase
-            originalItems = items
+            // FIX (crash on open): the whole load used to run with zero error handling —
+            // any exception (bad row, slow/never-emitting Flow, etc.) took the app down
+            // with it instead of just this screen. Now wrapped so a failure shows a
+            // Toast + logs the real cause instead of crashing ~12s after opening.
+            try {
+                val db = PosDatabase.get(this@PurchaseActivity)
+                val purchase = db.purchaseDao().findPurchase(bill) ?: return@launch
+                val items = db.purchaseDao().itemsForBill(bill)
+                originalPurchase = purchase
+                originalItems = items
 
-            purchaseDateMillis = purchase.createdAt
-            dateValueText.text = formatDate(purchaseDateMillis)
+                purchaseDateMillis = purchase.createdAt
+                dateValueText.text = formatDate(purchaseDateMillis)
 
-            val supplierName = purchase.supplierId?.let { id ->
-                db.supplierDao().all().first().find { it.id == id }?.name
-            } ?: ""
-            partyName.setText(supplierName)
-            updateSupplierBalanceDisplay(supplierName)
+                // FIX: db.supplierDao().all().first() subscribes to the ENTIRE suppliers
+                // Flow just to read one row — if that Flow is slow to emit (or never
+                // emits, e.g. Room invalidation not firing yet) this suspends forever
+                // with no feedback, which is what "nothing happens, then crash ~12s
+                // later" looked like. withTimeoutOrNull caps the wait instead of hanging.
+                val supplierName = purchase.supplierId?.let { id ->
+                    withTimeoutOrNull(8000) {
+                        db.supplierDao().all().first().find { it.id == id }?.name
+                    }
+                } ?: ""
+                partyName.setText(supplierName)
+                updateSupplierBalanceDisplay(supplierName)
 
-            paidInput.setText(if (purchase.paid > 0) Math.round(purchase.paid).toString() else "")
+                paidInput.setText(if (purchase.paid > 0) Math.round(purchase.paid).toString() else "")
 
-            lines.clear()
-            items.forEach { pi ->
-                val product = db.productDao().find(pi.barcode)
-                lines.add(
-                    PurchaseLine(
-                        itemName = product?.name ?: pi.barcode,
-                        barcode = pi.barcode,
-                        qty = pi.qty.toDouble(),
-                        unit = pi.unit.ifBlank { product?.unit ?: "" },
-                        rate = pi.unitCost,
-                        amount = pi.amount,
-                        mainUnit = product?.unit ?: "",
-                        secondaryUnit = product?.secondaryUnit ?: "",
-                        secondaryUnitQty = product?.secondaryUnitQty ?: 0.0,
-                        tertiaryUnit = product?.tertiaryUnit ?: "",
-                        tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0
+                lines.clear()
+                items.forEach { pi ->
+                    val product = try { db.productDao().find(pi.barcode) } catch (e: Exception) {
+                        Log.e("PurchaseActivity", "loadForEdit: product lookup failed for ${pi.barcode}", e)
+                        null
+                    }
+                    lines.add(
+                        PurchaseLine(
+                            itemName = product?.name ?: pi.barcode,
+                            barcode = pi.barcode,
+                            qty = pi.qty.toDouble(),
+                            unit = pi.unit.ifBlank { product?.unit ?: "" },
+                            rate = pi.unitCost,
+                            amount = pi.amount,
+                            mainUnit = product?.unit ?: "",
+                            secondaryUnit = product?.secondaryUnit ?: "",
+                            secondaryUnitQty = product?.secondaryUnitQty ?: 0.0,
+                            tertiaryUnit = product?.tertiaryUnit ?: "",
+                            tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0
+                        )
                     )
-                )
+                }
+                renderItemsList()
+                updateGrandTotal()
+                deleteButton.visibility = View.VISIBLE
+            } catch (e: Exception) {
+                Log.e("PurchaseActivity", "loadForEdit failed for bill=$bill", e)
+                Toast.makeText(
+                    this@PurchaseActivity,
+                    "Could not load this purchase (${e.message ?: "unknown error"})",
+                    Toast.LENGTH_LONG
+                ).show()
             }
-            renderItemsList()
-            updateGrandTotal()
-            deleteButton.visibility = View.VISIBLE
         }
     }
 
@@ -1441,7 +1473,12 @@ class PurchaseActivity : AppCompatActivity() {
             var autoCreatedCount = 0
 
             for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
+                // FIX: one bad scanned row (malformed JSON object) used to abort the
+                // whole loop, dropping every item after it. Now just skips that row.
+                val o = try { arr.getJSONObject(i) } catch (e: Exception) {
+                    Log.e("PurchaseActivity", "handleScannedItems: skipping bad item $i", e)
+                    continue
+                }
                 val scannedName = o.optString("name").trim()
                 val scannedQty = o.optDouble("qty", 0.0)
                 val scannedRate = o.optDouble("rate", 0.0)
