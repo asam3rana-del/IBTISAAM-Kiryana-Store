@@ -2041,4 +2041,118 @@ class PurchaseActivity : AppCompatActivity() {
                     PurchaseItem(
                         billNo = billNo,
                         barcode = line.barcode ?: "",
-                        qty = line.mainUnitQty().roundToI
+                        qty = line.mainUnitQty().roundToInt(),
+                        unitCost = line.mainUnitRate(),
+                        amount = line.amount,
+                        unit = line.unit
+                    )
+                }
+            )
+
+            // FIX: for each line, snapshot the product's stock+cost BEFORE increasing
+            // stock, then after increasing, write back a weighted-average cost:
+            //   newCost = (oldStock * oldCost + purchasedQty * purchaseRate) / (oldStock + purchasedQty)
+            // Without this, Product.cost stayed frozen at whatever was typed once in
+            // Add/Edit Product, so Sale's profit calculation didn't reflect real
+            // purchase rates over time.
+            lines.forEach { line ->
+                val barcode = line.barcode ?: return@forEach
+                val before = db.productDao().find(barcode)
+                val purchasedQty = line.mainUnitQty().roundToInt()
+
+                db.productDao().increase(barcode, purchasedQty)
+
+                if (before != null && purchasedQty > 0) {
+                    val oldStock = before.stock
+                    val oldCost = before.cost
+                    val purchaseRate = line.mainUnitRate()
+                    val newCost = if (oldStock <= 0) {
+                        purchaseRate
+                    } else {
+                        ((oldStock * oldCost) + (purchasedQty * purchaseRate)) / (oldStock + purchasedQty)
+                    }
+                    db.productDao().updateCost(barcode, newCost)
+                }
+            }
+
+            val outstanding = grandTotal - amountPaid
+            if (supplierId != null && outstanding > 0) {
+                db.supplierDao().addBalance(supplierId!!, outstanding)
+            }
+            if (supplierId != null && amountPaid > 0) {
+                db.paymentDao().insert(
+                    Payment(
+                        reference = billNo,
+                        partyType = "supplier",
+                        partyId = supplierId,
+                        amount = amountPaid,
+                        method = paymentMethod,
+                        note = if (original != null) "Purchase payment (edited)" else "Purchase payment"
+                    )
+                )
+            }
+
+            // FIX: record the cash that actually left the register for this purchase —
+            // previously nothing logged this, so Cash Register / Reports never reflected
+            // money paid out to suppliers.
+            if (amountPaid > 0) {
+                db.cashTransactionDao().insert(
+                    CashTransaction(
+                        type = "OUT",
+                        method = paymentMethod.lowercase(),
+                        amount = amountPaid,
+                        reason = "Purchase",
+                        reference = billNo
+                    )
+                )
+            }
+
+            // Bill is safely persisted now — clear the recovery draft so a future launch
+            // doesn't try to restore an already-saved purchase.
+            suppressDraftSave = true
+            clearDraft()
+
+            editBillNo = billNo
+
+            // Whether this is a new purchase or an update to an existing one, always
+            // go to the Bill Preview after Paid Amount is saved.
+            Toast.makeText(
+                this@PurchaseActivity,
+                if (original != null) "Purchase updated" else "Purchase saved",
+                Toast.LENGTH_SHORT
+            ).show()
+            openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
+        }
+    }
+
+    // ---- Open the receipt-style Bill Preview. Used both right after Save, and from the
+    // 3-dot Print/Share menu for an already-saved bill. ----
+    private fun openBillPreview(
+        billNo: String,
+        forSaving: Boolean,
+        party: String = partyName.text.toString().trim(),
+        grandTotal: Double = Math.round(lines.sumOf { it.amount }).toDouble(),
+        discount: Double = 0.0,
+        amountPaid: Double = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble(),
+        paymentMethod: String = "Cash"
+    ) {
+        val itemsEncoded = lines.joinToString("\u0002") {
+            listOf(it.itemName, formatQty(it.qty), it.unit, it.rate, it.amount).joinToString("\u0003")
+        }
+        val previewIntent = Intent(this, BillPreviewActivity::class.java).apply {
+            putExtra(BillPreviewActivity.EXTRA_TYPE, "purchase")
+            putExtra(BillPreviewActivity.EXTRA_REFERENCE, billNo)
+            putExtra(BillPreviewActivity.EXTRA_PARTY_NAME, party)
+            putExtra(BillPreviewActivity.EXTRA_PARTY_LABEL, "Supplier")
+            putExtra(BillPreviewActivity.EXTRA_DATE_MILLIS, purchaseDateMillis)
+            putExtra(BillPreviewActivity.EXTRA_SUBTOTAL, grandTotal + discount)
+            putExtra(BillPreviewActivity.EXTRA_DISCOUNT, discount)
+            putExtra(BillPreviewActivity.EXTRA_TOTAL, grandTotal)
+            putExtra(BillPreviewActivity.EXTRA_PAID, amountPaid)
+            putExtra(BillPreviewActivity.EXTRA_PAYMENT_METHOD, paymentMethod)
+            putExtra(BillPreviewActivity.EXTRA_ITEMS_ENCODED, itemsEncoded)
+        }
+        startActivity(previewIntent)
+        if (forSaving) finish()
+    }
+}
