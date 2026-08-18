@@ -286,7 +286,7 @@ class PartyActivity : AppCompatActivity() {
                 }
                 for (c in list) {
                     listContainer.addView(
-                        partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64",
+                        partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64", isCustomer = true,
                             onClick = { openCustomerHistory(c) },
                             onEdit = { editCustomerDialog(c) },
                             onDelete = { confirmDeleteCustomer(c) }
@@ -306,7 +306,7 @@ class PartyActivity : AppCompatActivity() {
                 }
                 for (s in list) {
                     listContainer.addView(
-                        partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6",
+                        partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6", isCustomer = false,
                             onClick = { openSupplierHistory(s) },
                             onEdit = { editSupplierDialog(s) },
                             onDelete = { confirmDeleteSupplier(s) }
@@ -318,6 +318,13 @@ class PartyActivity : AppCompatActivity() {
     }
 
     // ================= Premium party row card =================
+    // ---- FIX ----
+    // Closing-balance color must be type-aware, not a blanket "positive = red" rule:
+    //   - Customer closing > 0  => customer owes the shop (receivable)  -> green (good, You'll Get)
+    //   - Customer closing < 0  => shop owes the customer                -> red (You'll Give)
+    //   - Supplier closing > 0  => shop owes the supplier (payable)      -> red (You'll Give)
+    //   - Supplier closing < 0  => supplier owes the shop (e.g. credit)  -> green (You'll Get)
+    // This mirrors the same fix applied to PartyDashboardActivity's You'll Get/You'll Give totals.
     private fun partyRow(
         name: String,
         phone: String,
@@ -325,11 +332,13 @@ class PartyActivity : AppCompatActivity() {
         running: Double,
         accentHex: String,
         icon: String,
+        isCustomer: Boolean,
         onClick: () -> Unit,
         onEdit: () -> Unit,
         onDelete: () -> Unit
     ): LinearLayout {
         val closing = opening + running
+        val isGive = if (isCustomer) closing < 0 else closing > 0
         val outerRow = premiumCard().apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 16, 18, 12)
@@ -388,7 +397,7 @@ class PartyActivity : AppCompatActivity() {
             text = "Rs %.2f".format(closing)
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor(if (closing > 0) red else green))
+            setTextColor(Color.parseColor(if (isGive) red else green))
         })
         outerRow.addView(topRow)
 
