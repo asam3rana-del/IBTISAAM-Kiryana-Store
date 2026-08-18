@@ -26,6 +26,14 @@
         <activity
             android:name=".ui.PurchaseActivity"
             android:windowSoftInputMode="adjustResize" />
+        
+        <!-- NEW WINDOW FOR BILLED ITEMS - ADDED -->
+        <activity
+            android:name=".ui.PurchaseAddItemWindowActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.GroceryPOS" />
+
         <activity
             android:name=".ui.SaleActivity"
             android:windowSoftInputMode="adjustResize" />
