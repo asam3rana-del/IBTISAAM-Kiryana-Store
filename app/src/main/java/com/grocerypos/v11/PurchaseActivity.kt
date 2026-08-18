@@ -401,12 +401,11 @@ class PurchaseActivity : AppCompatActivity() {
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-            // Bulk entry: pressing Done on the keyboard adds the item immediately —
-            // no need to reach for the ADD ITEM button for every single line when
-            // punching in 10-20 items from one supplier.
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT
+            // Bulk entry: pressing Next moves into the Total Amount quick-entry field,
+            // letting the user type either Rate or the line Total (whichever they know).
             setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { addItem(); true } else false
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_NEXT) { amountInput.requestFocus(); true } else false
             }
         }
         rateBox.addView(rate)
@@ -425,6 +424,9 @@ class PurchaseActivity : AppCompatActivity() {
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            // Bulk entry: pressing Done on the keyboard adds the item immediately —
+            // no need to reach for the ADD ITEM button for every single line when
+            // punching in 10-20 items from one supplier.
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { addItem(); true } else false
             }
@@ -2039,10 +2041,4 @@ class PurchaseActivity : AppCompatActivity() {
                     PurchaseItem(
                         billNo = billNo,
                         barcode = line.barcode ?: "",
-                        qty = line.mainUnitQty().roundToInt(),
-                        unitCost = line.mainUnitRate(),
-                        amount = line.amount,
-                        unit = line.unit
-                    )
-                }
-      
+                        qty = line.mainUnitQty().roundToI
