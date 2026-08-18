@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -304,8 +305,14 @@ class ItemsActivity : AppCompatActivity() {
                 priceRow.addView(priceCol("Purchase Price", p.cost))
                 addView(priceRow)
 
+                // ---- FIX: tapping a product now opens ProductActivity pre-loaded
+                // with THIS product's full data (name, category, unit chain, prices,
+                // stock) via the same edit deep-link the Edit button uses, instead of
+                // opening a blank "New Product" form. ----
                 setOnClickListener {
-                    startActivity(Intent(this@ItemsActivity, ProductActivity::class.java))
+                    startActivity(Intent(this@ItemsActivity, ProductActivity::class.java).apply {
+                        putExtra(ProductActivity.EXTRA_EDIT_BARCODE, p.barcode)
+                    })
                 }
             })
         }
@@ -414,6 +421,18 @@ class ItemsActivity : AppCompatActivity() {
                     textSize = 14f
                     setTextColor(Color.parseColor(textDark))
                     setTypeface(typeface, Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+
+                // ---- Delete button for this unit ----
+                addView(TextView(this@ItemsActivity).apply {
+                    text = "🗑️  Delete"
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+                    setTypeface(typeface, Typeface.BOLD)
+                    background = roundedBg(red, 30)
+                    setPadding(22, 10, 22, 10)
+                    setOnClickListener { confirmDeleteUnit(u) }
                 })
             })
         }
@@ -428,6 +447,20 @@ class ItemsActivity : AppCompatActivity() {
                 val v = input.text.toString().trim()
                 if (v.isNotEmpty()) lifecycleScope.launch {
                     PosDatabase.get(this@ItemsActivity).unitDao().insert(UnitType(v))
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun confirmDeleteUnit(u: UnitType) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete Unit")
+            .setMessage("Delete \"${u.name}\"? This cannot be undone.")
+            .setPositiveButton("Delete") { _, _ ->
+                lifecycleScope.launch {
+                    PosDatabase.get(this@ItemsActivity).unitDao().delete(u)
+                    Toast.makeText(this@ItemsActivity, "Unit deleted", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
