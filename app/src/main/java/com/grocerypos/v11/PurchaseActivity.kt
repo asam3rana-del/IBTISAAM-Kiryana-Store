@@ -1616,12 +1616,26 @@ class PurchaseActivity : AppCompatActivity() {
         val paymentMethod = "Cash"
 
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
-        val supplierId = matchedSupplier?.id
+        // FIX: was `val` — a purchase whose typed Party name didn't match any existing
+        // supplier (i.e. the "+" button was never tapped) used to save with
+        // supplierId = null, which silently skipped BOTH the addBalance() call below
+        // AND the Payment record, so that purchase's due amount never showed up
+        // anywhere in "You'll Give". Now mutable so it can be filled in by
+        // auto-creating the supplier, mirroring how SaleActivity.saveSale() already
+        // auto-creates a Customer when the typed name doesn't match one.
+        var supplierId = matchedSupplier?.id
 
         val billNo = editBillNo ?: genBillNo()
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
+
+            // FIX: auto-create the supplier if the typed party name isn't an existing
+            // one, instead of leaving supplierId null and losing this purchase's due
+            // amount from every balance/report that keys off supplierId.
+            if (supplierId == null && party.isNotEmpty()) {
+                supplierId = db.supplierDao().insert(Supplier(name = party))
+            }
 
             val original = originalPurchase
             if (original != null) {
@@ -1696,7 +1710,7 @@ class PurchaseActivity : AppCompatActivity() {
 
             val outstanding = grandTotal - amountPaid
             if (supplierId != null && outstanding > 0) {
-                db.supplierDao().addBalance(supplierId, outstanding)
+                db.supplierDao().addBalance(supplierId!!, outstanding)
             }
             if (supplierId != null && amountPaid > 0) {
                 db.paymentDao().insert(
