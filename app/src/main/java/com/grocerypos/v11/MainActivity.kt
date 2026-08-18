@@ -335,7 +335,19 @@ class MainActivity : AppCompatActivity() {
         return section
     }
 
-    /** Mirrors PartyDashboardActivity's own You'll Get / You'll Give calculation, so both screens always agree. */
+    /**
+     * Mirrors PartyDashboardActivity's own You'll Get / You'll Give calculation, so both
+     * screens always agree.
+     *
+     * ---- FIX ----
+     * Customers and suppliers are NOT the same kind of balance:
+     *   - Customer closing > 0  => customer owes the shop (receivable)  -> You'll Get
+     *   - Customer closing < 0  => shop owes the customer (rare, e.g. refund due) -> You'll Give
+     *   - Supplier closing > 0  => shop owes the supplier (payable)     -> You'll Give
+     *   - Supplier closing < 0  => supplier owes the shop (e.g. return credit)    -> You'll Get
+     * Previously both were combined into one list and split purely by sign, which mixed
+     * receivables and payables together incorrectly.
+     */
     private fun loadPartySummary() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@MainActivity)
@@ -344,10 +356,15 @@ class MainActivity : AppCompatActivity() {
             }.collectLatest { (customers, suppliers) ->
                 val customerClosings = customers.map { it.openingBalance + it.balance }
                 val supplierClosings = suppliers.map { it.openingBalance + it.balance }
-                val allClosings = customerClosings + supplierClosings
 
-                val youllGet = allClosings.filter { it <= 0 }.sumOf { -it }
-                val youllGive = allClosings.filter { it > 0 }.sumOf { it }
+                val getFromCustomers = customerClosings.filter { it > 0 }.sumOf { it }
+                val giveFromCustomers = customerClosings.filter { it < 0 }.sumOf { -it }
+
+                val giveFromSuppliers = supplierClosings.filter { it > 0 }.sumOf { it }
+                val getFromSuppliers = supplierClosings.filter { it < 0 }.sumOf { -it }
+
+                val youllGet = getFromCustomers + getFromSuppliers
+                val youllGive = giveFromCustomers + giveFromSuppliers
 
                 youllGetValue.text = "Rs %.2f".format(youllGet)
                 youllGiveValue.text = "Rs %.2f".format(youllGive)
