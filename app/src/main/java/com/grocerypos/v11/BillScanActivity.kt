@@ -2,7 +2,6 @@ package com.grocerypos.v11.ui
 
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -13,19 +12,19 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /** One OCR-detected (or manually added) row on the review screen, before it becomes
  *  a real PurchaseLine back in PurchaseActivity. Everything here is editable — OCR
@@ -37,12 +36,22 @@ data class ScannedLine(
     var include: Boolean = true
 )
 
-/** Lets the user photograph (or pick from gallery) a supplier's purchase bill, runs
+/** Lets the user scan (or pick from gallery) a supplier's purchase bill, runs
  *  on-device ML Kit text recognition on it, does a best-effort parse into
  *  item/qty/rate rows, and shows a review/edit screen. Nothing is added to the
  *  Purchase form until the user taps "Confirm & Add" — the result is returned to
  *  PurchaseActivity as a JSON array via RESULT_ITEMS_JSON, and PurchaseActivity
- *  matches each name against existing Products before creating lines. */
+ *  matches each name against existing Products before creating lines.
+ *
+ *  ---- Accuracy upgrade: ML Kit Document Scanner ----
+ *  "Scan Document" now goes through Google's ML Kit Document Scanner
+ *  (GmsDocumentScanning) instead of a plain camera photo. It auto-detects the bill's
+ *  edges, corrects perspective/skew, and removes shadows/glare before handing back a
+ *  clean, cropped image — the OCR step below then runs on that clean image instead
+ *  of a raw, possibly tilted/shadowed photo, which meaningfully improves item/qty/rate
+ *  read accuracy. It also has its own built-in camera, so the CAMERA permission
+ *  dance that used to be here is no longer needed. "Gallery" stays as a fallback for
+ *  an already-taken photo and skips the auto-crop/enhance step. */
 class BillScanActivity : AppCompatActivity() {
 
     companion object {
@@ -70,16 +79,35 @@ class BillScanActivity : AppCompatActivity() {
     private var photoUri: Uri? = null
     private val scannedLines = mutableListOf<ScannedLine>()
 
-    private val cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success && photoUri != null) processImage(photoUri!!)
+    // ---- ML Kit Document Scanner client. SCANNER_MODE_FULL gives the user the full
+    // edit flow (crop handles, filters, shadow/stain removal) before the image comes
+    // back to us — this is what actually drives the accuracy improvement, since a
+    // clean, well-lit, perspective-corrected image is what on-device OCR needs most. ----
+    private val documentScanner by lazy {
+        val options = GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(false)
+            .setPageLimit(1)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+        GmsDocumentScanning.getClient(options)
+    }
+
+    private val documentScannerLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            val pageUri = scanResult?.pages?.firstOrNull()?.imageUri
+            if (pageUri != null) {
+                photoUri = pageUri
+                processImage(pageUri)
+            } else {
+                statusText.text = "Scan mil nahi saka. Dobara koshish karein."
+            }
+        }
     }
 
     private val galleryLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) { photoUri = uri; processImage(uri) }
-    }
-
-    private val cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) launchCamera() else Toast.makeText(this, "Camera permission required", Toast.LENGTH_SHORT).show()
     }
 
     override fun onCreate(b: Bundle?) {
@@ -123,10 +151,10 @@ class BillScanActivity : AppCompatActivity() {
         scroll.addView(body)
         root.addView(scroll)
 
-        // ---------------- Camera / Gallery buttons ----------------
+        // ---------------- Scan Document / Gallery buttons ----------------
         val scanButtonsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         scanButtonsRow.addView(
-            actionButton("\uD83D\uDCF7  Camera") { requestCameraAndLaunch() },
+            actionButton("\uD83D\uDCF7  Scan Document") { launchDocumentScanner() },
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
         )
         scanButtonsRow.addView(
@@ -134,6 +162,13 @@ class BillScanActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
         )
         body.addView(scanButtonsRow)
+        body.addView(spacer(8))
+        body.addView(TextView(this).apply {
+            text = "Scan Document = auto crop + clean-up (zyada accurate). Gallery = pehle se li hui photo (bina crop/enhance)."
+            textSize = 11f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(4, 0, 4, 0)
+        })
         body.addView(spacer(16))
 
         imagePreview = ImageView(this).apply {
@@ -155,7 +190,7 @@ class BillScanActivity : AppCompatActivity() {
         body.addView(progressRow)
 
         statusText = TextView(this).apply {
-            text = "Bill ki photo lein ya gallery se select karein — items neeche detect ho kar dikhenge."
+            text = "Bill scan karein ya gallery se select karein — items neeche detect ho kar dikhenge."
             textSize = 13f
             setTextColor(Color.parseColor(textMuted))
             setPadding(4, 8, 4, 16)
@@ -212,21 +247,24 @@ class BillScanActivity : AppCompatActivity() {
         setContentView(root)
     }
 
-    // ---------------- Capture ----------------
-    private fun requestCameraAndLaunch() {
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            launchCamera()
-        } else {
-            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+    // ---------------- Capture (ML Kit Document Scanner) ----------------
+    /** Launches the ML Kit Document Scanner flow. Its own built-in camera means no
+     *  runtime CAMERA permission is needed here. Falls back to a plain Toast if Play
+     *  Services isn't available/up to date on the device — Gallery still works either way. */
+    private fun launchDocumentScanner() {
+        val availability = GoogleApiAvailability.getInstance()
+        val playServicesStatus = availability.isGooglePlayServicesAvailable(this)
+        if (playServicesStatus != ConnectionResult.SUCCESS) {
+            Toast.makeText(this, "Google Play Services update chahiye — Gallery se try karein.", Toast.LENGTH_LONG).show()
+            return
         }
-    }
-
-    private fun launchCamera() {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val photoFile = File(cacheDir, "BILL_$timeStamp.jpg")
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", photoFile)
-        photoUri = uri
-        cameraLauncher.launch(uri)
+        documentScanner.getStartScanIntent(this)
+            .addOnSuccessListener { intentSender ->
+                documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+            }
+            .addOnFailureListener {
+                Toast.makeText(this, "Scanner shuru nahi ho saka: ${it.message}", Toast.LENGTH_LONG).show()
+            }
     }
 
     // ---------------- OCR ----------------
