@@ -57,7 +57,9 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var stockNote: TextView
     private lateinit var saveButton: Button
     private lateinit var cancelEditChip: TextView
+    private lateinit var searchField: EditText
     private lateinit var listContainer: LinearLayout
+    private lateinit var noResultsCard: LinearLayout
 
     private var units = listOf("pcs", "kg", "box", "dozen")
 
@@ -71,6 +73,9 @@ class ProductActivity : AppCompatActivity() {
 
     // ---- when non-null, the form is editing this existing product instead of creating a new one ----
     private var editingProduct: Product? = null
+
+    // ---- full unfiltered product list, kept so search can filter locally without re-querying ----
+    private var allProducts: List<Product> = emptyList()
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -230,9 +235,70 @@ class ProductActivity : AppCompatActivity() {
         listHeaderRow.addView(sectionLabel("🗃️", Loc.t(this, "Products", "پروڈکٹس")))
         root.addView(spacer(4))
         root.addView(listHeaderRow)
-        root.addView(spacer(6))
+        root.addView(spacer(10))
+
+        // ================= SEARCH BAR =================
+        val searchBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 4, 18, 4)
+            background = strokedBg(border, cardWhite, 14)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 12) }
+        }
+        searchBox.addView(TextView(this).apply { text = "🔍  "; textSize = 15f })
+        searchField = EditText(this).apply {
+            hint = Loc.t(this@ProductActivity, "Search products by name or category…", "نام یا کیٹیگری سے پروڈکٹ تلاش کریں…")
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 14.5f
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        searchBox.addView(searchField)
+        val clearSearchBtn = TextView(this).apply {
+            text = "✕"
+            textSize = 14f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(14, 10, 6, 10)
+            visibility = View.GONE
+            setOnClickListener { searchField.text.clear() }
+        }
+        searchBox.addView(clearSearchBtn)
+        root.addView(searchBox)
+
+        searchField.addTextChangedListener(simpleWatcher {
+            val q = searchField.text.toString()
+            clearSearchBtn.visibility = if (q.isNotEmpty()) View.VISIBLE else View.GONE
+            renderProducts(filterProducts(q))
+        })
+
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
+
+        noResultsCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(20, 30, 20, 30)
+            background = strokedBg(border, cardWhite, 14)
+            visibility = View.GONE
+            addView(TextView(this@ProductActivity).apply {
+                text = "🔍"
+                textSize = 26f
+                gravity = Gravity.CENTER
+            })
+            addView(TextView(this@ProductActivity).apply {
+                text = Loc.t(this@ProductActivity, "No matching products", "کوئی مماثل پروڈکٹ نہیں ملی")
+                textSize = 13f
+                setTextColor(Color.parseColor(textMuted))
+                gravity = Gravity.CENTER
+                setPadding(0, 10, 0, 0)
+            })
+        }
+        root.addView(noResultsCard)
         root.addView(spacer(24))
 
         scrollArea.addView(root)
@@ -893,92 +959,115 @@ class ProductActivity : AppCompatActivity() {
         }
     }
 
+    // ================= Search filtering =================
+    /** Filters the cached [allProducts] list by name or category (case-insensitive, partial match). */
+    private fun filterProducts(query: String): List<Product> {
+        val q = query.trim()
+        if (q.isEmpty()) return allProducts
+        return allProducts.filter {
+            it.name.contains(q, ignoreCase = true) || it.category.contains(q, ignoreCase = true)
+        }
+    }
+
     private fun loadProducts() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).productDao().all().collectLatest { list ->
-                listContainer.removeAllViews()
-                for (p in list) {
-                    listContainer.addView(LinearLayout(this@ProductActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(20, 16, 20, 16)
-                        background = strokedBg(border, cardWhite, 14)
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply { setMargins(0, 0, 0, 10) }
-                        applyElevation(this, 2f)
+                allProducts = list
+                renderProducts(filterProducts(searchField.text.toString()))
+            }
+        }
+    }
 
-                        val top = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-                        top.addView(TextView(this@ProductActivity).apply {
-                            text = p.name; textSize = 14.5f
-                            setTextColor(Color.parseColor(textDark))
-                            setTypeface(typeface, android.graphics.Typeface.BOLD)
-                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                        })
-                        top.addView(TextView(this@ProductActivity).apply {
-                            text = p.category
-                            setTextColor(Color.WHITE)
-                            textSize = 10.5f
-                            setTypeface(typeface, android.graphics.Typeface.BOLD)
-                            background = roundedBg(teal, 16)
-                            setPadding(16, 5, 16, 5)
-                        })
-                        addView(top)
-                        addView(TextView(this@ProductActivity).apply {
-                            text = "📊 ${Loc.t(this@ProductActivity, "Stock", "اسٹاک")}: ${p.stock} ${p.unit}"
-                            textSize = 12f
-                            setTextColor(Color.parseColor(textMuted))
-                            setPadding(0, 8, 0, 4)
-                        })
-                        addView(TextView(this@ProductActivity).apply {
-                            text = "🛒 %s: %.2f   •   📦 %s: %.2f   •   🏪 %s: %.2f".format(
-                                Loc.t(this@ProductActivity, "Purchase", "خریداری"), p.cost,
-                                Loc.t(this@ProductActivity, "Wholesale", "تھوک"), p.wholesalePrice,
-                                Loc.t(this@ProductActivity, "Retail", "پرچون"), p.salePrice
-                            )
-                            textSize = 12f
-                            setTextColor(Color.parseColor(teal))
-                            setTypeface(typeface, android.graphics.Typeface.BOLD)
-                        })
-                        if (p.secondaryUnit.isNotEmpty()) {
-                            addView(TextView(this@ProductActivity).apply {
-                                text = buildString {
-                                    append("📏 1 ${p.unit} = ${p.secondaryUnitQty} ${p.secondaryUnit}")
-                                    if (p.tertiaryUnit.isNotEmpty()) append("   •   1 ${p.secondaryUnit} = ${p.tertiaryUnitQty} ${p.tertiaryUnit}")
-                                }
-                                textSize = 11.5f
-                                setTextColor(Color.parseColor(textMuted))
-                                setPadding(0, 4, 0, 0)
-                            })
-                        }
+    /** Renders the given product list into [listContainer]; shows [noResultsCard] when a search yields nothing. */
+    private fun renderProducts(list: List<Product>) {
+        listContainer.removeAllViews()
 
-                        // ---- Edit / Delete actions ----
-                        val actionsRow = LinearLayout(this@ProductActivity).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            setPadding(0, 10, 0, 0)
+        if (list.isEmpty()) {
+            noResultsCard.visibility = View.VISIBLE
+            return
+        }
+        noResultsCard.visibility = View.GONE
+
+        for (p in list) {
+            listContainer.addView(LinearLayout(this@ProductActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(20, 16, 20, 16)
+                background = strokedBg(border, cardWhite, 14)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 0, 0, 10) }
+                applyElevation(this, 2f)
+
+                val top = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                top.addView(TextView(this@ProductActivity).apply {
+                    text = p.name; textSize = 14.5f
+                    setTextColor(Color.parseColor(textDark))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                top.addView(TextView(this@ProductActivity).apply {
+                    text = p.category
+                    setTextColor(Color.WHITE)
+                    textSize = 10.5f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBg(teal, 16)
+                    setPadding(16, 5, 16, 5)
+                })
+                addView(top)
+                addView(TextView(this@ProductActivity).apply {
+                    text = "📊 ${Loc.t(this@ProductActivity, "Stock", "اسٹاک")}: ${p.stock} ${p.unit}"
+                    textSize = 12f
+                    setTextColor(Color.parseColor(textMuted))
+                    setPadding(0, 8, 0, 4)
+                })
+                addView(TextView(this@ProductActivity).apply {
+                    text = "🛒 %s: %.2f   •   📦 %s: %.2f   •   🏪 %s: %.2f".format(
+                        Loc.t(this@ProductActivity, "Purchase", "خریداری"), p.cost,
+                        Loc.t(this@ProductActivity, "Wholesale", "تھوک"), p.wholesalePrice,
+                        Loc.t(this@ProductActivity, "Retail", "پرچون"), p.salePrice
+                    )
+                    textSize = 12f
+                    setTextColor(Color.parseColor(teal))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                if (p.secondaryUnit.isNotEmpty()) {
+                    addView(TextView(this@ProductActivity).apply {
+                        text = buildString {
+                            append("📏 1 ${p.unit} = ${p.secondaryUnitQty} ${p.secondaryUnit}")
+                            if (p.tertiaryUnit.isNotEmpty()) append("   •   1 ${p.secondaryUnit} = ${p.tertiaryUnitQty} ${p.tertiaryUnit}")
                         }
-                        actionsRow.addView(TextView(this@ProductActivity).apply {
-                            text = "✏️  " + Loc.t(this@ProductActivity, "Edit", "ترمیم کریں")
-                            textSize = 12f
-                            setTextColor(Color.WHITE)
-                            setTypeface(typeface, android.graphics.Typeface.BOLD)
-                            background = roundedBg(navy, 30)
-                            setPadding(24, 10, 24, 10)
-                            setOnClickListener { loadProductForEdit(p) }
-                        })
-                        actionsRow.addView(View(this@ProductActivity).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
-                        actionsRow.addView(TextView(this@ProductActivity).apply {
-                            text = "🗑️  " + Loc.t(this@ProductActivity, "Delete", "حذف کریں")
-                            textSize = 12f
-                            setTextColor(Color.WHITE)
-                            setTypeface(typeface, android.graphics.Typeface.BOLD)
-                            background = roundedBg(red, 30)
-                            setPadding(24, 10, 24, 10)
-                            setOnClickListener { confirmDeleteProduct(p) }
-                        })
-                        addView(actionsRow)
+                        textSize = 11.5f
+                        setTextColor(Color.parseColor(textMuted))
+                        setPadding(0, 4, 0, 0)
                     })
                 }
-            }
+
+                // ---- Edit / Delete actions ----
+                val actionsRow = LinearLayout(this@ProductActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, 10, 0, 0)
+                }
+                actionsRow.addView(TextView(this@ProductActivity).apply {
+                    text = "✏️  " + Loc.t(this@ProductActivity, "Edit", "ترمیم کریں")
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBg(navy, 30)
+                    setPadding(24, 10, 24, 10)
+                    setOnClickListener { loadProductForEdit(p) }
+                })
+                actionsRow.addView(View(this@ProductActivity).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
+                actionsRow.addView(TextView(this@ProductActivity).apply {
+                    text = "🗑️  " + Loc.t(this@ProductActivity, "Delete", "حذف کریں")
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBg(red, 30)
+                    setPadding(24, 10, 24, 10)
+                    setOnClickListener { confirmDeleteProduct(p) }
+                })
+                addView(actionsRow)
+            })
         }
     }
 }
