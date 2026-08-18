@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.ViewCompat
@@ -145,6 +146,18 @@ class PurchaseActivity : AppCompatActivity() {
     // in-progress purchase that hasn't been saved yet. ----
     private var suppressDraftSave = false
     private var draftRestored = false
+
+    // ---- Scan Bill: launches BillScanActivity (camera/gallery + on-device OCR) and
+    // receives back a JSON array of {name, qty, rate} rows the user reviewed/confirmed
+    // there. handleScannedItems() matches each name against existing Products and adds
+    // matched ones straight to the Billed Items list. Registered as a field initializer
+    // so it's ready before the Activity reaches STARTED, as required by the API. ----
+    private val billScanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val json = result.data?.getStringExtra(BillScanActivity.RESULT_ITEMS_JSON)
+            if (!json.isNullOrBlank()) handleScannedItems(json)
+        }
+    }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -289,14 +302,34 @@ class PurchaseActivity : AppCompatActivity() {
             applyElevation(this, 2f)
         }
 
+        // ---- "Add Item" label + "Scan Bill" (OCR) button share one row. Scan Bill
+        // opens BillScanActivity (camera/gallery capture + on-device text recognition),
+        // and matched items come back through billScanLauncher -> handleScannedItems(). ----
+        val addItemHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 14)
+        }
         addItemsTrigger = TextView(this).apply {
             text = "\u2795  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Add Item", "آئٹم شامل کریں")
             textSize = 14.5f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, 0, 0, 14)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        itemEntrySection.addView(addItemsTrigger)
+        addItemHeaderRow.addView(addItemsTrigger)
+        addItemHeaderRow.addView(TextView(this).apply {
+            text = "\uD83D\uDCF7  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Scan Bill", "بل اسکین کریں")
+            textSize = 12.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = roundedBg(teal, 30)
+            setPadding(22, 12, 22, 12)
+            setOnClickListener {
+                billScanLauncher.launch(Intent(this@PurchaseActivity, BillScanActivity::class.java))
+            }
+        })
+        itemEntrySection.addView(addItemHeaderRow)
 
         val itemBox = innerField()
         itemBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Item Name", "آئٹم کا نام")))
@@ -1231,6 +1264,69 @@ class PurchaseActivity : AppCompatActivity() {
         itemName.requestFocus()
 
         if (editBillNo == null) saveDraft()
+    }
+
+    /** Handles the JSON result returned by BillScanActivity after the user reviews and
+     *  confirms detected {name, qty, rate} rows. Each name is matched against existing
+     *  Products (exact match first, then a loose contains-match) so unit-conversion
+     *  info stays correct; anything that doesn't match an existing product is skipped
+     *  and reported back so the user can add it manually (via the "+" next to Item
+     *  Name) or create the product first. */
+    private fun handleScannedItems(json: String) {
+        val arr = try { JSONArray(json) } catch (e: Exception) { return }
+        var addedCount = 0
+        val unmatched = mutableListOf<String>()
+
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val scannedName = o.optString("name").trim()
+            val scannedQty = o.optDouble("qty", 0.0)
+            val scannedRate = o.optDouble("rate", 0.0)
+            if (scannedName.isEmpty() || scannedQty <= 0) {
+                if (scannedName.isNotEmpty()) unmatched.add(scannedName)
+                continue
+            }
+
+            val product = products.find { it.name.equals(scannedName, ignoreCase = true) }
+                ?: products.find { it.name.contains(scannedName, ignoreCase = true) || scannedName.contains(it.name, ignoreCase = true) }
+
+            if (product == null) {
+                unmatched.add(scannedName)
+                continue
+            }
+
+            lines.add(
+                PurchaseLine(
+                    itemName = product.name,
+                    barcode = product.barcode,
+                    qty = scannedQty,
+                    unit = product.unit,
+                    rate = scannedRate,
+                    amount = Math.round(scannedQty * scannedRate).toDouble(),
+                    mainUnit = product.unit,
+                    secondaryUnit = product.secondaryUnit,
+                    secondaryUnitQty = product.secondaryUnitQty,
+                    tertiaryUnit = product.tertiaryUnit,
+                    tertiaryUnitQty = product.tertiaryUnitQty
+                )
+            )
+            addedCount++
+        }
+
+        if (addedCount > 0) {
+            renderItemsList()
+            updateGrandTotal()
+            if (editBillNo == null) saveDraft()
+        }
+
+        val message = buildString {
+            append(if (addedCount > 0) "$addedCount items added from scan" else "Koi item match nahi hua")
+            if (unmatched.isNotEmpty()) {
+                append(". Not found in Products: ")
+                append(unmatched.joinToString(", "))
+            }
+        }
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     /** Renders the numbered "#1, #2, …" Billed Items cards — matches the reference
