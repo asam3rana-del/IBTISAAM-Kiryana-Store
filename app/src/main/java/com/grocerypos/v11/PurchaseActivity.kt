@@ -48,11 +48,6 @@ data class PurchaseLine(
     val tertiaryUnitQty: Double = 0.0
 )
 
-// ---- Unit-conversion helpers: a PurchaseLine may be entered in the secondary or
-// tertiary unit (e.g. "dozen" or "grams" while the product's stock is tracked in
-// "pcs"). These convert the entered qty back to the product's main unit before it
-// touches the DB / stock. Chain: 1 main = secondaryUnitQty secondary;
-// 1 secondary = tertiaryUnitQty tertiary. ----
 private fun PurchaseLine.isSecondary(): Boolean =
     secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
 
@@ -81,15 +76,14 @@ class PurchaseActivity : AppCompatActivity() {
         private const val KEY_DRAFT = "draft_json"
     }
 
-    // ================= NAVY + TEAL + WHITE PALETTE =================
     private val bg = "#F4F6F8"
     private val cardWhite = "#FFFFFF"
-    private val navy = "#0F9B8E"     // primary brand — header, Save button (swapped with teal)
-    private val teal = "#0B2545"     // secondary accent — chips, Add Item, totals, "+" icons (swapped with navy)
-    private val textDark = "#0B2545" // headings/values reuse navy
+    private val navy = "#0F9B8E"
+    private val teal = "#0B2545"
+    private val textDark = "#0B2545"
     private val textMuted = "#7C8798"
     private val border = "#E3E8EE"
-    private val red = "#E5484D"      // functional — remove / delete / negative balance
+    private val red = "#E5484D"
     private val amberBadge = "#EEF2F6"
 
     private lateinit var dateValueText: TextView
@@ -103,7 +97,6 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var unitSpinner: Spinner
     private lateinit var unitToggleRow: LinearLayout
     private lateinit var rate: EditText
-    private lateinit var amountInput: EditText
     private lateinit var conversionInfo: TextView
     private lateinit var totalAmountText: TextView
     private lateinit var addItemButton: Button
@@ -127,40 +120,19 @@ class PurchaseActivity : AppCompatActivity() {
     private var selectedProduct: Product? = null
     private var itemsExpanded = true
 
-    // ---- tracks the last-entered quantity converted to the product's MAIN unit, so
-    // switching the unit chip (e.g. bag -> kg) can auto-convert the displayed qty
-    // instead of leaving the old number sitting under the new unit. ----
     private var lastMainQty: Double = 0.0
     private var suppressQtyWatcher = false
 
-    // ---- same idea for Rate: tracks the last-entered rate converted to a "per MAIN
-    // unit" price, so switching the unit chip auto-converts the rate too (e.g. typing
-    // 10000 while on "bag", where 1 bag = 50 kg, then switching to "kg" auto-fills 200
-    // instead of leaving a stale 10000 under "kg"). ----
     private var lastMainRate: Double = 0.0
     private var suppressRateWatcher = false
-
-    // ---- "Total Amount" quick-entry: lets the user type the total price for the
-    // whole line (e.g. 2500 for 2 cartons) instead of manually dividing on a
-    // calculator to work out the per-unit Rate (e.g. 1250). Typing here back-computes
-    // Rate = Amount / Qty. Guarded the same way as Qty/Rate to avoid update loops. ----
-    private var suppressAmountWatcher = false
 
     private var editBillNo: String? = null
     private var originalPurchase: Purchase? = null
     private var originalItems: List<PurchaseItem> = emptyList()
 
-    // ---- draft persistence: guards against process death (e.g. fingerprint prompt,
-    // switching apps, or the OS killing the app in the background) wiping out an
-    // in-progress purchase that hasn't been saved yet. ----
     private var suppressDraftSave = false
     private var draftRestored = false
 
-    // ---- Scan Bill: launches BillScanActivity (camera/gallery + on-device OCR) and
-    // receives back a JSON array of {name, qty, rate} rows the user reviewed/confirmed
-    // there. handleScannedItems() matches each name against existing Products and adds
-    // matched ones straight to the Billed Items list. Registered as a field initializer
-    // so it's ready before the Activity reaches STARTED, as required by the API. ----
     private val billScanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
             val json = result.data?.getStringExtra(BillScanActivity.RESULT_ITEMS_JSON)
@@ -178,7 +150,6 @@ class PurchaseActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= HEADER (flat navy, teal chip + overflow) =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -222,7 +193,6 @@ class PurchaseActivity : AppCompatActivity() {
         header.addView(overflowButton)
         root.addView(header)
 
-        // ================= DATE (now sits right below the "Purchase" header) =================
         val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -252,7 +222,6 @@ class PurchaseActivity : AppCompatActivity() {
         topRow.addView(dateChip)
         root.addView(topRow)
 
-        // ================= FIRM NAME + PARTY BALANCE (stacked: balance right under the firm name) =================
         val firmBox = premiumCard().apply { setPadding(20, 14, 20, 14) }
         val firmCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -281,7 +250,6 @@ class PurchaseActivity : AppCompatActivity() {
         firmBox.addView(firmCol)
         root.addView(firmBox)
 
-        // ================= PARTY NAME =================
         val partyBox = premiumCard()
         partyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Party / Supplier", "پارٹی / سپلائر")))
         val partyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -299,7 +267,6 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(partyBox)
         root.addView(spacer(18))
 
-        // ================= ITEM ENTRY (Add Item button, always visible — no collapse gate) =================
         itemEntrySection = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.VISIBLE
@@ -311,9 +278,6 @@ class PurchaseActivity : AppCompatActivity() {
             applyElevation(this, 2f)
         }
 
-        // ---- "Add Item" label + "Scan Bill" (OCR) button share one row. Scan Bill
-        // opens BillScanActivity (camera/gallery capture + on-device text recognition),
-        // and matched items come back through billScanLauncher -> handleScannedItems(). ----
         val addItemHeaderRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -352,8 +316,6 @@ class PurchaseActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         itemNameRow.addView(itemName)
-        // Quick "add product" — lets a purchase item that isn't in Products yet get
-        // saved directly from here, with full Primary/Secondary/Tertiary unit setup.
         itemNameRow.addView(circleIcon("+", teal, 30) { openAddProductDialog(itemName.text.toString().trim()) })
         itemBox.addView(itemNameRow)
         itemEntrySection.addView(itemBox)
@@ -403,38 +365,13 @@ class PurchaseActivity : AppCompatActivity() {
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT
-            // Bulk entry: pressing Next moves into the Total Amount quick-entry field,
-            // letting the user type either Rate or the line Total (whichever they know).
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_NEXT) { amountInput.requestFocus(); true } else false
-            }
-        }
-        rateBox.addView(rate)
-        itemEntrySection.addView(rateBox)
-
-        // ---- Total Amount quick-entry (see suppressAmountWatcher note above). Typing
-        // a total here (e.g. 2500 for 2 CTN) auto-fills Rate (1250) — no calculator
-        // needed for bulk purchases. ----
-        val amountBox = innerField()
-        amountBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Total Amount (optional — auto-fills Rate)", "کل رقم (اختیاری — خودکار ریٹ)")))
-        amountInput = EditText(this).apply {
-            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "e.g. 2500 for this quantity", "مثلاً اس مقدار کے لیے 2500")
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15f
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-            // Bulk entry: pressing Done on the keyboard adds the item immediately —
-            // no need to reach for the ADD ITEM button for every single line when
-            // punching in 10-20 items from one supplier.
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { addItem(); true } else false
             }
         }
-        amountBox.addView(amountInput)
-        itemEntrySection.addView(amountBox)
+        rateBox.addView(rate)
+        itemEntrySection.addView(rateBox)
 
         conversionInfo = TextView(this).apply {
             text = ""
@@ -455,8 +392,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
         itemEntrySection.addView(totalAmountText)
 
-        // ---- Qty watcher also records the entered qty converted to the product's
-        // MAIN unit, so switching unit chips can auto-convert the number shown. ----
         qty.addTextChangedListener(simpleWatcher {
             if (!suppressQtyWatcher) {
                 val entered = qty.text.toString().toDoubleOrNull() ?: 0.0
@@ -464,31 +399,10 @@ class PurchaseActivity : AppCompatActivity() {
             }
             updateLineTotal()
         })
-        // ---- Rate watcher records the entered rate converted to a "per MAIN unit"
-        // price, so switching unit chips can auto-convert the rate shown (e.g. 1 bag =
-        // 50 kg, rate 10000 typed on "bag" -> switching to "kg" auto-fills 200). ----
         rate.addTextChangedListener(simpleWatcher {
             if (!suppressRateWatcher) {
                 val entered = rate.text.toString().toDoubleOrNull() ?: 0.0
                 lastMainRate = toMainUnitRate(entered)
-            }
-            updateLineTotal()
-        })
-        // ---- Total Amount watcher: back-computes Rate = Amount / Qty whenever the
-        // user types a total directly, so bulk entries (e.g. "2 CTN for 2500") don't
-        // need a separate calculator to work out the per-unit Rate. ----
-        amountInput.addTextChangedListener(simpleWatcher {
-            if (!suppressAmountWatcher) {
-                val amt = amountInput.text.toString().toDoubleOrNull()
-                val q = qty.text.toString().toDoubleOrNull() ?: 0.0
-                if (amt != null && amt >= 0 && q > 0) {
-                    val computedRate = amt / q
-                    suppressRateWatcher = true
-                    rate.setText(if (computedRate > 0) formatMoney(computedRate) else "")
-                    rate.setSelection(rate.text.length)
-                    suppressRateWatcher = false
-                    lastMainRate = toMainUnitRate(computedRate)
-                }
             }
             updateLineTotal()
         })
@@ -506,7 +420,6 @@ class PurchaseActivity : AppCompatActivity() {
         itemEntrySection.addView(addItemButton)
         root.addView(itemEntrySection)
 
-        // ================= BILLED ITEMS (collapsible header + numbered list) =================
         billedItemsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -540,7 +453,6 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(itemsContainer)
         root.addView(spacer(14))
 
-        // ================= TOTAL / PAID / DUE — one clean summary card =================
         val totalCard = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -562,10 +474,6 @@ class PurchaseActivity : AppCompatActivity() {
         totalCard.addView(grandTotalText)
         root.addView(totalCard)
 
-        // ---- PAID AMOUNT — its own dedicated card so it's easy to find and edit,
-        // especially right after updating a purchase (see savePurchase()). No
-        // Cash/Credit toggle — it's on credit whenever Amount Paid is less than the
-        // total; leaving Paid blank means fully on credit (0 paid). ----
         paymentSection = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -599,8 +507,6 @@ class PurchaseActivity : AppCompatActivity() {
         paymentSection.addView(paidInput)
         root.addView(paymentSection)
 
-        // ---- DUE AMOUNT — read-only, auto-computed (Total − Paid), its own card so it
-        // reads as clearly as Total/Paid instead of being squeezed into a corner. ----
         val dueCard = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -626,7 +532,6 @@ class PurchaseActivity : AppCompatActivity() {
         val totalsWatcher = simpleWatcher { updateGrandTotal() }
         paidInput.addTextChangedListener(totalsWatcher)
 
-        // ================= EDIT + SAVE + DELETE (fixed bottom bar) =================
         saveButton = Button(this).apply {
             text = if (editBillNo != null) com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "UPDATE PURCHASE", "خریداری اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SAVE PURCHASE", "خریداری محفوظ کریں")
             setTextColor(Color.WHITE)
@@ -649,8 +554,6 @@ class PurchaseActivity : AppCompatActivity() {
             visibility = if (editBillNo != null) View.VISIBLE else View.GONE
             setOnClickListener { confirmDeletePurchase() }
         }
-        // ---- No separate EDIT button: an existing bill opened from History is directly
-        // editable right away, same as a brand-new purchase. ----
         val saveDeleteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         saveDeleteRow.addView(
             saveButton,
@@ -675,10 +578,6 @@ class PurchaseActivity : AppCompatActivity() {
             applyElevation(this, 8f)
             addView(saveDeleteRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
-        // ---- Handles both system bars AND the on-screen keyboard (IME). Without the
-        // ime() inset, the keyboard used to sit on top of Save/Delete, making them
-        // unreachable while a field was focused (e.g. right after typing the Rate and
-        // hitting the ADD ITEM flow, or when the keyboard was still up at Save time). ----
         ViewCompat.setOnApplyWindowInsetsListener(saveBar) { view, insets ->
             val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
@@ -716,10 +615,6 @@ class PurchaseActivity : AppCompatActivity() {
 
         unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                // FIX: unit switch should only auto-recalculate Rate (and therefore
-                // Amount) — the typed Quantity number must stay exactly as entered.
-                // refillAutoQty() used to overwrite it here, silently changing the
-                // qty the user typed whenever they switched the unit chip.
                 refillAutoRate()
                 updateLineTotal()
             }
@@ -734,10 +629,6 @@ class PurchaseActivity : AppCompatActivity() {
             updateSupplierBalanceDisplay(partyName.text.toString().trim())
         })
 
-        // ---- Restore an unsaved draft (new purchase only — edit mode loads its own
-        // data via loadForEdit). This recovers in-progress entries that were lost when
-        // the OS killed the app in the background (fingerprint prompt, app switch,
-        // low memory, etc.) before the user could tap Save. ----
         if (editBillNo == null) {
             restoreDraftIfAny()
         }
@@ -745,22 +636,14 @@ class PurchaseActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Snapshot whatever is currently on screen so a process death while backgrounded
-        // (fingerprint unlock, switching to another app, OS reclaiming memory) doesn't
-        // wipe out an in-progress purchase. Only relevant for a brand-new purchase —
-        // edits reload from the DB via loadForEdit(), and once a bill is actually saved
-        // the draft is cleared (see savePurchase()/clearDraft()).
         if (editBillNo == null && !suppressDraftSave) {
             saveDraft()
         }
     }
 
-    // ---- Draft persistence (SharedPreferences, JSON-encoded) ----
-
     private fun draftPrefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private fun saveDraft() {
-        // Nothing worth saving if the form is effectively empty.
         val hasContent = lines.isNotEmpty() ||
             partyName.text.toString().isNotBlank() ||
             itemName.text.toString().isNotBlank() ||
@@ -829,9 +712,6 @@ class PurchaseActivity : AppCompatActivity() {
             val linesArray = draft.optJSONArray("lines")
             if (linesArray != null) {
                 for (i in 0 until linesArray.length()) {
-                    // FIX: one malformed draft row used to throw and abort the whole
-                    // restore (and could crash onCreate if not caught above). Skip just
-                    // the bad row instead of losing/crashing the entire draft.
                     try {
                         val o = linesArray.getJSONObject(i)
                         lines.add(
@@ -857,7 +737,6 @@ class PurchaseActivity : AppCompatActivity() {
                 updateGrandTotal()
             }
 
-            // Restore whatever was mid-entry in the item-entry row (not yet added as a line).
             val pendingItemName = draft.optString("pendingItemName", "")
             if (pendingItemName.isNotBlank()) {
                 itemName.setText(pendingItemName)
@@ -882,7 +761,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    /** Keeps the "Firm Name" card in sync with Settings > Shop Information > Shop Name. */
     private fun loadFirmName() {
         lifecycleScope.launch {
             val savedName = PosDatabase.get(this@PurchaseActivity).appSettingDao().get("shop_name")?.value
@@ -890,7 +768,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    /** Shows the selected supplier's current outstanding balance top-right. */
     private fun updateSupplierBalanceDisplay(name: String) {
         val supplier = suppliers.find { it.name.equals(name, ignoreCase = true) }
         if (supplier == null) {
@@ -902,7 +779,6 @@ class PurchaseActivity : AppCompatActivity() {
         supplierBalanceText.setTextColor(Color.parseColor(if (supplier.balance > 0) red else teal))
     }
 
-    // ---- UI helpers ----
     private fun premiumCard() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(22, 16, 22, 16)
@@ -924,7 +800,6 @@ class PurchaseActivity : AppCompatActivity() {
         ).apply { setMargins(0, 0, 0, 12) }
     }
 
-    /** Small uppercase muted micro-label. */
     private fun labelRow(label: String) = TextView(this).apply {
         text = label.uppercase()
         textSize = 10.5f
@@ -993,7 +868,6 @@ class PurchaseActivity : AppCompatActivity() {
         setColor(Color.parseColor(colorHex))
     }
 
-    /** Adds a soft elevation/shadow to a view that has a rounded background (API 21+). */
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             view.elevation = dp * resources.displayMetrics.density
@@ -1017,9 +891,6 @@ class PurchaseActivity : AppCompatActivity() {
     private fun formatQty(v: Double): String =
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
-    private fun formatMoney(v: Double): String =
-        if (v == v.toLong().toDouble()) v.toLong().toString() else "%.2f".format(v)
-
     private fun openDatePicker() {
         val cal = Calendar.getInstance().apply { timeInMillis = purchaseDateMillis }
         DatePickerDialog(this, { _, y, m, d ->
@@ -1029,13 +900,21 @@ class PurchaseActivity : AppCompatActivity() {
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    // ---- Load an existing bill into the form for editing ----
+    // FIX: shared keyboard-dismiss helper. Used before opening nested dialogs (e.g. the
+    // inline "Add Unit" dialog opened from within Add Product) so the soft keyboard
+    // left open from a field like Secondary/Tertiary Qty doesn't stay up and cover the
+    // new dialog's own input — this is what forced you to manually hide the keyboard
+    // before you could type the 3rd/tertiary unit's name.
+    private fun hideKeyboard() {
+        currentFocus?.let { focused ->
+            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            imm?.hideSoftInputFromWindow(focused.windowToken, 0)
+            focused.clearFocus()
+        }
+    }
+
     private fun loadForEdit(bill: String) {
         lifecycleScope.launch {
-            // FIX (crash on open): the whole load used to run with zero error handling —
-            // any exception (bad row, slow/never-emitting Flow, etc.) took the app down
-            // with it instead of just this screen. Now wrapped so a failure shows a
-            // Toast + logs the real cause instead of crashing ~12s after opening.
             try {
                 val db = PosDatabase.get(this@PurchaseActivity)
                 val purchase = db.purchaseDao().findPurchase(bill) ?: return@launch
@@ -1046,11 +925,6 @@ class PurchaseActivity : AppCompatActivity() {
                 purchaseDateMillis = purchase.createdAt
                 dateValueText.text = formatDate(purchaseDateMillis)
 
-                // FIX: db.supplierDao().all().first() subscribes to the ENTIRE suppliers
-                // Flow just to read one row — if that Flow is slow to emit (or never
-                // emits, e.g. Room invalidation not firing yet) this suspends forever
-                // with no feedback, which is what "nothing happens, then crash ~12s
-                // later" looked like. withTimeoutOrNull caps the wait instead of hanging.
                 val supplierName = purchase.supplierId?.let { id ->
                     withTimeoutOrNull(8000) {
                         db.supplierDao().all().first().find { it.id == id }?.name
@@ -1097,7 +971,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Data loading ----
     private fun loadSuppliers() {
         lifecycleScope.launch {
             PosDatabase.get(this@PurchaseActivity).supplierDao().all().collectLatest { list ->
@@ -1128,17 +1001,11 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Item entry logic ----
-    // Unit chips now offer up to three tiers: main, secondary, and (if a secondary
-    // chain exists) tertiary — mirroring SaleActivity.
     private fun onItemPicked(pickedName: String) {
         val product = products.find { it.name.equals(pickedName, ignoreCase = true) } ?: return
         applyPickedProduct(product)
     }
 
-    /** Shared by onItemPicked() (existing product chosen from the dropdown) and by
-     *  openAddProductDialog() (brand-new product just created) — sets up unit chips,
-     *  conversion info, and auto-filled rate for whichever product is now selected. */
     private fun applyPickedProduct(product: Product) {
         selectedProduct = product
 
@@ -1166,20 +1033,13 @@ class PurchaseActivity : AppCompatActivity() {
 
         lastMainQty = 0.0
         lastMainRate = 0.0
-        suppressAmountWatcher = true
-        amountInput.setText("")
-        suppressAmountWatcher = false
         refillAutoRate()
         updateLineTotal()
 
-        // Fast bulk entry: jump straight to Quantity after picking the item.
         qty.setText("")
         qty.requestFocus()
     }
 
-    // ---- Converts an entered quantity (in whichever unit is currently selected) to
-    // the product's MAIN unit, and back. Used to auto-convert the Quantity field when
-    // the unit chip is switched (e.g. 2 bag -> auto-shows 100 kg if 1 bag = 50 kg). ----
     private fun toMainUnitQty(entered: Double): Double {
         val product = selectedProduct ?: return entered
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
@@ -1205,9 +1065,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    /** Re-writes the Quantity field to match the newly-selected unit, converted from
-     *  whatever was last entered — e.g. typing 2 while on "bag" then switching to "kg"
-     *  (1 bag = 50 kg) auto-fills 100 instead of leaving a stale "2" under "kg". */
     private fun refillAutoQty() {
         if (lastMainQty <= 0) return
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: return
@@ -1218,9 +1075,6 @@ class PurchaseActivity : AppCompatActivity() {
         suppressQtyWatcher = false
     }
 
-    // ---- Converts an entered "price per currently-selected unit" to a "price per
-    // MAIN unit", and back — mirrors toMainUnitQty()/fromMainUnitQty() but inverted
-    // (price scales the opposite way qty does: smaller unit -> smaller price). ----
     private fun toMainUnitRate(entered: Double): Double {
         val product = selectedProduct ?: return entered
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
@@ -1246,12 +1100,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Rate adjusts to the chosen unit. Picking the product suggests the main-unit
-    // cost as a starting point; but once the user types their OWN rate (e.g. 10000 for
-    // 1 bag), lastMainRate takes over so switching units converts proportionally from
-    // what was actually entered, instead of snapping back to the product's saved cost.
-    // Example: 1 bag = 50 kg, user types 10000 while on "bag" -> switching to "kg"
-    // auto-fills 200 (10000 / 50), and switching back to "bag" restores 10000. ----
     private fun refillAutoRate() {
         val product = selectedProduct ?: return
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
@@ -1284,9 +1132,6 @@ class PurchaseActivity : AppCompatActivity() {
                 setOnClickListener {
                     unitSpinner.setSelection(options.indexOf(unitLabel))
                     buildUnitChips(options, unitLabel)
-                    // FIX: don't auto-change the typed Quantity when the unit chip is
-                    // tapped — only Rate/Amount should recalculate (see onItemSelected
-                    // above for the full explanation).
                     refillAutoRate()
                     updateLineTotal()
                 }
@@ -1300,15 +1145,6 @@ class PurchaseActivity : AppCompatActivity() {
         val r = rate.text.toString().toDoubleOrNull() ?: 0.0
         val amount = Math.round(q * r).toDouble()
         totalAmountText.text = "Total Amount: Rs %.0f".format(amount)
-
-        // Mirror Qty x Rate into the "Total Amount" quick-entry field, but only while
-        // the user isn't actively typing into it themselves (see amountInput watcher
-        // above, which does the reverse: Amount -> Rate).
-        if (::amountInput.isInitialized && !amountInput.hasFocus()) {
-            suppressAmountWatcher = true
-            amountInput.setText(if (amount > 0) formatMoney(amount) else "")
-            suppressAmountWatcher = false
-        }
     }
 
     private fun addItem() {
@@ -1323,8 +1159,6 @@ class PurchaseActivity : AppCompatActivity() {
 
         val product = selectedProduct ?: products.find { it.name.equals(enteredName, ignoreCase = true) }
         if (product == null) {
-            // Not an existing product — open the quick "Add Product" dialog (prefilled
-            // with what was typed) instead of blocking the user with an error.
             openAddProductDialog(enteredName)
             return
         }
@@ -1342,30 +1176,6 @@ class PurchaseActivity : AppCompatActivity() {
             tertiaryUnit = product.tertiaryUnit,
             tertiaryUnitQty = product.tertiaryUnitQty
         )
-
-        // FIX ("Galat figure" with Secondary/Tertiary units, e.g. 1 CTN = 50 Outer,
-        // 1 Outer = 10 Dabbi): stock is tracked in whole main units, so a
-        // Secondary/Tertiary quantity that converts to less than half a main unit
-        // rounds DOWN to 0 when saved (see savePurchase() -> roundToInt()). That used
-        // to silently add the item to the bill without increasing stock or updating
-        // the weighted-average cost — a wrong figure with no warning. Block it here
-        // with a clear message instead.
-        val mainQtyPreview = line.mainUnitQty()
-        if (mainQtyPreview < 0.5) {
-            android.app.AlertDialog.Builder(this)
-                .setTitle(com.grocerypos.v11.util.Loc.t(this, "Quantity Too Small", "مقدار بہت کم ہے"))
-                .setMessage(
-                    com.grocerypos.v11.util.Loc.t(
-                        this,
-                        "${formatQty(q)} $unit is too small to convert into a whole ${product.unit} for stock — it would round down to 0. Increase the quantity, or pick a bigger unit.",
-                        "$unit ${formatQty(q)} کو ${product.unit} میں تبدیل کرنا ممکن نہیں (اسٹاک میں 0 بن جائے گا)۔ مقدار بڑھائیں یا بڑا یونٹ منتخب کریں۔"
-                    )
-                )
-                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "OK", "ٹھیک ہے"), null)
-                .show()
-            return
-        }
-
         lines.add(line)
         renderItemsList()
         updateGrandTotal()
@@ -1373,9 +1183,6 @@ class PurchaseActivity : AppCompatActivity() {
         itemName.setText("")
         qty.setText("")
         rate.setText("")
-        suppressAmountWatcher = true
-        amountInput.setText("")
-        suppressAmountWatcher = false
         selectedProduct = null
         lastMainQty = 0.0
         lastMainRate = 0.0
@@ -1387,12 +1194,6 @@ class PurchaseActivity : AppCompatActivity() {
         if (editBillNo == null) saveDraft()
     }
 
-    // ---- Universal unit-conversion lookup (mirrors ProductActivity): known standard
-    // conversions between common unit names (case/spacing-insensitive), regardless of
-    // whether the pair sits in the primary→secondary or secondary→tertiary slot.
-    // Returns null for any pair not in this table — those still need manual entry.
-    // Used by openAddProductDialog() below to auto-suggest the secondary/tertiary
-    // conversion quantity (e.g. dozen -> pcs = 12, kg -> gram = 1000). ----
     private fun normalizeUnitName(u: String) = u.trim().lowercase()
 
     private fun standardUnitQty(fromUnit: String, toUnit: String): Double? {
@@ -1421,24 +1222,15 @@ class PurchaseActivity : AppCompatActivity() {
     private fun trimNum(v: Double): String =
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
-    // ---- Quick inline "add a new unit" — used by the unit spinners inside
-    // openAddProductDialog() below (Primary / Secondary / Tertiary), mirroring
-    // ProductActivity.promptAddUnitInline(). Saves straight to the shared `units`
-    // table via unitDao().insert(), so the new unit is immediately available
-    // everywhere else too (other products, the main Item Entry unit chips, etc.) —
-    // not just for the product currently being created. ----
     private fun promptAddUnitInline(onAdded: (String) -> Unit) {
-        // FIX (3rd-tier unit "+" hidden behind keyboard): dismiss whatever keyboard is
-        // currently up (e.g. from the Secondary/Tertiary qty field in the parent
-        // dialog) before opening this one — otherwise the two overlap and the "Add"
-        // button here can end up hidden behind the keyboard, forcing the user to
-        // manually close it first.
-        currentFocus?.let { focused ->
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-            imm?.hideSoftInputFromWindow(focused.windowToken, 0)
-        }
+        // FIX: hide whatever soft keyboard is currently open (e.g. from typing in the
+        // Secondary/Tertiary Qty field just above) BEFORE this dialog is shown. Without
+        // this the old keyboard stayed up and covered/blocked this dialog's own input
+        // field, so you had to manually dismiss the keyboard first (e.g. when adding
+        // the 3rd/tertiary unit) before you could type the new unit's name.
+        hideKeyboard()
         val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
-        val unitDialog = android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog.Builder(this)
             .setTitle(com.grocerypos.v11.util.Loc.t(this, "New Unit", "نیا یونٹ"))
             .setView(input)
             .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Add", "شامل کریں")) { _, _ ->
@@ -1450,20 +1242,9 @@ class PurchaseActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .create()
-        // FIX: without ADJUST_RESIZE this small dialog can also sit partly under the
-        // keyboard on some devices/text sizes — resize so "Add"/"Cancel" stay reachable.
-        unitDialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        unitDialog.show()
+            .show()
     }
 
-    /** Handles the JSON result returned by BillScanActivity after the user reviews and
-     *  confirms detected {name, qty, rate} rows. Each name is matched against existing
-     *  Products (exact match first, then a loose contains-match). Anything that does
-     *  NOT match an existing product is copied into the purchase window exactly as if
-     *  it had been added manually: a bare-bones product (pcs unit, no conversions) is
-     *  auto-created on the spot so the scanned line lands directly in Billed Items,
-     *  fully editable — nothing from a scan is silently dropped anymore. */
     private fun handleScannedItems(json: String) {
         val arr = try { JSONArray(json) } catch (e: Exception) { return }
 
@@ -1473,8 +1254,6 @@ class PurchaseActivity : AppCompatActivity() {
             var autoCreatedCount = 0
 
             for (i in 0 until arr.length()) {
-                // FIX: one bad scanned row (malformed JSON object) used to abort the
-                // whole loop, dropping every item after it. Now just skips that row.
                 val o = try { arr.getJSONObject(i) } catch (e: Exception) {
                     Log.e("PurchaseActivity", "handleScannedItems: skipping bad item $i", e)
                     continue
@@ -1487,9 +1266,6 @@ class PurchaseActivity : AppCompatActivity() {
                 var product = products.find { it.name.equals(scannedName, ignoreCase = true) }
                     ?: products.find { it.name.contains(scannedName, ignoreCase = true) || scannedName.contains(it.name, ignoreCase = true) }
 
-                // No match at all — copy it into the purchase exactly as scanned, same as
-                // if the user had typed it manually and it were a brand-new item: auto-create
-                // a bare-bones product (pcs, no conversions) so the line can be added right away.
                 if (product == null) {
                     val newProduct = Product(
                         barcode = "P" + System.currentTimeMillis() + i,
@@ -1543,9 +1319,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    /** Renders the numbered "#1, #2, …" Billed Items cards — matches the reference
-     *  screenshot: bold item name + amount on top, "Item Subtotal: qty unit x rate = Rs amount"
-     *  underneath. The whole section is hidden until at least one line is added. */
     private fun renderItemsList() {
         itemsContainer.removeAllViews()
         billedItemsHeader.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
@@ -1607,8 +1380,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    /** Total = items subtotal (rounded to the nearest rupee, no paisas).
-     *  Due = Total − Paid. */
     private fun updateGrandTotal() {
         val total = Math.round(lines.sumOf { it.amount }).toDouble()
         grandTotalText.text = "Rs %.0f".format(total)
@@ -1619,10 +1390,9 @@ class PurchaseActivity : AppCompatActivity() {
         dueAmountText.setTextColor(Color.parseColor(if (due > 0) red else teal))
     }
 
-    // ---- Supplier quick-add ----
     private fun promptAddSupplier() {
         val input = EditText(this).apply { hint = "Supplier name"; setPadding(32, 24, 32, 24) }
-        val supplierDialog = android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog.Builder(this)
             .setTitle("Add Supplier")
             .setView(input)
             .setPositiveButton("Add") { _, _ ->
@@ -1636,19 +1406,9 @@ class PurchaseActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Cancel", null)
-            .create()
-        supplierDialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        supplierDialog.show()
+            .show()
     }
 
-    // ---- Quick "Add Product" from within Purchase: lets the user create a brand-new
-    // product on the spot — with full Primary/Secondary/Tertiary unit setup — when the
-    // item being purchased isn't in the Products list yet, instead of having to leave
-    // this screen and set it up in Product Management first. Each of the three unit
-    // spinners now has its own inline "+" so a brand-new unit (not in the Units list
-    // yet) can be added right here — it's saved to the shared units table via
-    // promptAddUnitInline() AND, once "Save" below is tapped, saved onto this product
-    // itself (unit / secondaryUnit / tertiaryUnit fields). ----
     private fun openAddProductDialog(prefillName: String) {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1683,7 +1443,6 @@ class PurchaseActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 8)
         }
 
-        // ---- Name ----
         body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "PRODUCT NAME", "پروڈکٹ کا نام")))
         val nameField = EditText(this).apply {
             setText(prefillName)
@@ -1695,7 +1454,6 @@ class PurchaseActivity : AppCompatActivity() {
         body.addView(nameField)
         body.addView(spacer(18))
 
-        // ---- Category ----
         body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "CATEGORY", "کیٹیگری")))
         val categorySpinnerBox = LinearLayout(this).apply {
             background = strokedBg(border, "#FAFBFC", 12)
@@ -1710,7 +1468,6 @@ class PurchaseActivity : AppCompatActivity() {
             categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats)
         }
 
-        // ---- Primary Unit (with inline "+" to add a brand-new unit) ----
         body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "PRIMARY UNIT", "بنیادی یونٹ")))
         val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val primarySpinnerBox = LinearLayout(this).apply {
@@ -1735,7 +1492,6 @@ class PurchaseActivity : AppCompatActivity() {
         body.addView(primaryRow)
         body.addView(spacer(20))
 
-        // ---- Secondary Unit (optional, with inline "+") ----
         body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SECONDARY UNIT (smaller, optional)", "ثانوی یونٹ (چھوٹی، اختیاری)")))
         val secondaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val secondarySpinnerBox = LinearLayout(this).apply {
@@ -1775,7 +1531,6 @@ class PurchaseActivity : AppCompatActivity() {
         body.addView(secQtyBox)
         body.addView(spacer(20))
 
-        // ---- Tertiary Unit (optional, relative to Secondary, with inline "+") ----
         body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "TERTIARY UNIT (smallest, optional)", "تیسرا یونٹ (سب سے چھوٹا، اختیاری)")))
         val tertiaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val tertiarySpinnerBox = LinearLayout(this).apply {
@@ -1822,10 +1577,6 @@ class PurchaseActivity : AppCompatActivity() {
         val tertiaryOptions = listOf("None") + allUnits
         tertiarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, tertiaryOptions)
 
-        // ---- Universal conversion auto-fill (mirrors ProductActivity's unit dialog):
-        // when a known unit pair is picked (dozen->pcs=12, kg->gram=1000, etc.), suggest
-        // the standard quantity automatically. Only fills an EMPTY field, so it never
-        // overwrites a value the user already typed. ----
         fun autoFillSecondaryQty() {
             val p = primarySpinner.selectedItem?.toString() ?: return
             val s = secondarySpinner.selectedItem?.toString() ?: return
@@ -1859,13 +1610,6 @@ class PurchaseActivity : AppCompatActivity() {
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }
         content.addView(footer)
         val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
-        // FIX (3rd-tier unit "+" hidden behind keyboard): without ADJUST_RESIZE the
-        // dialog didn't shrink when the keyboard opened, so fields below the one being
-        // typed in — e.g. the Tertiary Unit "+" button, right after typing the
-        // Secondary qty — ended up hidden behind the keyboard, forcing the user to
-        // manually dismiss the keyboard first just to reach it. Resizing keeps
-        // everything reachable through the ScrollView while the keyboard is up.
-        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         footer.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Cancel", "منسوخ کریں")
@@ -1893,11 +1637,6 @@ class PurchaseActivity : AppCompatActivity() {
                 var tertiaryUnit = tertiarySpinner.selectedItem?.toString() ?: "None"
                 var tertiaryQty = terQtyField.text.toString().toDoubleOrNull() ?: 0.0
 
-                // ---- Numeric validation for the unit-conversion chain (e.g. 1 CTN = 50
-                // Outer, 1 Outer = 10 Dabbi). Every tier that's selected needs a positive
-                // conversion number and must be distinct from the tiers above it — without
-                // this, a blank/zero conversion silently saved as 0, which is what made
-                // qty/rate math for that product misbehave later in Purchase/Sale. ----
                 if (secondaryUnit != "None") {
                     if (secondaryUnit == primaryUnit) {
                         Toast.makeText(this@PurchaseActivity, "Secondary unit must be different from Primary unit", Toast.LENGTH_SHORT).show()
@@ -1957,7 +1696,6 @@ class PurchaseActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    // ---- Delete (edit mode only): reverses stock + supplier balance, then removes the bill ----
     private fun confirmDeletePurchase() {
         val billNo = editBillNo ?: return
         android.app.AlertDialog.Builder(this)
@@ -1974,9 +1712,6 @@ class PurchaseActivity : AppCompatActivity() {
             val purchase = originalPurchase ?: db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
 
-            // FIX: decreaseForce (unguarded) instead of decrease (guarded) — a purchase's
-            // stock may have already been partly/fully sold by now, so this must be able
-            // to go negative to correctly reverse it, instead of silently no-op'ing.
             items.forEach { db.productDao().decreaseForce(it.barcode, it.qty) }
             val outstanding = purchase.total - purchase.paid
             if (purchase.supplierId != null && outstanding > 0) {
@@ -1985,7 +1720,6 @@ class PurchaseActivity : AppCompatActivity() {
             db.purchaseDao().deleteItems(billNo)
             db.purchaseDao().deletePurchase(billNo)
             db.paymentDao().deleteByReference(billNo)
-            // FIX: also remove the Cash Out record this purchase created (see savePurchase()).
             db.cashTransactionDao().deleteByReference(billNo)
 
             Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show()
@@ -1993,16 +1727,8 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Save ----
     private fun savePurchase() {
-        // Dismiss the keyboard up front so the bottom Save/Delete bar (which can sit
-        // under the soft keyboard on smaller screens) is reachable without the user
-        // having to manually tap outside a field first.
-        currentFocus?.let { focused ->
-            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-            imm?.hideSoftInputFromWindow(focused.windowToken, 0)
-            focused.clearFocus()
-        }
+        hideKeyboard()
 
         val party = partyName.text.toString().trim()
         if (party.isEmpty()) { partyName.error = "Required"; return }
@@ -2010,23 +1736,13 @@ class PurchaseActivity : AppCompatActivity() {
             Toast.makeText(this, "Add at least one item, or continue without items", Toast.LENGTH_SHORT).show()
         }
 
-        // Amounts are rounded to the nearest rupee (no paisas) throughout.
         val subtotal = lines.sumOf { it.amount }
         val grandTotal = Math.round(subtotal).toDouble().coerceAtLeast(0.0)
         val discount = 0.0
-        // No Cash/Credit toggle — it's a credit purchase whenever Amount Paid is less
-        // than the total; leaving it blank means fully on credit (0 paid).
         val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
         val paymentMethod = "Cash"
 
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
-        // FIX: was `val` — a purchase whose typed Party name didn't match any existing
-        // supplier (i.e. the "+" button was never tapped) used to save with
-        // supplierId = null, which silently skipped BOTH the addBalance() call below
-        // AND the Payment record, so that purchase's due amount never showed up
-        // anywhere in "You'll Give". Now mutable so it can be filled in by
-        // auto-creating the supplier, mirroring how SaleActivity.saveSale() already
-        // auto-creates a Customer when the typed name doesn't match one.
         var supplierId = matchedSupplier?.id
 
         val billNo = editBillNo ?: genBillNo()
@@ -2034,18 +1750,12 @@ class PurchaseActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
 
-            // FIX: auto-create the supplier if the typed party name isn't an existing
-            // one, instead of leaving supplierId null and losing this purchase's due
-            // amount from every balance/report that keys off supplierId.
             if (supplierId == null && party.isNotEmpty()) {
                 supplierId = db.supplierDao().insert(Supplier(name = party))
             }
 
             val original = originalPurchase
             if (original != null) {
-                // FIX: decreaseForce instead of decrease — a purchase's stock may already
-                // be partly/fully sold by the time it's edited, so this reversal must be
-                // able to go negative rather than silently no-op'ing.
                 originalItems.forEach { db.productDao().decreaseForce(it.barcode, it.qty) }
                 val originalOutstanding = original.total - original.paid
                 if (original.supplierId != null && originalOutstanding > 0) {
@@ -2054,7 +1764,6 @@ class PurchaseActivity : AppCompatActivity() {
                 db.purchaseDao().deleteItems(billNo)
                 db.purchaseDao().deletePurchase(billNo)
                 db.paymentDao().deleteByReference(billNo)
-                // FIX: also remove the old Cash Out record before re-inserting the updated one below.
                 db.cashTransactionDao().deleteByReference(billNo)
             }
 
@@ -2070,9 +1779,6 @@ class PurchaseActivity : AppCompatActivity() {
                 )
             )
 
-            // ---- Convert secondary/tertiary-unit qty & rate to main-unit terms before
-            // persisting, mirroring SaleActivity. mainUnitQty()/mainUnitRate() now handle
-            // both tiers via the extension functions above. ----
             db.purchaseDao().items(
                 lines.map { line ->
                     PurchaseItem(
@@ -2086,12 +1792,6 @@ class PurchaseActivity : AppCompatActivity() {
                 }
             )
 
-            // FIX: for each line, snapshot the product's stock+cost BEFORE increasing
-            // stock, then after increasing, write back a weighted-average cost:
-            //   newCost = (oldStock * oldCost + purchasedQty * purchaseRate) / (oldStock + purchasedQty)
-            // Without this, Product.cost stayed frozen at whatever was typed once in
-            // Add/Edit Product, so Sale's profit calculation didn't reflect real
-            // purchase rates over time.
             lines.forEach { line ->
                 val barcode = line.barcode ?: return@forEach
                 val before = db.productDao().find(barcode)
@@ -2129,9 +1829,6 @@ class PurchaseActivity : AppCompatActivity() {
                 )
             }
 
-            // FIX: record the cash that actually left the register for this purchase —
-            // previously nothing logged this, so Cash Register / Reports never reflected
-            // money paid out to suppliers.
             if (amountPaid > 0) {
                 db.cashTransactionDao().insert(
                     CashTransaction(
@@ -2144,15 +1841,11 @@ class PurchaseActivity : AppCompatActivity() {
                 )
             }
 
-            // Bill is safely persisted now — clear the recovery draft so a future launch
-            // doesn't try to restore an already-saved purchase.
             suppressDraftSave = true
             clearDraft()
 
             editBillNo = billNo
 
-            // Whether this is a new purchase or an update to an existing one, always
-            // go to the Bill Preview after Paid Amount is saved.
             Toast.makeText(
                 this@PurchaseActivity,
                 if (original != null) "Purchase updated" else "Purchase saved",
@@ -2162,8 +1855,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Open the receipt-style Bill Preview. Used both right after Save, and from the
-    // 3-dot Print/Share menu for an already-saved bill. ----
     private fun openBillPreview(
         billNo: String,
         forSaving: Boolean,
