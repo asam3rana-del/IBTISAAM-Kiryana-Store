@@ -1047,11 +1047,9 @@ class PurchaseActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@PurchaseActivity)
             val purchase = originalPurchase ?: db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
-            // FIX 1: qty Int expected
             items.forEach { db.productDao().decreaseForce(it.barcode, it.qty.toInt()) }
             val outstanding = purchase.total - purchase.paid
-            // FIX 2: addBalance expects Double, not Int
-            if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
+            if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, (-outstanding).roundToInt()) }
             db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
             Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
         }
@@ -1076,13 +1074,11 @@ class PurchaseActivity : AppCompatActivity() {
             if (original != null) {
                 originalItems.forEach { db.productDao().decreaseForce(it.barcode, it.qty.toInt()) }
                 val originalOutstanding = original.total - original.paid
-                // FIX 3: Double expected
-                if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
+                if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, (-originalOutstanding).roundToInt()) }
                 db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
             }
             db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = subtotal, discount = discount))
-            // FIX 4: qty Int expected, not Double
-            db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.mainUnitQty().roundToInt(), unitCost = line.mainUnitRate(), amount = line.amount, unit = line.unit) })
+            db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.mainUnitQty(), unitCost = line.mainUnitRate(), amount = line.amount, unit = line.unit) })
             lines.forEach { line ->
                 val barcode = line.barcode ?: return@forEach
                 val before = db.productDao().find(barcode)
@@ -1095,8 +1091,7 @@ class PurchaseActivity : AppCompatActivity() {
                 }
             }
             val outstanding = grandTotal - amountPaid
-            // FIX 5: Double expected
-            if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
+            if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding.roundToInt()) }
             if (supplierId != null && amountPaid > 0) { db.paymentDao().insert(Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")) }
             if (amountPaid > 0) { db.cashTransactionDao().insert(CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)) }
             suppressDraftSave = true; clearDraft(); editBillNo = billNo
