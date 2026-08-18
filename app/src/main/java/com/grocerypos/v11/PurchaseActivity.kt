@@ -73,6 +73,12 @@ class PurchaseActivity : AppCompatActivity() {
         const val EXTRA_BILL_NO = "billNo"
         private const val PREFS_NAME = "purchase_draft_prefs"
         private const val KEY_DRAFT = "draft_json"
+        private const val PREFS_UNIT = "unit_preset_prefs"
+        private const val KEY_LAST_PRIMARY = "last_primary"
+        private const val KEY_LAST_SECONDARY = "last_secondary"
+        private const val KEY_LAST_SEC_QTY = "last_sec_qty"
+        private const val KEY_LAST_TERTIARY = "last_tertiary"
+        private const val KEY_LAST_TER_QTY = "last_ter_qty"
     }
 
     private val bg = "#F4F6F8"
@@ -115,7 +121,7 @@ class PurchaseActivity : AppCompatActivity() {
 
     private var suppliers = listOf<Supplier>()
     private var products = listOf<Product>()
-    private var allUnits = listOf("pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi")
+    private var allUnits = listOf("pcs", "kg", "Pao", "gram", "g", "box", "dozen", "carton", "ctn", "outer", "dabbi")
     private val lines = mutableListOf<PurchaseLine>()
     private var purchaseDateMillis = System.currentTimeMillis()
     private var selectedProduct: Product? = null
@@ -567,6 +573,22 @@ class PurchaseActivity : AppCompatActivity() {
         if (editBillNo == null) restoreDraftIfAny()
     }
 
+    // UNIT PRESET LOGIC
+    private fun getUnitPrefs() = getSharedPreferences(PREFS_UNIT, Context.MODE_PRIVATE)
+    private fun saveLastUnitPreset(primary: String, secondary: String, secQty: Double, tertiary: String, terQty: Double) {
+        getUnitPrefs().edit().putString(KEY_LAST_PRIMARY, primary).putString(KEY_LAST_SECONDARY, secondary).putString(KEY_LAST_SEC_QTY, secQty.toString()).putString(KEY_LAST_TERTIARY, tertiary).putString(KEY_LAST_TER_QTY, terQty.toString()).apply()
+    }
+    private fun getLastUnitPreset(): Map<String, String> {
+        val p = getUnitPrefs()
+        return mapOf(
+            "primary" to (p.getString(KEY_LAST_PRIMARY, "kg") ?: "kg"),
+            "secondary" to (p.getString(KEY_LAST_SECONDARY, "Pao") ?: "Pao"),
+            "secQty" to (p.getString(KEY_LAST_SEC_QTY, "4") ?: "4"),
+            "tertiary" to (p.getString(KEY_LAST_TERTIARY, "gram") ?: "gram"),
+            "terQty" to (p.getString(KEY_LAST_TER_QTY, "250") ?: "250")
+        )
+    }
+
     override fun onPause() {
         super.onPause()
         if (editBillNo == null && !suppressDraftSave) saveDraft()
@@ -720,7 +742,7 @@ class PurchaseActivity : AppCompatActivity() {
     private fun loadUnits() {
         lifecycleScope.launch {
             PosDatabase.get(this@PurchaseActivity).unitDao().all().collectLatest { list ->
-                allUnits = (listOf("pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi") + list.map { it.name }).distinct()
+                allUnits = (listOf("pcs", "kg", "Pao", "gram", "g", "box", "dozen", "carton", "ctn", "outer", "dabbi") + list.map { it.name }).distinct()
                 if (selectedProduct == null) { unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits) }
             }
         }
@@ -833,9 +855,18 @@ class PurchaseActivity : AppCompatActivity() {
     private fun normalizeUnitName(u: String) = u.trim().lowercase()
     private fun standardUnitQty(fromUnit: String, toUnit: String): Double? {
         val f = normalizeUnitName(fromUnit); val t = normalizeUnitName(toUnit)
-        val gramNames = setOf("gram", "grams", "g", "gm"); val pieceNames = setOf("pcs", "pc", "piece", "pieces"); val mlNames = setOf("ml", "milliliter", "millilitre"); val kgNames = setOf("kg", "kgs", "kilogram", "kilograms"); val litreNames = setOf("litre", "liter", "l", "ltr")
+        val gramNames = setOf("gram", "grams", "g", "gm"); val pieceNames = setOf("pcs", "pc", "piece", "pieces"); val paoNames = setOf("pao", "pav", "paoo")
+        val mlNames = setOf("ml", "milliliter", "millilitre"); val kgNames = setOf("kg", "kgs", "kilogram", "kilograms"); val litreNames = setOf("litre", "liter", "l", "ltr")
         return when {
-            f == "dozen" && t in pieceNames -> 12.0; f == "gross" && t == "dozen" -> 12.0; f == "gross" && t in pieceNames -> 144.0; f in kgNames && t in gramNames -> 1000.0; f in litreNames && t in mlNames -> 1000.0; f == "quintal" && t in kgNames -> 100.0; f == "ton" && t in kgNames -> 1000.0; f == "pao" && t in gramNames -> 250.0; f in kgNames && t == "pao" -> 4.0; else -> null
+            f in kgNames && t in paoNames -> 4.0
+            f in paoNames && t in gramNames -> 250.0
+            f in kgNames && t in gramNames -> 1000.0
+            f == "dozen" && t in pieceNames -> 12.0
+            f == "gross" && t == "dozen" -> 12.0
+            f == "gross" && t in pieceNames -> 144.0
+            f in litreNames && t in mlNames -> 1000.0
+            f == "quintal" && t in kgNames -> 100.0
+            else -> null
         }
     }
     private fun trimNum(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
@@ -896,20 +927,41 @@ class PurchaseActivity : AppCompatActivity() {
             if (name.isNotBlank()) { lifecycleScope.launch { val s = Supplier(name = name); PosDatabase.get(this@PurchaseActivity).supplierDao().insert(s); partyName.setText(name) } }
         }.setNegativeButton("Cancel", null).show()
     }
+
     private fun openAddProductDialog(prefillName: String) {
-        // same dialog as before - truncated for brevity but full working
+        val lastPreset = getLastUnitPreset()
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.parseColor(cardWhite)) }
         val dialogHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(28, 26, 28, 26); background = roundedBg(navy, 0) }
-        dialogHeader.addView(TextView(this).apply { text = "\u2795  Add New Product"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) })
+        dialogHeader.addView(TextView(this).apply { text = "\u2795  Add New Product - Quick Unit"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) })
         content.addView(dialogHeader)
         val scrollableBody = ScrollView(this); val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 26, 28, 8) }; scrollableBody.addView(body)
+
+        // Quick Preset Chips
+        fun addQuickPresets() {
+            body.addView(TextView(this).apply { text = "QUICK PRESETS (1 Click)"; textSize = 10.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0,0,0,8) })
+            val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val presets = listOf(
+                Triple("kg > Pao > 250g", listOf("kg","Pao","gram") to listOf("4","250")),
+                Triple("kg > gram", listOf("kg","gram","None") to listOf("1000","0")),
+                Triple("Dozen > pcs", listOf("Dozen","pcs","None") to listOf("12","0")),
+                Triple("Carton > pcs", listOf("Carton","pcs","None") to listOf("12","0"))
+            )
+            // These chips will be added later after spinners created
+            body.addView(chipRow)
+        }
+
         fun microLabel(text: String) = TextView(this).apply { this.text = text; textSize = 11.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 8) }
         body.addView(microLabel("PRODUCT NAME"))
         val nameField = EditText(this).apply { setText(prefillName); setTextColor(Color.parseColor(textDark)); background = strokedBg(border, "#FAFBFC", 12); setPadding(18, 16, 18, 16); textSize = 15f }
         body.addView(nameField); body.addView(spacer(18))
+
         body.addView(microLabel("CATEGORY"))
         val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2) }; val categorySpinnerDialog = Spinner(this); categorySpinnerBox.addView(categorySpinnerDialog); body.addView(categorySpinnerBox); body.addView(spacer(20))
         lifecycleScope.launch { val cats = (listOf("General") + PosDatabase.get(this@PurchaseActivity).categoryDao().all().first().map { it.name }).distinct(); categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats) }
+
+        body.addView(microLabel("LAST USED: ${lastPreset["primary"]} > ${lastPreset["secondary"]} (${lastPreset["secQty"]}) > ${lastPreset["tertiary"]} (${lastPreset["terQty"]})  [EDITABLE]"))
+        body.addView(spacer(8))
+
         body.addView(microLabel("PRIMARY UNIT"))
         val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val primarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
@@ -917,7 +969,8 @@ class PurchaseActivity : AppCompatActivity() {
         primarySpinnerBox.addView(primarySpinner); primaryRow.addView(primarySpinnerBox); primaryRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
         primaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); primarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits); primarySpinner.setSelection(allUnits.indexOf(newUnit)) } })
         body.addView(primaryRow); body.addView(spacer(20))
-        body.addView(microLabel("SECONDARY UNIT"))
+
+        body.addView(microLabel("SECONDARY UNIT (editable suggestion)"))
         val secondaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val secondarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val secondarySpinner = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
@@ -925,9 +978,13 @@ class PurchaseActivity : AppCompatActivity() {
         secondaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); val opts = listOf("None") + allUnits; secondarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, opts); secondarySpinner.setSelection(opts.indexOf(newUnit)) } })
         body.addView(secondaryRow); body.addView(spacer(16))
         val secQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFC", 12); setPadding(16, 4, 16, 4) }
-        val secQtyField = EditText(this).apply { hint = "1 Primary = how many Secondary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        secQtyBox.addView(secQtyField); body.addView(secQtyBox); body.addView(spacer(20))
-        body.addView(microLabel("TERTIARY UNIT"))
+        secQtyBox.addView(TextView(this).apply { text = "1 Primary = "; textSize = 12f; setTextColor(Color.parseColor(textMuted)) })
+        val secQtyField = EditText(this).apply { hint = "e.g. 4"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL; setText(lastPreset["secQty"]) }
+        secQtyBox.addView(secQtyField)
+        secQtyBox.addView(TextView(this).apply { text = "  Secondary (editable)"; textSize = 12f; setTextColor(Color.parseColor(textMuted)) })
+        body.addView(secQtyBox); body.addView(spacer(20))
+
+        body.addView(microLabel("TERTIARY UNIT (editable suggestion - 250 gram)"))
         val tertiaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val tertiarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val tertiarySpinner = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
@@ -935,17 +992,44 @@ class PurchaseActivity : AppCompatActivity() {
         tertiaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); val opts = listOf("None") + allUnits; tertiarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, opts); tertiarySpinner.setSelection(opts.indexOf(newUnit)) } })
         body.addView(tertiaryRow); body.addView(spacer(16))
         val terQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFC", 12); setPadding(16, 4, 16, 4) }
-        val terQtyField = EditText(this).apply { hint = "1 Secondary = how many Tertiary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        terQtyBox.addView(terQtyField); body.addView(terQtyBox)
+        terQtyBox.addView(TextView(this).apply { text = "1 Secondary = "; textSize = 12f; setTextColor(Color.parseColor(textMuted)) })
+        val terQtyField = EditText(this).apply { hint = "e.g. 250"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL; setText(lastPreset["terQty"]) }
+        terQtyBox.addView(terQtyField)
+        terQtyBox.addView(TextView(this).apply { text = "  Tertiary (editable)"; textSize = 12f; setTextColor(Color.parseColor(textMuted)) })
+        body.addView(terQtyBox)
+
         content.addView(scrollableBody, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         primarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
+        primarySpinner.setSelection(allUnits.indexOf(lastPreset["primary"]).takeIf { it >=0 } ?: allUnits.indexOf("kg"))
         val secondaryOptions = listOf("None") + allUnits; secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, secondaryOptions)
+        secondarySpinner.setSelection(secondaryOptions.indexOf(lastPreset["secondary"]).takeIf { it >=0 } ?: secondaryOptions.indexOf("Pao"))
         val tertiaryOptions = listOf("None") + allUnits; tertiarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, tertiaryOptions)
-        fun autoFillSecondaryQty() { val p = primarySpinner.selectedItem?.toString() ?: return; val s = secondarySpinner.selectedItem?.toString() ?: return; if (s == "None") return; val std = standardUnitQty(p, s) ?: return; if (secQtyField.text.toString().isBlank()) secQtyField.setText(trimNum(std)) }
-        fun autoFillTertiaryQty() { val s = secondarySpinner.selectedItem?.toString() ?: return; val t = tertiarySpinner.selectedItem?.toString() ?: return; if (s == "None" || t == "None") return; val std = standardUnitQty(s, t) ?: return; if (terQtyField.text.toString().isBlank()) terQtyField.setText(trimNum(std)) }
+        tertiarySpinner.setSelection(tertiaryOptions.indexOf(lastPreset["tertiary"]).takeIf { it >=0 } ?: tertiaryOptions.indexOf("gram"))
+
+        fun autoFillSecondaryQty() {
+            val p = primarySpinner.selectedItem?.toString() ?: return
+            val s = secondarySpinner.selectedItem?.toString() ?: return
+            if (s == "None") return
+            if (secQtyField.text.toString().isNotBlank() && secQtyField.text.toString() != lastPreset["secQty"]) return // user edited, respect it
+            val std = standardUnitQty(p, s)
+            if (std != null) secQtyField.setText(trimNum(std))
+        }
+        fun autoFillTertiaryQty() {
+            val s = secondarySpinner.selectedItem?.toString() ?: return
+            val t = tertiarySpinner.selectedItem?.toString() ?: return
+            if (s == "None" || t == "None") return
+            if (terQtyField.text.toString().isNotBlank() && terQtyField.text.toString() != lastPreset["terQty"]) {
+                // check if user edited manually, don't overwrite
+            } else {
+                val std = standardUnitQty(s, t)
+                if (std != null) terQtyField.setText(trimNum(std))
+            }
+        }
+
         primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
         secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty(); autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
         tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
+
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }; content.addView(footer)
         val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
         footer.addView(TextView(this).apply { text = "Cancel"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, "#FAFBFC", 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }; setOnClickListener { dialog.dismiss() } })
@@ -953,13 +1037,18 @@ class PurchaseActivity : AppCompatActivity() {
             text = "Save"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); background = roundedBg(teal, 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener {
                 val pname = nameField.text.toString().trim(); if (pname.isEmpty()) { nameField.error = "Required"; return@setOnClickListener }
-                val primaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"; var secondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"; val secondaryQty = secQtyField.text.toString().toDoubleOrNull() ?: 0.0; var tertiaryUnit = tertiarySpinner.selectedItem?.toString() ?: "None"; var tertiaryQty = terQtyField.text.toString().toDoubleOrNull() ?: 0.0
+                val primaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"
+                var secondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"
+                val secondaryQty = secQtyField.text.toString().toDoubleOrNull() ?: 0.0
+                var tertiaryUnit = tertiarySpinner.selectedItem?.toString() ?: "None"
+                var tertiaryQty = terQtyField.text.toString().toDoubleOrNull() ?: 0.0
                 if (secondaryUnit != "None" && secondaryUnit == primaryUnit) { Toast.makeText(this@PurchaseActivity, "Secondary must be different", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
                 if (secondaryUnit != "None" && secondaryQty <= 0) { secQtyField.error = "Enter qty"; return@setOnClickListener }
                 if (tertiaryUnit != "None" && secondaryUnit == "None") { Toast.makeText(this@PurchaseActivity, "Select Secondary first", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
                 if (secondaryUnit == "None") { tertiaryUnit = "None"; tertiaryQty = 0.0 }
+                saveLastUnitPreset(primaryUnit, secondaryUnit, secondaryQty, tertiaryUnit, tertiaryQty)
                 val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = 0.0, wholesalePrice = 0.0, stock = 0, openingStock = 0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty)
-                lifecycleScope.launch { PosDatabase.get(this@PurchaseActivity).productDao().upsert(newProduct); Toast.makeText(this@PurchaseActivity, "Product added", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
+                lifecycleScope.launch { PosDatabase.get(this@PurchaseActivity).productDao().upsert(newProduct); Toast.makeText(this@PurchaseActivity, "Product added - ${primaryUnit} > $secondaryUnit ($secondaryQty) > $tertiaryUnit ($tertiaryQty)", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
             }
         })
         dialog.show()
