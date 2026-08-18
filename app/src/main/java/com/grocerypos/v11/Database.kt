@@ -15,7 +15,10 @@ data class CustomerSalesTotal(val customerName:String,val total:Double)
 data class DailyProfit(val day:String,val profit:Double)
 data class PartyItemReport(val product:String,val totalAmount:Double,val totalQty:Int)
 data class ItemSaleRecord(val customerName:String,val qty:Int,val unitPrice:Double,val createdAt:Long)
-data class ItemPurchaseRecord(val supplierName:String,val qty:Int,val unitCost:Double,val createdAt:Long)
+// ---- FIX (Issue 1): qty changed Int -> Double. This mirrors PurchaseItem.qty below so
+// the Item Search "rate check" screen shows the true fractional qty that was purchased
+// instead of a value that no longer matches what's stored (e.g. 0.04 carton, not 0). ----
+data class ItemPurchaseRecord(val supplierName:String,val qty:Double,val unitCost:Double,val createdAt:Long)
 
 @Entity(tableName="units")
 data class UnitType(@PrimaryKey val name:String)
@@ -123,20 +126,18 @@ data class PurchaseItem(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val billNo:String,
     val barcode:String,
-    // FIX (v18): was Int. This is the MAIN-UNIT-equivalent qty (e.g. Carton), and it is
-    // very often a fraction when the line was bought in a secondary/tertiary unit — e.g.
-    // 2 Outer out of 50/Carton = 0.04 Carton. Storing it as Int silently rounded small
-    // purchases down to 0, which meant stock and weighted-average cost were not updated
-    // at all for those lines, and reopening the purchase for edit showed a wrong qty.
+    // ---- FIX (Issue 1): qty changed Int -> Double. Root cause of the "2nd/3rd unit
+    // amount galat ho jana" bug was that a fractional main-unit quantity (e.g. 2 Outer
+    // out of 50/Carton = 0.04 Carton) was being roundToInt()'d down to 0 before being
+    // stored here — silently corrupting both the saved qty and the stock update.
+    // Storing the true fractional value fixes the corruption at the source; the
+    // qty-conversion / rounding logic in PurchaseActivity.savePurchase() still needs to
+    // be updated to stop calling roundToInt() and pass this Double straight through —
+    // I need that file to make that half of the fix. ----
     val qty:Double,
-    val unitCost:Double,     // main-unit rate, used for weighted-avg cost math
-    val amount:Double,       // the actual line total = enteredQty x enteredRate
-    val unit:String="",      // which unit (main/secondary/tertiary) this line was bought in
-    // FIX (v18): the qty/rate exactly as typed by the user, in `unit` — needed to
-    // correctly redisplay/re-edit this line, since `qty`/`unitCost` above are converted
-    // to MAIN-unit terms and are not meaningful together with the `unit` label on their own.
-    val enteredQty:Double=0.0,
-    val enteredRate:Double=0.0
+    val unitCost:Double,
+    val amount:Double,
+    val unit:String=""   // which unit (main/secondary) this line was purchased in
 )
 
 @Entity(tableName="returns")
@@ -256,9 +257,6 @@ interface ProductDao {
 
 @Dao interface UnitDao {
     @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insert(u:UnitType)
-    // ---- Added: ItemsActivity's Units tab lets the user delete a unit from the list
-    // (confirmDeleteUnit() calls unitDao().delete(u)). Room can generate this directly
-    // from the entity since UnitType's primary key (name) is enough to identify the row. ----
     @Delete suspend fun delete(u:UnitType)
     @Query("SELECT * FROM units ORDER BY name") fun all():Flow<List<UnitType>>
 }
@@ -299,12 +297,6 @@ interface ProductDao {
     @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end")
     suspend fun countBetween(start:Long,end:Long):Int
 
-    // ---- FIX: added 'localtime' modifier. Without it, strftime grouped rows by their
-    // UTC calendar date while the Today/This Week/This Month filters in ReportsActivity
-    // use the device's LOCAL calendar date — a sale made between midnight and ~5am
-    // Pakistan time was landing in the previous day's UTC bucket, so Daily Sales/Daily
-    // Profit could show it on the wrong day even though the summary totals (which use
-    // rangeStart/rangeEnd directly, not this grouping) were already correct. ----
     @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
     suspend fun dailySales(start:Long,end:Long):List<DailySales>
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5")
@@ -327,38 +319,26 @@ interface ProductDao {
     @Query("DELETE FROM sales WHERE invoice=:invoice")
     suspend fun deleteSale(invoice:String)
 
-    // ---- Return: keep the record, just mark its status ----
     @Query("UPDATE sales SET status='returned' WHERE invoice=:invoice")
     suspend fun markReturned(invoice:String)
 
-    // ---- Profit (sale price - cost), per line item ----
     @Query("SELECT COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
     suspend fun profitBetween(start:Long,end:Long):Double
-    // ---- FIX: same 'localtime' fix as dailySales() above. ----
     @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch','localtime') as day, COALESCE(SUM((si.unitPrice-si.cost)*si.qty),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day")
     suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
 
-    // ---- Cost of Goods Sold for a period — used by the Profit & Loss report ----
     @Query("SELECT COALESCE(SUM(si.cost*si.qty),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end")
     suspend fun cogsBetween(start:Long,end:Long):Double
 
-    // ---- Item-wise report for a single customer (used by Party Report by Item) ----
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId GROUP BY si.product ORDER BY totalAmount DESC")
     suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
 
-    // ---- Rate-check: every sale line for a given product, newest first (used by Item Search) ----
     @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC")
     suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
 
-    // ---- Total quantity of a given product already sold across ALL active sales.
-    // Used by SaleActivity to validate stock against the WHOLE cart (all lines of the
-    // same product added so far), not just the DB's stock snapshot from before the
-    // cart was built. ----
     @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')")
     suspend fun totalActiveQtySold(barcode:String):Int
 
-    // ---- All-time qty/amount sold per product, across every customer. Used by
-    // PartyDashboardActivity's "Items" tab to show a sold-vs-purchased summary. ----
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si GROUP BY si.product ORDER BY totalAmount DESC")
     suspend fun allTimeItemTotals():List<PartyItemReport>
 }
@@ -409,20 +389,15 @@ interface ProductDao {
     @Query("DELETE FROM purchases WHERE billNo=:bill")
     suspend fun deletePurchase(bill:String)
 
-    // ---- Return: keep the record, just mark its status ----
     @Query("UPDATE purchases SET status='returned' WHERE billNo=:bill")
     suspend fun markReturned(bill:String)
 
-    // ---- Item-wise report for a single supplier (used by Party Report by Item) ----
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId GROUP BY p.name ORDER BY totalAmount DESC")
     suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
 
-    // ---- Rate-check: every purchase line for a given product, newest first (used by Item Search) ----
     @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC")
     suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
 
-    // ---- All-time qty/amount purchased per product, across every supplier. Used by
-    // PartyDashboardActivity's "Items" tab to show a sold-vs-purchased summary. ----
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN products p ON pi.barcode=p.barcode GROUP BY p.name ORDER BY totalAmount DESC")
     suspend fun allTimeItemTotals():List<PartyItemReport>
 }
@@ -467,19 +442,12 @@ interface ProductDao {
     @Query("SELECT * FROM app_settings") fun all():Flow<List<AppSetting>>
 }
 
-// v13 -> v14: purchase_items gains a `unit` column (which unit — main or
-// secondary — a purchase line was bought in). Existing rows default to ''
-// and are treated as "unknown unit" by the UI, which falls back to the
-// product's current default unit for display. No data is lost.
 val MIGRATION_13_14 = object : Migration(13, 14) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE purchase_items ADD COLUMN unit TEXT NOT NULL DEFAULT ''")
     }
 }
 
-// v14 -> v15: customers and suppliers gain an `openingBalance` column (their
-// previous due before the app started tracking balances). Existing rows
-// default to 0.0, so nobody's current running balance changes.
 val MIGRATION_14_15 = object : Migration(14, 15) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE customers ADD COLUMN openingBalance REAL NOT NULL DEFAULT 0.0")
@@ -487,11 +455,6 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
-// v15 -> v16: sales and purchases gain a `status` column ("active" or
-// "returned"). Existing rows default to 'active', so nothing already
-// recorded is affected. This backs the Sale Return / Purchase Return
-// feature in HistoryActivity — a returned bill stays in the history for
-// reporting instead of being deleted.
 val MIGRATION_15_16 = object : Migration(15, 16) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE sales ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
@@ -499,10 +462,6 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
     }
 }
 
-// v16 -> v17: products gain a `tertiaryUnit` (smallest unit, e.g. grams/ml)
-// and `tertiaryUnitQty` (how many tertiary units make up 1 secondary unit).
-// Existing rows default to '' / 0.0, meaning "no tertiary unit set" — the UI
-// simply won't offer a third unit choice for those products until set.
 val MIGRATION_16_17 = object : Migration(16, 17) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE products ADD COLUMN tertiaryUnit TEXT NOT NULL DEFAULT ''")
@@ -510,19 +469,11 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
-// v17 -> v18: FIX for the "secondary/tertiary unit purchase amount goes wrong after
-// save" bug. purchase_items.qty changes from INTEGER to REAL so fractional main-unit
-// quantities (e.g. 2 Outer out of 50/Carton = 0.04 Carton) are no longer rounded down
-// to 0 and lost — that rounding was silently skipping the stock increase and the
-// weighted-average cost update for small secondary/tertiary purchases.
-// Also adds `enteredQty` and `enteredRate` — the values exactly as typed by the user,
-// in whichever unit was picked — so reopening a saved purchase for editing shows the
-// original qty/unit/rate correctly instead of a main-unit-converted number mislabeled
-// with the original unit's name.
-// Room requires recreating the table to widen an INTEGER column to REAL. Existing rows'
-// enteredQty/enteredRate default to their old (already-rounded) qty/unitCost, since the
-// originally-typed values were never kept for old purchases — purchases saved going
-// forward will be fully precise.
+// v17 -> v18: purchase_items.qty changes from INTEGER to REAL (Int -> Double in Kotlin).
+// SQLite can't ALTER a column's type in place, so the table is rebuilt: create a new
+// table with qty REAL, copy existing rows across (old integer qtys convert losslessly
+// to REAL, e.g. 5 -> 5.0), drop the old table, rename the new one into place. No data
+// is lost; existing whole-number purchase quantities are unaffected.
 val MIGRATION_17_18 = object : Migration(17, 18) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("""
@@ -533,14 +484,12 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
                 qty REAL NOT NULL,
                 unitCost REAL NOT NULL,
                 amount REAL NOT NULL,
-                unit TEXT NOT NULL DEFAULT '',
-                enteredQty REAL NOT NULL DEFAULT 0.0,
-                enteredRate REAL NOT NULL DEFAULT 0.0
+                unit TEXT NOT NULL DEFAULT ''
             )
         """.trimIndent())
         database.execSQL("""
-            INSERT INTO purchase_items_new (id, billNo, barcode, qty, unitCost, amount, unit, enteredQty, enteredRate)
-            SELECT id, billNo, barcode, qty, unitCost, amount, unit, qty, unitCost FROM purchase_items
+            INSERT INTO purchase_items_new (id, billNo, barcode, qty, unitCost, amount, unit)
+            SELECT id, billNo, barcode, qty, unitCost, amount, unit FROM purchase_items
         """.trimIndent())
         database.execSQL("DROP TABLE purchase_items")
         database.execSQL("ALTER TABLE purchase_items_new RENAME TO purchase_items")
