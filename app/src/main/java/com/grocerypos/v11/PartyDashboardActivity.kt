@@ -48,6 +48,16 @@ import java.util.Locale
  *    (cost) rate, retail (sale) rate, wholesale rate — plus lifetime sold/purchased
  *    qty & amount already there before. Tapping a row shows the full detail dialog.
  *
+ * ---- FIX IN THIS VERSION ----
+ * 6. You'll Get / You'll Give totals (both the top summary cards and each party row's
+ *    label) were using the exact same sign rule for customers and suppliers, which
+ *    wrongly mixed receivables and payables together. Fixed so that:
+ *      - Customer closing > 0  => customer owes the shop (receivable)  -> You'll Get
+ *      - Customer closing < 0  => shop owes the customer                -> You'll Give
+ *      - Supplier closing > 0  => shop owes the supplier (payable)      -> You'll Give
+ *      - Supplier closing < 0  => supplier owes the shop (e.g. credit)  -> You'll Get
+ *    See updateSummaryTotals() and dashboardPartyRow() below.
+ *
  * Manifest: PartyTransactionActivity must be added:
  *   <activity android:name=".ui.PartyTransactionActivity" android:exported="false" />
  */
@@ -642,9 +652,22 @@ class PartyDashboardActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * ---- FIX ----
+     * Customer and supplier closing balances mean opposite things and must NOT share the
+     * same sign rule:
+     *   - Customer closing > 0  => customer owes the shop (receivable)  -> You'll Get
+     *   - Customer closing < 0  => shop owes the customer                -> You'll Give
+     *   - Supplier closing > 0  => shop owes the supplier (payable)      -> You'll Give
+     *   - Supplier closing < 0  => supplier owes the shop (e.g. credit)  -> You'll Get
+     */
     private fun updateSummaryTotals() {
-        val youllGet = allItems.filter { it.closing <= 0 }.sumOf { -it.closing }
-        val youllGive = allItems.filter { it.closing > 0 }.sumOf { it.closing }
+        val youllGet = allItems.sumOf {
+            if (it.isCustomer) maxOf(it.closing, 0.0) else maxOf(-it.closing, 0.0)
+        }
+        val youllGive = allItems.sumOf {
+            if (it.isCustomer) maxOf(-it.closing, 0.0) else maxOf(it.closing, 0.0)
+        }
         youllGetValue.text = "Rs %.2f".format(youllGet)
         youllGiveValue.text = "Rs %.2f".format(youllGive)
     }
@@ -685,7 +708,8 @@ class PartyDashboardActivity : AppCompatActivity() {
     }
 
     private fun dashboardPartyRow(item: PartyItem): LinearLayout {
-        val give = item.closing > 0
+        // ---- FIX: type-aware give/get, see updateSummaryTotals() comment above ----
+        val give = if (item.isCustomer) item.closing < 0 else item.closing > 0
         val amountColor = if (give) red else green
         val label = if (give) Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA") else Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")
 
