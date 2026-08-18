@@ -1049,7 +1049,7 @@ class PurchaseActivity : AppCompatActivity() {
             val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
             items.forEach { db.productDao().decreaseForce(it.barcode, it.qty.toInt()) }
             val outstanding = purchase.total - purchase.paid
-            if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, (-outstanding).roundToInt()) }
+            if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
             db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
             Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
         }
@@ -1074,7 +1074,7 @@ class PurchaseActivity : AppCompatActivity() {
             if (original != null) {
                 originalItems.forEach { db.productDao().decreaseForce(it.barcode, it.qty.toInt()) }
                 val originalOutstanding = original.total - original.paid
-                if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, (-originalOutstanding).roundToInt()) }
+                if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
                 db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
             }
             db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = subtotal, discount = discount))
@@ -1091,7 +1091,7 @@ class PurchaseActivity : AppCompatActivity() {
                 }
             }
             val outstanding = grandTotal - amountPaid
-            if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding.roundToInt()) }
+            if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
             if (supplierId != null && amountPaid > 0) { db.paymentDao().insert(Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")) }
             if (amountPaid > 0) { db.cashTransactionDao().insert(CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)) }
             suppressDraftSave = true; clearDraft(); editBillNo = billNo
