@@ -41,6 +41,10 @@
         <activity android:name=".ui.CategoriesUnitsActivity" android:exported="false" />
         <activity android:name=".ui.ItemsActivity" android:exported="false" />
         <activity android:name=".ui.BillPreviewActivity" android:exported="false" />
+        <activity
+            android:name=".ui.BillScanActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
