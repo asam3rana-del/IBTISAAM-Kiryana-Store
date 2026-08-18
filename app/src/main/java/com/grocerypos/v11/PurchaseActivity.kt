@@ -97,9 +97,8 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var unitSpinner: Spinner
     private lateinit var unitToggleRow: LinearLayout
     private lateinit var rate: EditText
-    private lateinit var totalLotPrice: EditText
     private lateinit var conversionInfo: TextView
-    private lateinit var totalAmountText: TextView
+    private lateinit var totalAmountInput: EditText
     private lateinit var addItemButton: Button
     private lateinit var billedItemsHeader: LinearLayout
     private lateinit var billedItemsChevron: TextView
@@ -115,7 +114,7 @@ class PurchaseActivity : AppCompatActivity() {
 
     private var suppliers = listOf<Supplier>()
     private var products = listOf<Product>()
-    private var allUnits = listOf("pcs", "kg", "box", "dozen", "carton", "ctn", "outer")
+    private var allUnits = listOf("pcs", "kg", "box", "dozen")
     private val lines = mutableListOf<PurchaseLine>()
     private var purchaseDateMillis = System.currentTimeMillis()
     private var selectedProduct: Product? = null
@@ -125,7 +124,7 @@ class PurchaseActivity : AppCompatActivity() {
     private var suppressQtyWatcher = false
     private var lastMainRate: Double = 0.0
     private var suppressRateWatcher = false
-    private var suppressTotalLotWatcher = false
+    private var suppressTotalWatcher = false
     private var editBillNo: String? = null
     private var originalPurchase: Purchase? = null
     private var originalItems: List<PurchaseItem> = emptyList()
@@ -250,8 +249,10 @@ class PurchaseActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
             textSize = 15f
-            threshold = 1
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            threshold = 1
+            setOnFocusChangeListener { _, hasFocus -> if (hasFocus) post { showDropDown() } }
+            setOnClickListener { showDropDown() }
         }
         partyRow.addView(partyName)
         partyRow.addView(circleIcon("+", teal, 30) { promptAddSupplier() })
@@ -303,8 +304,10 @@ class PurchaseActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
             textSize = 15f
-            threshold = 1 // FIX 1: 1 letter pe hi suggestions
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            threshold = 1
+            setOnFocusChangeListener { _, hasFocus -> if (hasFocus) post { showDropDown() } }
+            setOnClickListener { showDropDown() }
         }
         itemNameRow.addView(itemName)
         itemNameRow.addView(circleIcon("+", teal, 30) { openAddProductDialog(itemName.text.toString().trim()) })
@@ -347,29 +350,10 @@ class PurchaseActivity : AppCompatActivity() {
         itemEntrySection.addView(qtyUnitRow)
         itemEntrySection.addView(spacer(10))
 
-        // ---- NEW: Smart Rate Calculation Section ----
-        val rateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val rateBox = innerField().apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) }
-        }
-        rateBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Rate (Per Unit)", "ریٹ (فی یونٹ)")))
+        val rateBox = innerField()
+        rateBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Rate", "ریٹ")))
         rate = EditText(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Price / Unit", "قیمت / یونٹ")
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15f
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT
-        }
-        rateBox.addView(rate)
-
-        val totalLotBox = innerField().apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) }
-        }
-        totalLotBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Total Lot Price (for 2 Carton)", "کل قیمت (2 کارٹن کی)")))
-        totalLotPrice = EditText(this).apply {
-            hint = "e.g. 5000 for 2 Ctn"
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
@@ -380,11 +364,8 @@ class PurchaseActivity : AppCompatActivity() {
                 if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { addItem(); true } else false
             }
         }
-        totalLotBox.addView(totalLotPrice)
-
-        rateRow.addView(rateBox)
-        rateRow.addView(totalLotBox)
-        itemEntrySection.addView(rateRow)
+        rateBox.addView(rate)
+        itemEntrySection.addView(rateBox)
 
         conversionInfo = TextView(this).apply {
             text = ""
@@ -396,14 +377,29 @@ class PurchaseActivity : AppCompatActivity() {
         }
         itemEntrySection.addView(conversionInfo)
 
-        totalAmountText = TextView(this).apply {
-            text = "Total Amount: Rs 0.00"
-            textSize = 14f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        val totalBox = innerField()
+        totalBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Total Amount (for this qty)", "کل رقم (اس مقدار کے لیے)")))
+        totalAmountInput = EditText(this).apply {
+            hint = "0"
+            setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(teal))
-            setPadding(6, 10, 0, 10)
+            background = null
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { addItem(); true } else false
+            }
         }
-        itemEntrySection.addView(totalAmountText)
+        totalBox.addView(totalAmountInput)
+        totalBox.addView(TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Tip: for 2 cartons, just type the total price here — the rate per carton fills in automatically.", "ٹِپ: 2 کارٹن کی صورت میں یہاں کل قیمت لکھ دیں — فی کارٹن ریٹ خودکار طور پر آ جائے گا۔")
+            textSize = 10.5f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(0, 6, 0, 0)
+        })
+        itemEntrySection.addView(totalBox)
 
         qty.addTextChangedListener(simpleWatcher {
             if (!suppressQtyWatcher) {
@@ -412,32 +408,25 @@ class PurchaseActivity : AppCompatActivity() {
             }
             updateLineTotal()
         })
-
         rate.addTextChangedListener(simpleWatcher {
-            if (suppressRateWatcher) return@simpleWatcher
-            val entered = rate.text.toString().toDoubleOrNull() ?: 0.0
-            lastMainRate = toMainUnitRate(entered)
-            // update total lot field
-            val q = qty.text.toString().toDoubleOrNull() ?: 0.0
-            if (q > 0 && entered > 0) {
-                suppressTotalLotWatcher = true
-                totalLotPrice.setText("%.2f".format(q * entered).trimEnd('0').trimEnd('.'))
-                suppressTotalLotWatcher = false
+            if (!suppressRateWatcher) {
+                val entered = rate.text.toString().toDoubleOrNull() ?: 0.0
+                lastMainRate = toMainUnitRate(entered)
             }
             updateLineTotal()
         })
-
-        totalLotPrice.addTextChangedListener(simpleWatcher {
-            if (suppressTotalLotWatcher) return@simpleWatcher
-            val totalLot = totalLotPrice.text.toString().toDoubleOrNull() ?: 0.0
-            val q = qty.text.toString().toDoubleOrNull() ?: 0.0
-            if (q > 0 && totalLot > 0) {
-                val newRate = totalLot / q
-                suppressRateWatcher = true
-                rate.setText("%.2f".format(newRate).trimEnd('0').trimEnd('.'))
-                suppressRateWatcher = false
-                lastMainRate = toMainUnitRate(newRate)
-                updateLineTotal()
+        totalAmountInput.addTextChangedListener(simpleWatcher {
+            if (!suppressTotalWatcher) {
+                val enteredTotal = totalAmountInput.text.toString().toDoubleOrNull() ?: 0.0
+                val q = qty.text.toString().toDoubleOrNull() ?: 0.0
+                if (q > 0) {
+                    val computedRate = enteredTotal / q
+                    suppressRateWatcher = true
+                    rate.setText(if (computedRate > 0) "%.2f".format(computedRate) else "")
+                    suppressRateWatcher = false
+                    val enteredRate = rate.text.toString().toDoubleOrNull() ?: 0.0
+                    lastMainRate = toMainUnitRate(enteredRate)
+                }
             }
         })
 
@@ -623,13 +612,9 @@ class PurchaseActivity : AppCompatActivity() {
         loadFirmName()
         editBillNo?.let { loadForEdit(it) }
 
-        // FIX 2: AutoComplete suggestions show on focus and threshold=1
         itemName.setOnItemClickListener { _, _, position, _ ->
             val pickedName = itemName.adapter.getItem(position).toString()
             onItemPicked(pickedName)
-        }
-        itemName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) itemName.showDropDown()
         }
         itemName.addTextChangedListener(simpleWatcher {
             val match = products.find { it.name.equals(itemName.text.toString().trim(), ignoreCase = true) }
@@ -649,9 +634,6 @@ class PurchaseActivity : AppCompatActivity() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
-        partyName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) partyName.showDropDown()
-        }
         partyName.setOnItemClickListener { _, _, position, _ ->
             val pickedName = partyName.adapter.getItem(position).toString()
             updateSupplierBalanceDisplay(pickedName)
@@ -838,8 +820,7 @@ class PurchaseActivity : AppCompatActivity() {
         lifecycleScope.launch {
             PosDatabase.get(this@PurchaseActivity).supplierDao().all().collectLatest { list ->
                 suppliers = list
-                val adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name })
-                partyName.setAdapter(adapter)
+                partyName.setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
                 updateSupplierBalanceDisplay(partyName.text.toString().trim())
             }
         }
@@ -847,7 +828,7 @@ class PurchaseActivity : AppCompatActivity() {
     private fun loadUnits() {
         lifecycleScope.launch {
             PosDatabase.get(this@PurchaseActivity).unitDao().all().collectLatest { list ->
-                allUnits = (listOf("pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi") + list.map { it.name }).distinct()
+                allUnits = (listOf("pcs", "kg", "box", "dozen") + list.map { it.name }).distinct()
                 if (selectedProduct == null) { unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits) }
             }
         }
@@ -856,8 +837,7 @@ class PurchaseActivity : AppCompatActivity() {
         lifecycleScope.launch {
             PosDatabase.get(this@PurchaseActivity).productDao().all().collectLatest { list ->
                 products = list
-                val adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name })
-                itemName.setAdapter(adapter)
+                itemName.setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
             }
         }
     }
@@ -880,7 +860,7 @@ class PurchaseActivity : AppCompatActivity() {
         }
         conversionInfo.visibility = if (conversionInfo.text.isNotEmpty()) View.VISIBLE else View.GONE
         lastMainQty = 0.0; lastMainRate = 0.0; refillAutoRate(); updateLineTotal()
-        qty.setText(""); totalLotPrice.setText(""); qty.requestFocus()
+        qty.setText(""); qty.requestFocus()
     }
     private fun toMainUnitQty(entered: Double): Double {
         val product = selectedProduct ?: return entered
@@ -947,16 +927,9 @@ class PurchaseActivity : AppCompatActivity() {
         val q = qty.text.toString().toDoubleOrNull() ?: 0.0
         val r = rate.text.toString().toDoubleOrNull() ?: 0.0
         val amount = Math.round(q * r).toDouble()
-        totalAmountText.text = "Total Amount: Rs %.0f".format(amount)
-        // Smart conversion info
-        if (selectedProduct != null && q > 0) {
-            val mainQty = toMainUnitQty(q)
-            val chosenUnit = unitSpinner.selectedItem?.toString() ?: ""
-            if (chosenUnit != selectedProduct!!.unit && mainQty > 0) {
-                conversionInfo.visibility = View.VISIBLE
-                conversionInfo.text = "${formatQty(q)} $chosenUnit = ${formatQty(mainQty)} ${selectedProduct!!.unit} | 1 ${selectedProduct!!.unit} ka rate Rs %.2f".format(toMainUnitRate(r))
-            }
-        }
+        suppressTotalWatcher = true
+        totalAmountInput.setText(if (amount > 0) formatQty(amount) else "")
+        suppressTotalWatcher = false
     }
     private fun addItem() {
         val enteredName = itemName.text.toString().trim()
@@ -970,20 +943,10 @@ class PurchaseActivity : AppCompatActivity() {
         if (product == null) { openAddProductDialog(enteredName); return }
         val line = PurchaseLine(product.name, product.barcode, q, unit, r, Math.round(q * r).toDouble(), product.unit, product.secondaryUnit, product.secondaryUnitQty, product.tertiaryUnit, product.tertiaryUnitQty)
         lines.add(line); renderItemsList(); updateGrandTotal()
-        // FIX 3: Billed items ke baad paid amount highlight + scroll
-        itemName.setText(""); qty.setText(""); rate.setText(""); totalLotPrice.setText(""); selectedProduct = null; lastMainQty = 0.0; lastMainRate = 0.0; conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE; totalAmountText.text = "Total Amount: Rs 0"; itemName.requestFocus()
+        itemName.setText(""); qty.setText(""); rate.setText(""); selectedProduct = null; lastMainQty = 0.0; lastMainRate = 0.0; conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
+        suppressTotalWatcher = true; totalAmountInput.setText(""); suppressTotalWatcher = false
+        itemName.requestFocus()
         if (editBillNo == null) saveDraft()
-        
-        // Auto scroll to paid section and highlight
-        scrollArea.postDelayed({
-            scrollArea.smoothScrollTo(0, paymentSection.top)
-            paymentSection.background = strokedBg(navy, "#FFFBE6", 16)
-            paidInput.requestFocus()
-            Toast.makeText(this, "Ab Paid Amount likhein!", Toast.LENGTH_SHORT).show()
-            paymentSection.postDelayed({
-                paymentSection.background = strokedBg(border, cardWhite, 16)
-            }, 2000)
-        }, 300)
     }
     private fun normalizeUnitName(u: String) = u.trim().lowercase()
     private fun standardUnitQty(fromUnit: String, toUnit: String): Double? {
@@ -1022,10 +985,7 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
     private fun renderItemsList() {
-        itemsContainer.removeAllViews(); billedItemsHeader.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE; 
-        if (!itemsExpanded) itemsExpanded = true
-        itemsContainer.visibility = View.VISIBLE
-        billedItemsChevron.text = "\u25BE"
+        itemsContainer.removeAllViews(); billedItemsHeader.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE; if (!itemsExpanded) return
         lines.forEachIndexed { index, line ->
             val row = premiumCard(); val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val badge = TextView(this).apply { text = "#${index + 1}"; textSize = 11.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)); background = strokedBg(border, amberBadge, 8); setPadding(14, 4, 14, 4) }
@@ -1138,44 +1098,36 @@ class PurchaseActivity : AppCompatActivity() {
         hideKeyboard()
         val party = partyName.text.toString().trim()
         if (party.isEmpty()) { partyName.error = "Required"; return }
-        if (lines.isEmpty()) { Toast.makeText(this, "Add at least one item", Toast.LENGTH_SHORT).show(); return }
-
-        // FIX 3: Paid amount check - prevent accidental credit save
+        if (lines.isEmpty()) { Toast.makeText(this, "Add at least one item, or continue without items", Toast.LENGTH_SHORT).show() }
         val subtotal = lines.sumOf { it.amount }
         val grandTotal = Math.round(subtotal).toDouble().coerceAtLeast(0.0)
-        val paidText = paidInput.text.toString().trim()
-        val isPaidEmpty = paidText.isEmpty() || paidText.toDoubleOrNull() == 0.0
+        val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
 
-        if (isPaidEmpty && grandTotal > 0) {
+        if (amountPaid <= 0.0 && grandTotal > 0.0) {
             android.app.AlertDialog.Builder(this)
-                .setTitle(com.grocerypos.v11.util.Loc.t(this, "Confirm Credit Purchase", "ادھار خریداری کی تصدیق"))
-                .setMessage(com.grocerypos.v11.util.Loc.t(this, 
-                    "You have not entered Paid Amount.\nTotal: Rs %.0f\n\nThis bill will be saved as CREDIT (Udhaar).\nSupplier balance will increase.\n\nAre you sure?".format(grandTotal),
-                    "آپ نے ادا شدہ رقم درج نہیں کی۔\nکل: %.0f روپے\n\nیہ بل ادھار میں محفوظ ہو جائے گا۔\nسپلائر کا بیلنس بڑھ جائے گا۔\n\nکیا آپ کو یقین ہے؟".format(grandTotal)))
-                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Yes, Save as Credit", "ہاں، ادھار محفوظ کریں")) { _, _ ->
-                    proceedSave(party, grandTotal)
+                .setTitle(com.grocerypos.v11.util.Loc.t(this, "No Paid Amount Entered", "کوئی ادا شدہ رقم درج نہیں"))
+                .setMessage(
+                    com.grocerypos.v11.util.Loc.t(
+                        this,
+                        "You haven't entered a Paid Amount. The full amount of Rs %.0f".format(grandTotal) + " will be recorded as credit/due against this supplier. Continue?",
+                        "آپ نے ادا شدہ رقم درج نہیں کی۔ پوری رقم Rs %.0f".format(grandTotal) + " اس سپلائر کے کریڈٹ/باقی میں شامل ہو جائے گی۔ جاری رکھیں؟"
+                    )
+                )
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Save as Credit", "کریڈٹ میں محفوظ کریں")) { _, _ ->
+                    proceedSavePurchase(party, grandTotal, amountPaid)
                 }
-                .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Enter Payment", "ادائیگی درج کریں")) { dialog, _ ->
-                    dialog.dismiss()
-                    scrollArea.post {
-                        scrollArea.smoothScrollTo(0, paymentSection.top)
-                        paidInput.requestFocus()
-                        paymentSection.background = strokedBg(red, "#FFEBEE", 16)
-                        paymentSection.postDelayed({
-                            paymentSection.background = strokedBg(border, cardWhite, 16)
-                        }, 2500)
-                    }
+                .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Go Back, Enter Paid Amount", "واپس جائیں")) { _, _ ->
+                    paidInput.requestFocus()
                 }
                 .show()
             return
         }
-
-        proceedSave(party, grandTotal)
+        proceedSavePurchase(party, grandTotal, amountPaid)
     }
 
-    private fun proceedSave(party: String, grandTotal: Double) {
+    private fun proceedSavePurchase(party: String, grandTotal: Double, amountPaid: Double) {
+        val subtotal = lines.sumOf { it.amount }
         val discount = 0.0
-        val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
         val paymentMethod = "Cash"
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
         var supplierId = matchedSupplier?.id
@@ -1190,7 +1142,7 @@ class PurchaseActivity : AppCompatActivity() {
                 if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
                 db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
             }
-            db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
+            db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = subtotal, discount = discount))
             db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.mainUnitQty(), unitCost = line.mainUnitRate(), amount = line.amount, unit = line.unit) })
             lines.forEach { line ->
                 val barcode = line.barcode ?: return@forEach
@@ -1212,7 +1164,6 @@ class PurchaseActivity : AppCompatActivity() {
             openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
         }
     }
-
     private fun openBillPreview(billNo: String, forSaving: Boolean, party: String = partyName.text.toString().trim(), grandTotal: Double = Math.round(lines.sumOf { it.amount }).toDouble(), discount: Double = 0.0, amountPaid: Double = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble(), paymentMethod: String = "Cash") {
         val itemsEncoded = lines.joinToString("\u0002") { listOf(it.itemName, formatQty(it.qty), it.unit, it.rate, it.amount).joinToString("\u0003") }
         val previewIntent = Intent(this, BillPreviewActivity::class.java).apply {
