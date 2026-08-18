@@ -28,15 +28,22 @@ class HistoryActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 32, 28, 32)
+            setPadding(dp(16), dp(20), dp(16), dp(16))
+            setBackgroundColor(Color.parseColor("#F4F6F8"))
         }
 
-        root.addView(TextView(this).apply { text = "History"; textSize = 22f; setPadding(0,0,0,16) })
+        root.addView(TextView(this).apply { 
+            text = "History"
+            textSize = 22f
+            setTextColor(Color.parseColor("#0B2545"))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0,0,0,dp(4))
+        })
         root.addView(TextView(this).apply {
             text = "Kisi bhi entry par tap karke poori detail dekhein"
             textSize = 12f
-            setTextColor(Color.GRAY)
-            setPadding(0,0,0,16)
+            setTextColor(Color.parseColor("#7C8798"))
+            setPadding(0,0,0,dp(16))
         })
 
         tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -64,14 +71,14 @@ class HistoryActivity : AppCompatActivity() {
             text = "SALES"
             setTextColor(Color.WHITE)
             background = roundedBackground(if (showingSales) "#2E7D32" else "#90A4AE", 14)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,8,0) }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,dp(8),0) }
             setOnClickListener { showSales() }
         })
         tabRow.addView(Button(this).apply {
             text = "PURCHASES"
             setTextColor(Color.WHITE)
             background = roundedBackground(if (!showingSales) "#EF6C00" else "#90A4AE", 14)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8,0,0,0) }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(8),0,0,0) }
             setOnClickListener { showPurchases() }
         })
     }
@@ -166,10 +173,10 @@ class HistoryActivity : AppCompatActivity() {
 
             if (!isReturned) {
                 footer.addView(Button(this@HistoryActivity).apply {
-                    text = "↩ Return"
+                    text = "Return"
                     setTextColor(Color.WHITE)
                     background = roundedBackground("#EF6C00", 12)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(6),0,0,0) }
                     setOnClickListener {
                         AlertDialog.Builder(this@HistoryActivity)
                             .setTitle("Sale return karen?")
@@ -186,7 +193,7 @@ class HistoryActivity : AppCompatActivity() {
                     text = "Delete"
                     setTextColor(Color.WHITE)
                     background = roundedBackground("#C62828", 12)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(6),0,0,0) }
                     setOnClickListener {
                         AlertDialog.Builder(this@HistoryActivity)
                             .setTitle("Sale delete karen?")
@@ -204,7 +211,6 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    /** Reverses stock/balance like delete, but keeps the sale record and marks it as returned. */
     private fun returnSale(invoice: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity)
@@ -215,7 +221,6 @@ class HistoryActivity : AppCompatActivity() {
             }
             val items = db.saleDao().itemsForInvoice(invoice)
 
-            // Stock wapas add karo (jitna becha tha)
             for (it in items) {
                 db.productDao().increase(it.barcode, it.qty)
                 db.returnDao().insert(
@@ -229,7 +234,6 @@ class HistoryActivity : AppCompatActivity() {
                 )
             }
 
-            // Agar customer ka udhar tha to wo wapas kam karo
             if (sale.customerId != null && sale.paid < sale.total) {
                 db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
             }
@@ -248,12 +252,10 @@ class HistoryActivity : AppCompatActivity() {
             val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
 
-            // Stock wapas add karo (jitna becha tha)
             for (it in items) {
                 db.productDao().increase(it.barcode, it.qty)
             }
 
-            // Agar customer ka udhar tha to wo wapas kam karo
             if (sale.customerId != null && sale.paid < sale.total) {
                 db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
             }
@@ -298,261 +300,4 @@ class HistoryActivity : AppCompatActivity() {
                 setOnClickListener { dialog.dismiss() }
             })
 
-            if (!isReturned) {
-                footer.addView(Button(this@HistoryActivity).apply {
-                    text = "Edit"
-                    setTextColor(Color.WHITE)
-                    background = roundedBackground("#1565C0", 12)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    setOnClickListener {
-                        dialog.dismiss()
-                        startActivity(
-                            Intent(this@HistoryActivity, PurchaseActivity::class.java)
-                                .putExtra(PurchaseActivity.EXTRA_BILL_NO, billNo)
-                        )
-                    }
-                })
-                footer.addView(Button(this@HistoryActivity).apply {
-                    text = "↩ Return"
-                    setTextColor(Color.WHITE)
-                    background = roundedBackground("#EF6C00", 12)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    setOnClickListener {
-                        AlertDialog.Builder(this@HistoryActivity)
-                            .setTitle("Purchase return karen?")
-                            .setMessage("Stock wapas kam ho jayega aur supplier ka udhaar adjust ho jayega. Record History mein 'Returned' ke tor par reh jayega.")
-                            .setPositiveButton("Return") { _, _ ->
-                                returnPurchase(billNo)
-                                dialog.dismiss()
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }
-                })
-                footer.addView(Button(this@HistoryActivity).apply {
-                    text = "Delete"
-                    setTextColor(Color.WHITE)
-                    background = roundedBackground("#C62828", 12)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    setOnClickListener {
-                        AlertDialog.Builder(this@HistoryActivity)
-                            .setTitle("Purchase delete karen?")
-                            .setMessage("Stock aur cash record wapas revert ho jayenge. Ye action undo nahi ho sakta.")
-                            .setPositiveButton("Delete") { _, _ ->
-                                deletePurchase(billNo)
-                                dialog.dismiss()
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }
-                })
-            }
-            dialog.show()
-        }
-    }
-
-    /** Reverses stock/balance like delete, but keeps the purchase record and marks it as returned. */
-    private fun returnPurchase(billNo: String) {
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@HistoryActivity)
-            val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
-            if (purchase.status == "returned") {
-                Toast.makeText(this@HistoryActivity, "Ye purchase pehle hi return ho chuki hai", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val items = db.purchaseDao().itemsForBill(billNo)
-
-            // Stock wapas kam karo (jitna khareeda tha)
-            for (it in items) {
-            in returnPurchase()
-            db.productDao().decrease(it.barcode, it.qty.toInt())
-                    ReturnLine(
-                        reference = billNo,
-                        type = "purchase",
-                        barcode = it.barcode,
-                        qty = it.qty,
-                        amount = it.amount
-                    )
-                )
-            }
-
-            // Agar supplier ka udhar tha to wo wapas kam karo
-            if (purchase.supplierId != null && purchase.paid < purchase.total) {
-                db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
-            }
-
-            db.cashTransactionDao().deleteByReference(billNo)
-            db.purchaseDao().markReturned(billNo)
-
-            Toast.makeText(this@HistoryActivity, "Purchase return ho gayi, stock revert ho gaya", Toast.LENGTH_LONG).show()
-            loadPurchases()
-        }
-    }
-
-    private fun deletePurchase(billNo: String) {
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@HistoryActivity)
-            val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
-            val items = db.purchaseDao().itemsForBill(billNo)
-
-            // Stock wapas kam karo (jitna khareeda tha)
-            for (it in items) {
-            in deletePurchase()
-db.productDao().decrease(it.barcode, it.qty.toInt())
-
-            // Agar supplier ka udhar tha to wo wapas kam karo
-            if (purchase.supplierId != null && purchase.paid < purchase.total) {
-                db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
-            }
-
-            db.cashTransactionDao().deleteByReference(billNo)
-            db.paymentDao().deleteByReference(billNo)
-            db.purchaseDao().deleteItems(billNo)
-            db.purchaseDao().deletePurchase(billNo)
-
-            Toast.makeText(this@HistoryActivity, "Purchase delete ho gayi, stock revert ho gaya", Toast.LENGTH_LONG).show()
-            loadPurchases()
-        }
-    }
-
-    // ================= shared small UI helpers =================
-    private fun detailContainer(title: String, colorHex: String): LinearLayout {
-        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val header = LinearLayout(this).apply {
-            setPadding(28, 24, 28, 24)
-            setBackgroundColor(Color.parseColor(colorHex))
-        }
-        header.addView(TextView(this).apply {
-            text = title; textSize = 17f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        outer.addView(header)
-
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(28, 20, 28, 12)
-        }
-        outer.addView(body)
-
-        val footer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(20, 8, 20, 20)
-        }
-        outer.addView(footer)
-        return outer
-    }
-
-    private fun returnedBanner() = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(16, 10, 16, 10)
-        background = roundedBackground("#FFEBEE", 10)
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(0, 0, 0, 12) }
-        addView(TextView(this@HistoryActivity).apply {
-            text = "↩ RETURNED"
-            textSize = 12.5f
-            setTextColor(Color.parseColor("#C62828"))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-    }
-
-    private fun kv(label: String, value: String) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        setPadding(0, 4, 0, 4)
-        addView(TextView(this@HistoryActivity).apply {
-            text = label; setTextColor(Color.GRAY); textSize = 13f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        addView(TextView(this@HistoryActivity).apply { text = value; textSize = 14f })
-    }
-
-    private fun sectionTitle(text: String) = TextView(this).apply {
-        this.text = text; textSize = 14f
-        setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setPadding(0, 10, 0, 6)
-    }
-
-    private fun itemRow(name: String, qtyRate: String, amount: String) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        setPadding(0, 6, 0, 6)
-        val col = LinearLayout(this@HistoryActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        col.addView(TextView(this@HistoryActivity).apply { text = name; textSize = 13f })
-        col.addView(TextView(this@HistoryActivity).apply { text = qtyRate; textSize = 11f; setTextColor(Color.GRAY) })
-        addView(col)
-        addView(TextView(this@HistoryActivity).apply { text = amount; textSize = 13f })
-    }
-
-    private fun spacer() = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 16)
-    }
-
-    private fun row(title: String, subtitle: String, amount: Double, date: String, color: String, returned: Boolean, onClick: () -> Unit): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 14, 16, 14)
-            setOnClickListener { onClick() }
-
-            val topRow = LinearLayout(this@HistoryActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val titleCol = LinearLayout(this@HistoryActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            titleCol.addView(TextView(this@HistoryActivity).apply {
-                text = title
-                textSize = 15f
-            })
-            if (returned) {
-                titleCol.addView(TextView(this@HistoryActivity).apply {
-                    text = "  RETURNED"
-                    textSize = 10f
-                    setTextColor(Color.WHITE)
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    background = roundedBackground("#C62828", 8)
-                    setPadding(12, 4, 12, 4)
-                })
-            }
-            topRow.addView(titleCol)
-            topRow.addView(TextView(this@HistoryActivity).apply {
-                text = "Rs %.2f".format(amount)
-                setTextColor(if (returned) Color.GRAY else Color.parseColor(color))
-                textSize = 15f
-            })
-            addView(topRow)
-
-            addView(TextView(this@HistoryActivity).apply {
-                text = subtitle
-                textSize = 13f
-                setTextColor(Color.DKGRAY)
-            })
-            addView(TextView(this@HistoryActivity).apply {
-                text = date
-                textSize = 12f
-                setTextColor(Color.GRAY)
-            })
-            addView(divider())
-        }
-    }
-
-    private fun emptyText(text: String) = TextView(this).apply {
-        this.text = text
-        setTextColor(Color.GRAY)
-        setPadding(8, 8, 8, 8)
-    }
-
-    private fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        this.cornerRadius = cornerRadius.toFloat()
-    }
-
-    private fun divider() = View(this).apply {
-        setBackgroundColor(0xFFEEEEEE.toInt())
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2)
-    }
-}
+           
