@@ -53,6 +53,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // Free, on-device OCR for the "Scan Bill" purchase feature — no API key, no
+    // internet required, no per-request cost.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.camera:camera-core:1.4.1")
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
