@@ -1300,6 +1300,29 @@ class PurchaseActivity : AppCompatActivity() {
     private fun trimNum(v: Double): String =
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
+    // ---- Quick inline "add a new unit" — used by the unit spinners inside
+    // openAddProductDialog() below (Primary / Secondary / Tertiary), mirroring
+    // ProductActivity.promptAddUnitInline(). Saves straight to the shared `units`
+    // table via unitDao().insert(), so the new unit is immediately available
+    // everywhere else too (other products, the main Item Entry unit chips, etc.) —
+    // not just for the product currently being created. ----
+    private fun promptAddUnitInline(onAdded: (String) -> Unit) {
+        val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(com.grocerypos.v11.util.Loc.t(this, "New Unit", "نیا یونٹ"))
+            .setView(input)
+            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Add", "شامل کریں")) { _, _ ->
+                val v = input.text.toString().trim()
+                if (v.isNotEmpty()) lifecycleScope.launch {
+                    PosDatabase.get(this@PurchaseActivity).unitDao().insert(UnitType(v))
+                    Toast.makeText(this@PurchaseActivity, com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Unit added", "یونٹ شامل ہو گیا"), Toast.LENGTH_SHORT).show()
+                    onAdded(v)
+                }
+            }
+            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
     /** Handles the JSON result returned by BillScanActivity after the user reviews and
      *  confirms detected {name, qty, rate} rows. Each name is matched against existing
      *  Products (exact match first, then a loose contains-match). Anything that does
@@ -1480,7 +1503,11 @@ class PurchaseActivity : AppCompatActivity() {
     // ---- Quick "Add Product" from within Purchase: lets the user create a brand-new
     // product on the spot — with full Primary/Secondary/Tertiary unit setup — when the
     // item being purchased isn't in the Products list yet, instead of having to leave
-    // this screen and set it up in Product Management first. ----
+    // this screen and set it up in Product Management first. Each of the three unit
+    // spinners now has its own inline "+" so a brand-new unit (not in the Units list
+    // yet) can be added right here — it's saved to the shared units table via
+    // promptAddUnitInline() AND, once "Save" below is tapped, saved onto this product
+    // itself (unit / secondaryUnit / tertiaryUnit fields). ----
     private fun openAddProductDialog(prefillName: String) {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1542,24 +1569,55 @@ class PurchaseActivity : AppCompatActivity() {
             categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats)
         }
 
-        // ---- Primary Unit ----
+        // ---- Primary Unit (with inline "+" to add a brand-new unit) ----
         body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "PRIMARY UNIT", "بنیادی یونٹ")))
+        val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val primarySpinnerBox = LinearLayout(this).apply {
             background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val primarySpinner = Spinner(this)
+        val primarySpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
         primarySpinnerBox.addView(primarySpinner)
-        body.addView(primarySpinnerBox)
+        primaryRow.addView(primarySpinnerBox)
+        primaryRow.addView(spacer(8).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1)
+        })
+        primaryRow.addView(circleIcon("+", teal, 34) {
+            promptAddUnitInline { newUnit ->
+                allUnits = (allUnits + newUnit).distinct()
+                primarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits)
+                primarySpinner.setSelection(allUnits.indexOf(newUnit))
+            }
+        })
+        body.addView(primaryRow)
         body.addView(spacer(20))
 
-        // ---- Secondary Unit (optional) ----
+        // ---- Secondary Unit (optional, with inline "+") ----
         body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SECONDARY UNIT (smaller, optional)", "ثانوی یونٹ (چھوٹی، اختیاری)")))
+        val secondaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val secondarySpinnerBox = LinearLayout(this).apply {
             background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val secondarySpinner = Spinner(this)
+        val secondarySpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
         secondarySpinnerBox.addView(secondarySpinner)
-        body.addView(secondarySpinnerBox)
+        secondaryRow.addView(secondarySpinnerBox)
+        secondaryRow.addView(spacer(8).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1)
+        })
+        secondaryRow.addView(circleIcon("+", teal, 34) {
+            promptAddUnitInline { newUnit ->
+                allUnits = (allUnits + newUnit).distinct()
+                val opts = listOf("None") + allUnits
+                secondarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, opts)
+                secondarySpinner.setSelection(opts.indexOf(newUnit))
+            }
+        })
+        body.addView(secondaryRow)
         body.addView(spacer(16))
         val secQtyBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
@@ -1576,14 +1634,30 @@ class PurchaseActivity : AppCompatActivity() {
         body.addView(secQtyBox)
         body.addView(spacer(20))
 
-        // ---- Tertiary Unit (optional, relative to Secondary) ----
+        // ---- Tertiary Unit (optional, relative to Secondary, with inline "+") ----
         body.addView(microLabel(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "TERTIARY UNIT (smallest, optional)", "تیسرا یونٹ (سب سے چھوٹا، اختیاری)")))
+        val tertiaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val tertiarySpinnerBox = LinearLayout(this).apply {
             background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val tertiarySpinner = Spinner(this)
+        val tertiarySpinner = Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
         tertiarySpinnerBox.addView(tertiarySpinner)
-        body.addView(tertiarySpinnerBox)
+        tertiaryRow.addView(tertiarySpinnerBox)
+        tertiaryRow.addView(spacer(8).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1)
+        })
+        tertiaryRow.addView(circleIcon("+", teal, 34) {
+            promptAddUnitInline { newUnit ->
+                allUnits = (allUnits + newUnit).distinct()
+                val opts = listOf("None") + allUnits
+                tertiarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, opts)
+                tertiarySpinner.setSelection(opts.indexOf(newUnit))
+            }
+        })
+        body.addView(tertiaryRow)
         body.addView(spacer(16))
         val terQtyBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
