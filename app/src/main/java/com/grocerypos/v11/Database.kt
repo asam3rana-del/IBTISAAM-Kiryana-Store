@@ -123,10 +123,20 @@ data class PurchaseItem(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val billNo:String,
     val barcode:String,
-    val qty:Int,
-    val unitCost:Double,
-    val amount:Double,
-    val unit:String=""   // which unit (main/secondary) this line was purchased in
+    // FIX (v18): was Int. This is the MAIN-UNIT-equivalent qty (e.g. Carton), and it is
+    // very often a fraction when the line was bought in a secondary/tertiary unit — e.g.
+    // 2 Outer out of 50/Carton = 0.04 Carton. Storing it as Int silently rounded small
+    // purchases down to 0, which meant stock and weighted-average cost were not updated
+    // at all for those lines, and reopening the purchase for edit showed a wrong qty.
+    val qty:Double,
+    val unitCost:Double,     // main-unit rate, used for weighted-avg cost math
+    val amount:Double,       // the actual line total = enteredQty x enteredRate
+    val unit:String="",      // which unit (main/secondary/tertiary) this line was bought in
+    // FIX (v18): the qty/rate exactly as typed by the user, in `unit` — needed to
+    // correctly redisplay/re-edit this line, since `qty`/`unitCost` above are converted
+    // to MAIN-unit terms and are not meaningful together with the `unit` label on their own.
+    val enteredQty:Double=0.0,
+    val enteredRate:Double=0.0
 )
 
 @Entity(tableName="returns")
@@ -500,12 +510,49 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+// v17 -> v18: FIX for the "secondary/tertiary unit purchase amount goes wrong after
+// save" bug. purchase_items.qty changes from INTEGER to REAL so fractional main-unit
+// quantities (e.g. 2 Outer out of 50/Carton = 0.04 Carton) are no longer rounded down
+// to 0 and lost — that rounding was silently skipping the stock increase and the
+// weighted-average cost update for small secondary/tertiary purchases.
+// Also adds `enteredQty` and `enteredRate` — the values exactly as typed by the user,
+// in whichever unit was picked — so reopening a saved purchase for editing shows the
+// original qty/unit/rate correctly instead of a main-unit-converted number mislabeled
+// with the original unit's name.
+// Room requires recreating the table to widen an INTEGER column to REAL. Existing rows'
+// enteredQty/enteredRate default to their old (already-rounded) qty/unitCost, since the
+// originally-typed values were never kept for old purchases — purchases saved going
+// forward will be fully precise.
+val MIGRATION_17_18 = object : Migration(17, 18) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("""
+            CREATE TABLE purchase_items_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                billNo TEXT NOT NULL,
+                barcode TEXT NOT NULL,
+                qty REAL NOT NULL,
+                unitCost REAL NOT NULL,
+                amount REAL NOT NULL,
+                unit TEXT NOT NULL DEFAULT '',
+                enteredQty REAL NOT NULL DEFAULT 0.0,
+                enteredRate REAL NOT NULL DEFAULT 0.0
+            )
+        """.trimIndent())
+        database.execSQL("""
+            INSERT INTO purchase_items_new (id, billNo, barcode, qty, unitCost, amount, unit, enteredQty, enteredRate)
+            SELECT id, billNo, barcode, qty, unitCost, amount, unit, qty, unitCost FROM purchase_items
+        """.trimIndent())
+        database.execSQL("DROP TABLE purchase_items")
+        database.execSQL("ALTER TABLE purchase_items_new RENAME TO purchase_items")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class],
-    version=17, exportSchema=false
+    version=18, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -528,7 +575,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() {
