@@ -57,6 +57,7 @@ class PurchaseActivity : AppCompatActivity() {
         "pao" to "پاؤ",
         "box" to "باکس",
         "bottle" to "بوتل"
+        "pet" to "پیٹ"
     )
 
     private fun toUrdu(unit: String): String {
