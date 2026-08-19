@@ -1,6 +1,5 @@
 package com.grocerypos.v11.ui
 
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -19,23 +18,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Receipt-style preview shown right after a Sale or Purchase is saved.
- * Reads everything it needs from the Intent extras the caller passes —
- * no extra DB queries for party name etc, so it can't drift out of sync
- * with what was actually just saved.
- *
- * One line item is encoded as: name\u0003qty\u0003unit\u0003rate\u0003amount
- * Multiple lines are joined with \u0002 (same delimiter style already
- * used for held bills elsewhere in the app).
- */
 class BillPreviewActivity : AppCompatActivity() {
 
     companion object {
-        const val EXTRA_TYPE = "type"                 // "sale" or "purchase"
-        const val EXTRA_REFERENCE = "reference"        // invoice or billNo
+        const val EXTRA_TYPE = "type"
+        const val EXTRA_REFERENCE = "reference"
         const val EXTRA_PARTY_NAME = "party_name"
-        const val EXTRA_PARTY_LABEL = "party_label"    // "Customer" or "Supplier"
+        const val EXTRA_PARTY_LABEL = "party_label"
         const val EXTRA_DATE_MILLIS = "date_millis"
         const val EXTRA_SUBTOTAL = "subtotal"
         const val EXTRA_DISCOUNT = "discount"
@@ -63,20 +52,24 @@ class BillPreviewActivity : AppCompatActivity() {
     private var shopAddress = ""
     private var receiptFooter = ""
 
+    private lateinit var shopNameLine: TextView
+    private lateinit var shopSubLine: TextView
+    private lateinit var footerLine: TextView
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
-        val type = intent.getStringExtra(EXTRA_TYPE) ?: "sale"
-        val reference = intent.getStringExtra(EXTRA_REFERENCE) ?: ""
-        val partyName = intent.getStringExtra(EXTRA_PARTY_NAME) ?: ""
-        val partyLabel = intent.getStringExtra(EXTRA_PARTY_LABEL) ?: "Customer"
+        val type = intent.getStringExtra(EXTRA_TYPE)?: "sale"
+        val reference = intent.getStringExtra(EXTRA_REFERENCE)?: ""
+        val partyName = intent.getStringExtra(EXTRA_PARTY_NAME)?: ""
+        val partyLabel = intent.getStringExtra(EXTRA_PARTY_LABEL)?: "Customer"
         val dateMillis = intent.getLongExtra(EXTRA_DATE_MILLIS, System.currentTimeMillis())
         val subtotal = intent.getDoubleExtra(EXTRA_SUBTOTAL, 0.0)
         val discount = intent.getDoubleExtra(EXTRA_DISCOUNT, 0.0)
         val total = intent.getDoubleExtra(EXTRA_TOTAL, 0.0)
         val paid = intent.getDoubleExtra(EXTRA_PAID, 0.0)
-        val paymentMethod = intent.getStringExtra(EXTRA_PAYMENT_METHOD) ?: ""
-        val itemsEncoded = intent.getStringExtra(EXTRA_ITEMS_ENCODED) ?: ""
+        val paymentMethod = intent.getStringExtra(EXTRA_PAYMENT_METHOD)?: ""
+        val itemsEncoded = intent.getStringExtra(EXTRA_ITEMS_ENCODED)?: ""
 
         val lines = decodeItems(itemsEncoded)
         val isSale = type == "sale"
@@ -89,100 +82,42 @@ class BillPreviewActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= HEADER =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(26, 26, 26, 26)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(accent), Color.parseColor(accentDark))
-            ).apply { cornerRadius = 22f }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 18) }
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(accent), Color.parseColor(accentDark))).apply { cornerRadius = 22f }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 18) }
             applyElevation(this, 10f)
         }
-        header.addView(TextView(this).apply {
-            text = "✅"
-            textSize = 32f
-            gravity = Gravity.CENTER
-        })
-        header.addView(TextView(this).apply {
-            text = if (isSale) "Sale Saved" else "Purchase Saved"
-            textSize = 18f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, 8, 0, 0)
-        })
-        header.addView(TextView(this).apply {
-            text = reference
-            textSize = 12.5f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#E4F5EC"))
-            setPadding(0, 4, 0, 0)
-        })
+        header.addView(TextView(this).apply { text = "✅"; textSize = 32f; gravity = Gravity.CENTER })
+        header.addView(TextView(this).apply { text = if (isSale) "Sale Saved" else "Purchase Saved"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD); setPadding(0, 8, 0, 0) })
+        header.addView(TextView(this).apply { text = reference; textSize = 12.5f; gravity = Gravity.CENTER; setTextColor(Color.parseColor("#E4F5EC")); setPadding(0, 4, 0, 0) })
         root.addView(header)
 
-        // ================= RECEIPT CARD =================
         val receiptCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(26, 24, 26, 20)
             background = strokedBg(border, cardBg, 18)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             applyElevation(this, 3f)
         }
 
-        receiptCard.addView(TextView(this).apply {
-            text = shopName
-            textSize = 17f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        }.also { shopNameLine = it })
-
-        receiptCard.addView(TextView(this).apply {
-            textSize = 11.5f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor(textGray))
-            setPadding(0, 4, 0, 0)
-        }.also { shopSubLine = it })
-
+        receiptCard.addView(TextView(this).apply { textSize = 17f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }.also { shopNameLine = it })
+        receiptCard.addView(TextView(this).apply { textSize = 11.5f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(textGray)); setPadding(0, 4, 0, 0) }.also { shopSubLine = it })
         receiptCard.addView(dashedDivider())
-
         val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
         receiptCard.addView(kv("Invoice/Bill No", reference))
         receiptCard.addView(kv("Date", fmt.format(Date(dateMillis))))
         if (partyName.isNotBlank()) receiptCard.addView(kv(partyLabel, partyName))
         if (paymentMethod.isNotBlank()) receiptCard.addView(kv("Payment Method", paymentMethod.replaceFirstChar { it.uppercase() }))
-
         receiptCard.addView(dashedDivider())
 
-        // ---- Items header row ----
         receiptCard.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(TextView(this@BillPreviewActivity).apply {
-                text = "ITEM"; textSize = 11f
-                setTextColor(Color.parseColor(textGray))
-                setTypeface(typeface, Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
-            })
-            addView(TextView(this@BillPreviewActivity).apply {
-                text = "QTY"; textSize = 11f; gravity = Gravity.CENTER
-                setTextColor(Color.parseColor(textGray))
-                setTypeface(typeface, Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            addView(TextView(this@BillPreviewActivity).apply {
-                text = "AMOUNT"; textSize = 11f; gravity = Gravity.END
-                setTextColor(Color.parseColor(textGray))
-                setTypeface(typeface, Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
+            addView(TextView(this@BillPreviewActivity).apply { text = "ITEM"; textSize = 11f; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f) })
+            addView(TextView(this@BillPreviewActivity).apply { text = "QTY"; textSize = 11f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
+            addView(TextView(this@BillPreviewActivity).apply { text = "AMOUNT"; textSize = 11f; gravity = Gravity.END; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
         })
         receiptCard.addView(spacer(6))
 
@@ -193,27 +128,11 @@ class BillPreviewActivity : AppCompatActivity() {
                 addView(LinearLayout(this@BillPreviewActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
-                    addView(TextView(this@BillPreviewActivity).apply {
-                        text = line.name; textSize = 13.5f
-                        setTextColor(Color.parseColor(textDark))
-                        setTypeface(typeface, Typeface.BOLD)
-                    })
-                    addView(TextView(this@BillPreviewActivity).apply {
-                        text = "@ %.2f".format(line.rate); textSize = 11f
-                        setTextColor(Color.parseColor(textGray))
-                    })
+                    addView(TextView(this@BillPreviewActivity).apply { text = line.name; textSize = 13.5f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, Typeface.BOLD) })
+                    addView(TextView(this@BillPreviewActivity).apply { text = "@ %.2f".format(line.rate); textSize = 11f; setTextColor(Color.parseColor(textGray)) })
                 })
-                addView(TextView(this@BillPreviewActivity).apply {
-                    text = "${line.qty} ${line.unit}"; textSize = 13f; gravity = Gravity.CENTER
-                    setTextColor(Color.parseColor(textDark))
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                })
-                addView(TextView(this@BillPreviewActivity).apply {
-                    text = "%.2f".format(line.amount); textSize = 13.5f; gravity = Gravity.END
-                    setTextColor(Color.parseColor(textDark))
-                    setTypeface(typeface, Typeface.BOLD)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                })
+                addView(TextView(this@BillPreviewActivity).apply { text = "${line.qty} ${line.unit}"; textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(textDark)); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
+                addView(TextView(this@BillPreviewActivity).apply { text = "%.2f".format(line.amount); textSize = 13.5f; gravity = Gravity.END; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
             })
         }
 
@@ -224,79 +143,42 @@ class BillPreviewActivity : AppCompatActivity() {
         receiptCard.addView(kv("Paid", "Rs %.2f".format(paid)))
         val balance = total - paid
         if (balance > 0.009) receiptCard.addView(kv("Balance Due", "Rs %.2f".format(balance), valueColor = "#C62828"))
-
-        footerLine = TextView(this).apply {
-            textSize = 11.5f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor(textGray))
-            setPadding(0, 14, 0, 0)
-        }
+        footerLine = TextView(this).apply { textSize = 11.5f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(textGray)); setPadding(0, 14, 0, 0) }
         receiptCard.addView(footerLine)
-
         root.addView(receiptCard)
         root.addView(spacer(22))
 
-        // ================= BUTTONS =================
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
-            text = "🖨️  PRINT"
-            setTextColor(Color.WHITE)
-            textSize = 14.5f
-            isAllCaps = false
-            setTypeface(typeface, Typeface.BOLD)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.parseColor(blue), Color.parseColor("#1E4FBE"))
-            ).apply { cornerRadius = 16f }
-            setPadding(0, 26, 0, 26)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
+            text = "🖨️ PRINT"; setTextColor(Color.WHITE); textSize = 14.5f; isAllCaps = false; setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.parseColor(blue), Color.parseColor("#1E4FBE"))).apply { cornerRadius = 16f }
+            setPadding(0, 26, 0, 26); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
             applyElevation(this, 4f)
             setOnClickListener { printReceipt(type, reference, partyName, partyLabel, dateMillis, lines, subtotal, discount, total, paid, paymentMethod) }
         })
         btnRow.addView(Button(this).apply {
-            text = "✓  DONE"
-            setTextColor(Color.WHITE)
-            textSize = 14.5f
-            isAllCaps = false
-            setTypeface(typeface, Typeface.BOLD)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 16f }
-            setPadding(0, 26, 0, 26)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
+            text = "✓ DONE"; setTextColor(Color.WHITE); textSize = 14.5f; isAllCaps = false; setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))).apply { cornerRadius = 16f }
+            setPadding(0, 26, 0, 26); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             applyElevation(this, 4f)
             setOnClickListener { finish() }
         })
         root.addView(btnRow)
         root.addView(spacer(30))
-
-        setContentView(ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor(bg))
-            addView(root)
-        })
-
+        setContentView(ScrollView(this).apply { setBackgroundColor(Color.parseColor(bg)); addView(root) })
         loadShopInfo()
     }
-
-    private lateinit var shopNameLine: TextView
-    private lateinit var shopSubLine: TextView
-    private lateinit var footerLine: TextView
 
     private fun loadShopInfo() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@BillPreviewActivity)
-            shopName = db.appSettingDao().get("shop_name")?.value?.ifBlank { shopName } ?: shopName
-            shopPhone = db.appSettingDao().get("shop_phone")?.value ?: ""
-            shopAddress = db.appSettingDao().get("shop_address")?.value ?: ""
-            receiptFooter = db.appSettingDao().get("receipt_footer")?.value ?: ""
-
+            shopName = db.appSettingDao().get("shop_name")?.value?.ifBlank { shopName }?: shopName
+            shopPhone = db.appSettingDao().get("shop_phone")?.value?: ""
+            shopAddress = db.appSettingDao().get("shop_address")?.value?: ""
+            receiptFooter = db.appSettingDao().get("receipt_footer")?.value?: ""
             shopNameLine.text = shopName
-            val subParts = listOfNotNull(
-                shopAddress.takeIf { it.isNotBlank() },
-                shopPhone.takeIf { it.isNotBlank() }?.let { "📞 $it" }
-            )
-            shopSubLine.text = subParts.joinToString("  •  ")
+            val subParts = listOfNotNull(shopAddress.takeIf { it.isNotBlank() }, shopPhone.takeIf { it.isNotBlank() }?.let { "📞 $it" })
+            shopSubLine.text = subParts.joinToString(" • ")
             footerLine.text = receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }
         }
     }
@@ -314,108 +196,83 @@ class BillPreviewActivity : AppCompatActivity() {
                 return@launch
             }
 
-            val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-            val sb = StringBuilder()
-            sb.append(center(shopName, 32)).append("\n")
-            if (shopAddress.isNotBlank()) sb.append(center(shopAddress, 32)).append("\n")
-            if (shopPhone.isNotBlank()) sb.append(center(shopPhone, 32)).append("\n")
-            sb.append("--------------------------------\n")
-            sb.append(if (type == "sale") "SALE RECEIPT\n" else "PURCHASE RECEIPT\n")
-            sb.append("Ref: $reference\n")
-            sb.append("Date: ${fmt.format(Date(dateMillis))}\n")
-            if (partyName.isNotBlank()) sb.append("$partyLabel: $partyName\n")
-            sb.append("--------------------------------\n")
-            for (line in lines) {
-                sb.append(line.name).append("\n")
-                sb.append("  ${line.qty} ${line.unit} x %.2f".format(line.rate))
-                sb.append(row("", "%.2f".format(line.amount), 32)).append("\n")
+            val PAPER_WIDTH = 32 // 58mm printer
+            val fmt = SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault())
+
+            val out = mutableListOf<Byte>()
+            fun add(b: ByteArray) { out.addAll(b.toList()) }
+            fun addLine(t: String = "") { out.addAll((t + "\n").toByteArray(Charsets.UTF_8).toList()) }
+            fun addLeftRight(left: String, right: String) {
+                var l = left
+                val r = right
+                if (l.length + r.length >= PAPER_WIDTH) l = l.take(PAPER_WIDTH - r.length - 1)
+                val spaces = PAPER_WIDTH - l.length - r.length
+                addLine(l + " ".repeat(spaces.coerceAtLeast(1)) + r)
             }
-            sb.append("--------------------------------\n")
-            sb.append(row("Subtotal", "Rs %.2f".format(subtotal), 32)).append("\n")
-            if (discount > 0) sb.append(row("Discount", "-Rs %.2f".format(discount), 32)).append("\n")
-            sb.append(row("TOTAL", "Rs %.2f".format(total), 32)).append("\n")
-            sb.append(row("Paid", "Rs %.2f".format(paid), 32)).append("\n")
+
+            add(PrinterHelper.ESC_INIT)
+            add(PrinterHelper.ESC_ALIGN_CENTER); add(PrinterHelper.ESC_BOLD_ON)
+            addLine(shopName.uppercase())
+            add(PrinterHelper.ESC_BOLD_OFF)
+            if (shopAddress.isNotBlank()) addLine(shopAddress)
+            if (shopPhone.isNotBlank()) addLine("Tel: $shopPhone")
+            addLine("--------------------------------")
+            add(PrinterHelper.ESC_BOLD_ON)
+            addLine(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT")
+            add(PrinterHelper.ESC_BOLD_OFF)
+            add(PrinterHelper.ESC_ALIGN_LEFT)
+            addLine("No: $reference")
+            addLine("Date: ${fmt.format(Date(dateMillis))}")
+            if (partyName.isNotBlank()) addLine("$partyLabel: $partyName")
+            if (paymentMethod.isNotBlank()) addLine("Pay: $paymentMethod")
+            addLine("--------------------------------")
+            addLine("ITEM")
+            addLeftRight("QTY x RATE", "AMOUNT")
+            addLine("--------------------------------")
+
+            for (line in lines) {
+                add(PrinterHelper.ESC_BOLD_ON)
+                addLine(line.name.take(PAPER_WIDTH))
+                add(PrinterHelper.ESC_BOLD_OFF)
+                val qtyRate = "${line.qty} ${line.unit} x ${"%.2f".format(line.rate)}"
+                addLeftRight(qtyRate, "%.2f".format(line.amount))
+            }
+
+            addLine("--------------------------------")
+            addLeftRight("Subtotal", "Rs ${"%.2f".format(subtotal)}")
+            if (discount > 0) addLeftRight("Discount", "-Rs ${"%.2f".format(discount)}")
+            add(PrinterHelper.ESC_BOLD_ON)
+            addLeftRight("TOTAL", "Rs ${"%.2f".format(total)}")
+            add(PrinterHelper.ESC_BOLD_OFF)
+            addLeftRight("Paid", "Rs ${"%.2f".format(paid)}")
             val balance = total - paid
-            if (balance > 0.009) sb.append(row("Balance", "Rs %.2f".format(balance), 32)).append("\n")
-            sb.append("--------------------------------\n")
-            sb.append(center(receiptFooter.ifBlank { "Shukriya!" }, 32)).append("\n")
+            if (balance > 0.009) addLeftRight("Balance Due", "Rs ${"%.2f".format(balance)}")
+            addLine("--------------------------------")
+            add(PrinterHelper.ESC_ALIGN_CENTER)
+            addLine(receiptFooter.ifBlank { "Shukriya!" })
+            addLine("\n\n")
+            add(PrinterHelper.FEED_AND_CUT)
 
-            val ok = PrinterHelper.printText(this@BillPreviewActivity, PrinterHelper.PrinterType.BLUETOOTH, mac, sb.toString())
-            Toast.makeText(
-                this@BillPreviewActivity,
-                if (ok) "Print bhej diya" else "Print fail ho gaya. Printer check karein.",
-                Toast.LENGTH_LONG
-            ).show()
+            val ok = PrinterHelper.printBytes(this@BillPreviewActivity, PrinterHelper.PrinterType.BLUETOOTH, mac, out.toByteArray())
+            Toast.makeText(this@BillPreviewActivity, if (ok) "Print bhej diya" else "Print fail", Toast.LENGTH_LONG).show()
         }
-    }
-
-    private fun center(text: String, width: Int): String {
-        if (text.length >= width) return text
-        val left = (width - text.length) / 2
-        return " ".repeat(left) + text
-    }
-
-    private fun row(left: String, right: String, width: Int): String {
-        val space = (width - left.length - right.length).coerceAtLeast(1)
-        return left + " ".repeat(space) + right
     }
 
     private fun decodeItems(encoded: String): List<PreviewLine> {
         if (encoded.isBlank()) return emptyList()
         return encoded.split("\u0002").mapNotNull { row ->
             val f = row.split("\u0003")
-            if (f.size >= 5) {
-                PreviewLine(
-                    name = f[0],
-                    qty = f[1],
-                    unit = f[2],
-                    rate = f[3].toDoubleOrNull() ?: 0.0,
-                    amount = f[4].toDoubleOrNull() ?: 0.0
-                )
-            } else null
+            if (f.size >= 5) PreviewLine(f[0], f[1], f[2], f[3].toDoubleOrNull()?: 0.0, f[4].toDoubleOrNull()?: 0.0) else null
         }
     }
 
-    // ================= UI HELPERS =================
     private fun kv(label: String, value: String, bold: Boolean = false, valueColor: String? = null) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        setPadding(0, 5, 0, 5)
-        addView(TextView(this@BillPreviewActivity).apply {
-            text = label; textSize = if (bold) 14.5f else 13f
-            setTextColor(Color.parseColor(if (bold) textDark else textGray))
-            if (bold) setTypeface(typeface, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        addView(TextView(this@BillPreviewActivity).apply {
-            text = value; textSize = if (bold) 14.5f else 13f
-            setTextColor(Color.parseColor(valueColor ?: textDark))
-            setTypeface(typeface, if (bold) Typeface.BOLD else Typeface.NORMAL)
-            gravity = Gravity.END
-        })
+        orientation = LinearLayout.HORIZONTAL; setPadding(0, 5, 0, 5)
+        addView(TextView(this@BillPreviewActivity).apply { text = label; textSize = if (bold) 14.5f else 13f; setTextColor(Color.parseColor(if (bold) textDark else textGray)); if (bold) setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
+        addView(TextView(this@BillPreviewActivity).apply { text = value; textSize = if (bold) 14.5f else 13f; setTextColor(Color.parseColor(valueColor?: textDark)); setTypeface(typeface, if (bold) Typeface.BOLD else Typeface.NORMAL); gravity = Gravity.END })
     }
-
-    private fun dashedDivider() = View(this).apply {
-        setBackgroundColor(Color.parseColor(border))
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
-            setMargins(0, 12, 0, 12)
-        }
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    private fun dashedDivider() = View(this).apply { setBackgroundColor(Color.parseColor(border)); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply { setMargins(0, 12, 0, 12) } }
+    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(fillHex)); setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex)); cornerRadius = radius.toFloat() }
+    private fun applyElevation(view: View, dp: Float) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { view.elevation = dp * resources.displayMetrics.density; view.outlineProvider = ViewOutlineProvider.BACKGROUND } }
+    private fun spacer(heightDp: Int) = View(this).apply { val px = (heightDp * resources.displayMetrics.density).toInt(); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px) }
 }
