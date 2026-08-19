@@ -63,17 +63,17 @@ class BillPreviewActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        val type = intent.getStringExtra(EXTRA_TYPE)?: "sale"
-        val reference = intent.getStringExtra(EXTRA_REFERENCE)?: ""
-        val partyName = intent.getStringExtra(EXTRA_PARTY_NAME)?: ""
-        val partyLabel = intent.getStringExtra(EXTRA_PARTY_LABEL)?: "Customer"
+        val type = intent.getStringExtra(EXTRA_TYPE) ?: "sale"
+        val reference = intent.getStringExtra(EXTRA_REFERENCE) ?: ""
+        val partyName = intent.getStringExtra(EXTRA_PARTY_NAME) ?: ""
+        val partyLabel = intent.getStringExtra(EXTRA_PARTY_LABEL) ?: "Customer"
         val dateMillis = intent.getLongExtra(EXTRA_DATE_MILLIS, System.currentTimeMillis())
         val subtotal = intent.getDoubleExtra(EXTRA_SUBTOTAL, 0.0)
         val discount = intent.getDoubleExtra(EXTRA_DISCOUNT, 0.0)
         val total = intent.getDoubleExtra(EXTRA_TOTAL, 0.0)
         val paid = intent.getDoubleExtra(EXTRA_PAID, 0.0)
-        val paymentMethod = intent.getStringExtra(EXTRA_PAYMENT_METHOD)?: ""
-        val itemsEncoded = intent.getStringExtra(EXTRA_ITEMS_ENCODED)?: ""
+        val paymentMethod = intent.getStringExtra(EXTRA_PAYMENT_METHOD) ?: ""
+        val itemsEncoded = intent.getStringExtra(EXTRA_ITEMS_ENCODED) ?: ""
 
         val lines = decodeItems(itemsEncoded)
         val isSale = type == "sale"
@@ -176,10 +176,10 @@ class BillPreviewActivity : AppCompatActivity() {
     private fun loadShopInfo() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@BillPreviewActivity)
-            shopName = db.appSettingDao().get("shop_name")?.value?.ifBlank { shopName }?: shopName
-            shopPhone = db.appSettingDao().get("shop_phone")?.value?: ""
-            shopAddress = db.appSettingDao().get("shop_address")?.value?: ""
-            receiptFooter = db.appSettingDao().get("receipt_footer")?.value?: ""
+            shopName = db.appSettingDao().get("shop_name")?.value?.ifBlank { shopName } ?: shopName
+            shopPhone = db.appSettingDao().get("shop_phone")?.value ?: ""
+            shopAddress = db.appSettingDao().get("shop_address")?.value ?: ""
+            receiptFooter = db.appSettingDao().get("receipt_footer")?.value ?: ""
             shopNameLine.text = shopName
             val subParts = listOfNotNull(shopAddress.takeIf { it.isNotBlank() }, shopPhone.takeIf { it.isNotBlank() }?.let { "📞 $it" })
             shopSubLine.text = subParts.joinToString(" • ")
@@ -187,6 +187,7 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
+    // ===== BIG PRINT FOR 58mm - FULL WIDTH =====
     private fun printReceipt(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
@@ -199,7 +200,7 @@ class BillPreviewActivity : AppCompatActivity() {
                 Toast.makeText(this@BillPreviewActivity, "Pehle Settings mein printer select karein", Toast.LENGTH_LONG).show()
                 return@launch
             }
-            val dotWidth = 384
+            val dotWidth = 384 // 58mm FIXED
             val bitmap = buildReceiptBitmapBIG58mm(type, reference, partyName, partyLabel, dateMillis, lines, subtotal, discount, total, paid, paymentMethod, dotWidth)
             val ok = PrinterHelper.printBitmap(this@BillPreviewActivity, PrinterHelper.PrinterType.BLUETOOTH, mac, bitmap)
             Toast.makeText(this@BillPreviewActivity, if (ok) "BIG Print bheja" else "Print fail", Toast.LENGTH_LONG).show()
@@ -211,7 +212,7 @@ class BillPreviewActivity : AppCompatActivity() {
         val safeWidth = width.coerceAtLeast(1)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             StaticLayout.Builder.obtain(text, 0, text.length, paint, safeWidth)
-               .setAlignment(align).setIncludePad(false).build()
+                .setAlignment(align).setIncludePad(false).build()
         } else {
             StaticLayout(text, paint, safeWidth, align, 1f, 0f, false)
         }
@@ -222,8 +223,9 @@ class BillPreviewActivity : AppCompatActivity() {
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
         total: Double, paid: Double, paymentMethod: String, dotWidth: Int
     ): Bitmap {
+        // BIG PRINT - ZERO PADDING, MAX FONT
         val width = 384
-        val padding = 2
+        val padding = 2 // Bilkul kam padding
         val contentLeft = padding
         val contentRight = width - padding
         val contentWidth = contentRight - contentLeft
@@ -231,18 +233,19 @@ class BillPreviewActivity : AppCompatActivity() {
         fun makePaint(sizeFactor: Float, bold: Boolean): TextPaint =
             TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.BLACK
-                textSize = width * sizeFactor
+                textSize = width * sizeFactor // BIGGER
                 typeface = if (bold) Typeface.create(Typeface.DEFAULT, Typeface.BOLD) else Typeface.DEFAULT
             }
 
-        val titlePaint = makePaint(0.115f, true)
+        // BIG FONTS FOR 58mm
+        val titlePaint = makePaint(0.115f, true) // Shop name BIG
         val subPaint = makePaint(0.055f, false)
         val sectionPaint = makePaint(0.070f, true)
-        val labelPaint = makePaint(0.060f, false)
+        val labelPaint = makePaint(0.060f, false) // KV rows bigger
         val valuePaint = makePaint(0.060f, true)
         val boldLabelPaint = makePaint(0.075f, true)
         val boldValuePaint = makePaint(0.075f, true)
-        val itemNamePaint = makePaint(0.065f, true)
+        val itemNamePaint = makePaint(0.065f, true) // Item name BIG
         val itemSubPaint = makePaint(0.048f, false)
         val itemQtyPaint = makePaint(0.058f, true)
         val itemAmountPaint = makePaint(0.065f, true)
@@ -280,11 +283,7 @@ class BillPreviewActivity : AppCompatActivity() {
         }
 
         fun fullLine(char: String = "-") {
-            val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.BLACK
-                textSize = width * 0.055f
-                typeface = Typeface.MONOSPACE
-            }
+            val paint = Paint().apply { color = Color.BLACK; textSize = width * 0.055f; typeface = Typeface.MONOSPACE }
             drawAt(char.repeat(32), paint, contentLeft.toFloat(), contentWidth.toFloat(), y)
             y += paint.textSize * 1.2f
         }
@@ -294,10 +293,11 @@ class BillPreviewActivity : AppCompatActivity() {
             val vp = if (bold) boldValuePaint else valuePaint
             val labelLayout = drawAt(label, lp, contentLeft.toFloat(), contentWidth * 0.48f, y)
             val valueLayout = drawRightAligned(value, vp, contentRight.toFloat(), contentWidth * 0.52f, y)
-            val h = maxOf(labelLayout?.height?: 0, valueLayout?.height?: 0, 25)
+            val h = maxOf(labelLayout?.height ?: 0, valueLayout?.height ?: 0, 25)
             y += h + 6
         }
 
+        // HEADER BIG
         drawCentered(shopName.uppercase(Locale.getDefault()), titlePaint, 4f)
         val subParts = listOfNotNull(shopAddress.takeIf { it.isNotBlank() }, shopPhone.takeIf { it.isNotBlank() })
         if (subParts.isNotEmpty()) drawCentered(subParts.joinToString(" | "), subPaint, 6f)
@@ -310,6 +310,7 @@ class BillPreviewActivity : AppCompatActivity() {
         if (partyName.isNotBlank()) kvRow("$partyLabel:", partyName)
         fullLine("-")
 
+        // TABLE HEADER BIG
         val col1 = contentLeft.toFloat()
         val col1W = contentWidth * 0.50f
         val col2X = contentLeft + contentWidth * 0.50f
@@ -328,7 +329,7 @@ class BillPreviewActivity : AppCompatActivity() {
             val nameLayout = drawAt(line.name, itemNamePaint, col1, col1W, y)
             drawAt("${line.qty}", itemQtyPaint, col2X, col2W, y)
             drawRightAligned("${line.amount.toInt()}", itemAmountPaint, col3X, col3W, y)
-            y = rowY + (nameLayout?.height?: 22) + 2
+            y = rowY + (nameLayout?.height ?: 22) + 2
             drawAt("${line.unit} @${line.rate.toInt()}", itemSubPaint, col1, col1W, y)
             y += 20
         }
@@ -352,14 +353,14 @@ class BillPreviewActivity : AppCompatActivity() {
         if (encoded.isBlank()) return emptyList()
         return encoded.split("\u0002").mapNotNull { row ->
             val f = row.split("\u0003")
-            if (f.size >= 5) PreviewLine(f[0], f[1], f[2], f[3].toDoubleOrNull()?: 0.0, f[4].toDoubleOrNull()?: 0.0) else null
+            if (f.size >= 5) PreviewLine(f[0], f[1], f[2], f[3].toDoubleOrNull() ?: 0.0, f[4].toDoubleOrNull() ?: 0.0) else null
         }
     }
 
     private fun kv(label: String, value: String, bold: Boolean = false, valueColor: String? = null) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL; setPadding(0, 5, 0, 5)
         addView(TextView(this@BillPreviewActivity).apply { text = label; textSize = if (bold) 14.5f else 13f; setTextColor(Color.parseColor(if (bold) textDark else textGray)); if (bold) setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
-        addView(TextView(this@BillPreviewActivity).apply { text = value; textSize = if (bold) 14.5f else 13f; setTextColor(Color.parseColor(valueColor?: textDark)); setTypeface(typeface, if (bold) Typeface.BOLD else Typeface.NORMAL); gravity = Gravity.END })
+        addView(TextView(this@BillPreviewActivity).apply { text = value; textSize = if (bold) 14.5f else 13f; setTextColor(Color.parseColor(valueColor ?: textDark)); setTypeface(typeface, if (bold) Typeface.BOLD else Typeface.NORMAL); gravity = Gravity.END })
     }
     private fun dashedDivider() = View(this).apply { setBackgroundColor(Color.parseColor(border)); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply { setMargins(0, 12, 0, 12) } }
     private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = DrawableGradient().apply { setColor(Color.parseColor(fillHex)); setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex)); cornerRadius = radius.toFloat() }
