@@ -9,7 +9,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -25,13 +24,12 @@ import kotlinx.coroutines.launch
 
 /**
  * Shows every Category, and inside each category, every Product that belongs to it —
- * with its Primary Unit, Secondary Unit, Tertiary Unit, and the conversions between them
- * (1 Primary = X Secondary, 1 Secondary = X Tertiary).
+ * with its Primary Unit, Secondary Unit and conversion (1 Primary = X Secondary).
  * Each product row also offers Edit (deep-links into ProductActivity's edit form) and Delete.
+ * 2-TIER ONLY - tertiary removed
  */
 class CategoriesUnitsActivity : AppCompatActivity() {
 
-    // ================= PREMIUM COLOR PALETTE (matches Settings / Product) =================
     private val bg = "#F3F2FA"
     private val cardBg = "#FFFFFF"
     private val primary = "#4A3AFF"
@@ -55,7 +53,6 @@ class CategoriesUnitsActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= HEADER =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -143,7 +140,6 @@ class CategoriesUnitsActivity : AppCompatActivity() {
         )
         applyElevation(this, 3f)
 
-        // ---- category header row ----
         val head = LinearLayout(this@CategoriesUnitsActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -167,7 +163,6 @@ class CategoriesUnitsActivity : AppCompatActivity() {
         })
         addView(head)
 
-        // ---- one row per product ----
         for ((index, p) in items.withIndex()) {
             addView(productRow(p))
             if (index != items.lastIndex) addView(spacer(10))
@@ -186,16 +181,11 @@ class CategoriesUnitsActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
 
-        // ---- FIX: now shows all 3 tiers — Primary, Secondary, and Tertiary
-        // (smallest quantity, e.g. grams/ml) — instead of stopping at Secondary.
-        // Chain: 1 Primary = secondaryUnitQty Secondary; 1 Secondary = tertiaryUnitQty Tertiary.
+        // 2-TIER ONLY - shows Primary + Secondary
         val unitLine = buildString {
             append("📏 " + Loc.t(this@CategoriesUnitsActivity, "Unit", "یونٹ") + ": ${p.unit}")
             if (p.secondaryUnit.isNotBlank() && p.secondaryUnitQty > 0) {
                 append("  •  🔁 1 ${p.unit} = ${formatQty(p.secondaryUnitQty)} ${p.secondaryUnit}")
-                if (p.tertiaryUnit.isNotBlank() && p.tertiaryUnitQty > 0) {
-                    append("  •  🔁 1 ${p.secondaryUnit} = ${formatQty(p.tertiaryUnitQty)} ${p.tertiaryUnit}")
-                }
             }
         }
 
@@ -213,7 +203,6 @@ class CategoriesUnitsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textGray))
         })
 
-        // ---- Edit / Delete actions ----
         val actionsRow = LinearLayout(this@CategoriesUnitsActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 10, 0, 0)
@@ -247,13 +236,7 @@ class CategoriesUnitsActivity : AppCompatActivity() {
     private fun confirmDeleteProduct(p: Product) {
         AlertDialog.Builder(this)
             .setTitle(Loc.t(this, "Delete Product", "پروڈکٹ حذف کریں"))
-            .setMessage(
-                Loc.t(
-                    this,
-                    "Delete \"${p.name}\"? This cannot be undone.",
-                    "\"${p.name}\" کو حذف کریں؟ یہ واپس نہیں ہو سکتا۔"
-                )
-            )
+            .setMessage(Loc.t(this, "Delete \"${p.name}\"? This cannot be undone.", "\"${p.name}\" کو حذف کریں؟"))
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { _, _ ->
                 lifecycleScope.launch {
                     PosDatabase.get(this@CategoriesUnitsActivity).productDao().delete(p)
@@ -267,7 +250,6 @@ class CategoriesUnitsActivity : AppCompatActivity() {
     private fun formatQty(v: Double): String =
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
-    // ================= UI HELPERS =================
     private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
         text = label
         textSize = 18f
@@ -276,30 +258,25 @@ class CategoriesUnitsActivity : AppCompatActivity() {
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         width = px; height = px
     }
-
     private fun ovalBg(colorHex: String) = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(Color.parseColor(colorHex))
     }
-
     private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(colorHex))
         cornerRadius = radius.toFloat()
     }
-
     private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(fillHex))
         setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
         cornerRadius = radius.toFloat()
     }
-
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             view.elevation = dp * resources.displayMetrics.density
             view.outlineProvider = ViewOutlineProvider.BACKGROUND
         }
     }
-
     private fun spacer(heightDp: Int) = View(this).apply {
         val px = (heightDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
