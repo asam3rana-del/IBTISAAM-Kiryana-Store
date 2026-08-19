@@ -274,7 +274,7 @@ class PurchaseActivity : AppCompatActivity() {
             setOnClickListener { toggleBilledItems() }
         }
         val checkCircle = TextView(this).apply {
-            text = "✓"
+            text = "\u2713"
             textSize = 12f
             setTextColor(Color.parseColor(billedBlueDark))
             gravity = Gravity.CENTER
@@ -290,7 +290,7 @@ class PurchaseActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(12,0,0,0) }
         })
-        billedItemsChevron = TextView(this).apply { text = "▼"; textSize = 12f; setTextColor(Color.WHITE) }
+        billedItemsChevron = TextView(this).apply { text = "\u25BC"; textSize = 12f; setTextColor(Color.WHITE) }
         billedItemsHeader.addView(billedItemsChevron)
         root.addView(billedItemsHeader)
 
@@ -337,7 +337,7 @@ class PurchaseActivity : AppCompatActivity() {
         paidRow.addView(paidInput)
         paymentSection.addView(paidRow)
         paidWarningText = TextView(this).apply {
-            text = "⚠️ Paid khali hai - Ye Udhaar me jayega"
+            text = "\u26A0\uFE0F Paid khali hai - Ye Udhaar me jayega"
             textSize = 11f
             setTextColor(Color.parseColor(red))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -428,7 +428,7 @@ class PurchaseActivity : AppCompatActivity() {
             setPadding(0, 20, 0, 20)
         }
         header.addView(TextView(this).apply {
-            text = "←  Add Item (New Window)"
+            text = "\u2190  Add Item (New Window)"
             textSize = 17f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -436,7 +436,7 @@ class PurchaseActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         header.addView(TextView(this).apply {
-            text = "✕"
+            text = "\u2715"
             textSize = 20f
             setTextColor(Color.parseColor(textMuted))
             setPadding(20, 0, 0, 0)
@@ -447,17 +447,26 @@ class PurchaseActivity : AppCompatActivity() {
         // Item Name
         val itemBox = innerField()
         itemBox.addView(labelRow("Item Name"))
+        val itemNameRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val itemNameInput = AutoCompleteTextView(this).apply {
-            hint = "Type to search…"
+            hint = "Type to search\u2026"
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
             textSize = 15f
             threshold = 1
+            imeOptions = EditorInfo.IME_ACTION_NEXT
             setAdapter(android.widget.ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, products.map { it.name }))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        itemBox.addView(itemNameInput)
+        itemNameRow.addView(itemNameInput)
+        itemNameRow.addView(circleIcon("+", teal, 30) {
+            // Manual "+" toggle: open the quick add-item dialog with unit picker
+            openQuickAddItemDialog(itemNameInput.text.toString().trim()) { product ->
+                itemNameInput.setText(product.name)
+            }
+        })
+        itemBox.addView(itemNameRow)
         root.addView(itemBox)
 
         // Live Preview
@@ -478,6 +487,7 @@ class PurchaseActivity : AppCompatActivity() {
         val qtyInput = EditText(this).apply {
             hint = "0"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_NEXT
             background = null
             textSize = 15f
         }
@@ -498,6 +508,7 @@ class PurchaseActivity : AppCompatActivity() {
         val rateInput = EditText(this).apply {
             hint = "Price / Unit"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_NEXT
             background = null
             textSize = 15f
         }
@@ -507,6 +518,7 @@ class PurchaseActivity : AppCompatActivity() {
         val totalLotInput = EditText(this).apply {
             hint = "e.g. 5000 for 2 Ctn"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_DONE
             background = null
             textSize = 15f
         }
@@ -534,28 +546,63 @@ class PurchaseActivity : AppCompatActivity() {
             totalAmountTextLocal.text = "Total Amount: Rs ${"%.0f".format(q * r)}"
         }
 
+        fun applyProductToUnits(product: Product) {
+            val unitOptions = mutableListOf(product.unit)
+            if (product.secondaryUnit.isNotBlank()) unitOptions.add(product.secondaryUnit)
+            if (product.tertiaryUnit.isNotBlank()) unitOptions.add(product.tertiaryUnit)
+            unitSpinner.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
+            if (product.cost > 0) rateInput.setText(product.cost.toInt().toString())
+        }
+
         itemNameInput.setOnItemClickListener { _, _, pos, _ ->
             val picked = itemNameInput.adapter.getItem(pos).toString()
             val product = products.find { it.name == picked }
             selectedProductLocal = product
-            if (product != null) {
-                val unitOptions = mutableListOf(product.unit)
-                if (product.secondaryUnit.isNotBlank()) unitOptions.add(product.secondaryUnit)
-                if (product.tertiaryUnit.isNotBlank()) unitOptions.add(product.tertiaryUnit)
-                unitSpinner.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
-                if (product.cost > 0) rateInput.setText(product.cost.toInt().toString())
-            }
+            if (product != null) applyProductToUnits(product)
             qtyInput.requestFocus()
             updatePreview()
         }
 
+        // "Ek word likhne par save item open ho jaye" - if the typed name doesn't match any
+        // existing product, automatically offer to save it as a new item (with its unit)
+        // before moving on to Quantity.
+        fun resolveTypedNameThenAdvance() {
+            val typed = itemNameInput.text.toString().trim()
+            if (typed.isEmpty()) { qtyInput.requestFocus(); return }
+            val existing = products.find { it.name.equals(typed, ignoreCase = true) }
+            if (existing != null) {
+                selectedProductLocal = existing
+                applyProductToUnits(existing)
+                updatePreview()
+                qtyInput.requestFocus()
+            } else {
+                openQuickAddItemDialog(typed) { product ->
+                    selectedProductLocal = product
+                    itemNameInput.setText(product.name)
+                    applyProductToUnits(product)
+                    updatePreview()
+                    qtyInput.requestFocus()
+                }
+            }
+        }
+
+        itemNameInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { resolveTypedNameThenAdvance(); true } else false
+        }
+
         qtyInput.addTextChangedListener(simpleWatcher { updatePreview() })
+        qtyInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { rateInput.requestFocus(); true } else false
+        }
         rateInput.addTextChangedListener(simpleWatcher {
             val q = qtyInput.text.toString().toDoubleOrNull() ?: 0.0
             val r = rateInput.text.toString().toDoubleOrNull() ?: 0.0
             if (q > 0 && r > 0) totalLotInput.setText("%.0f".format(q * r))
             updatePreview()
         })
+        rateInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { totalLotInput.requestFocus(); true } else false
+        }
         totalLotInput.addTextChangedListener(simpleWatcher {
             val totalLot = totalLotInput.text.toString().toDoubleOrNull() ?: 0.0
             val q = qtyInput.text.toString().toDoubleOrNull() ?: 0.0
@@ -580,6 +627,11 @@ class PurchaseActivity : AppCompatActivity() {
         btnRow.addView(addAnotherBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) })
         btnRow.addView(addBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) })
         root.addView(btnRow)
+
+        // Last field's keyboard "Done" stops/lands on "Add & Another"
+        totalLotInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) { hideKeyboard(); addAnotherBtn.requestFocus(); addAnotherBtn.performClick(); true } else false
+        }
 
         fun addItemToBill(closeAfter: Boolean) {
             val enteredName = itemNameInput.text.toString().trim()
@@ -623,6 +675,70 @@ class PurchaseActivity : AppCompatActivity() {
 
         dialog.setContentView(root)
         dialog.show()
+    }
+
+    // Quick "+" add-item dialog: lets the user save a brand-new item (with its unit)
+    // straight from the Add Item window, without leaving the purchase flow.
+    private fun openQuickAddItemDialog(prefillName: String, onSaved: (Product) -> Unit) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 16, 48, 0)
+        }
+        container.addView(TextView(this).apply {
+            text = "Item not found \u2014 save it as a new item"
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(0, 0, 0, 16)
+        })
+        val nameInput = EditText(this).apply {
+            hint = "Item name"
+            setText(prefillName)
+        }
+        container.addView(nameInput)
+        container.addView(spacer(10))
+        container.addView(labelRow("Unit"))
+        val unitSpinner = Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits)
+        }
+        container.addView(unitSpinner)
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Save New Item")
+            .setView(container)
+            .setPositiveButton("Save") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(this, "Item name required", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val unit = unitSpinner.selectedItem?.toString() ?: "pcs"
+                lifecycleScope.launch {
+                    val db = PosDatabase.get(this@PurchaseActivity)
+                    val existing = products.find { it.name.equals(name, ignoreCase = true) }
+                    val product = existing ?: Product(
+                        barcode = "P" + System.currentTimeMillis(),
+                        name = name,
+                        category = "General",
+                        cost = 0.0,
+                        salePrice = 0.0,
+                        wholesalePrice = 0.0,
+                        stock = 0,
+                        openingStock = 0,
+                        unit = unit,
+                        secondaryUnit = "",
+                        secondaryUnitQty = 0.0,
+                        tertiaryUnit = "",
+                        tertiaryUnitQty = 0.0
+                    )
+                    if (existing == null) {
+                        db.productDao().upsert(product)
+                        products = products + product
+                    }
+                    onSaved(product)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ================== REST OF YOUR ORIGINAL FUNCTIONS (UNCHANGED LOGIC) ==================
@@ -721,7 +837,7 @@ class PurchaseActivity : AppCompatActivity() {
     private fun toggleBilledItems() {
         itemsExpanded = !itemsExpanded
         itemsContainer.visibility = if (itemsExpanded) View.VISIBLE else View.GONE
-        billedItemsChevron.text = if (itemsExpanded) "▼" else "▶"
+        billedItemsChevron.text = if (itemsExpanded) "\u25BC" else "\u25B6"
     }
     private fun showOverflowMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
@@ -809,7 +925,7 @@ class PurchaseActivity : AppCompatActivity() {
         if (!itemsExpanded) {
             itemsExpanded = true
             itemsContainer.visibility = View.VISIBLE
-            billedItemsChevron.text = "▼"
+            billedItemsChevron.text = "\u25BC"
         }
         lines.forEachIndexed { index, line ->
             val row = LinearLayout(this).apply {
@@ -824,7 +940,7 @@ class PurchaseActivity : AppCompatActivity() {
             }
             val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val badge = TextView(this).apply {
-                text = "#${34 + index}"
+                text = "#${index + 1}"
                 textSize = 10.5f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(Color.parseColor(textMuted))
@@ -892,7 +1008,7 @@ class PurchaseActivity : AppCompatActivity() {
             setPadding(24, 24, 24, 24)
         }
         root.addView(TextView(this).apply {
-            text = "←  Edit Item #${34+editIndex}"
+            text = "\u2190  Edit Item #${editIndex + 1}"
             textSize = 17f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setOnClickListener { dialog.dismiss() }
@@ -926,7 +1042,7 @@ class PurchaseActivity : AppCompatActivity() {
         dueAmountText.setTextColor(Color.parseColor(if (due > 0) red else teal))
         if (paid == 0.0 && total > 0) {
             paidWarningText.visibility = View.VISIBLE
-            paidWarningText.text = "⚠️ Paid khali hai - Ye Rs %.0f Udhaar jayega".format(due)
+            paidWarningText.text = "\u26A0\uFE0F Paid khali hai - Ye Rs %.0f Udhaar jayega".format(due)
         } else {
             paidWarningText.visibility = View.GONE
         }
