@@ -1,4 +1,4 @@
-package com.grocerypos.v11.ui
+package com.grocerypos.v11
 
 import android.app.AlertDialog
 import android.content.Intent
@@ -16,17 +16,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.grocerypos.v11.PosDatabase
-import com.grocerypos.v11.Product
-import com.grocerypos.v11.util.Loc
+import com.grocerypos.v11.ui.ProductActivity
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
  * Shows every Category, and inside each category, every Product that belongs to it —
  * with its Primary Unit, Secondary Unit and conversion (1 Primary = X Secondary).
- * Each product row also offers Edit (deep-links into ProductActivity's edit form) and Delete.
- * 2-TIER ONLY - tertiary removed
+ * 2-TIER ONLY - tertiary removed (fixed for build)
  */
 class CategoriesUnitsActivity : AppCompatActivity() {
 
@@ -181,7 +178,7 @@ class CategoriesUnitsActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
 
-        // 2-TIER ONLY - shows Primary + Secondary
+        // 2-TIER ONLY - shows Primary + Secondary (tertiary removed)
         val unitLine = buildString {
             append("📏 " + Loc.t(this@CategoriesUnitsActivity, "Unit", "یونٹ") + ": ${p.unit}")
             if (p.secondaryUnit.isNotBlank() && p.secondaryUnitQty > 0) {
