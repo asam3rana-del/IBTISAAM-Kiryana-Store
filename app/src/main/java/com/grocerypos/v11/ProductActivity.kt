@@ -1,607 +1,290 @@
+
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Bundle
-import android.text.Editable
 import android.text.InputType
-import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
-import com.grocerypos.v11.UnitType
-import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class ProductActivity : AppCompatActivity() {
 
-    companion object {
-        const val EXTRA_EDIT_BARCODE = "editBarcode"
-    }
-
     private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
     private val navy = "#0B2545"
     private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val textDark = "#0B2545"
-    private val textMuted = "#7C8798"
+    private val cardWhite = "#FFFFFF"
     private val border = "#E3E8EE"
 
-    private lateinit var scrollView: ScrollView
-    private lateinit var formCardTitle: TextView
-    private lateinit var name: EditText
-    private lateinit var selectUnitBtn: TextView
-    private lateinit var categorySpinner: Spinner
-    private lateinit var cost: EditText
-    private lateinit var wholesalePrice: EditText
-    private lateinit var salePrice: EditText
-    private lateinit var stock: EditText
-    private lateinit var stockNote: TextView
+    private lateinit var nameField: EditText
+    private lateinit var primaryUnitField: EditText
+    private lateinit var secondaryUnitField: EditText
+    private lateinit var secondaryQtyField: EditText
+    private lateinit var tertiaryUnitField: EditText
+    private lateinit var tertiaryQtyField: EditText
+    private lateinit var costField: EditText
+    private lateinit var salePriceField: EditText
+    private lateinit var stockField: EditText
+    private lateinit var stockUnitSpinner: Spinner
     private lateinit var saveButton: Button
-    private lateinit var cancelEditChip: TextView
-    private lateinit var searchField: EditText
-    private lateinit var listContainer: LinearLayout
-    private lateinit var noResultsCard: LinearLayout
-    private lateinit var convertAllBtn: TextView
+    private lateinit var productList: LinearLayout
 
-    private var units = listOf("pcs", "kg", "box", "dozen", "Pao", "gram", "g", "ctn", "Nos")
-    private var selectedPrimaryUnit = "pcs"
-    private var selectedSecondaryUnit = "None"
-    private var selectedSecondaryQty = 0.0
+    private var editing: Product? = null
 
-    private var editingProduct: Product? = null
-    private var allProducts: List<Product> = emptyList()
+    // Urdu units suggestions
+    private val urduUnits = listOf(
+        "کارٹن", "بیرونی پیک", "ڈبی", "لڑی", "عدد", "گچھی",
+        "بوری", "کلو", "گرام", "پاؤ", "باکس", "بوتل", "شیشی", "پیکٹ"
+    )
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 44, 24, 28)
-            setBackgroundColor(Color.parseColor(bg))
-        }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 22, 22)
-            background = roundedBg(navy, 20)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 18) }
-            applyElevation(this, 6f)
-        }
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = Loc.t(this@ProductActivity, "Add / Edit Product", "پروڈکٹ شامل / تبدیل کریں")
-            textSize = 18.5f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        header.addView(headerCol)
-        root.addView(header)
-
-        // CONVERT ALL BUTTON - NEW FOR 2-TIER MIGRATION
-        convertAllBtn = TextView(this).apply {
-            text = "🔄  Convert All Products to 2-Tier (Fix Old Units)"
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            background = roundedBg("#F5A524", 12)
-            setPadding(20, 16, 20, 16)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 12) }
-            setOnClickListener { confirmConvertAll() }
-        }
-        root.addView(convertAllBtn)
-
-        val formHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        formCardTitle = TextView(this).apply {
-            text = "✚  " + Loc.t(this@ProductActivity, "New Product", "نئی پروڈکٹ")
-            textSize = 14.5f
-            setTextColor(Color.parseColor(teal))
-            setTypeface(typeface, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        cancelEditChip = TextView(this).apply {
-            text = "✕  " + Loc.t(this@ProductActivity, "Cancel Edit", "ترمیم منسوخ کریں")
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            background = roundedBg(red, 30)
-            setPadding(24, 12, 24, 12)
-            visibility = View.GONE
-            setOnClickListener { clearForm() }
-        }
-        formHeaderRow.addView(formCardTitle)
-        formHeaderRow.addView(cancelEditChip)
-        root.addView(formHeaderRow)
-        root.addView(spacer(10))
-
-        val nameCard = premiumCard()
-        nameCard.addView(sectionLabel("🏷️", Loc.t(this, "Product Name", "پروڈکٹ کا نام")))
-        val nameBox = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 6, 6, 6)
-            background = strokedBg(border, "#FAFBFC", 12)
-        }
-        name = EditText(this).apply {
-            hint = Loc.t(this@ProductActivity, "Product Name", "پروڈکٹ کا نام")
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        selectUnitBtn = TextView(this).apply {
-            text = "📏 " + Loc.t(this@ProductActivity, "Select Unit (Editable)", "یونٹ منتخب کریں (قابل ترمیم)")
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            background = roundedBg(teal, 30)
-            setPadding(26, 15, 26, 15)
-            setOnClickListener { openUnitDialog() }
-        }
-        nameBox.addView(name)
-        nameBox.addView(selectUnitBtn)
-        nameCard.addView(nameBox)
-        root.addView(nameCard)
-
-        val categoryCard = premiumCard()
-        categoryCard.addView(sectionLabel("🗂️", Loc.t(this, "Category", "کیٹیگری")))
-        val spinnerBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = strokedBg(border, "#FAFBFC", 12)
-            setPadding(16, 2, 16, 2)
-        }
-        categorySpinner = Spinner(this)
-        spinnerBox.addView(categorySpinner)
-        categoryCard.addView(spinnerBox)
-        categoryCard.addView(spacer(10))
-        categoryCard.addView(pillLink("✚  " + Loc.t(this, "Add New Category", "نئی کیٹیگری شامل کریں")) { promptAddCategory() })
-        root.addView(categoryCard)
-
-        val ratesCard = premiumCard()
-        ratesCard.addView(sectionLabel("💰", Loc.t(this, "Pricing", "قیمتیں")))
-        cost = rateField("🛒", Loc.t(this, "Purchase Rate", "خریداری کی قیمت"))
-        ratesCard.addView(fieldBox(cost))
-        ratesCard.addView(spacer(12))
-        wholesalePrice = rateField("📦", Loc.t(this, "Wholesale Sale Rate", "تھوک فروخت کی قیمت"))
-        ratesCard.addView(fieldBox(wholesalePrice))
-        ratesCard.addView(spacer(12))
-        salePrice = rateField("🏪", Loc.t(this, "Retail Sale Rate", "پرچون فروخت کی قیمت"))
-        ratesCard.addView(fieldBox(salePrice))
-        ratesCard.addView(spacer(12))
-        stock = EditText(this).apply {
-            hint = Loc.t(this@ProductActivity, "Opening Stock", "ابتدائی اسٹاک")
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15f
-            inputType = InputType.TYPE_CLASS_NUMBER
-        }
-        ratesCard.addView(fieldBox(stock, "🔢"))
-        stockNote = TextView(this).apply {
-            text = "EDIT MODE: Stock & Unit dono change kar sakte ho ab"
-            textSize = 11f
-            setTextColor(Color.parseColor(teal))
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(6, 8, 0, 0)
-            visibility = View.GONE
-        }
-        ratesCard.addView(stockNote)
-        root.addView(ratesCard)
-
-        val scrollArea = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        }
-        val listHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        listHeaderRow.addView(sectionLabel("🗃️", Loc.t(this, "Products", "پروڈکٹس")))
-        root.addView(spacer(4))
-        root.addView(listHeaderRow)
-        root.addView(spacer(10))
-
-        val searchBox = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 4, 18, 4)
-            background = strokedBg(border, cardWhite, 14)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 12) }
-        }
-        searchBox.addView(TextView(this).apply { text = "🔍  "; textSize = 15f })
-        searchField = EditText(this).apply {
-            hint = Loc.t(this@ProductActivity, "Search products…", "پروڈکٹ تلاش کریں…")
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 14.5f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        searchBox.addView(searchField)
-        root.addView(searchBox)
-        searchField.addTextChangedListener(simpleWatcher { renderProducts(filterProducts(searchField.text.toString())) })
-
-        listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(listContainer)
-        noResultsCard = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
-        root.addView(noResultsCard)
-        scrollArea.addView(root)
-
-        saveButton = Button(this).apply {
-            text = "💾  " + Loc.t(this@ProductActivity, "SAVE PRODUCT", "پروڈکٹ محفوظ کریں")
-            setTextColor(Color.WHITE)
-            background = roundedBg(navy, 16)
-            setPadding(0, 26, 0, 26)
-            setOnClickListener { saveProduct() }
-        }
-        val saveBar = LinearLayout(this).apply {
-            setPadding(24, 14, 24, 18)
-            setBackgroundColor(Color.parseColor(cardWhite))
-            addView(saveButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        }
-        setContentView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor(bg))
-            addView(scrollArea)
-            addView(saveBar)
-        })
-        scrollView = scrollArea
-        loadCategories(); loadUnits(); loadProducts()
-        intent.getStringExtra(EXTRA_EDIT_BARCODE)?.let { barcode ->
-            lifecycleScope.launch {
-                PosDatabase.get(this@ProductActivity).productDao().find(barcode)?.let { p -> loadProductForEdit(p) }
+        val root = ScrollView(this).apply {
+            val col = LinearLayout(this@ProductActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(24, 44, 24, 24)
+                setBackgroundColor(Color.parseColor(bg))
             }
-        }
-    }
 
-    // ===== NEW: CONVERT ALL PRODUCTS TO 2-TIER =====
-    private fun confirmConvertAll() {
-        AlertDialog.Builder(this)
-            .setTitle("Convert All to 2-Tier?")
-            .setMessage("Ye sare products me se Tertiary Unit hata dega aur sirf Primary + Secondary rakhega.\n\nAgar kisi product me Secondary khali tha aur Tertiary tha, to Tertiary ko Secondary bana dega.\n\nContinue?")
-            .setPositiveButton("Yes, Convert") { _, _ -> convertAllProductsTo2Tier() }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
+            col.addView(TextView(this@ProductActivity).apply {
+                text = "پروڈکٹ شامل کریں - اردو یونٹ 3 درجہ"
+                textSize = 18f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0,0,0,16)
+            })
 
-    private fun convertAllProductsTo2Tier() {
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@ProductActivity)
-            val all = db.productDao().all().first()
-            var count = 0
-            for (p in all) {
-                // Logic: If product has tertiary data in old DB, migrate it
-                // Since new entity has no tertiary fields, we just ensure secondary is clean
-                // For old DBs, we need raw query - we do it via fallback
-                try {
-                    // Check if this product still has tertiary in DB (via raw query)
-                    // We will just reset tertiary by updating product with only 2-tier fields
-                    val newProduct = p.copy(
-                        secondaryUnit = p.secondaryUnit, // keep as is
-                        secondaryUnitQty = p.secondaryUnitQty
-                    )
-                    // If secondary is empty but old tertiary existed, we can't get it from new entity
-                    // So we run a direct SQL to clean tertiary columns if they still exist
-                    db.openHelper.writableDatabase.execSQL("UPDATE products SET tertiaryUnit = '', tertiaryUnitQty = 0 WHERE barcode = '${p.barcode}'")
-                    count++
-                } catch (e: Exception) {
-                    // Column may already be removed, ignore
-                    count++
-                }
+            // Name
+            nameField = EditText(this@ProductActivity).apply {
+                hint = "پروڈکٹ نام - Sugar / Shampoo"
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
             }
-            // Also run global clean
-            try {
-                db.openHelper.writableDatabase.execSQL("UPDATE products SET secondaryUnit = '' WHERE secondaryUnit = 'None'")
-                db.openHelper.writableDatabase.execSQL("UPDATE products SET secondaryUnitQty = 0 WHERE secondaryUnit = ''")
-            } catch (_: Exception) {}
+            col.addView(nameField)
+            col.addView(spacer(10))
 
-            Toast.makeText(this@ProductActivity, "$count products converted to 2-Tier!", Toast.LENGTH_LONG).show()
-            convertAllBtn.text = "✅ Converted $count products"
-        }
-    }
-
-    private fun premiumCard() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(22, 18, 22, 18)
-        background = strokedBg(border, cardWhite, 16)
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
-        applyElevation(this, 2f)
-    }
-    private fun fieldBox(field: EditText, icon: String = "") = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        background = strokedBg(border, "#FAFBFC", 12)
-        setPadding(18, 4, 18, 4)
-        if (icon.isNotEmpty()) addView(TextView(this@ProductActivity).apply { text = "$icon  "; textSize = 14f })
-        (field.parent as? ViewGroup)?.removeView(field)
-        field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        addView(field)
-    }
-    private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, 0, 0, 12)
-        addView(TextView(this@ProductActivity).apply { text = "$icon  "; textSize = 14f })
-        addView(TextView(this@ProductActivity).apply {
-            text = label.uppercase()
-            textSize = 12f
-            setTextColor(Color.parseColor(teal))
-            setTypeface(typeface, Typeface.BOLD)
-        })
-    }
-    private fun pillLink(label: String, onClick: () -> Unit) = TextView(this).apply {
-        text = label; textSize = 12.5f; setTextColor(Color.parseColor(teal)); setPadding(4, 4, 4, 4); setOnClickListener { onClick() }
-    }
-    private fun rateField(icon: String, hint: String) = EditText(this).apply {
-        this.hint = hint; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; textSize = 15f
-        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-    }
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(colorHex)); cornerRadius = radius.toFloat() }
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex)); setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex)); cornerRadius = radius.toFloat()
-    }
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(colorHex)) }
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { view.elevation = dp * resources.displayMetrics.density; view.outlineProvider = ViewOutlineProvider.BACKGROUND }
-    }
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
-    private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
-        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-        override fun afterTextChanged(s: Editable?) = onChange()
-    }
-
-    private fun loadCategories() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@ProductActivity).categoryDao().all().collectLatest { list ->
-                val names = (listOf("General") + list.map { it.name }).distinct()
-                categorySpinner.adapter = ArrayAdapter(this@ProductActivity, android.R.layout.simple_spinner_dropdown_item, names)
-                editingProduct?.let { p ->
-                    val idx = names.indexOf(p.category)
-                    if (idx >= 0) categorySpinner.setSelection(idx)
-                }
+            // Primary Unit
+            col.addView(label("بڑا یونٹ - Primary (مثال: کارٹن / بوری)"))
+            primaryUnitField = EditText(this@ProductActivity).apply {
+                hint = "مثال: کارٹن یا بوری یا ctn یا bag"
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
             }
-        }
-    }
-    private fun loadUnits() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@ProductActivity).unitDao().all().collectLatest { list ->
-                units = (listOf("pcs", "kg", "box", "dozen", "Pao", "gram", "g", "ctn", "Nos") + list.map { it.name }).distinct()
+            col.addView(primaryUnitField)
+            col.addView(quickUnitChips(primaryUnitField))
+            col.addView(spacer(10))
+
+            // Secondary
+            col.addView(label("درمیانہ یونٹ - Secondary + مقدار"))
+            val secRow = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            secondaryUnitField = EditText(this@ProductActivity).apply {
+                hint = "بیرونی پیک / لڑی / کلو"
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,6,0) }
             }
-        }
-    }
-    private fun normalizeUnitName(u: String) = u.trim().lowercase()
-    private fun standardUnitQty(fromUnit: String, toUnit: String): Double? {
-        val f = normalizeUnitName(fromUnit)
-        val t = normalizeUnitName(toUnit)
-        val gramNames = setOf("gram", "grams", "g", "gm")
-        val pieceNames = setOf("pcs", "pc", "piece", "pieces")
-        val kgNames = setOf("kg", "kgs", "kilogram", "kilograms")
-        return when {
-            f == "dozen" && t in pieceNames -> 12.0
-            f in kgNames && t in gramNames -> 1000.0
-            f == "pao" && t in gramNames -> 250.0
-            f in kgNames && t == "pao" -> 4.0
-            else -> null
-        }
-    }
-    private fun trimNum(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
-    private fun promptAddCategory() {
-        val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
-        AlertDialog.Builder(this).setTitle(Loc.t(this, "New Category", "نئی کیٹیگری")).setView(input)
-            .setPositiveButton(Loc.t(this, "Add", "شامل کریں")) { _, _ ->
-                val v = input.text.toString().trim()
-                if (v.isNotEmpty()) lifecycleScope.launch { PosDatabase.get(this@ProductActivity).categoryDao().insert(Category(v)) }
-            }.setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null).show()
-    }
-
-    private fun openUnitDialog() {
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.parseColor(cardWhite)) }
-        val dialogHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(28, 26, 28, 26)
-            background = roundedBg(navy, 0)
-        }
-        dialogHeader.addView(TextView(this).apply {
-            text = "📏  " + Loc.t(this@ProductActivity, "Add Item Unit - 2 Tier Only", "آئٹم یونٹ - 2 درجے")
-            textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD)
-        })
-        content.addView(dialogHeader)
-        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 26, 28, 8) }
-
-        body.addView(TextView(this).apply { text = "PRIMARY UNIT"; textSize = 11.5f; setTextColor(Color.parseColor(textMuted)) })
-        val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val primarySpinner = Spinner(this)
-        primaryRow.addView(primarySpinner, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        body.addView(primaryRow)
-        body.addView(spacer(20))
-
-        body.addView(TextView(this).apply { text = "SECONDARY UNIT (optional)"; textSize = 11.5f; setTextColor(Color.parseColor(textMuted)) })
-        val secondaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val secondarySpinner = Spinner(this)
-        secondaryRow.addView(secondarySpinner, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        body.addView(secondaryRow)
-        body.addView(spacer(16))
-
-        val qtyBox = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; background = strokedBg(border, "#FAFBFC", 12); setPadding(16, 4, 16, 4)
-        }
-        val qtyField = EditText(this).apply {
-            hint = "1 Unit = how many Secondary? (e.g. 1 box = 12 pcs)"
-            setHintTextColor(Color.parseColor(textMuted)); background = null
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            if (selectedSecondaryQty > 0) setText(selectedSecondaryQty.toString())
-        }
-        qtyBox.addView(qtyField)
-        body.addView(qtyBox)
-        content.addView(body)
-
-        primarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, units)
-        primarySpinner.setSelection(units.indexOf(selectedPrimaryUnit).coerceAtLeast(0))
-        val secondaryOptions = listOf("None") + units
-        secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, secondaryOptions)
-        secondarySpinner.setSelection(secondaryOptions.indexOf(selectedSecondaryUnit).coerceAtLeast(0))
-
-        fun autoFillSecondaryQty() {
-            val p = primarySpinner.selectedItem?.toString() ?: return
-            val s = secondarySpinner.selectedItem?.toString() ?: return
-            if (s == "None") return
-            val std = standardUnitQty(p, s) ?: return
-            if (qtyField.text.toString().isBlank()) qtyField.setText(trimNum(std))
-        }
-        primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty() }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
-        secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty() }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
-        autoFillSecondaryQty()
-
-        val dialog = AlertDialog.Builder(this).setView(content).create()
-        val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }
-        footer.addView(TextView(this).apply {
-            text = "Cancel"; gravity = Gravity.CENTER; background = strokedBg(border, "#FAFBFC", 14); setPadding(0, 22, 0, 22)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
-            setOnClickListener { dialog.dismiss() }
-        })
-        footer.addView(TextView(this).apply {
-            text = "✓ Save Unit"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); background = roundedBg(teal, 14); setPadding(0, 22, 0, 22)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
-            setOnClickListener {
-                selectedPrimaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"
-                selectedSecondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"
-                selectedSecondaryQty = qtyField.text.toString().toDoubleOrNull() ?: 0.0
-                selectUnitBtn.text = buildString {
-                    append("📏 $selectedPrimaryUnit")
-                    if (selectedSecondaryUnit != "None") append(" / $selectedSecondaryUnit")
-                }
-                dialog.dismiss()
+            secondaryQtyField = EditText(this@ProductActivity).apply {
+                hint = "1 کارٹن = 50 بیرونی"
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6,0,0,0) }
             }
-        })
-        content.addView(footer)
-        dialog.show()
-    }
+            secRow.addView(secondaryUnitField)
+            secRow.addView(secondaryQtyField)
+            col.addView(secRow)
+            col.addView(quickUnitChips(secondaryUnitField))
+            col.addView(spacer(10))
 
-    private fun loadProductForEdit(p: Product) {
-        editingProduct = p
-        name.setText(p.name)
-        selectedPrimaryUnit = p.unit
-        selectedSecondaryUnit = if (p.secondaryUnit.isBlank()) "None" else p.secondaryUnit
-        selectedSecondaryQty = p.secondaryUnitQty
-        selectUnitBtn.text = buildString {
-            append("📏 $selectedPrimaryUnit")
-            if (selectedSecondaryUnit != "None") append(" / $selectedSecondaryUnit")
-        }
-        cost.setText(if (p.cost > 0) p.cost.toString() else "")
-        wholesalePrice.setText(if (p.wholesalePrice > 0) p.wholesalePrice.toString() else "")
-        salePrice.setText(if (p.salePrice > 0) p.salePrice.toString() else "")
-        // EDIT ALLOWED NOW - Stock bhi editable
-        stock.setText(p.stock.toString())
-        stock.isEnabled = true // Pehle false tha, ab true kar diya
-        stockNote.visibility = View.VISIBLE
-        stockNote.text = "✏️ EDIT MODE: Stock & Unit dono editable hain"
-        formCardTitle.text = "✏️  Editing: ${p.name}"
-        cancelEditChip.visibility = View.VISIBLE
-        saveButton.text = "💾  UPDATE PRODUCT"
-        scrollView.post { scrollView.smoothScrollTo(0, 0) }
-    }
-
-    private fun confirmDeleteProduct(p: Product) {
-        AlertDialog.Builder(this).setTitle("Delete Product").setMessage("Delete ${p.name}?").setPositiveButton("Delete") { _, _ ->
-            lifecycleScope.launch {
-                PosDatabase.get(this@ProductActivity).productDao().delete(p)
-                if (editingProduct?.barcode == p.barcode) clearForm()
+            // Tertiary
+            col.addView(label("چھوٹا یونٹ - Tertiary + مقدار (اسٹاک اسی میں)"))
+            val terRow = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            tertiaryUnitField = EditText(this@ProductActivity).apply {
+                hint = "ڈبی / عدد / گرام"
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,6,0) }
             }
-        }.setNegativeButton("Cancel", null).show()
+            tertiaryQtyField = EditText(this@ProductActivity).apply {
+                hint = "1 بیرونی = 10 ڈبی"
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6,0,0,0) }
+            }
+            terRow.addView(tertiaryUnitField)
+            terRow.addView(tertiaryQtyField)
+            col.addView(terRow)
+            col.addView(quickUnitChips(tertiaryUnitField))
+            col.addView(spacer(12))
+
+            // Cost, Sale, Stock
+            costField = EditText(this@ProductActivity).apply {
+                hint = "خرید قیمت فی چھوٹا یونٹ"
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
+            }
+            col.addView(costField)
+            col.addView(spacer(8))
+            salePriceField = EditText(this@ProductActivity).apply {
+                hint = "فروخت قیمت فی چھوٹا یونٹ"
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
+            }
+            col.addView(salePriceField)
+            col.addView(spacer(8))
+
+            col.addView(label("ابتدائی اسٹاک - ہمیشہ چھوٹے یونٹ میں لکھیں"))
+            val stockRow = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            stockField = EditText(this@ProductActivity).apply {
+                hint = "مثال: 500 ڈبی / 768 عدد"
+                inputType = InputType.TYPE_CLASS_NUMBER
+                background = strokedBg(border, cardWhite, 12)
+                setPadding(18,16,18,16)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,6,0) }
+            }
+            stockUnitSpinner = Spinner(this@ProductActivity).apply {
+                adapter = ArrayAdapter(this@ProductActivity, android.R.layout.simple_spinner_dropdown_item, listOf("ڈبی","عدد","گرام","کارٹن","بیرونی","لڑی"))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply { setMargins(6,0,0,0) }
+            }
+            stockRow.addView(stockField)
+            stockRow.addView(stockUnitSpinner)
+            col.addView(stockRow)
+            col.addView(TextView(this@ProductActivity).apply {
+                text = "نوٹ: اسٹاک ہمیشہ سب سے چھوٹے یونٹ میں لکھیں تاکہ ctn پوائنٹ والا مسئلہ ختم ہو۔ مثال: 2 کارٹن (50×10) = 1000 ڈبی لکھیں"
+                textSize = 11f
+                setTextColor(Color.parseColor("#E5484D"))
+                setPadding(0,8,0,0)
+            })
+            col.addView(spacer(16))
+
+            saveButton = Button(this@ProductActivity).apply {
+                text = "محفوظ کریں"
+                setTextColor(Color.WHITE)
+                background = roundedBg(navy, 16)
+                setOnClickListener { saveProduct() }
+            }
+            col.addView(saveButton)
+            col.addView(spacer(20))
+            col.addView(TextView(this@ProductActivity).apply {
+                text = "موجودہ پروڈکٹس"
+                setTypeface(typeface, Typeface.BOLD)
+            })
+            productList = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.VERTICAL }
+            col.addView(productList)
+
+            addView(col)
+        }
+        setContentView(root)
+        loadProducts()
+    }
+
+    private fun quickUnitChips(target: EditText): LinearLayout {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for (u in urduUnits.take(6)) {
+            val chip = TextView(this).apply {
+                text = u
+                setPadding(16,8,16,8)
+                background = roundedBg("#E3E8EE", 20)
+                setMargins(0,6,8,0)
+                textSize = 11f
+                setOnClickListener { target.setText(u) }
+            }
+            row.addView(chip)
+        }
+        return row
     }
 
     private fun saveProduct() {
-        val pname = name.text.toString().trim()
-        if (pname.isEmpty()) { Toast.makeText(this, "Product Name required", Toast.LENGTH_SHORT).show(); return }
-        val existing = editingProduct
-        val code = existing?.barcode ?: ("P" + System.currentTimeMillis().toString())
-        // EDIT MODE ME STOCK BHI UPDATE HOGA AB
-        val resolvedStock = stock.text.toString().toIntOrNull() ?: (existing?.stock ?: 0)
-        val resolvedOpeningStock = existing?.openingStock ?: resolvedStock
+        val name = nameField.text.toString().trim()
+        if (name.isEmpty()) return
+        val primary = primaryUnitField.text.toString().trim().ifEmpty { "کارٹن" }
+        val secondary = secondaryUnitField.text.toString().trim()
+        val secQty = secondaryQtyField.text.toString().toDoubleOrNull() ?: 0.0
+        val tertiary = tertiaryUnitField.text.toString().trim().ifEmpty { "عدد" }
+        val terQty = tertiaryQtyField.text.toString().toDoubleOrNull() ?: 0.0
+        val stock = stockField.text.toString().toIntOrNull() ?: 0
+        val cost = costField.text.toString().toDoubleOrNull() ?: 0.0
+        val sale = salePriceField.text.toString().toDoubleOrNull() ?: 0.0
+        val barcode = editing?.barcode ?: "P${System.currentTimeMillis()}"
+
         val product = Product(
-            barcode = code, name = pname, category = categorySpinner.selectedItem?.toString() ?: "General",
-            cost = cost.text.toString().toDoubleOrNull() ?: 0.0,
-            salePrice = salePrice.text.toString().toDoubleOrNull() ?: 0.0,
-            wholesalePrice = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0,
-            stock = resolvedStock, openingStock = resolvedOpeningStock,
-            unit = selectedPrimaryUnit,
-            secondaryUnit = if (selectedSecondaryUnit == "None") "" else selectedSecondaryUnit,
-            secondaryUnitQty = selectedSecondaryQty
+            barcode = barcode,
+            name = name,
+            unit = primary,
+            secondaryUnit = secondary,
+            secondaryUnitQty = secQty,
+            tertiaryUnit = tertiary,
+            tertiaryUnitQty = terQty,
+            stock = stock,
+            openingStock = stock,
+            cost = cost,
+            salePrice = sale
         )
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).productDao().upsert(product)
-            Toast.makeText(this@ProductActivity, if (existing != null) "Product updated - 2 Tier" else "Product saved - 2 Tier", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@ProductActivity, "محفوظ ہو گیا اردو یونٹ میں", Toast.LENGTH_SHORT).show()
             clearForm()
         }
     }
 
     private fun clearForm() {
-        name.text.clear(); cost.text.clear(); wholesalePrice.text.clear(); salePrice.text.clear(); stock.text.clear()
-        stock.isEnabled = true; stockNote.visibility = View.GONE
-        selectedPrimaryUnit = "pcs"; selectedSecondaryUnit = "None"; selectedSecondaryQty = 0.0
-        selectUnitBtn.text = "📏 Select Unit (Editable)"
-        editingProduct = null; formCardTitle.text = "✚  New Product"; cancelEditChip.visibility = View.GONE; saveButton.text = "💾  SAVE PRODUCT"
-        if (categorySpinner.adapter != null && categorySpinner.adapter.count > 0) categorySpinner.setSelection(0)
+        nameField.text.clear()
+        stockField.text.clear()
+        costField.text.clear()
+        salePriceField.text.clear()
+        editing = null
+        saveButton.text = "محفوظ کریں"
     }
 
-    private fun filterProducts(query: String): List<Product> {
-        val q = query.trim()
-        if (q.isEmpty()) return allProducts
-        return allProducts.filter { it.name.contains(q, true) || it.category.contains(q, true) }
-    }
     private fun loadProducts() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).productDao().all().collectLatest { list ->
-                allProducts = list; renderProducts(filterProducts(searchField.text.toString()))
+                productList.removeAllViews()
+                for (p in list.take(20)) {
+                    val v = TextView(this@ProductActivity).apply {
+                        text = "${p.name} - ${p.stock} ${p.tertiaryUnit} (${p.unit} ${p.secondaryUnitQty.toInt()} ${p.secondaryUnit} ${p.tertiaryUnitQty.toInt()} ${p.tertiaryUnit})"
+                        setPadding(12,12,12,12)
+                        background = strokedBg(border, cardWhite, 8)
+                        setOnClickListener {
+                            editing = p
+                            nameField.setText(p.name)
+                            primaryUnitField.setText(p.unit)
+                            secondaryUnitField.setText(p.secondaryUnit)
+                            secondaryQtyField.setText(p.secondaryUnitQty.toString())
+                            tertiaryUnitField.setText(p.tertiaryUnit)
+                            tertiaryQtyField.setText(p.tertiaryUnitQty.toString())
+                            stockField.setText(p.stock.toString())
+                            saveButton.text = "اپڈیٹ کریں"
+                        }
+                    }
+                    productList.addView(v)
+                    productList.addView(spacer(6))
+                }
             }
         }
     }
-    private fun renderProducts(list: List<Product>) {
-        listContainer.removeAllViews()
-        if (list.isEmpty()) { noResultsCard.visibility = View.VISIBLE; return }
-        noResultsCard.visibility = View.GONE
-        for (p in list) {
-            listContainer.addView(LinearLayout(this@ProductActivity).apply {
-                orientation = LinearLayout.VERTICAL; setPadding(20, 16, 20, 16); background = strokedBg(border, cardWhite, 14)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 10) }
-                val top = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL }
-                top.addView(TextView(this@ProductActivity).apply { text = p.name; setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
-                top.addView(TextView(this@ProductActivity).apply { text = p.category; setTextColor(Color.WHITE); background = roundedBg(teal, 16); setPadding(16, 5, 16, 5) })
-                addView(top)
-                addView(TextView(this@ProductActivity).apply { text = "Stock: ${p.stock} ${p.unit} | Cost: ${p.cost}"; setTextColor(Color.parseColor(textMuted)) })
-                if (p.secondaryUnit.isNotEmpty()) {
-                    addView(TextView(this@ProductActivity).apply { text = "1 ${p.unit} = ${p.secondaryUnitQty} ${p.secondaryUnit}"; setTextColor(Color.parseColor(textMuted)) })
-                }
-                val actionsRow = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 10, 0, 0) }
-                actionsRow.addView(TextView(this@ProductActivity).apply { text = "✏️ Edit"; background = roundedBg(navy, 30); setTextColor(Color.WHITE); setPadding(24, 10, 24, 10); setOnClickListener { loadProductForEdit(p) } })
-                actionsRow.addView(View(this@ProductActivity).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
-                actionsRow.addView(TextView(this@ProductActivity).apply { text = "🗑️ Delete"; background = roundedBg("#E5484D", 30); setTextColor(Color.WHITE); setPadding(24, 10, 24, 10); setOnClickListener { confirmDeleteProduct(p) } })
-                addView(actionsRow)
-            })
-        }
+
+    private fun label(t: String) = TextView(this).apply { text = t; textSize = 12f; setTextColor(Color.parseColor("#0F9B8E")); setTypeface(typeface, Typeface.BOLD); setPadding(0,4,0,4) }
+    private fun roundedBg(c: String, r: Int) = GradientDrawable().apply { setColor(Color.parseColor(c)); cornerRadius = r.toFloat() }
+    private fun strokedBg(s: String, f: String, r: Int) = GradientDrawable().apply { setColor(Color.parseColor(f)); setStroke(2, Color.parseColor(s)); cornerRadius = r.toFloat() }
+    private fun spacer(h: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (h*3)) }
+}
+
+fun View.setMargins(l: Int, t: Int, r: Int, b: Int) {
+    if (layoutParams is LinearLayout.LayoutParams) {
+        (layoutParams as LinearLayout.LayoutParams).setMargins(l,t,r,b)
     }
 }
