@@ -57,6 +57,7 @@ class BillPreviewActivity : AppCompatActivity() {
     private var shopPhone = ""
     private var shopAddress = ""
     private var receiptFooter = ""
+
     private lateinit var shopNameLine: TextView
     private lateinit var shopSubLine: TextView
     private lateinit var footerLine: TextView
@@ -74,7 +75,6 @@ class BillPreviewActivity : AppCompatActivity() {
         val paid = intent.getDoubleExtra(EXTRA_PAID, 0.0)
         val paymentMethod = intent.getStringExtra(EXTRA_PAYMENT_METHOD) ?: ""
         val itemsEncoded = intent.getStringExtra(EXTRA_ITEMS_ENCODED) ?: ""
-
         val lines = decodeItems(itemsEncoded)
         val isSale = type == "sale"
         val accent = if (isSale) green else "#EF6C00"
@@ -85,7 +85,6 @@ class BillPreviewActivity : AppCompatActivity() {
             setPadding(24, 56, 24, 24)
             setBackgroundColor(Color.parseColor(bg))
         }
-
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -106,7 +105,6 @@ class BillPreviewActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             applyElevation(this, 3f)
         }
-
         receiptCard.addView(TextView(this).apply { textSize = 17f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }.also { shopNameLine = it })
         receiptCard.addView(TextView(this).apply { textSize = 11.5f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(textGray)); setPadding(0, 4, 0, 0) }.also { shopSubLine = it })
         receiptCard.addView(dashedDivider())
@@ -116,7 +114,6 @@ class BillPreviewActivity : AppCompatActivity() {
         if (partyName.isNotBlank()) receiptCard.addView(kv(partyLabel, partyName))
         if (paymentMethod.isNotBlank()) receiptCard.addView(kv("Payment Method", paymentMethod.replaceFirstChar { it.uppercase() }))
         receiptCard.addView(dashedDivider())
-
         receiptCard.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(TextView(this@BillPreviewActivity).apply { text = "ITEM"; textSize = 11f; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f) })
@@ -124,7 +121,6 @@ class BillPreviewActivity : AppCompatActivity() {
             addView(TextView(this@BillPreviewActivity).apply { text = "AMOUNT"; textSize = 11f; gravity = Gravity.END; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
         })
         receiptCard.addView(spacer(6))
-
         for (line in lines) {
             receiptCard.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -139,7 +135,6 @@ class BillPreviewActivity : AppCompatActivity() {
                 addView(TextView(this@BillPreviewActivity).apply { text = "%.2f".format(line.amount); textSize = 13.5f; gravity = Gravity.END; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
             })
         }
-
         receiptCard.addView(dashedDivider())
         receiptCard.addView(kv("Subtotal", "Rs %.2f".format(subtotal)))
         if (discount > 0) receiptCard.addView(kv("Discount", "- Rs %.2f".format(discount)))
@@ -151,7 +146,6 @@ class BillPreviewActivity : AppCompatActivity() {
         receiptCard.addView(footerLine)
         root.addView(receiptCard)
         root.addView(spacer(22))
-
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
             text = "🖨️ PRINT BIG 58mm"; setTextColor(Color.WHITE); textSize = 14.5f; isAllCaps = false; setTypeface(typeface, Typeface.BOLD)
@@ -187,7 +181,6 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    // ===== BIG PRINT FOR 58mm - FULL WIDTH =====
     private fun printReceipt(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
@@ -200,7 +193,7 @@ class BillPreviewActivity : AppCompatActivity() {
                 Toast.makeText(this@BillPreviewActivity, "Pehle Settings mein printer select karein", Toast.LENGTH_LONG).show()
                 return@launch
             }
-            val dotWidth = 384 // 58mm FIXED
+            val dotWidth = 384
             val bitmap = buildReceiptBitmapBIG58mm(type, reference, partyName, partyLabel, dateMillis, lines, subtotal, discount, total, paid, paymentMethod, dotWidth)
             val ok = PrinterHelper.printBitmap(this@BillPreviewActivity, PrinterHelper.PrinterType.BLUETOOTH, mac, bitmap)
             Toast.makeText(this@BillPreviewActivity, if (ok) "BIG Print bheja" else "Print fail", Toast.LENGTH_LONG).show()
@@ -223,9 +216,8 @@ class BillPreviewActivity : AppCompatActivity() {
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
         total: Double, paid: Double, paymentMethod: String, dotWidth: Int
     ): Bitmap {
-        // BIG PRINT - ZERO PADDING, MAX FONT
         val width = 384
-        val padding = 2 // Bilkul kam padding
+        val padding = 2
         val contentLeft = padding
         val contentRight = width - padding
         val contentWidth = contentRight - contentLeft
@@ -233,19 +225,18 @@ class BillPreviewActivity : AppCompatActivity() {
         fun makePaint(sizeFactor: Float, bold: Boolean): TextPaint =
             TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.BLACK
-                textSize = width * sizeFactor // BIGGER
+                textSize = width * sizeFactor
                 typeface = if (bold) Typeface.create(Typeface.DEFAULT, Typeface.BOLD) else Typeface.DEFAULT
             }
 
-        // BIG FONTS FOR 58mm
-        val titlePaint = makePaint(0.115f, true) // Shop name BIG
+        val titlePaint = makePaint(0.115f, true)
         val subPaint = makePaint(0.055f, false)
         val sectionPaint = makePaint(0.070f, true)
-        val labelPaint = makePaint(0.060f, false) // KV rows bigger
+        val labelPaint = makePaint(0.060f, false)
         val valuePaint = makePaint(0.060f, true)
         val boldLabelPaint = makePaint(0.075f, true)
         val boldValuePaint = makePaint(0.075f, true)
-        val itemNamePaint = makePaint(0.065f, true) // Item name BIG
+        val itemNamePaint = makePaint(0.065f, true)
         val itemSubPaint = makePaint(0.048f, false)
         val itemQtyPaint = makePaint(0.058f, true)
         val itemAmountPaint = makePaint(0.065f, true)
@@ -283,7 +274,11 @@ class BillPreviewActivity : AppCompatActivity() {
         }
 
         fun fullLine(char: String = "-") {
-            val paint = Paint().apply { color = Color.BLACK; textSize = width * 0.055f; typeface = Typeface.MONOSPACE }
+            val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.BLACK
+                textSize = width * 0.055f
+                typeface = Typeface.MONOSPACE
+            }
             drawAt(char.repeat(32), paint, contentLeft.toFloat(), contentWidth.toFloat(), y)
             y += paint.textSize * 1.2f
         }
@@ -297,7 +292,6 @@ class BillPreviewActivity : AppCompatActivity() {
             y += h + 6
         }
 
-        // HEADER BIG
         drawCentered(shopName.uppercase(Locale.getDefault()), titlePaint, 4f)
         val subParts = listOfNotNull(shopAddress.takeIf { it.isNotBlank() }, shopPhone.takeIf { it.isNotBlank() })
         if (subParts.isNotEmpty()) drawCentered(subParts.joinToString(" | "), subPaint, 6f)
@@ -310,7 +304,6 @@ class BillPreviewActivity : AppCompatActivity() {
         if (partyName.isNotBlank()) kvRow("$partyLabel:", partyName)
         fullLine("-")
 
-        // TABLE HEADER BIG
         val col1 = contentLeft.toFloat()
         val col1W = contentWidth * 0.50f
         val col2X = contentLeft + contentWidth * 0.50f
