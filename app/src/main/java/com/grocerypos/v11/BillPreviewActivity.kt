@@ -287,11 +287,47 @@ class BillPreviewActivity : AppCompatActivity() {
 
         var y = padding.toFloat()
 
+        // All text is drawn via StaticLayout, never raw canvas.drawText.
+        // Reason: raw Paint.drawText does not run the Unicode bidi algorithm,
+        // so a mixed string like "10 کارٹن" (digits + Urdu) gets drawn with
+        // the wrong glyph order/width and can visually collide with
+        // neighbouring columns. StaticLayout reorders it correctly; we then
+        // position the *rendered* line by its measured width so left/center/
+        // right placement stays visually correct regardless of script.
+        fun lineWidthOf(layout: StaticLayout) = if (layout.lineCount > 0) layout.getLineWidth(0) else 0f
+
+        fun drawAt(text: String, p: TextPaint, boxLeft: Float, boxWidth: Float, y0: Float): StaticLayout? {
+            if (text.isBlank()) return null
+            val layout = makeStaticLayout(text, p, boxWidth.toInt().coerceAtLeast(1), Layout.Alignment.ALIGN_NORMAL)
+            canvas.save(); canvas.translate(boxLeft, y0); layout.draw(canvas); canvas.restore()
+            return layout
+        }
+
         fun drawCentered(text: String, p: TextPaint, gapAfter: Float) {
             if (text.isBlank()) return
-            val layout = makeStaticLayout(text, p, contentWidth, Layout.Alignment.ALIGN_CENTER)
-            canvas.save(); canvas.translate(contentLeft.toFloat(), y); layout.draw(canvas); canvas.restore()
+            val layout = makeStaticLayout(text, p, contentWidth, Layout.Alignment.ALIGN_NORMAL)
+            val lineW = lineWidthOf(layout)
+            val startX = contentLeft + (contentWidth - lineW) / 2f
+            canvas.save(); canvas.translate(startX, y); layout.draw(canvas); canvas.restore()
             y += layout.height + gapAfter
+        }
+
+        // Draws text so its right edge lands exactly at rightX.
+        fun drawRightAligned(text: String, p: TextPaint, rightX: Float, maxWidth: Float, y0: Float): StaticLayout? {
+            if (text.isBlank()) return null
+            val layout = makeStaticLayout(text, p, maxWidth.toInt().coerceAtLeast(1), Layout.Alignment.ALIGN_NORMAL)
+            val lineW = lineWidthOf(layout)
+            canvas.save(); canvas.translate(rightX - lineW, y0); layout.draw(canvas); canvas.restore()
+            return layout
+        }
+
+        // Draws text centered around centerX.
+        fun drawCenterAligned(text: String, p: TextPaint, centerX: Float, maxWidth: Float, y0: Float): StaticLayout? {
+            if (text.isBlank()) return null
+            val layout = makeStaticLayout(text, p, maxWidth.toInt().coerceAtLeast(1), Layout.Alignment.ALIGN_NORMAL)
+            val lineW = lineWidthOf(layout)
+            canvas.save(); canvas.translate(centerX - lineW / 2f, y0); layout.draw(canvas); canvas.restore()
+            return layout
         }
 
         fun dashedLine(gapBefore: Float, gapAfter: Float) {
@@ -310,10 +346,11 @@ class BillPreviewActivity : AppCompatActivity() {
         fun kvRow(label: String, value: String, bold: Boolean = false) {
             val lp = if (bold) boldLabelPaint else labelPaint
             val vp = if (bold) boldValuePaint else valuePaint
-            val labelLayout = makeStaticLayout(label, lp, (contentWidth * 0.55f).toInt(), Layout.Alignment.ALIGN_NORMAL)
-            canvas.save(); canvas.translate(contentLeft.toFloat(), y); labelLayout.draw(canvas); canvas.restore()
-            canvas.drawText(value, contentRight.toFloat(), y + vp.textSize, vp)
-            y += maxOf(labelLayout.height.toFloat(), vp.textSize * 1.35f)
+            val labelLayout = drawAt(label, lp, contentLeft.toFloat(), contentWidth * 0.55f, y)
+            val valueLayout = drawRightAligned(value, vp, contentRight.toFloat(), contentWidth * 0.55f, y)
+            val labelH = labelLayout?.height?.toFloat() ?: (lp.textSize * 1.2f)
+            val valueH = valueLayout?.height?.toFloat() ?: (vp.textSize * 1.2f)
+            y += maxOf(labelH, valueH, vp.textSize * 1.35f)
         }
 
         // Header
@@ -333,20 +370,24 @@ class BillPreviewActivity : AppCompatActivity() {
 
         // Table header
         val col1 = contentLeft.toFloat()
-        val qtyX = contentLeft + contentWidth * 0.78f
+        val nameColWidth = contentWidth * 0.56f
+        val qtyX = contentLeft + contentWidth * 0.80f
+        val qtyColWidth = contentWidth * 0.20f
         val col3 = contentRight.toFloat()
-        canvas.drawText("ITEM", col1, y + headerPaint.textSize, headerPaint)
-        canvas.drawText("QTY", qtyX, y + headerPaint.textSize, headerCenterPaint)
-        canvas.drawText("AMOUNT", col3, y + headerPaint.textSize, headerRightPaint)
+        val amountColWidth = contentWidth * 0.24f
+
+        drawAt("ITEM", headerPaint, col1, nameColWidth, y)
+        drawCenterAligned("QTY", headerCenterPaint, qtyX, qtyColWidth, y)
+        drawRightAligned("AMOUNT", headerRightPaint, col3, amountColWidth, y)
         y += headerPaint.textSize * 1.7f
 
         for (line in lines) {
-            val nameLayout = makeStaticLayout(line.name, itemNamePaint, (contentWidth * 0.58f).toInt(), Layout.Alignment.ALIGN_NORMAL)
-            canvas.save(); canvas.translate(col1, y); nameLayout.draw(canvas); canvas.restore()
-            canvas.drawText("${line.qty} ${line.unit}", qtyX, y + itemNamePaint.textSize, itemQtyPaint)
-            canvas.drawText("%.2f".format(line.amount), col3, y + itemNamePaint.textSize, itemAmountPaint)
-            y += nameLayout.height + width * 0.004f
-            canvas.drawText("@ %.2f".format(line.rate), col1, y + itemSubPaint.textSize, itemSubPaint)
+            val rowStartY = y
+            val nameLayout = drawAt(line.name, itemNamePaint, col1, nameColWidth, y)
+            drawCenterAligned("${line.qty} ${line.unit}", itemQtyPaint, qtyX, qtyColWidth, y)
+            drawRightAligned("%.2f".format(line.amount), itemAmountPaint, col3, amountColWidth, y)
+            y = rowStartY + (nameLayout?.height?.toFloat() ?: (itemNamePaint.textSize * 1.2f)) + width * 0.004f
+            drawAt("@ %.2f".format(line.rate), itemSubPaint, col1, nameColWidth, y)
             y += itemSubPaint.textSize * 1.5f + width * 0.014f
         }
 
