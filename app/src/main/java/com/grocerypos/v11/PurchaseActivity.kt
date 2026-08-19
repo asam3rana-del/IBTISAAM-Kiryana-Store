@@ -1,4 +1,224 @@
-com.grocerypos.v11.ui *")
+package com.grocerypos.v11.ui
+
+import android.app.DatePickerDialog
+import android.app.Dialog
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.Bundle
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
+import android.view.Gravity
+import android.view.View
+import android.view.ViewOutlineProvider
+import android.view.inputmethod.EditorInfo
+import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.PopupMenu
+import androidx.lifecycle.lifecycleScope
+import com.grocerypos.v11.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import kotlin.math.roundToInt
+
+data class PurchaseLine(
+    val itemName: String,
+    val barcode: String?,
+    val qty: Double,
+    val unit: String,
+    val rate: Double,
+    val amount: Double,
+    val mainUnit: String,
+    val secondaryUnit: String,
+    val secondaryUnitQty: Double,
+    val tertiaryUnit: String = "",
+    val tertiaryUnitQty: Double = 0.0
+)
+
+private fun PurchaseLine.isSecondary(): Boolean =
+    secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
+
+private fun PurchaseLine.isTertiary(): Boolean =
+    tertiaryUnit.isNotEmpty() && unit == tertiaryUnit && tertiaryUnitQty > 0 && secondaryUnitQty > 0
+
+private fun PurchaseLine.mainUnitQty(): Double = when {
+    isTertiary() -> qty / (secondaryUnitQty * tertiaryUnitQty)
+    isSecondary() -> qty / secondaryUnitQty
+    else -> qty
+}
+
+private fun PurchaseLine.mainUnitRate(): Double = when {
+    isTertiary() -> rate * secondaryUnitQty * tertiaryUnitQty
+    isSecondary() -> rate * secondaryUnitQty
+    else -> rate
+}
+
+private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
+
+class PurchaseActivity : AppCompatActivity() {
+
+    companion object {
+        const val EXTRA_BILL_NO = "billNo"
+        private const val PREFS_NAME = "purchase_draft_prefs"
+        private const val KEY_DRAFT = "draft_json"
+        private const val PREFS_UNIT = "unit_preset_prefs"
+        private const val KEY_LAST_PRIMARY = "last_primary"
+        private const val KEY_LAST_SECONDARY = "last_secondary"
+        private const val KEY_LAST_SEC_QTY = "last_sec_qty"
+        private const val KEY_LAST_TERTIARY = "last_tertiary"
+        private const val KEY_LAST_TER_QTY = "last_ter_qty"
+    }
+
+    private val bg = "#F4F6F8"
+    private val cardWhite = "#FFFFFF"
+    private val navy = "#0F9B8E"
+    private val teal = "#0B2545"
+    private val textDark = "#0B2545"
+    private val textMuted = "#7C8798"
+    private val border = "#E3E8EE"
+    private val red = "#E5484D"
+    private val billedBlue = "#90CAF9"
+    private val billedBlueDark = "#42A5F5"
+
+    private lateinit var dateValueText: TextView
+    private lateinit var firmNameText: TextView
+    private lateinit var supplierBalanceText: TextView
+    private lateinit var partyName: AutoCompleteTextView
+    private lateinit var itemEntrySection: LinearLayout
+    private lateinit var addItemsTrigger: TextView
+    private lateinit var itemsContainer: LinearLayout
+    private lateinit var grandTotalText: TextView
+    private lateinit var paymentSection: LinearLayout
+    private lateinit var paidInput: EditText
+    private lateinit var dueAmountText: TextView
+    private lateinit var paidWarningText: TextView
+    private lateinit var saveButton: Button
+    private lateinit var deleteButton: Button
+    private lateinit var overflowButton: TextView
+    private lateinit var scrollArea: ScrollView
+    private lateinit var billedItemsHeader: LinearLayout
+    private lateinit var billedItemsChevron: TextView
+
+    private var suppliers = listOf<Supplier>()
+    private var products = listOf<Product>()
+    private var allUnits = listOf("pcs", "kg", "Pao", "gram", "g", "box", "dozen", "carton", "ctn", "outer", "dabbi", "Ctn", "Box", "Nos", "Bkt", "Kg")
+    private val lines = mutableListOf<PurchaseLine>()
+    private var purchaseDateMillis = System.currentTimeMillis()
+    private var itemsExpanded = true
+    private var editBillNo: String? = null
+    private var originalPurchase: Purchase? = null
+    private var originalItems: List<PurchaseItem> = emptyList()
+    private var suppressDraftSave = false
+    private var draftRestored = false
+
+    private val billScanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val json = result.data?.getStringExtra(BillScanActivity.RESULT_ITEMS_JSON)
+            if (!json.isNullOrBlank()) handleScannedItems(json)
+        }
+    }
+
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        editBillNo = intent.getStringExtra(EXTRA_BILL_NO)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 20, 24, 80)
+            setBackgroundColor(Color.parseColor(bg))
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(26, 22, 22, 22)
+            background = roundedBg(navy, 20)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 10) }
+            applyElevation(this, 6f)
+        }
+        val headerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headerCol.addView(TextView(this).apply {
+            text = if (editBillNo != null) com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Edit Purchase", "Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ…") else com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Purchase", "Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ")
+            textSize = 18.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        headerCol.addView(TextView(this).apply {
+            text = "Stock In / Supplier Billing"
+            textSize = 11f
+            setTextColor(Color.parseColor("#9FB4CC"))
+            setPadding(0, 3, 0, 0)
+        })
+        header.addView(headerCol)
+        header.addView(pillChip("History") {
+            startActivity(Intent(this@PurchaseActivity, PurchaseHistoryActivity::class.java))
+        })
+        header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
+        overflowButton = TextView(this).apply {
+            text = "\u22EE"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setPadding(18, 8, 6, 8)
+            setOnClickListener { showOverflowMenu(it) }
+        }
+        header.addView(overflowButton)
+        root.addView(header)
+
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
+        }
+        val dateChip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 10, 20, 10)
+            background = strokedBg(border, cardWhite, 30)
+            setOnClickListener { openDatePicker() }
+        }
+        dateValueText = TextView(this).apply {
+            text = formatDate(purchaseDateMillis)
+            textSize = 13f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        dateChip.addView(dateValueText)
+        dateChip.addView(TextView(this).apply { text = " \u203A"; textSize = 13f; setTextColor(Color.parseColor(teal)) })
+        topRow.addView(dateChip)
+        root.addView(topRow)
+
+        val firmBox = premiumCard().apply { setPadding(20, 14, 20, 14) }
+        val firmCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        firmCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Firm Name", "ÙØ±Ù… Ú©Ø§ Ù†Ø§Ù…"); textSize = 10f; setTextColor(Color.parseColor(textMuted)) })
+        firmNameText = TextView(this).apply { text = "IBTISAAM Kiryana Store"; textSize = 13f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
+        firmCol.addView(firmNameText)
+        firmCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Party Balance", "Ù¾Ø§Ø±Ù¹ÛŒ Ø¨ÛŒÙ„Ù†Ø³"); textSize = 10f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 8, 0, 0) })
+        supplierBalanceText = TextView(this).apply { text = "Rs 0.00"; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textMuted)) }
+        firmCol.addView(supplierBalanceText)
+        firmBox.addView(firmCol)
+        root.addView(firmBox)
+
+        val partyBox = premiumCard()
+        partyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Party / Supplier", "Ù¾Ø§Ø±Ù¹ÛŒ / Ø³Ù¾Ù„Ø§Ø¦Ø±")))
+        val partyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        partyName = AutoCompleteTextView(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Party Name (Supplier) *", "Ù¾Ø§Ø±Ù¹ÛŒ Ú©Ø§ Ù†Ø§Ù… (Ø³Ù¾Ù„Ø§Ø¦Ø±) *")
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
@@ -193,9 +413,10 @@ com.grocerypos.v11.ui *")
         if (editBillNo == null) restoreDraftIfAny()
     }
 
-    // ================== NEW WINDOW LOGIC - FAST PURCHASE ==================
+    // ================== NEW WINDOW LOGIC - FAST PURCHASE WITH 3-TIER ==================
     private fun openAddItemNewWindow() {
         val dialog = Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar_Fullscreen)
+        val scrollView = ScrollView(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor(bg))
@@ -208,7 +429,7 @@ com.grocerypos.v11.ui *")
             setPadding(0, 20, 0, 20)
         }
         header.addView(TextView(this).apply {
-            text = "â†  Add Item (New Window)"
+            text = "â†  Add Item (New Window) - 3 Tier"
             textSize = 17f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -226,7 +447,7 @@ com.grocerypos.v11.ui *")
 
         // Item Name
         val itemBox = innerField()
-        itemBox.addView(labelRow("Item Name"))
+        itemBox.addView(labelRow("Item Name *"))
         val itemNameInput = AutoCompleteTextView(this).apply {
             hint = "Type to searchâ€¦"
             setHintTextColor(Color.parseColor(textMuted))
@@ -234,11 +455,21 @@ com.grocerypos.v11.ui *")
             background = null
             textSize = 15f
             threshold = 1
-            setAdapter(android.widget.ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, products.map { it.name }))
+            setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, products.map { it.name }))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
         itemBox.addView(itemNameInput)
         root.addView(itemBox)
+
+        // Primary Unit Display
+        val primaryUnitInfo = TextView(this).apply {
+            text = "Primary: -"
+            textSize = 11f
+            setTextColor(Color.parseColor(teal))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            visibility = View.GONE
+        }
+        root.addView(primaryUnitInfo)
 
         // Live Preview
         val livePreview = TextView(this).apply {
@@ -254,7 +485,7 @@ com.grocerypos.v11.ui *")
         // Qty + Unit
         val qtyUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val qtyBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
-        qtyBox.addView(labelRow("Quantity"))
+        qtyBox.addView(labelRow("Quantity *"))
         val qtyInput = EditText(this).apply {
             hint = "0"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -263,18 +494,31 @@ com.grocerypos.v11.ui *")
         }
         qtyBox.addView(qtyInput)
         val unitBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) } }
-        unitBox.addView(labelRow("Unit"))
+        unitBox.addView(labelRow("Unit *"))
         val unitSpinner = Spinner(this)
-        unitSpinner.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
+        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
         unitBox.addView(unitSpinner)
         qtyUnitRow.addView(qtyBox)
         qtyUnitRow.addView(unitBox)
         root.addView(qtyUnitRow)
 
+        // 3-Tier Display - Secondary and Tertiary
+        val tierBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 12, 16, 12)
+            background = strokedBg(border, "#FFF8E1", 10)
+            visibility = View.GONE
+        }
+        val secondaryInfo = TextView(this).apply { textSize = 11f; setTextColor(Color.parseColor(textDark)) }
+        val tertiaryInfo = TextView(this).apply { textSize = 11f; setTextColor(Color.parseColor(textDark)) }
+        tierBox.addView(secondaryInfo)
+        tierBox.addView(tertiaryInfo)
+        root.addView(tierBox)
+
         // Rate + Total Lot
         val rateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val rateBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
-        rateBox.addView(labelRow("Rate (Per Unit)"))
+        rateBox.addView(labelRow("Rate (Per Unit) *"))
         val rateInput = EditText(this).apply {
             hint = "Price / Unit"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -304,7 +548,7 @@ com.grocerypos.v11.ui *")
         }
         root.addView(totalAmountTextLocal)
 
-        // Auto-fill logic
+        // Auto-fill logic with 3-tier
         var selectedProductLocal: Product? = null
         fun updatePreview() {
             val q = qtyInput.text.toString().toDoubleOrNull() ?: 0.0
@@ -319,10 +563,20 @@ com.grocerypos.v11.ui *")
             val product = products.find { it.name == picked }
             selectedProductLocal = product
             if (product != null) {
+                primaryUnitInfo.text = "Primary: ${product.unit} | Secondary: ${product.secondaryUnit.ifBlank { "None" }} (${product.secondaryUnitQty}) | Tertiary: ${product.tertiaryUnit.ifBlank { "None" }} (${product.tertiaryUnitQty})"
+                primaryUnitInfo.visibility = View.VISIBLE
+
                 val unitOptions = mutableListOf(product.unit)
                 if (product.secondaryUnit.isNotBlank()) unitOptions.add(product.secondaryUnit)
                 if (product.tertiaryUnit.isNotBlank()) unitOptions.add(product.tertiaryUnit)
-                unitSpinner.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
+                unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
+
+                if (product.secondaryUnit.isNotBlank() || product.tertiaryUnit.isNotBlank()) {
+                    tierBox.visibility = View.VISIBLE
+                    secondaryInfo.text = if (product.secondaryUnit.isNotBlank()) "1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}" else ""
+                    tertiaryInfo.text = if (product.tertiaryUnit.isNotBlank()) "1 ${product.secondaryUnit} = ${product.tertiaryUnitQty} ${product.tertiaryUnit}" else ""
+                }
+
                 if (product.cost > 0) rateInput.setText(product.cost.toInt().toString())
             }
             qtyInput.requestFocus()
@@ -378,7 +632,7 @@ com.grocerypos.v11.ui *")
                 unit = unit,
                 rate = r,
                 amount = Math.round(q * r).toDouble(),
-                mainUnit = product?.unit ?: "",
+                mainUnit = product?.unit ?: unit,
                 secondaryUnit = product?.secondaryUnit ?: "",
                 secondaryUnitQty = product?.secondaryUnitQty ?: 0.0,
                 tertiaryUnit = product?.tertiaryUnit ?: "",
@@ -393,15 +647,18 @@ com.grocerypos.v11.ui *")
                 rateInput.setText("")
                 totalLotInput.setText("")
                 selectedProductLocal = null
+                primaryUnitInfo.visibility = View.GONE
+                tierBox.visibility = View.GONE
                 itemNameInput.requestFocus()
-                Toast.makeText(this@PurchaseActivity, "#${lines.size} added", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@PurchaseActivity, "#${lines.size} added with 3-tier", Toast.LENGTH_SHORT).show()
             }
         }
 
         addBtn.setOnClickListener { addItemToBill(true) }
         addAnotherBtn.setOnClickListener { addItemToBill(false) }
 
-        dialog.setContentView(root)
+        scrollView.addView(root)
+        dialog.setContentView(scrollView)
         dialog.show()
     }
 
@@ -582,7 +839,7 @@ com.grocerypos.v11.ui *")
         }
     }
 
-    // ================== SCREENSHOT STYLE BILLED ITEMS ==================
+    // ================== SCREENSHOT STYLE BILLED ITEMS WITH 3-TIER + DELETE ==================
     private fun renderItemsList() {
         itemsContainer.removeAllViews()
         billedItemsHeader.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
@@ -630,6 +887,21 @@ com.grocerypos.v11.ui *")
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(Color.parseColor(textDark))
             })
+            // DELETE BUTTON per item
+            topRow.addView(TextView(this).apply {
+                text = "  âœ•"
+                textSize = 16f
+                setTextColor(Color.parseColor(red))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(12, 0, 0, 0)
+                setOnClickListener {
+                    lines.removeAt(index)
+                    renderItemsList()
+                    updateGrandTotal()
+                    if (editBillNo == null) saveDraft()
+                    Toast.makeText(this@PurchaseActivity, "Item #${34+index} deleted", Toast.LENGTH_SHORT).show()
+                }
+            })
             row.addView(topRow)
 
             val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 8, 0, 0) }
@@ -646,18 +918,58 @@ com.grocerypos.v11.ui *")
             })
             row.addView(bottomRow)
 
+            // 3-Tier info display
+            if (line.secondaryUnit.isNotEmpty() || line.tertiaryUnit.isNotEmpty()) {
+                val tierInfo = TextView(this).apply {
+                    text = buildString {
+                        append("${line.mainUnit}")
+                        if (line.secondaryUnit.isNotEmpty()) append(" > ${line.secondaryUnit} (${line.secondaryUnitQty})")
+                        if (line.tertiaryUnit.isNotEmpty()) append(" > ${line.tertiaryUnit} (${line.tertiaryUnitQty})")
+                    }
+                    textSize = 10f
+                    setTextColor(Color.parseColor(teal))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setPadding(0, 6, 0, 0)
+                }
+                row.addView(tierInfo)
+            }
+
             row.setOnClickListener {
-                // Edit on click
                 openAddItemNewWindowForEdit(index)
             }
-            row.setOnLongClickListener {
-                lines.removeAt(index)
-                renderItemsList()
-                updateGrandTotal()
-                if (editBillNo == null) saveDraft()
-                true
-            }
             itemsContainer.addView(row)
+        }
+
+        // Add Delete All button if items exist
+        if (lines.isNotEmpty()) {
+            val deleteAllRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+                setPadding(0, 8, 0, 0)
+            }
+            deleteAllRow.addView(TextView(this).apply {
+                text = "ðŸ—‘ Delete All Billed Items"
+                textSize = 12f
+                setTextColor(Color.parseColor(red))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(12, 8, 12, 8)
+                background = strokedBg(border, "#FFEBEE", 8)
+                setOnClickListener {
+                    android.app.AlertDialog.Builder(this@PurchaseActivity)
+                        .setTitle("Delete All?")
+                        .setMessage("Sari billed items delete karni hain? Ye undo nahi hoga.")
+                        .setPositiveButton("Yes, Delete All") { _, _ ->
+                            lines.clear()
+                            renderItemsList()
+                            updateGrandTotal()
+                            if (editBillNo == null) saveDraft()
+                            Toast.makeText(this@PurchaseActivity, "All billed items deleted", Toast.LENGTH_SHORT).show()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            })
+            itemsContainer.addView(deleteAllRow)
         }
     }
 
