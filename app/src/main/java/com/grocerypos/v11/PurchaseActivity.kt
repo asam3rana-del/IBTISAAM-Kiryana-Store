@@ -54,7 +54,7 @@ class PurchaseActivity : AppCompatActivity() {
             "gram", "g", "gm" -> "گرام"
             "pao" -> "پاؤ"
             "box" -> "باکس"
-            "pet" -> "پیٹ"
+            "pet" -> "pet"
             else -> unit
         }
     }
