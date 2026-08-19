@@ -2,6 +2,7 @@ package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -89,7 +90,7 @@ class ProductActivity : AppCompatActivity() {
             text = Loc.t(this@ProductActivity, "Add / Edit Product", "پروڈکٹ شامل / تبدیل کریں")
             textSize = 18.5f
             setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(typeface, Typeface.BOLD)
         })
         header.addView(headerCol)
         root.addView(header)
@@ -99,7 +100,7 @@ class ProductActivity : AppCompatActivity() {
             text = "🔄  Convert All Products to 2-Tier (Fix Old Units)"
             textSize = 13f
             setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(typeface, Typeface.BOLD)
             background = roundedBg("#F5A524", 12)
             setPadding(20, 16, 20, 16)
             gravity = Gravity.CENTER
@@ -113,7 +114,7 @@ class ProductActivity : AppCompatActivity() {
             text = "✚  " + Loc.t(this@ProductActivity, "New Product", "نئی پروڈکٹ")
             textSize = 14.5f
             setTextColor(Color.parseColor(teal))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(typeface, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         cancelEditChip = TextView(this).apply {
@@ -338,7 +339,7 @@ class ProductActivity : AppCompatActivity() {
             text = label.uppercase()
             textSize = 12f
             setTextColor(Color.parseColor(teal))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(typeface, Typeface.BOLD)
         })
     }
     private fun pillLink(label: String, onClick: () -> Unit) = TextView(this).apply {
@@ -420,7 +421,7 @@ class ProductActivity : AppCompatActivity() {
         }
         dialogHeader.addView(TextView(this).apply {
             text = "📏  " + Loc.t(this@ProductActivity, "Add Item Unit - 2 Tier Only", "آئٹم یونٹ - 2 درجے")
-            textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD)
         })
         content.addView(dialogHeader)
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 26, 28, 8) }
@@ -588,7 +589,7 @@ class ProductActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL; setPadding(20, 16, 20, 16); background = strokedBg(border, cardWhite, 14)
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 10) }
                 val top = LinearLayout(this@ProductActivity).apply { orientation = LinearLayout.HORIZONTAL }
-                top.addView(TextView(this@ProductActivity).apply { text = p.name; setTypeface(typeface, android.graphics.Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
+                top.addView(TextView(this@ProductActivity).apply { text = p.name; setTypeface(typeface, Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
                 top.addView(TextView(this@ProductActivity).apply { text = p.category; setTextColor(Color.WHITE); background = roundedBg(teal, 16); setPadding(16, 5, 16, 5) })
                 addView(top)
                 addView(TextView(this@ProductActivity).apply { text = "Stock: ${p.stock} ${p.unit} | Cost: ${p.cost}"; setTextColor(Color.parseColor(textMuted)) })
