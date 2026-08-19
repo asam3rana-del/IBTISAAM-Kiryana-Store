@@ -34,6 +34,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
+// FINAL 2-TIER MODEL - tertiary removed completely
 data class PurchaseLine(
     val itemName: String,
     val barcode: String?,
@@ -43,28 +44,17 @@ data class PurchaseLine(
     val amount: Double,
     val mainUnit: String,
     val secondaryUnit: String,
-    val secondaryUnitQty: Double,
-    val tertiaryUnit: String = "",
-    val tertiaryUnitQty: Double = 0.0
+    val secondaryUnitQty: Double
 )
 
 private fun PurchaseLine.isSecondary(): Boolean =
     secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
 
-private fun PurchaseLine.isTertiary(): Boolean =
-    tertiaryUnit.isNotEmpty() && unit == tertiaryUnit && tertiaryUnitQty > 0 && secondaryUnitQty > 0
+private fun PurchaseLine.mainUnitQty(): Double =
+    if (isSecondary()) qty / secondaryUnitQty else qty
 
-private fun PurchaseLine.mainUnitQty(): Double = when {
-    isTertiary() -> qty / (secondaryUnitQty * tertiaryUnitQty)
-    isSecondary() -> qty / secondaryUnitQty
-    else -> qty
-}
-
-private fun PurchaseLine.mainUnitRate(): Double = when {
-    isTertiary() -> rate * secondaryUnitQty * tertiaryUnitQty
-    isSecondary() -> rate * secondaryUnitQty
-    else -> rate
-}
+private fun PurchaseLine.mainUnitRate(): Double =
+    if (isSecondary()) rate * secondaryUnitQty else rate
 
 private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
 
@@ -78,8 +68,6 @@ class PurchaseActivity : AppCompatActivity() {
         private const val KEY_LAST_PRIMARY = "last_primary"
         private const val KEY_LAST_SECONDARY = "last_secondary"
         private const val KEY_LAST_SEC_QTY = "last_sec_qty"
-        private const val KEY_LAST_TERTIARY = "last_tertiary"
-        private const val KEY_LAST_TER_QTY = "last_ter_qty"
     }
 
     private val bg = "#F4F6F8"
@@ -233,7 +221,6 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(partyBox)
         root.addView(spacer(18))
 
-        // ================== ADD ITEM TRIGGER - NEW WINDOW ENTRY ==================
         itemEntrySection = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 20, 22, 20)
@@ -248,7 +235,7 @@ class PurchaseActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener { openAddItemNewWindow() } // NEW WINDOW
+            setOnClickListener { openAddItemNewWindow() }
         }
         addItemHeaderRow.addView(addItemsTrigger)
         addItemHeaderRow.addView(TextView(this).apply {
@@ -263,12 +250,11 @@ class PurchaseActivity : AppCompatActivity() {
         itemEntrySection.addView(addItemHeaderRow)
         root.addView(itemEntrySection)
 
-        // ================== BILLED ITEMS HEADER - SCREENSHOT STYLE ==================
         billedItemsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(20, 14, 20, 14)
-            background = roundedBg(billedBlue, 12) // Screenshot blue
+            background = roundedBg(billedBlue, 12)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 4, 0, 0) }
             visibility = View.GONE
             setOnClickListener { toggleBilledItems() }
@@ -298,7 +284,6 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(itemsContainer)
         root.addView(spacer(14))
 
-        // Totals - Screenshot style totals
         val totalCard = premiumCard().apply { orientation = LinearLayout.VERTICAL; setPadding(22, 18, 22, 18) }
         val totalRow1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         totalRow1.addView(TextView(this).apply { text = "Total Disc: 0.00"; textSize = 11f; setTextColor(Color.parseColor(textMuted)); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
@@ -413,7 +398,7 @@ class PurchaseActivity : AppCompatActivity() {
         if (editBillNo == null) restoreDraftIfAny()
     }
 
-    // ================== NEW WINDOW LOGIC - FAST PURCHASE ==================
+    // ================== NEW WINDOW - 2 TIER ONLY ==================
     private fun openAddItemNewWindow() {
         val dialog = Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar_Fullscreen)
         val root = LinearLayout(this).apply {
@@ -428,7 +413,7 @@ class PurchaseActivity : AppCompatActivity() {
             setPadding(0, 20, 0, 20)
         }
         header.addView(TextView(this).apply {
-            text = "\u2190  Add Item (New Window)"
+            text = "\u2190  Add Item"
             textSize = 17f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -444,12 +429,11 @@ class PurchaseActivity : AppCompatActivity() {
         })
         root.addView(header)
 
-        // Item Name
         val itemBox = innerField()
         itemBox.addView(labelRow("Item Name"))
         val itemNameRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val itemNameInput = AutoCompleteTextView(this).apply {
-            hint = "Type to search\u2026"
+            hint = "Type to search…"
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
@@ -461,7 +445,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
         itemNameRow.addView(itemNameInput)
         itemNameRow.addView(circleIcon("+", teal, 30) {
-            // Manual "+" toggle: open the quick add-item dialog with unit picker
             openQuickAddItemDialog(itemNameInput.text.toString().trim()) { product ->
                 itemNameInput.setText(product.name)
             }
@@ -469,9 +452,8 @@ class PurchaseActivity : AppCompatActivity() {
         itemBox.addView(itemNameRow)
         root.addView(itemBox)
 
-        // Live Preview
         val livePreview = TextView(this).apply {
-            text = "Live: 0 Ctn x 0 = Rs 0"
+            text = "Live: 0 x 0 = Rs 0"
             textSize = 12f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -480,7 +462,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
         root.addView(livePreview)
 
-        // Qty + Unit
         val qtyUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val qtyBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
         qtyBox.addView(labelRow("Quantity"))
@@ -501,7 +482,6 @@ class PurchaseActivity : AppCompatActivity() {
         qtyUnitRow.addView(unitBox)
         root.addView(qtyUnitRow)
 
-        // Rate + Total Lot
         val rateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val rateBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
         rateBox.addView(labelRow("Rate (Per Unit)"))
@@ -536,7 +516,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
         root.addView(totalAmountTextLocal)
 
-        // Auto-fill logic
         var selectedProductLocal: Product? = null
         fun updatePreview() {
             val q = qtyInput.text.toString().toDoubleOrNull() ?: 0.0
@@ -549,8 +528,7 @@ class PurchaseActivity : AppCompatActivity() {
         fun applyProductToUnits(product: Product) {
             val unitOptions = mutableListOf(product.unit)
             if (product.secondaryUnit.isNotBlank()) unitOptions.add(product.secondaryUnit)
-            if (product.tertiaryUnit.isNotBlank()) unitOptions.add(product.tertiaryUnit)
-            unitSpinner.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
+            unitSpinner.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions.distinct())
             if (product.cost > 0) rateInput.setText(product.cost.toInt().toString())
         }
 
@@ -563,9 +541,6 @@ class PurchaseActivity : AppCompatActivity() {
             updatePreview()
         }
 
-        // "Ek word likhne par save item open ho jaye" - if the typed name doesn't match any
-        // existing product, automatically offer to save it as a new item (with its unit)
-        // before moving on to Quantity.
         fun resolveTypedNameThenAdvance() {
             val typed = itemNameInput.text.toString().trim()
             if (typed.isEmpty()) { qtyInput.requestFocus(); return }
@@ -612,7 +587,6 @@ class PurchaseActivity : AppCompatActivity() {
             updatePreview()
         })
 
-        // Buttons
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 20, 0, 0) }
         val addAnotherBtn = Button(this).apply {
             text = "Add & Another"
@@ -628,7 +602,6 @@ class PurchaseActivity : AppCompatActivity() {
         btnRow.addView(addBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) })
         root.addView(btnRow)
 
-        // Last field's keyboard "Done" stops/lands on "Add & Another"
         totalLotInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) { hideKeyboard(); addAnotherBtn.requestFocus(); addAnotherBtn.performClick(); true } else false
         }
@@ -652,9 +625,7 @@ class PurchaseActivity : AppCompatActivity() {
                 amount = Math.round(q * r).toDouble(),
                 mainUnit = product?.unit ?: "",
                 secondaryUnit = product?.secondaryUnit ?: "",
-                secondaryUnitQty = product?.secondaryUnitQty ?: 0.0,
-                tertiaryUnit = product?.tertiaryUnit ?: "",
-                tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0
+                secondaryUnitQty = product?.secondaryUnitQty ?: 0.0
             )
             lines.add(line)
             renderItemsList()
@@ -677,15 +648,13 @@ class PurchaseActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    // Quick "+" add-item dialog: lets the user save a brand-new item (with its unit)
-    // straight from the Add Item window, without leaving the purchase flow.
     private fun openQuickAddItemDialog(prefillName: String, onSaved: (Product) -> Unit) {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 16, 48, 0)
         }
         container.addView(TextView(this).apply {
-            text = "Item not found \u2014 save it as a new item"
+            text = "Item not found — save it as a new item"
             textSize = 12.5f
             setTextColor(Color.parseColor(textMuted))
             setPadding(0, 0, 0, 16)
@@ -726,9 +695,7 @@ class PurchaseActivity : AppCompatActivity() {
                         openingStock = 0,
                         unit = unit,
                         secondaryUnit = "",
-                        secondaryUnitQty = 0.0,
-                        tertiaryUnit = "",
-                        tertiaryUnitQty = 0.0
+                        secondaryUnitQty = 0.0
                     )
                     if (existing == null) {
                         db.productDao().upsert(product)
@@ -741,19 +708,16 @@ class PurchaseActivity : AppCompatActivity() {
             .show()
     }
 
-    // ================== REST OF YOUR ORIGINAL FUNCTIONS (UNCHANGED LOGIC) ==================
     private fun getUnitPrefs() = getSharedPreferences(PREFS_UNIT, Context.MODE_PRIVATE)
-    private fun saveLastUnitPreset(primary: String, secondary: String, secQty: Double, tertiary: String, terQty: Double) {
-        getUnitPrefs().edit().putString(KEY_LAST_PRIMARY, primary).putString(KEY_LAST_SECONDARY, secondary).putString(KEY_LAST_SEC_QTY, secQty.toString()).putString(KEY_LAST_TERTIARY, tertiary).putString(KEY_LAST_TER_QTY, terQty.toString()).apply()
+    private fun saveLastUnitPreset(primary: String, secondary: String, secQty: Double) {
+        getUnitPrefs().edit().putString(KEY_LAST_PRIMARY, primary).putString(KEY_LAST_SECONDARY, secondary).putString(KEY_LAST_SEC_QTY, secQty.toString()).apply()
     }
     private fun getLastUnitPreset(): Map<String, String> {
         val p = getUnitPrefs()
         return mapOf(
             "primary" to (p.getString(KEY_LAST_PRIMARY, "kg") ?: "kg"),
             "secondary" to (p.getString(KEY_LAST_SECONDARY, "Pao") ?: "Pao"),
-            "secQty" to (p.getString(KEY_LAST_SEC_QTY, "4") ?: "4"),
-            "tertiary" to (p.getString(KEY_LAST_TERTIARY, "gram") ?: "gram"),
-            "terQty" to (p.getString(KEY_LAST_TER_QTY, "250") ?: "250")
+            "secQty" to (p.getString(KEY_LAST_SEC_QTY, "4") ?: "4")
         )
     }
 
@@ -771,7 +735,6 @@ class PurchaseActivity : AppCompatActivity() {
             linesArray.put(JSONObject().apply {
                 put("itemName", line.itemName); put("barcode", line.barcode ?: ""); put("qty", line.qty); put("unit", line.unit); put("rate", line.rate); put("amount", line.amount)
                 put("mainUnit", line.mainUnit); put("secondaryUnit", line.secondaryUnit); put("secondaryUnitQty", line.secondaryUnitQty)
-                put("tertiaryUnit", line.tertiaryUnit); put("tertiaryUnitQty", line.tertiaryUnitQty)
             })
         }
         val draft = JSONObject().apply {
@@ -796,7 +759,7 @@ class PurchaseActivity : AppCompatActivity() {
                 for (i in 0 until linesArray.length()) {
                     try {
                         val o = linesArray.getJSONObject(i)
-                        lines.add(PurchaseLine(o.optString("itemName"), o.optString("barcode").ifBlank { null }, o.optDouble("qty", 0.0), o.optString("unit"), o.optDouble("rate", 0.0), o.optDouble("amount", 0.0), o.optString("mainUnit"), o.optString("secondaryUnit"), o.optDouble("secondaryUnitQty", 0.0), o.optString("tertiaryUnit"), o.optDouble("tertiaryUnitQty", 0.0)))
+                        lines.add(PurchaseLine(o.optString("itemName"), o.optString("barcode").ifBlank { null }, o.optDouble("qty", 0.0), o.optString("unit"), o.optDouble("rate", 0.0), o.optDouble("amount", 0.0), o.optString("mainUnit"), o.optString("secondaryUnit"), o.optDouble("secondaryUnitQty", 0.0)))
                     } catch (e: Exception) { Log.e("PurchaseActivity", "restoreDraftIfAny: skipping bad line $i", e) }
                 }
                 renderItemsList(); updateGrandTotal()
@@ -884,13 +847,13 @@ class PurchaseActivity : AppCompatActivity() {
                 paidInput.setText(if (purchase.paid > 0) Math.round(purchase.paid).toString() else "")
                 lines.clear()
                 items.forEach { pi ->
-                    val product = try { db.productDao().find(pi.barcode) } catch (e: Exception) { Log.e("PurchaseActivity", "loadForEdit: product lookup failed for ${pi.barcode}", e); null }
-                    lines.add(PurchaseLine(product?.name ?: pi.barcode, pi.barcode, pi.qty.toDouble(), pi.unit.ifBlank { product?.unit ?: "" }, pi.unitCost, pi.amount, product?.unit ?: "", product?.secondaryUnit ?: "", product?.secondaryUnitQty ?: 0.0, product?.tertiaryUnit ?: "", product?.tertiaryUnitQty ?: 0.0))
+                    val product = try { db.productDao().find(pi.barcode) } catch (e: Exception) { null }
+                    lines.add(PurchaseLine(product?.name ?: pi.barcode, pi.barcode, pi.qty.toDouble(), pi.unit.ifBlank { product?.unit ?: "" }, pi.unitCost, pi.amount, product?.unit ?: "", product?.secondaryUnit ?: "", product?.secondaryUnitQty ?: 0.0))
                 }
                 renderItemsList(); updateGrandTotal(); deleteButton.visibility = View.VISIBLE
             } catch (e: Exception) {
-                Log.e("PurchaseActivity", "loadForEdit failed for bill=$bill", e)
-                Toast.makeText(this@PurchaseActivity, "Could not load this purchase (${e.message ?: "unknown error"})", Toast.LENGTH_LONG).show()
+                Log.e("PurchaseActivity", "loadForEdit failed", e)
+                Toast.makeText(this@PurchaseActivity, "Could not load purchase", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -912,13 +875,10 @@ class PurchaseActivity : AppCompatActivity() {
     }
     private fun loadProducts() {
         lifecycleScope.launch {
-            PosDatabase.get(this@PurchaseActivity).productDao().all().collectLatest { list ->
-                products = list
-            }
+            PosDatabase.get(this@PurchaseActivity).productDao().all().collectLatest { list -> products = list }
         }
     }
 
-    // ================== SCREENSHOT STYLE BILLED ITEMS ==================
     private fun renderItemsList() {
         itemsContainer.removeAllViews()
         billedItemsHeader.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
@@ -982,10 +942,7 @@ class PurchaseActivity : AppCompatActivity() {
             })
             row.addView(bottomRow)
 
-            row.setOnClickListener {
-                // Edit on click
-                openAddItemNewWindowForEdit(index)
-            }
+            row.setOnClickListener { openAddItemNewWindowForEdit(index) }
             row.setOnLongClickListener {
                 lines.removeAt(index)
                 renderItemsList()
@@ -1000,7 +957,6 @@ class PurchaseActivity : AppCompatActivity() {
     private fun openAddItemNewWindowForEdit(editIndex: Int) {
         if (editIndex < 0 || editIndex >= lines.size) return
         val existing = lines[editIndex]
-        // Reuse same dialog but prefill
         val dialog = Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar_Fullscreen)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1033,9 +989,7 @@ class PurchaseActivity : AppCompatActivity() {
 
     private fun updateGrandTotal() {
         val total = Math.round(lines.sumOf { it.amount }).toDouble()
-        val totalQty = lines.sumOf { it.qty }
         grandTotalText.text = "Subtotal: %.2f".format(total)
-        // Update the qty text inside totalCard - find by tag? For now update via direct reference if you keep it, else use logic
         val paid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble()
         val due = (total - paid).coerceAtLeast(0.0)
         dueAmountText.text = "Rs %.0f".format(due)
@@ -1046,8 +1000,6 @@ class PurchaseActivity : AppCompatActivity() {
         } else {
             paidWarningText.visibility = View.GONE
         }
-        // Also update the small total qty views if needed
-        // You can loop through parent to find qty text, but simplified:
     }
 
     private fun promptAddSupplier() {
@@ -1063,15 +1015,15 @@ class PurchaseActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity); var matchedCount = 0
             for (i in 0 until arr.length()) {
-                val o = try { arr.getJSONObject(i) } catch (e: Exception) { Log.e("PurchaseActivity", "handleScannedItems: skipping bad item $i", e); continue }
+                val o = try { arr.getJSONObject(i) } catch (e: Exception) { continue }
                 val scannedName = o.optString("name").trim(); val scannedQty = o.optDouble("qty", 0.0); val scannedRate = o.optDouble("rate", 0.0)
                 if (scannedName.isEmpty() || scannedQty <= 0) continue
                 var product = products.find { it.name.equals(scannedName, ignoreCase = true) } ?: products.find { it.name.contains(scannedName, ignoreCase = true) || scannedName.contains(it.name, ignoreCase = true) }
                 if (product == null) {
-                    val newProduct = Product(barcode = "P" + System.currentTimeMillis() + i, name = scannedName, category = "General", cost = scannedRate, salePrice = 0.0, wholesalePrice = 0.0, stock = 0, openingStock = 0, unit = "pcs", secondaryUnit = "", secondaryUnitQty = 0.0, tertiaryUnit = "", tertiaryUnitQty = 0.0)
+                    val newProduct = Product(barcode = "P" + System.currentTimeMillis() + i, name = scannedName, category = "General", cost = scannedRate, salePrice = 0.0, wholesalePrice = 0.0, stock = 0, openingStock = 0, unit = "pcs", secondaryUnit = "", secondaryUnitQty = 0.0)
                     db.productDao().upsert(newProduct); product = newProduct
                 }
-                lines.add(PurchaseLine(product.name, product.barcode, scannedQty, product.unit, scannedRate, Math.round(scannedQty * scannedRate).toDouble(), product.unit, product.secondaryUnit, product.secondaryUnitQty, product.tertiaryUnit, product.tertiaryUnitQty)); matchedCount++
+                lines.add(PurchaseLine(product.name, product.barcode, scannedQty, product.unit, scannedRate, Math.round(scannedQty * scannedRate).toDouble(), product.unit, product.secondaryUnit, product.secondaryUnitQty)); matchedCount++
             }
             if (matchedCount > 0) { renderItemsList(); updateGrandTotal(); if (editBillNo == null) saveDraft() }
             Toast.makeText(this@PurchaseActivity, "$matchedCount items added from scan", Toast.LENGTH_LONG).show()
