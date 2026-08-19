@@ -45,19 +45,20 @@ class PurchaseActivity : AppCompatActivity() {
     private val urduMap = mapOf(
         "ctn" to "کارٹن",
         "carton" to "کارٹن",
-        "outer" to "ڈنڈا",
+        "outer" to "آؤٹر",
         "lari" to "لڑی",
         "dabbi" to "ڈبی",
         "pcs" to "عدد",
-        "gachi" to "گاچی",
+        "gachi" to "گچھی",
         "bag" to "بوری",
         "kg" to "کلو",
         "gram" to "گرام",
         "g" to "گرام",
         "pao" to "پاؤ",
         "box" to "باکس",
-        "bottle" to "بوتل"
-        "pet" to "پیٹ"
+        "bottle" to "بوتل",
+        "pet" to "pet",
+        "پیٹ" to "pet"
     )
 
     private fun toUrdu(unit: String): String {
@@ -188,7 +189,7 @@ class PurchaseActivity : AppCompatActivity() {
         if (p.unit.isNotBlank()) list.add(p.unit)
         if (p.secondaryUnit.isNotBlank()) list.add(p.secondaryUnit)
         if (p.tertiaryUnit.isNotBlank()) list.add(p.tertiaryUnit)
-        if (list.isEmpty()) list.addAll(listOf("کارٹن","بیرونی پیک","ڈبی","بوری","کلو","گرام","عدد"))
+        if (list.isEmpty()) list.addAll(listOf("کارٹن","آؤٹر","ڈبی","بوری","کلو","گرام","عدد"))
         return list
     }
 
@@ -332,7 +333,9 @@ class PurchaseActivity : AppCompatActivity() {
                 background = strokedBg(border, "#FAFBFC", 8)
             }
             row.addView(TextView(this@PurchaseActivity).apply {
-                text = "${line.name) ${line.qty) ${toUrdu(line.unit)) = ${line.qtyInSmallest) ${toUrdu(selectedProduct?.tertiaryUnit ?: "")) - Rs ${line.totalCost)"
+                val unitUrdu = toUrdu(line.unit)
+                val terUrdu = toUrdu(selectedProduct?.tertiaryUnit ?: "")
+                text = line.name + " " + line.qty + " " + unitUrdu + " = " + line.qtyInSmallest + " " + terUrdu + " - Rs " + line.totalCost
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             val del = TextView(this@PurchaseActivity).apply {
