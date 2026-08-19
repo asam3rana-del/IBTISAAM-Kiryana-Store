@@ -156,7 +156,7 @@ class BillPreviewActivity : AppCompatActivity() {
 
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
-            text = "🖨️ PRINT"; setTextColor(Color.WHITE); textSize = 14.5f; isAllCaps = false; setTypeface(typeface, Typeface.BOLD)
+            text = "🖨️ PRINT 58mm"; setTextColor(Color.WHITE); textSize = 14.5f; isAllCaps = false; setTypeface(typeface, Typeface.BOLD)
             background = DrawableGradient(DrawableGradient.Orientation.LEFT_RIGHT, intArrayOf(Color.parseColor(blue), Color.parseColor("#1E4FBE"))).apply { cornerRadius = 16f }
             setPadding(0, 26, 0, 26); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
             applyElevation(this, 4f)
@@ -189,19 +189,7 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    // ----------------------------------------------------------------------
-    // PRINTING
-    //
-    // The receipt is rendered as a bitmap (using Android's own text layout
-    // engine) and sent to the printer as a raster image, instead of sending
-    // raw text bytes. Raw text bytes only work reliably for plain ASCII -
-    // thermal printers use their own single-byte codepage/font, so any
-    // Urdu/Unicode characters in the shop name, item names, address, or
-    // footer would come out as boxes or "????". Printing as an image avoids
-    // that completely: whatever is typed (English, Urdu, or mixed) prints
-    // exactly as it would render on screen.
-    // ----------------------------------------------------------------------
-
+    // ============= FIXED 58MM PRINTING - FULL PAGE =============
     private fun printReceipt(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
@@ -214,20 +202,16 @@ class BillPreviewActivity : AppCompatActivity() {
                 Toast.makeText(this@BillPreviewActivity, "Pehle Settings mein printer select karein", Toast.LENGTH_LONG).show()
                 return@launch
             }
+            // FIXED: 58mm = 384 dots always, no matter what setting says
+            val dotWidth = 384
 
-            // Printer paper width in mm, configurable via app settings.
-            // 58mm printers print at 384 dots wide, 80mm at 576 dots wide
-            // (both at the common 203dpi print head resolution).
-            val paperWidthMm = db.appSettingDao().get("printer_paper_width")?.value?.toIntOrNull() ?: 58
-            val dotWidth = if (paperWidthMm >= 80) 576 else 384
-
-            val bitmap = buildReceiptBitmap(
+            val bitmap = buildReceiptBitmap58mm(
                 type, reference, partyName, partyLabel, dateMillis, lines,
                 subtotal, discount, total, paid, paymentMethod, dotWidth
             )
 
             val ok = PrinterHelper.printBitmap(this@BillPreviewActivity, PrinterHelper.PrinterType.BLUETOOTH, mac, bitmap)
-            Toast.makeText(this@BillPreviewActivity, if (ok) "Print bhej diya" else "Print fail", Toast.LENGTH_LONG).show()
+            Toast.makeText(this@BillPreviewActivity, if (ok) "Print bhej diya 58mm full page" else "Print fail", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -244,56 +228,44 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildReceiptBitmap(
+    private fun buildReceiptBitmap58mm(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
         total: Double, paid: Double, paymentMethod: String, dotWidth: Int
     ): Bitmap {
-        val width = dotWidth
-        val padding = (width * 0.035f).toInt().coerceAtLeast(6)
+        // FIXED FOR 58MM - FULL PAGE
+        val width = 384 // 58mm fixed
+        val padding = 8 // Minimal padding for 58mm
         val contentLeft = padding
         val contentRight = width - padding
-        val contentWidth = (contentRight - contentLeft).coerceAtLeast(1)
+        val contentWidth = contentRight - contentLeft
 
-        fun makePaint(sizeFactor: Float, bold: Boolean, align: Paint.Align = Paint.Align.LEFT): TextPaint =
+        fun makePaint(sizeFactor: Float, bold: Boolean): TextPaint =
             TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.BLACK
                 textSize = width * sizeFactor
-                typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-                textAlign = align
+                typeface = if (bold) Typeface.create(Typeface.MONOSPACE, Typeface.BOLD) else Typeface.MONOSPACE
             }
 
-        val titlePaint = makePaint(0.072f, true, Paint.Align.CENTER)
-        val subPaint = makePaint(0.042f, false, Paint.Align.CENTER)
-        val sectionPaint = makePaint(0.05f, true, Paint.Align.CENTER)
-        val labelPaint = makePaint(0.045f, false)
-        val valuePaint = makePaint(0.045f, false, Paint.Align.RIGHT)
-        val boldLabelPaint = makePaint(0.05f, true)
-        val boldValuePaint = makePaint(0.05f, true, Paint.Align.RIGHT)
-        val itemNamePaint = makePaint(0.047f, true)
-        val itemSubPaint = makePaint(0.04f, false)
-        val itemQtyPaint = makePaint(0.045f, false, Paint.Align.CENTER)
-        val itemAmountPaint = makePaint(0.047f, true, Paint.Align.RIGHT)
-        val headerPaint = makePaint(0.038f, true)
-        val headerCenterPaint = makePaint(0.038f, true, Paint.Align.CENTER)
-        val headerRightPaint = makePaint(0.038f, true, Paint.Align.RIGHT)
+        val titlePaint = makePaint(0.085f, true)
+        val subPaint = makePaint(0.040f, false)
+        val sectionPaint = makePaint(0.050f, true)
+        val labelPaint = makePaint(0.042f, false)
+        val valuePaint = makePaint(0.042f, false)
+        val boldLabelPaint = makePaint(0.048f, true)
+        val boldValuePaint = makePaint(0.048f, true)
+        val itemNamePaint = makePaint(0.045f, true)
+        val itemSubPaint = makePaint(0.036f, false)
+        val itemQtyPaint = makePaint(0.040f, false)
+        val itemAmountPaint = makePaint(0.045f, true)
 
-        // Draw onto an oversized scratch canvas first, then crop to the
-        // actual content height once everything has been laid out.
-        val maxHeight = 4000
+        val maxHeight = 3000
         val scratch = Bitmap.createBitmap(width, maxHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(scratch)
         canvas.drawColor(Color.WHITE)
 
         var y = padding.toFloat()
 
-        // All text is drawn via StaticLayout, never raw canvas.drawText.
-        // Reason: raw Paint.drawText does not run the Unicode bidi algorithm,
-        // so a mixed string like "10 کارٹن" (digits + Urdu) gets drawn with
-        // the wrong glyph order/width and can visually collide with
-        // neighbouring columns. StaticLayout reorders it correctly; we then
-        // position the *rendered* line by its measured width so left/center/
-        // right placement stays visually correct regardless of script.
         fun lineWidthOf(layout: StaticLayout) = if (layout.lineCount > 0) layout.getLineWidth(0) else 0f
 
         fun drawAt(text: String, p: TextPaint, boxLeft: Float, boxWidth: Float, y0: Float): StaticLayout? {
@@ -312,7 +284,6 @@ class BillPreviewActivity : AppCompatActivity() {
             y += layout.height + gapAfter
         }
 
-        // Draws text so its right edge lands exactly at rightX.
         fun drawRightAligned(text: String, p: TextPaint, rightX: Float, maxWidth: Float, y0: Float): StaticLayout? {
             if (text.isBlank()) return null
             val layout = makeStaticLayout(text, p, maxWidth.toInt().coerceAtLeast(1), Layout.Alignment.ALIGN_NORMAL)
@@ -321,24 +292,15 @@ class BillPreviewActivity : AppCompatActivity() {
             return layout
         }
 
-        // Draws text centered around centerX.
-        fun drawCenterAligned(text: String, p: TextPaint, centerX: Float, maxWidth: Float, y0: Float): StaticLayout? {
-            if (text.isBlank()) return null
-            val layout = makeStaticLayout(text, p, maxWidth.toInt().coerceAtLeast(1), Layout.Alignment.ALIGN_NORMAL)
-            val lineW = lineWidthOf(layout)
-            canvas.save(); canvas.translate(centerX - lineW / 2f, y0); layout.draw(canvas); canvas.restore()
-            return layout
-        }
-
         fun dashedLine(gapBefore: Float, gapAfter: Float) {
             y += gapBefore
-            val dashPaint = Paint().apply { color = Color.BLACK; strokeWidth = (width * 0.004f).coerceAtLeast(1.5f) }
-            val dash = width * 0.012f
-            val gapPx = width * 0.008f
+            val dashPaint = Paint().apply { color = Color.BLACK; strokeWidth = 2f }
             var x = contentLeft.toFloat()
+            val dash = 6f
+            val gap = 4f
             while (x < contentRight) {
                 canvas.drawLine(x, y, minOf(x + dash, contentRight.toFloat()), y, dashPaint)
-                x += dash + gapPx
+                x += dash + gap
             }
             y += gapAfter
         }
@@ -346,64 +308,68 @@ class BillPreviewActivity : AppCompatActivity() {
         fun kvRow(label: String, value: String, bold: Boolean = false) {
             val lp = if (bold) boldLabelPaint else labelPaint
             val vp = if (bold) boldValuePaint else valuePaint
-            val labelLayout = drawAt(label, lp, contentLeft.toFloat(), contentWidth * 0.55f, y)
-            val valueLayout = drawRightAligned(value, vp, contentRight.toFloat(), contentWidth * 0.55f, y)
-            val labelH = labelLayout?.height?.toFloat() ?: (lp.textSize * 1.2f)
-            val valueH = valueLayout?.height?.toFloat() ?: (vp.textSize * 1.2f)
-            y += maxOf(labelH, valueH, vp.textSize * 1.35f)
+            // For 58mm, label left, value right in same line
+            val labelLayout = drawAt(label, lp, contentLeft.toFloat(), contentWidth * 0.50f, y)
+            val valueLayout = drawRightAligned(value, vp, contentRight.toFloat(), contentWidth * 0.50f, y)
+            val h = maxOf(labelLayout?.height ?: 0, valueLayout?.height ?: 0, (vp.textSize * 1.2f).toInt())
+            y += h + 4
         }
 
-        // Header
-        drawCentered(shopName.uppercase(Locale.getDefault()), titlePaint, width * 0.015f)
-        val subParts = listOfNotNull(shopAddress.takeIf { it.isNotBlank() }, shopPhone.takeIf { it.isNotBlank() }?.let { "Tel: $it" })
-        if (subParts.isNotEmpty()) drawCentered(subParts.joinToString("   •   "), subPaint, width * 0.02f)
-        dashedLine(width * 0.01f, width * 0.02f)
+        // === HEADER ===
+        drawCentered(shopName.uppercase(Locale.getDefault()), titlePaint, 6f)
+        val subParts = listOfNotNull(shopAddress.takeIf { it.isNotBlank() }, shopPhone.takeIf { it.isNotBlank() })
+        if (subParts.isNotEmpty()) drawCentered(subParts.joinToString(" | "), subPaint, 8f)
+        dashedLine(4f, 8f)
 
-        drawCentered(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT", sectionPaint, width * 0.02f)
+        drawCentered(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT", sectionPaint, 10f)
 
-        val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-        kvRow("No.", reference)
-        kvRow("Date", fmt.format(Date(dateMillis)))
-        if (partyName.isNotBlank()) kvRow(partyLabel, partyName)
-        if (paymentMethod.isNotBlank()) kvRow("Payment", paymentMethod.replaceFirstChar { it.uppercase() })
-        dashedLine(width * 0.015f, width * 0.02f)
+        val fmt = SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault())
+        kvRow("Bill No:", reference)
+        kvRow("Date:", fmt.format(Date(dateMillis)))
+        if (partyName.isNotBlank()) kvRow("$partyLabel:", partyName)
+        if (paymentMethod.isNotBlank()) kvRow("Pay:", paymentMethod.uppercase())
+        dashedLine(6f, 8f)
 
-        // Table header
+        // === TABLE HEADER - FIXED FOR 58MM ===
         val col1 = contentLeft.toFloat()
-        val nameColWidth = contentWidth * 0.56f
-        val qtyX = contentLeft + contentWidth * 0.80f
-        val qtyColWidth = contentWidth * 0.20f
-        val col3 = contentRight.toFloat()
-        val amountColWidth = contentWidth * 0.24f
+        val col1W = contentWidth * 0.52f
+        val col2X = contentLeft + contentWidth * 0.52f
+        val col2W = contentWidth * 0.18f
+        val col3X = contentRight.toFloat()
+        val col3W = contentWidth * 0.30f
 
-        drawAt("ITEM", headerPaint, col1, nameColWidth, y)
-        drawCenterAligned("QTY", headerCenterPaint, qtyX, qtyColWidth, y)
-        drawRightAligned("AMOUNT", headerRightPaint, col3, amountColWidth, y)
-        y += headerPaint.textSize * 1.7f
+        drawAt("ITEM", labelPaint, col1, col1W, y)
+        drawAt("QTY", labelPaint, col2X, col2W, y)
+        drawRightAligned("AMT", labelPaint, col3X, col3W, y)
+        y += labelPaint.textSize * 1.6f
+        dashedLine(2f, 6f)
 
+        // === ITEMS ===
         for (line in lines) {
-            val rowStartY = y
-            val nameLayout = drawAt(line.name, itemNamePaint, col1, nameColWidth, y)
-            drawCenterAligned("${line.qty} ${line.unit}", itemQtyPaint, qtyX, qtyColWidth, y)
-            drawRightAligned("%.2f".format(line.amount), itemAmountPaint, col3, amountColWidth, y)
-            y = rowStartY + (nameLayout?.height?.toFloat() ?: (itemNamePaint.textSize * 1.2f)) + width * 0.004f
-            drawAt("@ %.2f".format(line.rate), itemSubPaint, col1, nameColWidth, y)
-            y += itemSubPaint.textSize * 1.5f + width * 0.014f
+            val rowY = y
+            // Name wraps to 2 lines if needed
+            val nameLayout = drawAt(line.name, itemNamePaint, col1, col1W, y)
+            drawAt("${line.qty} ${line.unit}", itemQtyPaint, col2X, col2W, y)
+            drawRightAligned("%.0f".format(line.amount), itemAmountPaint, col3X, col3W, y)
+            y = rowY + (nameLayout?.height ?: 20) + 2
+            // Rate line
+            drawAt("@${"%.0f".format(line.rate)}", itemSubPaint, col1, col1W, y)
+            y += itemSubPaint.textSize * 1.5f + 8
         }
 
-        dashedLine(width * 0.008f, width * 0.02f)
-        kvRow("Subtotal", "Rs %.2f".format(subtotal))
-        if (discount > 0) kvRow("Discount", "-Rs %.2f".format(discount))
-        kvRow("TOTAL", "Rs %.2f".format(total), bold = true)
-        kvRow("Paid", "Rs %.2f".format(paid))
+        dashedLine(4f, 8f)
+        kvRow("Subtotal:", "Rs %.0f".format(subtotal))
+        if (discount > 0) kvRow("Discount:", "-Rs %.0f".format(discount))
+        kvRow("TOTAL:", "Rs %.0f".format(total), bold = true)
+        kvRow("Paid:", "Rs %.0f".format(paid))
         val balance = total - paid
-        if (balance > 0.009) kvRow("Balance Due", "Rs %.2f".format(balance), bold = true)
-        dashedLine(width * 0.015f, width * 0.02f)
+        if (balance > 0.009) kvRow("Due:", "Rs %.0f".format(balance), bold = true)
+        dashedLine(8f, 10f)
 
-        drawCentered(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }, subPaint, width * 0.03f)
+        drawCentered(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein" }, subPaint, 8f)
+        drawCentered("Powered by IBTISAAM POS", subPaint, 8f)
 
-        y += width * 0.02f
-
+        y += 20f
         val finalHeight = y.toInt().coerceIn(1, maxHeight)
         return Bitmap.createBitmap(scratch, 0, 0, width, finalHeight)
     }
