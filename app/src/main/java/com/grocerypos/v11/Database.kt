@@ -37,6 +37,12 @@ data class User(
     val active: Boolean = true
 )
 
+@Entity(tableName = "app_settings")
+data class AppSetting(
+    @PrimaryKey val key: String,
+    val value: String = ""
+)
+
 @Entity(tableName = "sales")
 data class Sale(
     @PrimaryKey val invoice: String,
@@ -111,6 +117,16 @@ interface UserDao {
 }
 
 @Dao
+interface AppSettingDao {
+    @Query("SELECT * FROM app_settings WHERE key = :key LIMIT 1")
+    suspend fun get(key: String): AppSetting?
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun set(setting: AppSetting)
+    @Query("SELECT * FROM app_settings")
+    fun all(): kotlinx.coroutines.flow.Flow<List<AppSetting>>
+}
+
+@Dao
 interface SaleDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun sale(s: Sale)
@@ -118,28 +134,32 @@ interface SaleDao {
     suspend fun items(items: List<SaleItem>)
 }
 
-@Database(entities = [Product::class, Category::class, UnitEntity::class, User::class, Sale::class, SaleItem::class], version = 20, exportSchema = false)
+@Database(entities = [Product::class, Category::class, UnitEntity::class, User::class, AppSetting::class, Sale::class, SaleItem::class], version = 21, exportSchema = false)
 abstract class PosDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun categoryDao(): CategoryDao
     abstract fun unitDao(): UnitDao
     abstract fun userDao(): UserDao
+    abstract fun appSettingDao(): AppSettingDao
     abstract fun saleDao(): SaleDao
 
     companion object {
         @Volatile private var INSTANCE: PosDatabase? = null
-        val MIGRATION_19_20 = object : Migration(19, 20) {
+
+        val MIGRATION_19_21 = object : Migration(19, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 try {
                     db.execSQL("CREATE TABLE IF NOT EXISTS users (username TEXT NOT NULL PRIMARY KEY, displayName TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'cashier', passwordHash TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS app_settings (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL DEFAULT '')")
                     db.execSQL("UPDATE products SET stock = CAST(stock * secondaryUnitQty * tertiaryUnitQty AS INTEGER) WHERE tertiaryUnitQty > 0 AND secondaryUnitQty > 0 AND stock > 0")
                 } catch (e: Exception) {}
             }
         }
+
         fun get(context: Context): PosDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(context.applicationContext, PosDatabase::class.java, "pos.db")
-                    .addMigrations(MIGRATION_19_20)
+                    .addMigrations(MIGRATION_19_21)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
@@ -147,4 +167,9 @@ abstract class PosDatabase : RoomDatabase() {
             }
         }
     }
+}
+
+// Helper for AppLock cached method used in SettingsActivity
+object AppLock {
+    fun updateCachedLoginMethod(method: String) {}
 }
