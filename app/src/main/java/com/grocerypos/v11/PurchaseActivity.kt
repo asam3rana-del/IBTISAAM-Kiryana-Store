@@ -45,11 +45,11 @@ class PurchaseActivity : AppCompatActivity() {
     private val urduMap = mapOf(
         "ctn" to "کارٹن",
         "carton" to "کارٹن",
-        "outer" to "بیرونی پیک",
+        "outer" to "ڈنڈا",
         "lari" to "لڑی",
         "dabbi" to "ڈبی",
         "pcs" to "عدد",
-        "gachi" to "گچھی",
+        "gachi" to "گاچی",
         "bag" to "بوری",
         "kg" to "کلو",
         "gram" to "گرام",
@@ -253,19 +253,19 @@ class PurchaseActivity : AppCompatActivity() {
                     searchField.setText(p.name)
                     // Setup unit spinner with 3-tier Urdu labels
                     val units = getUnitsForProduct(p)
-                    val urduUnits = units.map { u -> "\(toUrdu(u)) (\(u))" }
+                    val urduUnits = units.map { u -> "${toUrdu(u)) (${u))" }
                     unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, urduUnits)
                     // Show stock in smallest + converted
                     val stockText = formatStock(p)
-                    Toast.makeText(this@PurchaseActivity, "\(p.name) اسٹاک: \(stockText)", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@PurchaseActivity, "${p.name) اسٹاک: ${stockText)", Toast.LENGTH_LONG).show()
                 }
             }
             row.addView(TextView(this).apply {
-                text = "\(p.name) - \(formatStock(p))"
+                text = "${p.name) - ${formatStock(p))"
                 setTypeface(typeface, Typeface.BOLD)
             })
             row.addView(TextView(this).apply {
-                text = "\(toUrdu(p.unit)) \(p.secondaryUnitQty.toInt()) \(toUrdu(p.secondaryUnit)) \(p.tertiaryUnitQty.toInt()) \(toUrdu(p.tertiaryUnit))"
+                text = "${toUrdu(p.unit)) ${p.secondaryUnitQty.toInt()) ${toUrdu(p.secondaryUnit)) ${p.tertiaryUnitQty.toInt()) ${toUrdu(p.tertiaryUnit))"
                 setTextColor(Color.parseColor(textMuted))
                 textSize = 12f
             })
@@ -285,13 +285,13 @@ class PurchaseActivity : AppCompatActivity() {
             val remAfterPrimary = smallest % totalPerPrimary
             val secondaryCount = remAfterPrimary / terQty.toInt()
             val tertiaryCount = remAfterPrimary % terQty.toInt()
-            return "\(primaryCount) \(toUrdu(p.unit)) \(secondaryCount) \(toUrdu(p.secondaryUnit)) \(tertiaryCount) \(toUrdu(p.tertiaryUnit)) (\(smallest) \(toUrdu(p.tertiaryUnit)))"
+            return "${primaryCount) ${toUrdu(p.unit)) ${secondaryCount) ${toUrdu(p.secondaryUnit)) ${tertiaryCount) ${toUrdu(p.tertiaryUnit)) (${smallest) ${toUrdu(p.tertiaryUnit)))"
         } else if (secQty > 0) {
             val primaryCount = smallest / secQty.toInt()
             val secondaryCount = smallest % secQty.toInt()
-            return "\(primaryCount) \(toUrdu(p.unit)) \(secondaryCount) \(toUrdu(p.secondaryUnit))"
+            return "${primaryCount) ${toUrdu(p.unit)) ${secondaryCount) ${toUrdu(p.secondaryUnit))"
         }
-        return "\(smallest) \(toUrdu(p.tertiaryUnit.ifBlank { p.secondaryUnit.ifBlank { p.unit } }))"
+        return "${smallest) ${toUrdu(p.tertiaryUnit.ifBlank { p.secondaryUnit.ifBlank { p.unit } }))"
     }
 
     private fun addToCart() {
@@ -331,7 +331,7 @@ class PurchaseActivity : AppCompatActivity() {
                 background = strokedBg(border, "#FAFBFC", 8)
             }
             row.addView(TextView(this@PurchaseActivity).apply {
-                text = "\(line.name) \(line.qty) \(toUrdu(line.unit)) = \(line.qtyInSmallest) \(toUrdu(selectedProduct?.tertiaryUnit ?: "")) - Rs \(line.totalCost)"
+                text = "${line.name) ${line.qty) ${toUrdu(line.unit)) = ${line.qtyInSmallest) ${toUrdu(selectedProduct?.tertiaryUnit ?: "")) - Rs ${line.totalCost)"
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             val del = TextView(this@PurchaseActivity).apply {
@@ -343,7 +343,7 @@ class PurchaseActivity : AppCompatActivity() {
             cartContainer.addView(row)
             cartContainer.addView(spacer(6))
         }
-        totalView.text = "ٹوٹل: Rs \(total)"
+        totalView.text = "ٹوٹل: Rs ${total)"
     }
 
     private fun savePurchase() {
