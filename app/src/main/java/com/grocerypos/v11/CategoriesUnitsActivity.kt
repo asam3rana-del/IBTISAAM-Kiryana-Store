@@ -1,6 +1,7 @@
 package com.grocerypos.v11
 
 import android.app.AlertDialog
+import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -16,14 +17,16 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.Product
 import com.grocerypos.v11.ui.ProductActivity
+import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
  * Shows every Category, and inside each category, every Product that belongs to it —
- * with its Primary Unit, Secondary Unit and conversion (1 Primary = X Secondary).
- * 2-TIER ONLY - tertiary removed (fixed for build)
+ * 2-TIER ONLY - tertiary removed
  */
 class CategoriesUnitsActivity : AppCompatActivity() {
 
@@ -178,7 +181,7 @@ class CategoriesUnitsActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
 
-        // 2-TIER ONLY - shows Primary + Secondary (tertiary removed)
+        // 2-TIER ONLY
         val unitLine = buildString {
             append("📏 " + Loc.t(this@CategoriesUnitsActivity, "Unit", "یونٹ") + ": ${p.unit}")
             if (p.secondaryUnit.isNotBlank() && p.secondaryUnitQty > 0) {
@@ -231,16 +234,17 @@ class CategoriesUnitsActivity : AppCompatActivity() {
     }
 
     private fun confirmDeleteProduct(p: Product) {
-        AlertDialog.Builder(this)
-            .setTitle(Loc.t(this, "Delete Product", "پروڈکٹ حذف کریں"))
-            .setMessage(Loc.t(this, "Delete \"${p.name}\"? This cannot be undone.", "\"${p.name}\" کو حذف کریں؟"))
-            .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { _, _ ->
+        val ctx = this
+        AlertDialog.Builder(ctx)
+            .setTitle(Loc.t(ctx, "Delete Product", "پروڈکٹ حذف کریں"))
+            .setMessage(Loc.t(ctx, "Delete \"${p.name}\"? This cannot be undone.", "\"${p.name}\" کو حذف کریں؟"))
+            .setPositiveButton(Loc.t(ctx, "Delete", "حذف کریں"), DialogInterface.OnClickListener { _, _ ->
                 lifecycleScope.launch {
-                    PosDatabase.get(this@CategoriesUnitsActivity).productDao().delete(p)
-                    Toast.makeText(this@CategoriesUnitsActivity, Loc.t(this@CategoriesUnitsActivity, "Product deleted", "پروڈکٹ حذف ہو گئی"), Toast.LENGTH_SHORT).show()
+                    PosDatabase.get(ctx).productDao().delete(p)
+                    Toast.makeText(ctx, Loc.t(ctx, "Product deleted", "پروڈکٹ حذف ہو گئی"), Toast.LENGTH_SHORT).show()
                 }
-            }
-            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            })
+            .setNegativeButton(Loc.t(ctx, "Cancel", "منسوخ کریں"), null)
             .show()
     }
 
