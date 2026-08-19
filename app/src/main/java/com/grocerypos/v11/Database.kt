@@ -5,7 +5,7 @@ import androidx.room.*
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-// ================= PRODUCTS - 3-Tier Urdu =================
+// ================= PRODUCTS - 3-Tier Urdu (آؤٹر) =================
 @Entity(tableName = "products")
 data class Product(
     @PrimaryKey val barcode: String,
@@ -52,6 +52,14 @@ data class Customer(
     val balance: Double = 0.0
 )
 
+@Entity(tableName = "suppliers")
+data class Supplier(
+    @PrimaryKey val id: String,
+    val name: String = "",
+    val phone: String = "",
+    val balance: Double = 0.0
+)
+
 @Entity(tableName = "sales")
 data class Sale(
     @PrimaryKey val invoice: String,
@@ -63,6 +71,7 @@ data class Sale(
     val total: Double = 0.0,
     val paid: Double = 0.0,
     val paymentMethod: String = "cash",
+    val saleType: String = "retail",
     val createdAt: Long = System.currentTimeMillis(),
     val status: String = "completed",
     val date: Long = System.currentTimeMillis()
@@ -81,6 +90,29 @@ data class SaleItem(
     val amount: Double = 0.0
 )
 
+@Entity(tableName = "purchases")
+data class Purchase(
+    @PrimaryKey val billNo: String,
+    val supplierId: String? = null,
+    val supplierName: String = "Unknown",
+    val total: Double = 0.0,
+    val paid: Double = 0.0,
+    val status: String = "completed",
+    val createdAt: Long = System.currentTimeMillis(),
+    val date: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "purchase_items")
+data class PurchaseItem(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val billNo: String,
+    val barcode: String,
+    val qty: Double = 0.0,
+    val unit: String = "",
+    val unitCost: Double = 0.0,
+    val amount: Double = 0.0
+)
+
 @Entity(tableName = "payments")
 data class Payment(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -95,7 +127,7 @@ data class CashTransaction(
     val amount: Double = 0.0
 )
 
-// Data class for SaleHistory grouping
+// Data classes for History
 data class SaleWithCustomer(
     val invoice: String,
     val customerName: String,
@@ -105,6 +137,16 @@ data class SaleWithCustomer(
     val status: String,
     val customerId: String?,
     val paid: Double
+)
+
+data class PurchaseWithSupplier(
+    val billNo: String,
+    val supplierName: String,
+    val total: Double,
+    val createdAt: Long,
+    val status: String,
+    val paid: Double,
+    val supplierId: String?
 )
 
 @Dao
@@ -127,6 +169,8 @@ interface ProductDao {
     suspend fun decrease(code: String, qty: Int)
     @Query("UPDATE products SET stock = stock + :qty WHERE barcode = :code")
     suspend fun increase(code: String, qty: Int)
+    @Query("UPDATE products SET stock = stock - :qty WHERE barcode = :code")
+    suspend fun decreaseForce(code: String, qty: Int)
     @Query("SELECT * FROM products WHERE name LIKE '%' || :q || '%' LIMIT 20")
     suspend fun search(q: String): List<Product>
 }
@@ -182,26 +226,51 @@ interface CustomerDao {
 }
 
 @Dao
+interface SupplierDao {
+    @Query("SELECT * FROM suppliers")
+    fun all(): kotlinx.coroutines.flow.Flow<List<Supplier>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(s: Supplier)
+    @Query("UPDATE suppliers SET balance = balance + :amount WHERE id = :id")
+    suspend fun addBalance(id: String, amount: Double)
+    @Query("SELECT * FROM suppliers WHERE id = :id LIMIT 1")
+    suspend fun find(id: String): Supplier?
+}
+
+@Dao
 interface SaleDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun sale(s: Sale)
     @Insert
     suspend fun items(items: List<SaleItem>)
-
     @Query("SELECT invoice, customerName, total, paymentMethod, createdAt, status, customerId, paid FROM sales ORDER BY createdAt DESC")
     suspend fun allSales(): List<SaleWithCustomer>
-
     @Query("SELECT * FROM sale_items WHERE invoice = :invoice")
     suspend fun itemsForInvoice(invoice: String): List<SaleItem>
-
     @Query("SELECT * FROM sales WHERE invoice = :invoice LIMIT 1")
     suspend fun findSale(invoice: String): Sale?
-
     @Query("DELETE FROM sales WHERE invoice = :invoice")
     suspend fun deleteSale(invoice: String)
-
     @Query("DELETE FROM sale_items WHERE invoice = :invoice")
     suspend fun deleteItems(invoice: String)
+}
+
+@Dao
+interface PurchaseDao {
+    @Query("SELECT billNo, supplierName, total, createdAt, status, paid, supplierId FROM purchases ORDER BY createdAt DESC")
+    suspend fun allPurchases(): List<PurchaseWithSupplier>
+    @Query("SELECT * FROM purchase_items WHERE billNo = :billNo")
+    suspend fun itemsForBill(billNo: String): List<PurchaseItem>
+    @Query("SELECT * FROM purchases WHERE billNo = :billNo LIMIT 1")
+    suspend fun findPurchase(billNo: String): Purchase?
+    @Query("DELETE FROM purchases WHERE billNo = :billNo")
+    suspend fun deletePurchase(billNo: String)
+    @Query("DELETE FROM purchase_items WHERE billNo = :billNo")
+    suspend fun deleteItems(billNo: String)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPurchase(p: Purchase)
+    @Insert
+    suspend fun insertItems(items: List<PurchaseItem>)
 }
 
 @Dao
@@ -216,7 +285,7 @@ interface CashTransactionDao {
     suspend fun deleteByReference(ref: String)
 }
 
-@Database(entities = [Product::class, Category::class, UnitEntity::class, User::class, AppSetting::class, Customer::class, Sale::class, SaleItem::class, Payment::class, CashTransaction::class], version = 22, exportSchema = false)
+@Database(entities = [Product::class, Category::class, UnitEntity::class, User::class, AppSetting::class, Customer::class, Supplier::class, Sale::class, SaleItem::class, Purchase::class, PurchaseItem::class, Payment::class, CashTransaction::class], version = 23, exportSchema = false)
 abstract class PosDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun categoryDao(): CategoryDao
@@ -224,34 +293,32 @@ abstract class PosDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun appSettingDao(): AppSettingDao
     abstract fun customerDao(): CustomerDao
+    abstract fun supplierDao(): SupplierDao
     abstract fun saleDao(): SaleDao
+    abstract fun purchaseDao(): PurchaseDao
     abstract fun paymentDao(): PaymentDao
     abstract fun cashTransactionDao(): CashTransactionDao
 
     companion object {
         @Volatile private var INSTANCE: PosDatabase? = null
-
-        val MIGRATION_19_22 = object : Migration(19, 22) {
+        val MIGRATION = object : Migration(19, 23) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 try {
                     db.execSQL("CREATE TABLE IF NOT EXISTS users (username TEXT NOT NULL PRIMARY KEY, displayName TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'cashier', passwordHash TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS app_settings (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL DEFAULT '')")
                     db.execSQL("CREATE TABLE IF NOT EXISTS customers (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', balance REAL NOT NULL DEFAULT 0)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS suppliers (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', balance REAL NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference TEXT NOT NULL DEFAULT '', amount REAL NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS cash_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference TEXT NOT NULL DEFAULT '', amount REAL NOT NULL DEFAULT 0)")
-                    // Add new columns to sales if not exists
-                    try { db.execSQL("ALTER TABLE sales ADD COLUMN customerId TEXT") } catch (e: Exception) {}
-                    try { db.execSQL("ALTER TABLE sales ADD COLUMN customerName TEXT NOT NULL DEFAULT 'Walk-in'") } catch (e: Exception) {}
-                    try { db.execSQL("ALTER TABLE sales ADD COLUMN createdAt INTEGER NOT NULL DEFAULT 0") } catch (e: Exception) {}
-                    try { db.execSQL("ALTER TABLE sales ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'") } catch (e: Exception) {}
+                    db.execSQL("CREATE TABLE IF NOT EXISTS purchases (billNo TEXT NOT NULL PRIMARY KEY, supplierId TEXT, supplierName TEXT NOT NULL DEFAULT 'Unknown', total REAL NOT NULL DEFAULT 0, paid REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'completed', createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS purchase_items (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, billNo TEXT NOT NULL, barcode TEXT NOT NULL, qty REAL NOT NULL DEFAULT 0, unit TEXT NOT NULL DEFAULT '', unitCost REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0)")
                 } catch (e: Exception) {}
             }
         }
-
         fun get(context: Context): PosDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(context.applicationContext, PosDatabase::class.java, "pos.db")
-                    .addMigrations(MIGRATION_19_22)
+                    .addMigrations(MIGRATION)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
