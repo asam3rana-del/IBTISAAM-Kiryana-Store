@@ -39,9 +39,7 @@ data class Product(
     val secondaryUnit:String="",
     val secondaryUnitQty:Double=0.0,
     val wholesalePrice:Double=0.0,
-    val openingStock:Int=0,
-    val tertiaryUnit:String="",
-    val tertiaryUnitQty:Double=0.0
+    val openingStock:Int=0
 )
 
 @Entity(tableName="customers")
@@ -382,13 +380,43 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
         database.execSQL("ALTER TABLE returns_new RENAME TO returns")
     }
 }
+val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // Remove tertiaryUnit columns - recreate table
+        database.execSQL("""
+            CREATE TABLE products_new (
+                barcode TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT '',
+                cost REAL NOT NULL DEFAULT 0.0,
+                salePrice REAL NOT NULL DEFAULT 0.0,
+                stock INTEGER NOT NULL DEFAULT 0,
+                reorderLevel INTEGER NOT NULL DEFAULT 0,
+                expiry TEXT NOT NULL DEFAULT '',
+                unit TEXT NOT NULL DEFAULT 'pcs',
+                unitSize INTEGER NOT NULL DEFAULT 1,
+                unitNote TEXT NOT NULL DEFAULT '',
+                secondaryUnit TEXT NOT NULL DEFAULT '',
+                secondaryUnitQty REAL NOT NULL DEFAULT 0.0,
+                wholesalePrice REAL NOT NULL DEFAULT 0.0,
+                openingStock INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent())
+        database.execSQL("""
+            INSERT INTO products_new (barcode, name, category, cost, salePrice, stock, reorderLevel, expiry, unit, unitSize, unitNote, secondaryUnit, secondaryUnitQty, wholesalePrice, openingStock)
+            SELECT barcode, name, category, cost, salePrice, stock, reorderLevel, expiry, unit, unitSize, unitNote, secondaryUnit, secondaryUnitQty, wholesalePrice, openingStock FROM products
+        """.trimIndent())
+        database.execSQL("DROP TABLE products")
+        database.execSQL("ALTER TABLE products_new RENAME TO products")
+    }
+}
 
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class],
-    version=18, exportSchema=false
+    version=19, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -411,7 +439,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }
