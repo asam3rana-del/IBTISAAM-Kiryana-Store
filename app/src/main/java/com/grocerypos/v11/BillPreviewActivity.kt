@@ -3,7 +3,6 @@ package com.grocerypos.v11.ui
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.GradientDrawable
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable as DrawableGradient
