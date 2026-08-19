@@ -1,4 +1,4 @@
-package com.grocerypos.v11.ui
+package com.grocerypos.v11
 
 import android.app.DatePickerDialog
 import android.app.Dialog
@@ -20,7 +20,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
-import com.grocerypos.v11.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -33,6 +32,9 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+
+// ===== TOP LEVEL HELPERS - FIX 1: formatQty ko top level pe laya =====
+private fun formatQty(q: Double): String = if (q % 1 == 0.0) q.toInt().toString() else "%.2f".format(q)
 
 data class PurchaseLine(
     val itemName: String,
@@ -57,8 +59,6 @@ private fun PurchaseLine.isTertiary(): Boolean =
 private fun PurchaseLine.isMain(): Boolean =
     mainUnit.isNotEmpty() && unit.equals(mainUnit, ignoreCase = true)
 
-// ====== FIX 3: Outer 0.04 ka asal hal ======
-/** Base qty hamesha sab se choti unit (dabbi) me */
 private fun PurchaseLine.baseQty(): Double = when {
     isTertiary() -> qty
     isSecondary() -> qty * tertiaryUnitQty
@@ -70,7 +70,6 @@ private fun PurchaseLine.baseQty(): Double = when {
     else -> qty
 }
 
-/** Main unit me qty - display ke liye */
 private fun PurchaseLine.mainUnitQty(): Double {
     val base = baseQty()
     return when {
@@ -81,7 +80,6 @@ private fun PurchaseLine.mainUnitQty(): Double {
 }
 
 private fun PurchaseLine.mainUnitRate(): Double {
-    // Rate hamesha per selected unit se per main unit me convert
     return when {
         isTertiary() -> rate * secondaryUnitQty * tertiaryUnitQty
         isSecondary() -> rate * tertiaryUnitQty
@@ -89,7 +87,6 @@ private fun PurchaseLine.mainUnitRate(): Double {
     }
 }
 
-/** 0 Ctn x 2 Outer x 0 Dabbi format */
 private fun PurchaseLine.format3Tier(): String {
     if (tertiaryUnit.isEmpty() || secondaryUnit.isEmpty()) {
         return "${formatQty(qty)} ${unit}"
@@ -151,7 +148,6 @@ class PurchaseActivity : AppCompatActivity() {
 
     private var suppliers = listOf<Supplier>()
     private var products = listOf<Product>()
-    // ====== FIX 1: Duplicate units khatam + add new unit support ======
     private var allUnits = mutableListOf("pcs", "kg", "pao", "gram", "g", "box", "dozen", "carton", "ctn", "outer", "dabbi", "nos", "bkt")
     private val lines = mutableListOf<PurchaseLine>()
     private var purchaseDateMillis = System.currentTimeMillis()
@@ -169,12 +165,20 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ... baqi onCreate, UI code apka waisa hi rahega ...
-    // Yahan se neeche sirf fix wale important functions diye hain, baqi file ke liye apni purani file ka code rehne do
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // NOTE: Aapka asal UI code yahan tha, wohi rehne do. Build fix ke liye ye minimal setContentView kaafi hai
+        // Agar aapke pass layout file hai to usko use karo: setContentView(R.layout.activity_purchase)
+        // Filhal empty layout se build error khatam ho jayega
+        val root = ScrollView(this).apply {
+            addView(LinearLayout(this@PurchaseActivity).apply { orientation = LinearLayout.VERTICAL })
+        }
+        setContentView(root)
+        // Aapka baqi initialization yahan call hota tha
+    }
 
-    // ====== FIX 1 CONTINUE: Unit spinner me Add New Unit ======
     private fun getUnitAdapter(context: Context): ArrayAdapter<String> {
-        val cleaned = allUnits.map { it.lowercase() }.distinct().toMutableList()
+        val cleaned = allUnits.map { it.lowercase(Locale.ROOT) }.distinct().toMutableList()
         allUnits = cleaned.toMutableList()
         val listWithAdd = cleaned.toMutableList()
         listWithAdd.add("+ Add New Unit")
@@ -182,23 +186,24 @@ class PurchaseActivity : AppCompatActivity() {
     }
 
     private fun promptAddUnitFromPurchase(onAdded: (String) -> Unit) {
-        val input = EditText(this).apply { 
+        val input = EditText(this).apply {
             hint = "New unit name"
-            setPadding(32, 24, 32, 24) 
+            setPadding(32, 24, 32, 24)
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("New Unit")
             .setView(input)
             .setPositiveButton("Add") { _, _ ->
-                val v = input.text.toString().trim().lowercase()
+                val v = input.text.toString().trim().lowercase(Locale.ROOT)
                 if (v.isNotEmpty() && v != "+ add new unit") {
-                    if (!allUnits.any { it.lowercase() == v }) {
+                    if (!allUnits.any { it.lowercase(Locale.ROOT) == v }) {
                         allUnits.add(v)
-                        // DB me bhi save karo
                         lifecycleScope.launch {
                             try {
-                                PosDatabase.get(this@promptAddUnitFromPurchase).unitDao().insert(UnitType(v))
-                            } catch (e: Exception) {}
+                                PosDatabase.get(this@PurchaseActivity).unitDao().insert(UnitType(v))
+                            } catch (e: Exception) {
+                                Log.e("Purchase", "unit insert failed", e)
+                            }
                         }
                     }
                     onAdded(v)
@@ -208,11 +213,8 @@ class PurchaseActivity : AppCompatActivity() {
             .show()
     }
 
-    // ====== FIX 2: Billed items numbering 1,2,3,4 ======
-    // Apke render function me (jahan billed items ka container banta hai) ye logic lagao
     private fun renderBilledItems_FIXED() {
         itemsContainer.removeAllViews()
-        // yahan pehle apka for loop tha
         lines.forEachIndexed { index, line ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -223,10 +225,9 @@ class PurchaseActivity : AppCompatActivity() {
                     cornerRadius = 12f
                 }
                 val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                lp.setMargins(0,0,0,8)
+                lp.setMargins(0, 0, 0, 8)
                 layoutParams = lp
             }
-            // FIX: index+1 = 1,2,3,4
             row.addView(TextView(this).apply {
                 text = "${index + 1}"
                 textSize = 12f
@@ -240,7 +241,7 @@ class PurchaseActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             row.addView(TextView(this).apply {
-                text = line.format3Tier() // FIX 3 ka display
+                text = line.format3Tier()
                 textSize = 11f
                 setTextColor(Color.parseColor(textMuted))
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -255,59 +256,117 @@ class PurchaseActivity : AppCompatActivity() {
         grandTotalText.text = "Total: Rs %.0f".format(lines.sumOf { it.amount })
     }
 
-    // ====== FIX 3: proceedSave me stock logic ======
     private fun proceedSave_FIXED(party: String, grandTotal: Double) {
         val discount = 0.0
-        val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
+        val amountPaid = (paidInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, grandTotal)
         val paymentMethod = "Cash"
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
         var supplierId = matchedSupplier?.id
         val billNo = editBillNo ?: genBillNo()
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
-            if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
+            if (supplierId == null && party.isNotEmpty()) {
+                supplierId = db.supplierDao().insert(Supplier(name = party))
+            }
             val original = originalPurchase
             if (original != null) {
-                originalItems.forEach { db.productDao().decreaseForce(it.barcode, it.qty.toInt()) }
+                for (item in originalItems) {
+                    db.productDao().decreaseForce(item.barcode, item.qty.toInt())
+                }
                 val originalOutstanding = original.total - original.paid
-                if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
-                db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
+                if (original.supplierId != null && originalOutstanding > 0) {
+                    db.supplierDao().addBalance(original.supplierId, -originalOutstanding)
+                }
+                db.purchaseDao().deleteItems(billNo)
+                db.purchaseDao().deletePurchase(billNo)
+                db.paymentDao().deleteByReference(billNo)
+                db.cashTransactionDao().deleteByReference(billNo)
             }
-            db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
-            // Stock main unit me nahi, base me save karo
-            db.purchaseDao().items(lines.map { line -> 
-                PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.mainUnitQty(), unitCost = line.mainUnitRate(), amount = line.amount, unit = line.unit) 
+            db.purchaseDao().purchase(
+                Purchase(
+                    billNo = billNo,
+                    supplierId = supplierId,
+                    total = grandTotal,
+                    paid = amountPaid,
+                    createdAt = purchaseDateMillis,
+                    subtotal = lines.sumOf { it.amount },
+                    discount = discount
+                )
+            )
+            db.purchaseDao().items(lines.map { line ->
+                PurchaseItem(
+                    billNo = billNo,
+                    barcode = line.barcode ?: "",
+                    qty = line.mainUnitQty(),
+                    unitCost = line.mainUnitRate(),
+                    amount = line.amount,
+                    unit = line.unit
+                )
             })
-            lines.forEach { line ->
-                val barcode = line.barcode ?: return@forEach
+            // FIX 2: for-loop se return@forEach error khatam
+            for (line in lines) {
+                val barcode = line.barcode ?: continue
                 val before = db.productDao().find(barcode)
-                // FIX: baseQty use karo, mainUnitQty nahi
                 val purchasedBaseQty = line.baseQty().roundToInt()
+                if (purchasedBaseQty <= 0) continue
                 db.productDao().increase(barcode, purchasedBaseQty)
-                if (before != null && purchasedBaseQty > 0) {
+                if (before != null) {
                     val oldStock = before.stock
                     val oldCost = before.cost
-                    val purchaseRatePerBase = line.mainUnitRate() / (if(line.tertiaryUnit.isNotEmpty()) line.secondaryUnitQty * line.tertiaryUnitQty else if(line.secondaryUnit.isNotEmpty()) line.secondaryUnitQty else 1.0)
-                    val newCost = if (oldStock <= 0) { purchaseRatePerBase } else { ((oldStock * oldCost) + (purchasedBaseQty * purchaseRatePerBase)) / (oldStock + purchasedBaseQty).toDouble() }
+                    val div = when {
+                        line.tertiaryUnit.isNotEmpty() && line.secondaryUnit.isNotEmpty() -> line.secondaryUnitQty * line.tertiaryUnitQty
+                        line.secondaryUnit.isNotEmpty() -> line.secondaryUnitQty
+                        else -> 1.0
+                    }
+                    val purchaseRatePerBase = if (div != 0.0) line.mainUnitRate() / div else line.mainUnitRate()
+                    val newCost = if (oldStock <= 0) purchaseRatePerBase else ((oldStock * oldCost) + (purchasedBaseQty * purchaseRatePerBase)) / (oldStock + purchasedBaseQty).toDouble()
                     db.productDao().updateCost(barcode, newCost)
                 }
             }
             val outstanding = grandTotal - amountPaid
-            if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
-            if (supplierId != null && amountPaid > 0) { db.paymentDao().insert(Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")) }
-            if (amountPaid > 0) { db.cashTransactionDao().insert(CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)) }
+            if (supplierId != null && outstanding > 0) {
+                db.supplierDao().addBalance(supplierId!!, outstanding)
+            }
+            if (supplierId != null && amountPaid > 0) {
+                db.paymentDao().insert(
+                    Payment(
+                        reference = billNo,
+                        partyType = "supplier",
+                        partyId = supplierId,
+                        amount = amountPaid,
+                        method = paymentMethod,
+                        note = if (original != null) "Purchase payment (edited)" else "Purchase payment"
+                    )
+                )
+            }
+            if (amountPaid > 0) {
+                db.cashTransactionDao().insert(
+                    CashTransaction(
+                        type = "OUT",
+                        method = paymentMethod.lowercase(Locale.ROOT),
+                        amount = amountPaid,
+                        reason = "Purchase",
+                        reference = billNo
+                    )
+                )
+            }
             suppressDraftSave = true
             Toast.makeText(this@PurchaseActivity, if (original != null) "Purchase updated" else "Purchase saved", Toast.LENGTH_SHORT).show()
             finish()
         }
     }
 
-    // Dummy placeholders taake file compile ho - apni purani file se ye functions copy rehne do
+    // ===== DUMMY PLACEHOLDERS - aapki purani file me ye already hain, compile ke liye rakhe hain =====
     private fun handleScannedItems(json: String) {}
     private fun hideKeyboard() {}
     private fun clearDraft() {}
     private fun roundedBg(color: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(color)); cornerRadius = radius.toFloat() }
-    private fun applyElevation(v: View, dp: Float) {}
-    private fun formatQty(q: Double): String = if (q % 1 == 0.0) q.toInt().toString() else "%.2f".format(q)
+    private fun applyElevation(v: View, dp: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            v.elevation = dp * resources.displayMetrics.density
+            v.outlineProvider = ViewOutlineProvider.BACKGROUND
+            v.clipToOutline = true
+        }
+    }
     private fun openBillPreview(billNo: String, forSaving: Boolean, party: String = "", grandTotal: Double = 0.0, discount: Double = 0.0, amountPaid: Double = 0.0, paymentMethod: String = "Cash") {}
 }
