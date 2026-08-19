@@ -17,15 +17,11 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
 
-        <activity
-            android:name=".ui.SettingsActivity"
-            android:theme="@style/Theme.SettingsSheet" />
+        <activity android:name=".ui.SettingsActivity" android:theme="@style/Theme.SettingsSheet" />
         <activity android:name=".ui.LoginActivity" />
         <activity android:name=".ui.ProductActivity" />
         <activity android:name=".ui.ReportsActivity" />
-        <activity
-            android:name=".ui.PurchaseActivity"
-            android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />
         
         <!-- NEW WINDOW FOR BILLED ITEMS - ADDED -->
         <activity
@@ -34,9 +30,7 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.GroceryPOS" />
 
-        <activity
-            android:name=".ui.SaleActivity"
-            android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.SaleActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.CashActivity" />
         <activity android:name=".ui.HistoryActivity" />
         <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
@@ -50,10 +44,8 @@
         <activity android:name=".ui.CategoriesUnitsActivity" android:exported="false" />
         <activity android:name=".ui.ItemsActivity" android:exported="false" />
         <activity android:name=".ui.BillPreviewActivity" android:exported="false" />
-        <activity
-            android:name=".ui.BillScanActivity"
-            android:exported="false"
-            android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.BillScanActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -66,9 +58,7 @@
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
     </application>
 </manifest>
