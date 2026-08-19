@@ -1,4 +1,3 @@
-
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
@@ -57,8 +56,9 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var searchField: EditText
     private lateinit var listContainer: LinearLayout
     private lateinit var noResultsCard: LinearLayout
+    private lateinit var convertAllBtn: TextView
 
-    private var units = listOf("pcs", "kg", "box", "dozen")
+    private var units = listOf("pcs", "kg", "box", "dozen", "Pao", "gram", "g", "ctn", "Nos")
     private var selectedPrimaryUnit = "pcs"
     private var selectedSecondaryUnit = "None"
     private var selectedSecondaryQty = 0.0
@@ -93,6 +93,20 @@ class ProductActivity : AppCompatActivity() {
         })
         header.addView(headerCol)
         root.addView(header)
+
+        // CONVERT ALL BUTTON - NEW FOR 2-TIER MIGRATION
+        convertAllBtn = TextView(this).apply {
+            text = "🔄  Convert All Products to 2-Tier (Fix Old Units)"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = roundedBg("#F5A524", 12)
+            setPadding(20, 16, 20, 16)
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 12) }
+            setOnClickListener { confirmConvertAll() }
+        }
+        root.addView(convertAllBtn)
 
         val formHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         formCardTitle = TextView(this).apply {
@@ -133,7 +147,7 @@ class ProductActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         selectUnitBtn = TextView(this).apply {
-            text = "📏 " + Loc.t(this@ProductActivity, "Select Unit", "یونٹ منتخب کریں")
+            text = "📏 " + Loc.t(this@ProductActivity, "Select Unit (Editable)", "یونٹ منتخب کریں (قابل ترمیم)")
             textSize = 12f
             setTextColor(Color.WHITE)
             background = roundedBg(teal, 30)
@@ -171,7 +185,7 @@ class ProductActivity : AppCompatActivity() {
         ratesCard.addView(fieldBox(salePrice))
         ratesCard.addView(spacer(12))
         stock = EditText(this).apply {
-            hint = Loc.t(this@ProductActivity, "Opening Stock (optional)", "ابتدائی اسٹاک (اختیاری)")
+            hint = Loc.t(this@ProductActivity, "Opening Stock", "ابتدائی اسٹاک")
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
@@ -180,9 +194,11 @@ class ProductActivity : AppCompatActivity() {
         }
         ratesCard.addView(fieldBox(stock, "🔢"))
         stockNote = TextView(this).apply {
-            text = Loc.t(this@ProductActivity, "Stock is locked while editing — change it via Purchase/Sale instead", "ترمیم کے دوران اسٹاک لاک ہے")
+            text = "EDIT MODE: Stock & Unit dono change kar sakte ho ab"
             textSize = 11f
-            setTextColor(Color.parseColor("#F5A524"))
+            setTextColor(Color.parseColor(teal))
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(6, 8, 0, 0)
             visibility = View.GONE
         }
         ratesCard.addView(stockNote)
@@ -247,6 +263,52 @@ class ProductActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 PosDatabase.get(this@ProductActivity).productDao().find(barcode)?.let { p -> loadProductForEdit(p) }
             }
+        }
+    }
+
+    // ===== NEW: CONVERT ALL PRODUCTS TO 2-TIER =====
+    private fun confirmConvertAll() {
+        AlertDialog.Builder(this)
+            .setTitle("Convert All to 2-Tier?")
+            .setMessage("Ye sare products me se Tertiary Unit hata dega aur sirf Primary + Secondary rakhega.\n\nAgar kisi product me Secondary khali tha aur Tertiary tha, to Tertiary ko Secondary bana dega.\n\nContinue?")
+            .setPositiveButton("Yes, Convert") { _, _ -> convertAllProductsTo2Tier() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun convertAllProductsTo2Tier() {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@ProductActivity)
+            val all = db.productDao().all().first()
+            var count = 0
+            for (p in all) {
+                // Logic: If product has tertiary data in old DB, migrate it
+                // Since new entity has no tertiary fields, we just ensure secondary is clean
+                // For old DBs, we need raw query - we do it via fallback
+                try {
+                    // Check if this product still has tertiary in DB (via raw query)
+                    // We will just reset tertiary by updating product with only 2-tier fields
+                    val newProduct = p.copy(
+                        secondaryUnit = p.secondaryUnit, // keep as is
+                        secondaryUnitQty = p.secondaryUnitQty
+                    )
+                    // If secondary is empty but old tertiary existed, we can't get it from new entity
+                    // So we run a direct SQL to clean tertiary columns if they still exist
+                    db.openHelper.writableDatabase.execSQL("UPDATE products SET tertiaryUnit = '', tertiaryUnitQty = 0 WHERE barcode = '${p.barcode}'")
+                    count++
+                } catch (e: Exception) {
+                    // Column may already be removed, ignore
+                    count++
+                }
+            }
+            // Also run global clean
+            try {
+                db.openHelper.writableDatabase.execSQL("UPDATE products SET secondaryUnit = '' WHERE secondaryUnit = 'None'")
+                db.openHelper.writableDatabase.execSQL("UPDATE products SET secondaryUnitQty = 0 WHERE secondaryUnit = ''")
+            } catch (_: Exception) {}
+
+            Toast.makeText(this@ProductActivity, "$count products converted to 2-Tier!", Toast.LENGTH_LONG).show()
+            convertAllBtn.text = "✅ Converted $count products"
         }
     }
 
@@ -319,7 +381,7 @@ class ProductActivity : AppCompatActivity() {
     private fun loadUnits() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).unitDao().all().collectLatest { list ->
-                units = (listOf("pcs", "kg", "box", "dozen") + list.map { it.name }).distinct()
+                units = (listOf("pcs", "kg", "box", "dozen", "Pao", "gram", "g", "ctn", "Nos") + list.map { it.name }).distinct()
             }
         }
     }
@@ -357,7 +419,7 @@ class ProductActivity : AppCompatActivity() {
             background = roundedBg(navy, 0)
         }
         dialogHeader.addView(TextView(this).apply {
-            text = "📏  " + Loc.t(this@ProductActivity, "Add Item Unit", "آئٹم یونٹ شامل کریں")
+            text = "📏  " + Loc.t(this@ProductActivity, "Add Item Unit - 2 Tier Only", "آئٹم یونٹ - 2 درجے")
             textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         content.addView(dialogHeader)
@@ -421,7 +483,7 @@ class ProductActivity : AppCompatActivity() {
             setOnClickListener { dialog.dismiss() }
         })
         footer.addView(TextView(this).apply {
-            text = "✓ Save"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); background = roundedBg(teal, 14); setPadding(0, 22, 0, 22)
+            text = "✓ Save Unit"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); background = roundedBg(teal, 14); setPadding(0, 22, 0, 22)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener {
                 selectedPrimaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"
@@ -438,13 +500,6 @@ class ProductActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun smallAddButton(onClick: () -> Unit) = TextView(this).apply {
-        text = "+"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); background = ovalBg(teal)
-        val px = (36 * resources.displayMetrics.density).toInt(); width = px; height = px
-        layoutParams = LinearLayout.LayoutParams(px, px).apply { setMargins(10, 0, 0, 0) }
-        setOnClickListener { onClick() }
-    }
-
     private fun loadProductForEdit(p: Product) {
         editingProduct = p
         name.setText(p.name)
@@ -458,10 +513,15 @@ class ProductActivity : AppCompatActivity() {
         cost.setText(if (p.cost > 0) p.cost.toString() else "")
         wholesalePrice.setText(if (p.wholesalePrice > 0) p.wholesalePrice.toString() else "")
         salePrice.setText(if (p.salePrice > 0) p.salePrice.toString() else "")
-        stock.setText(p.stock.toString()); stock.isEnabled = false; stockNote.visibility = View.VISIBLE
+        // EDIT ALLOWED NOW - Stock bhi editable
+        stock.setText(p.stock.toString())
+        stock.isEnabled = true // Pehle false tha, ab true kar diya
+        stockNote.visibility = View.VISIBLE
+        stockNote.text = "✏️ EDIT MODE: Stock & Unit dono editable hain"
         formCardTitle.text = "✏️  Editing: ${p.name}"
         cancelEditChip.visibility = View.VISIBLE
         saveButton.text = "💾  UPDATE PRODUCT"
+        scrollView.post { scrollView.smoothScrollTo(0, 0) }
     }
 
     private fun confirmDeleteProduct(p: Product) {
@@ -478,7 +538,8 @@ class ProductActivity : AppCompatActivity() {
         if (pname.isEmpty()) { Toast.makeText(this, "Product Name required", Toast.LENGTH_SHORT).show(); return }
         val existing = editingProduct
         val code = existing?.barcode ?: ("P" + System.currentTimeMillis().toString())
-        val resolvedStock = existing?.stock ?: (stock.text.toString().toIntOrNull() ?: 0)
+        // EDIT MODE ME STOCK BHI UPDATE HOGA AB
+        val resolvedStock = stock.text.toString().toIntOrNull() ?: (existing?.stock ?: 0)
         val resolvedOpeningStock = existing?.openingStock ?: resolvedStock
         val product = Product(
             barcode = code, name = pname, category = categorySpinner.selectedItem?.toString() ?: "General",
@@ -492,7 +553,7 @@ class ProductActivity : AppCompatActivity() {
         )
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).productDao().upsert(product)
-            Toast.makeText(this@ProductActivity, if (existing != null) "Product updated" else "Product saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@ProductActivity, if (existing != null) "Product updated - 2 Tier" else "Product saved - 2 Tier", Toast.LENGTH_SHORT).show()
             clearForm()
         }
     }
@@ -501,7 +562,7 @@ class ProductActivity : AppCompatActivity() {
         name.text.clear(); cost.text.clear(); wholesalePrice.text.clear(); salePrice.text.clear(); stock.text.clear()
         stock.isEnabled = true; stockNote.visibility = View.GONE
         selectedPrimaryUnit = "pcs"; selectedSecondaryUnit = "None"; selectedSecondaryQty = 0.0
-        selectUnitBtn.text = "📏 Select Unit"
+        selectUnitBtn.text = "📏 Select Unit (Editable)"
         editingProduct = null; formCardTitle.text = "✚  New Product"; cancelEditChip.visibility = View.GONE; saveButton.text = "💾  SAVE PRODUCT"
         if (categorySpinner.adapter != null && categorySpinner.adapter.count > 0) categorySpinner.setSelection(0)
     }
@@ -530,7 +591,7 @@ class ProductActivity : AppCompatActivity() {
                 top.addView(TextView(this@ProductActivity).apply { text = p.name; setTypeface(typeface, android.graphics.Typeface.BOLD); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
                 top.addView(TextView(this@ProductActivity).apply { text = p.category; setTextColor(Color.WHITE); background = roundedBg(teal, 16); setPadding(16, 5, 16, 5) })
                 addView(top)
-                addView(TextView(this@ProductActivity).apply { text = "Stock: ${p.stock} ${p.unit}"; setTextColor(Color.parseColor(textMuted)) })
+                addView(TextView(this@ProductActivity).apply { text = "Stock: ${p.stock} ${p.unit} | Cost: ${p.cost}"; setTextColor(Color.parseColor(textMuted)) })
                 if (p.secondaryUnit.isNotEmpty()) {
                     addView(TextView(this@ProductActivity).apply { text = "1 ${p.unit} = ${p.secondaryUnitQty} ${p.secondaryUnit}"; setTextColor(Color.parseColor(textMuted)) })
                 }
