@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ dusri branch ]
+    branches: [ Dusri-branch ]
   workflow_dispatch:
 
 jobs:
