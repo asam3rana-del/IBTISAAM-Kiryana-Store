@@ -75,15 +75,19 @@ class PurchaseActivity : AppCompatActivity() {
         private const val KEY_DRAFT = "draft_json"
     }
 
-    private val bg = "#F4F6F8"
+    // ---------- Premium palette ----------
+    private val bg = "#F5F7FA"
     private val cardWhite = "#FFFFFF"
-    private val navy = "#0F9B8E"
-    private val teal = "#0B2545"
-    private val textDark = "#0B2545"
-    private val textMuted = "#7C8798"
-    private val border = "#E3E8EE"
+    private val navy = "#101B33"          // deep ink navy — headers / primary buttons
+    private val navyLight = "#1C2C4F"     // gradient partner for header
+    private val teal = "#0EA5A0"          // emerald-teal accent — links / secondary actions
+    private val gold = "#C9A24B"          // premium gold accent for highlights
+    private val textDark = "#111827"
+    private val textMuted = "#8892A0"
+    private val border = "#E7EAF0"
     private val red = "#E5484D"
-    private val amberBadge = "#EEF2F6"
+    private val amberBadge = "#F4F1E8"
+    private val successGreen = "#1E9E6B"
 
     private lateinit var dateValueText: TextView
     private lateinit var firmNameText: TextView
@@ -145,17 +149,18 @@ class PurchaseActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 20, 24, 80)
+            setPadding(24, 0, 24, 80)
             setBackgroundColor(Color.parseColor(bg))
         }
 
+        // ---------- Premium gradient header ----------
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 22, 22)
-            background = roundedBg(navy, 20)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 10) }
-            applyElevation(this, 6f)
+            setPadding(26, 30, 22, 26)
+            background = gradientBg(navy, navyLight, cornerBottom = 26)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(-24, 0, -24, 16) }
+            applyElevation(this, 8f)
         }
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -163,15 +168,18 @@ class PurchaseActivity : AppCompatActivity() {
         }
         headerCol.addView(TextView(this).apply {
             text = if (editBillNo != null) com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Edit Purchase", "خریداری میں ترمیم") else com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Purchase", "خریداری")
-            textSize = 18.5f
+            textSize = 20f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.01f
         })
         headerCol.addView(TextView(this).apply {
-            text = "Stock In / Supplier Billing"
-            textSize = 11f
-            setTextColor(Color.parseColor("#9FB4CC"))
-            setPadding(0, 3, 0, 0)
+            text = "STOCK IN · SUPPLIER BILLING"
+            textSize = 10.5f
+            setTextColor(Color.parseColor("#A7B4CC"))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.08f
+            setPadding(0, 5, 0, 0)
         })
         header.addView(headerCol)
         header.addView(pillChip("History") {
@@ -180,9 +188,11 @@ class PurchaseActivity : AppCompatActivity() {
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
         overflowButton = TextView(this).apply {
             text = "\u22EE"
-            textSize = 18f
+            textSize = 19f
             setTextColor(Color.WHITE)
-            setPadding(18, 8, 6, 8)
+            gravity = Gravity.CENTER
+            background = ovalBg("#22FFFFFF")
+            val px = (34 * resources.displayMetrics.density).toInt(); width = px; height = px
             setOnClickListener { showOverflowMenu(it) }
         }
         header.addView(overflowButton)
@@ -196,10 +206,12 @@ class PurchaseActivity : AppCompatActivity() {
         val dateChip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 10, 20, 10)
+            setPadding(22, 12, 22, 12)
             background = strokedBg(border, cardWhite, 30)
+            applyElevation(this, 1.5f)
             setOnClickListener { openDatePicker() }
         }
+        dateChip.addView(TextView(this).apply { text = "\uD83D\uDCC5  "; textSize = 13f })
         dateValueText = TextView(this).apply {
             text = formatDate(purchaseDateMillis)
             textSize = 13f
@@ -207,19 +219,23 @@ class PurchaseActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         dateChip.addView(dateValueText)
-        dateChip.addView(TextView(this).apply { text = " \u203A"; textSize = 13f; setTextColor(Color.parseColor(teal)) })
+        dateChip.addView(TextView(this).apply { text = "  \u203A"; textSize = 13f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
         topRow.addView(dateChip)
         root.addView(topRow)
 
-        val firmBox = premiumCard().apply { setPadding(20, 14, 20, 14) }
-        val firmCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        firmCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Firm Name", "فرم کا نام"); textSize = 10f; setTextColor(Color.parseColor(textMuted)) })
-        firmNameText = TextView(this).apply { text = "IBTISAAM Kiryana Store"; textSize = 13f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
+        val firmBox = premiumCard().apply { setPadding(22, 16, 22, 16) }
+        val firmRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val firmCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        firmCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Firm Name", "فرم کا نام").uppercase(); textSize = 9.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f })
+        firmNameText = TextView(this).apply { text = "IBTISAAM Kiryana Store"; textSize = 13.5f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 2, 0, 0) }
         firmCol.addView(firmNameText)
-        firmCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Party Balance", "پارٹی بیلنس"); textSize = 10f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 8, 0, 0) })
-        supplierBalanceText = TextView(this).apply { text = "Rs 0.00"; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textMuted)) }
-        firmCol.addView(supplierBalanceText)
-        firmBox.addView(firmCol)
+        firmRow.addView(firmCol)
+        val balCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
+        balCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Party Balance", "پارٹی بیلنس").uppercase(); textSize = 9.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f })
+        supplierBalanceText = TextView(this).apply { text = "Rs 0.00"; textSize = 14f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textMuted)); setPadding(0, 2, 0, 0) }
+        balCol.addView(supplierBalanceText)
+        firmRow.addView(balCol)
+        firmBox.addView(firmRow)
         root.addView(firmBox)
 
         val partyBox = premiumCard()
@@ -230,29 +246,29 @@ class PurchaseActivity : AppCompatActivity() {
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
-            textSize = 15f
+            textSize = 15.5f
             threshold = 1
             imeOptions = EditorInfo.IME_ACTION_NEXT
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         partyRow.addView(partyName)
-        partyRow.addView(circleIcon("+", teal, 30) { promptAddSupplier() })
+        partyRow.addView(circleIcon("+", teal, 32) { promptAddSupplier() })
         partyBox.addView(partyRow)
         root.addView(partyBox)
         root.addView(spacer(18))
 
         itemEntrySection = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(22, 20, 22, 20)
-            background = strokedBg(border, cardWhite, 18)
+            setPadding(24, 22, 24, 22)
+            background = strokedBg(border, cardWhite, 20)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 12) }
-            applyElevation(this, 2f)
+            applyElevation(this, 3f)
         }
 
-        val addItemHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, 14) }
+        val addItemHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, 16) }
         addItemsTrigger = TextView(this).apply {
             text = "\u2795  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Add Item", "آئٹم شامل کریں")
-            textSize = 14.5f
+            textSize = 15f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -263,8 +279,9 @@ class PurchaseActivity : AppCompatActivity() {
             textSize = 12.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(teal, 30)
-            setPadding(22, 12, 22, 12)
+            background = gradientBg(teal, "#0C8F8A", cornerBottom = 30, cornerTop = 30)
+            setPadding(22, 13, 22, 13)
+            applyElevation(this, 2f)
             setOnClickListener { billScanLauncher.launch(Intent(this@PurchaseActivity, BillScanActivity::class.java)) }
         })
         itemEntrySection.addView(addItemHeaderRow)
@@ -277,7 +294,7 @@ class PurchaseActivity : AppCompatActivity() {
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
-            textSize = 15f
+            textSize = 15.5f
             threshold = 1
             imeOptions = EditorInfo.IME_ACTION_NEXT
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -299,7 +316,7 @@ class PurchaseActivity : AppCompatActivity() {
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
-            textSize = 15f
+            textSize = 15.5f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_NEXT
         }
@@ -321,7 +338,7 @@ class PurchaseActivity : AppCompatActivity() {
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
-            textSize = 15f
+            textSize = 15.5f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_NEXT
         }
@@ -334,7 +351,7 @@ class PurchaseActivity : AppCompatActivity() {
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
-            textSize = 15f
+            textSize = 15.5f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_DONE
         }
@@ -343,20 +360,26 @@ class PurchaseActivity : AppCompatActivity() {
         rateRow.addView(totalLotBox)
         itemEntrySection.addView(rateRow)
 
-        conversionInfo = TextView(this).apply { text = ""; textSize = 12f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(6, 10, 0, 0); visibility = View.GONE }
+        conversionInfo = TextView(this).apply {
+            text = ""; textSize = 12f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(16, 10, 16, 10); visibility = View.GONE
+            background = strokedBg("#CDEEEC", "#EFFBFA", 10)
+        }
         itemEntrySection.addView(conversionInfo)
+        itemEntrySection.addView(spacer(6))
 
-        totalAmountText = TextView(this).apply { text = "Total Amount: Rs 0.00"; textSize = 14f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(teal)); setPadding(6, 10, 0, 10) }
+        totalAmountText = TextView(this).apply { text = "Total Amount: Rs 0.00"; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)); setPadding(6, 8, 0, 10) }
         itemEntrySection.addView(totalAmountText)
 
         addItemButton = Button(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "ADD ITEM", "آئٹم شامل کریں")
             setTextColor(Color.WHITE)
-            textSize = 14f
+            textSize = 14.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(teal, 14)
-            setPadding(0, 24, 0, 24)
+            background = gradientBg(teal, "#0C8F8A", cornerBottom = 14, cornerTop = 14)
+            setPadding(0, 26, 0, 26)
+            applyElevation(this, 3f)
         }
         itemEntrySection.addView(addItemButton)
         root.addView(itemEntrySection)
@@ -364,20 +387,21 @@ class PurchaseActivity : AppCompatActivity() {
         billedItemsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 14, 20, 14)
-            background = roundedBg(teal, 12)
+            setPadding(22, 16, 22, 16)
+            background = gradientBg(navy, navyLight, cornerBottom = 14, cornerTop = 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 4, 0, 0) }
             visibility = View.GONE
+            applyElevation(this, 2f)
             setOnClickListener { toggleBilledItems() }
         }
         billedItemsHeader.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Billed Items", "بل شدہ آئٹمز")
+            text = "\uD83D\uDCCB  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Billed Items", "بل شدہ آئٹمز")
             textSize = 13.5f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        billedItemsChevron = TextView(this).apply { text = "\u25BE"; textSize = 15f; setTextColor(Color.WHITE) }
+        billedItemsChevron = TextView(this).apply { text = "\u25BE"; textSize = 16f; setTextColor(Color.WHITE) }
         billedItemsHeader.addView(billedItemsChevron)
         root.addView(billedItemsHeader)
 
@@ -385,34 +409,36 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(itemsContainer)
         root.addView(spacer(14))
 
-        val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(22, 18, 22, 18) }
+        val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, "#FBFCFE", 18) }
         totalCard.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Total Amount", "کل رقم").uppercase()
             textSize = 12f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.05f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        grandTotalText = TextView(this).apply { text = "Rs 0"; textSize = 19f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
+        grandTotalText = TextView(this).apply { text = "Rs 0"; textSize = 21f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         totalCard.addView(grandTotalText)
         root.addView(totalCard)
 
-        paymentSection = premiumCard().apply { orientation = LinearLayout.VERTICAL; setPadding(22, 18, 22, 18) }
+        paymentSection = premiumCard().apply { orientation = LinearLayout.VERTICAL; setPadding(24, 20, 24, 20) }
         val paidRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         paidRow.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Paid Amount", "ادا شدہ رقم").uppercase()
             textSize = 12f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.05f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        paidRow.addView(TextView(this).apply { text = "Rs "; textSize = 16f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
+        paidRow.addView(TextView(this).apply { text = "Rs "; textSize = 17f; setTextColor(Color.parseColor(successGreen)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
         paidInput = EditText(this).apply {
             hint = "0"
             setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(navy))
+            setTextColor(Color.parseColor(successGreen))
             background = null
-            textSize = 19f
+            textSize = 20f
             gravity = Gravity.END
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             minWidth = (120 * resources.displayMetrics.density).toInt()
@@ -432,28 +458,29 @@ class PurchaseActivity : AppCompatActivity() {
         paymentSection.addView(paidWarningText)
         root.addView(paymentSection)
 
-        val dueCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(20, 16, 20, 16) }
+        val dueCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(22, 18, 22, 18); background = strokedBg(border, "#FBFCFE", 18) }
         dueCard.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Due Amount", "باقی رقم").uppercase()
             textSize = 12f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.05f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        dueAmountText = TextView(this).apply { text = "Rs 0"; textSize = 17f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
+        dueAmountText = TextView(this).apply { text = "Rs 0"; textSize = 18f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         dueCard.addView(dueAmountText)
         root.addView(dueCard)
-        root.addView(spacer(14))
+        root.addView(spacer(16))
 
         saveButton = Button(this).apply {
             text = if (editBillNo != null) com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "UPDATE PURCHASE", "خریداری اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SAVE PURCHASE", "خریداری محفوظ کریں")
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 15.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(navy, 16)
-            setPadding(0, 28, 0, 28)
-            applyElevation(this, 4f)
+            background = gradientBg(navy, navyLight, cornerBottom = 16, cornerTop = 16)
+            setPadding(0, 30, 0, 30)
+            applyElevation(this, 5f)
         }
         deleteButton = Button(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "DELETE", "حذف کریں")
@@ -462,7 +489,8 @@ class PurchaseActivity : AppCompatActivity() {
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             background = roundedBg(red, 16)
-            setPadding(0, 28, 0, 28)
+            setPadding(0, 30, 0, 30)
+            applyElevation(this, 3f)
             visibility = if (editBillNo != null) View.VISIBLE else View.GONE
         }
         val saveDeleteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -473,6 +501,7 @@ class PurchaseActivity : AppCompatActivity() {
 
         scrollArea = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
+            setBackgroundColor(Color.parseColor(bg))
             addView(root)
         }
 
@@ -623,30 +652,31 @@ class PurchaseActivity : AppCompatActivity() {
         val supplier = suppliers.find { it.name.equals(name, ignoreCase = true) }
         if (supplier == null) { supplierBalanceText.text = "Rs 0.00"; supplierBalanceText.setTextColor(Color.parseColor(textMuted)); return }
         supplierBalanceText.text = "Rs %.2f".format(supplier.balance)
-        supplierBalanceText.setTextColor(Color.parseColor(if (supplier.balance > 0) red else teal))
+        supplierBalanceText.setTextColor(Color.parseColor(if (supplier.balance > 0) red else successGreen))
     }
 
+    // ---------- Premium style helpers ----------
     private fun premiumCard() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(22, 16, 22, 16)
-        background = strokedBg(border, cardWhite, 16)
+        setPadding(22, 18, 22, 18)
+        background = strokedBg(border, cardWhite, 18)
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
-        applyElevation(this, 2f)
+        applyElevation(this, 3f)
     }
     private fun innerField() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(18, 12, 18, 12)
-        background = strokedBg(border, "#FAFBFC", 12)
+        setPadding(18, 13, 18, 13)
+        background = strokedBg(border, "#FAFBFD", 14)
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 12) }
     }
     private fun labelRow(label: String) = TextView(this).apply {
-        text = label.uppercase(); textSize = 10.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 6); letterSpacing = 0.03f
+        text = label.uppercase(); textSize = 10.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 6); letterSpacing = 0.05f
     }
     private fun pillChip(label: String, onClick: () -> Unit) = TextView(this).apply {
-        this.text = label; textSize = 12.5f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = roundedBg(cardWhite, 30); setPadding(24, 12, 24, 12); setOnClickListener { onClick() }
+        this.text = label; textSize = 12.5f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = roundedBg(cardWhite, 30); setPadding(24, 13, 24, 13); setOnClickListener { onClick() }
     }
     private fun circleIcon(label: String, colorHex: String, sizeDp: Int, onClick: (() -> Unit)? = null) = TextView(this).apply {
-        this.text = label; textSize = 15f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = ovalBg(colorHex); val px = (sizeDp * resources.displayMetrics.density).toInt(); width = px; height = px; if (onClick != null) setOnClickListener { onClick() }
+        this.text = label; textSize = 16f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = ovalBg(colorHex); val px = (sizeDp * resources.displayMetrics.density).toInt(); width = px; height = px; if (onClick != null) setOnClickListener { onClick() }
     }
     private fun toggleBilledItems() {
         itemsExpanded = !itemsExpanded
@@ -667,6 +697,17 @@ class PurchaseActivity : AppCompatActivity() {
     private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(colorHex)); cornerRadius = radius.toFloat() }
     private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(fillHex)); setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex)); cornerRadius = radius.toFloat() }
     private fun ovalBg(colorHex: String) = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(colorHex)) }
+    private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(startHex), Color.parseColor(endHex))
+    ).apply {
+        val density = resources.displayMetrics.density
+        cornerRadii = floatArrayOf(
+            cornerTop * density, cornerTop * density,
+            cornerTop * density, cornerTop * density,
+            cornerBottom * density, cornerBottom * density,
+            cornerBottom * density, cornerBottom * density
+        )
+    }
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { view.elevation = dp * resources.displayMetrics.density; view.outlineProvider = ViewOutlineProvider.BACKGROUND }
     }
@@ -794,7 +835,9 @@ class PurchaseActivity : AppCompatActivity() {
         options.forEachIndexed { index, unitLabel ->
             val isSelected = unitLabel == selected
             val chip = TextView(this).apply {
-                text = unitLabel; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(28, 12, 28, 12); setTextColor(if (isSelected) Color.WHITE else Color.parseColor(teal)); background = if (isSelected) roundedBg(teal, 30) else strokedBg(teal, cardWhite, 30)
+                text = unitLabel; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(28, 13, 28, 13)
+                setTextColor(if (isSelected) Color.WHITE else Color.parseColor(teal))
+                background = if (isSelected) roundedBg(teal, 30) else strokedBg(teal, cardWhite, 30)
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(if (index == 0) 0 else 8, 0, 0, 0) }
                 setOnClickListener { unitSpinner.setSelection(options.indexOf(unitLabel)); buildUnitChips(options, unitLabel); refillAutoRate(); updateLineTotal() }
             }
@@ -826,8 +869,8 @@ class PurchaseActivity : AppCompatActivity() {
         if (editBillNo == null) saveDraft()
         if (lines.isNotEmpty() && paidInput.text.toString().isBlank()) {
             paidWarningText.visibility = View.VISIBLE
-            paymentSection.background = strokedBg("#FF9800", "#FFF8E1", 16)
-            paymentSection.postDelayed({ paymentSection.background = strokedBg(border, cardWhite, 16) }, 2000)
+            paymentSection.background = strokedBg("#FF9800", "#FFF8E1", 18)
+            paymentSection.postDelayed({ paymentSection.background = strokedBg(border, cardWhite, 18) }, 2000)
         }
     }
     private fun normalizeUnitName(u: String) = u.trim().lowercase()
@@ -870,10 +913,10 @@ class PurchaseActivity : AppCompatActivity() {
         if (!itemsExpanded) { itemsExpanded = true; itemsContainer.visibility = View.VISIBLE; billedItemsChevron.text = "\u25BE" }
         lines.forEachIndexed { index, line ->
             val row = premiumCard(); val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val badge = TextView(this).apply { text = "#${index + 1}"; textSize = 11.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)); background = strokedBg(border, amberBadge, 8); setPadding(14, 4, 14, 4) }
+            val badge = TextView(this).apply { text = "#${index + 1}"; textSize = 11.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(gold)); background = strokedBg("#E7DCB8", amberBadge, 8); setPadding(14, 5, 14, 5) }
             topRow.addView(badge)
             topRow.addView(TextView(this).apply { text = "  ${line.itemName}"; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
-            topRow.addView(TextView(this).apply { text = "Rs %.0f".format(line.amount); textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
+            topRow.addView(TextView(this).apply { text = "Rs %.0f".format(line.amount); textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)) })
             topRow.addView(TextView(this).apply { text = "  \u2715"; textSize = 14f; setTextColor(Color.parseColor(red)); setTypeface(typeface, android.graphics.Typeface.BOLD); setOnClickListener { lines.removeAt(index); renderItemsList(); updateGrandTotal(); if (editBillNo == null) saveDraft() } })
             row.addView(topRow)
             row.addView(TextView(this).apply { text = "${formatQty(line.qty)} ${line.unit} x ${line.rate} = Rs %.0f".format(line.amount); textSize = 12.5f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 6, 0, 0) })
@@ -885,7 +928,7 @@ class PurchaseActivity : AppCompatActivity() {
         val paid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble()
         val due = (total - paid).coerceAtLeast(0.0)
         dueAmountText.text = "Rs %.0f".format(due)
-        dueAmountText.setTextColor(Color.parseColor(if (due > 0) red else teal))
+        dueAmountText.setTextColor(Color.parseColor(if (due > 0) red else successGreen))
         if (paid == 0.0 && total > 0) { paidWarningText.visibility = View.VISIBLE; paidWarningText.text = "⚠️ Paid khali hai - Ye Rs %.0f Udhaar jayega".format(due) }
         else { paidWarningText.visibility = View.GONE }
     }
@@ -897,44 +940,43 @@ class PurchaseActivity : AppCompatActivity() {
         }.setNegativeButton("Cancel", null).show()
     }
     private fun openAddProductDialog(prefillName: String) {
-        // same dialog as before - truncated for brevity but full working
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.parseColor(cardWhite)) }
-        val dialogHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(28, 26, 28, 26); background = roundedBg(navy, 0) }
+        val dialogHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(28, 26, 28, 26); background = gradientBg(navy, navyLight) }
         dialogHeader.addView(TextView(this).apply { text = "\u2795  Add New Product"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) })
         content.addView(dialogHeader)
         val scrollableBody = ScrollView(this); val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 26, 28, 8) }; scrollableBody.addView(body)
-        fun microLabel(text: String) = TextView(this).apply { this.text = text; textSize = 11.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 8) }
+        fun microLabel(text: String) = TextView(this).apply { this.text = text; textSize = 11.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 8); letterSpacing = 0.04f }
         body.addView(microLabel("PRODUCT NAME"))
-        val nameField = EditText(this).apply { setText(prefillName); setTextColor(Color.parseColor(textDark)); background = strokedBg(border, "#FAFBFC", 12); setPadding(18, 16, 18, 16); textSize = 15f }
+        val nameField = EditText(this).apply { setText(prefillName); setTextColor(Color.parseColor(textDark)); background = strokedBg(border, "#FAFBFD", 14); setPadding(18, 16, 18, 16); textSize = 15f }
         body.addView(nameField); body.addView(spacer(18))
         body.addView(microLabel("CATEGORY"))
-        val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2) }; val categorySpinnerDialog = Spinner(this); categorySpinnerBox.addView(categorySpinnerDialog); body.addView(categorySpinnerBox); body.addView(spacer(20))
+        val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2) }; val categorySpinnerDialog = Spinner(this); categorySpinnerBox.addView(categorySpinnerDialog); body.addView(categorySpinnerBox); body.addView(spacer(20))
         lifecycleScope.launch { val cats = (listOf("General") + PosDatabase.get(this@PurchaseActivity).categoryDao().all().first().map { it.name }).distinct(); categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats) }
         body.addView(microLabel("PRIMARY UNIT"))
         val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val primarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        val primarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val primarySpinner = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
         primarySpinnerBox.addView(primarySpinner); primaryRow.addView(primarySpinnerBox); primaryRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
         primaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); primarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits); primarySpinner.setSelection(allUnits.indexOf(newUnit)) } })
         body.addView(primaryRow); body.addView(spacer(20))
         body.addView(microLabel("SECONDARY UNIT"))
         val secondaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val secondarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        val secondarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val secondarySpinner = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
         secondarySpinnerBox.addView(secondarySpinner); secondaryRow.addView(secondarySpinnerBox); secondaryRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
         secondaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); val opts = listOf("None") + allUnits; secondarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, opts); secondarySpinner.setSelection(opts.indexOf(newUnit)) } })
         body.addView(secondaryRow); body.addView(spacer(16))
-        val secQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFC", 12); setPadding(16, 4, 16, 4) }
+        val secQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFD", 14); setPadding(16, 4, 16, 4) }
         val secQtyField = EditText(this).apply { hint = "1 Primary = how many Secondary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
         secQtyBox.addView(secQtyField); body.addView(secQtyBox); body.addView(spacer(20))
         body.addView(microLabel("TERTIARY UNIT"))
         val tertiaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val tertiarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFC", 12); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        val tertiarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val tertiarySpinner = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
         tertiarySpinnerBox.addView(tertiarySpinner); tertiaryRow.addView(tertiarySpinnerBox); tertiaryRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
         tertiaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); val opts = listOf("None") + allUnits; tertiarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, opts); tertiarySpinner.setSelection(opts.indexOf(newUnit)) } })
         body.addView(tertiaryRow); body.addView(spacer(16))
-        val terQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFC", 12); setPadding(16, 4, 16, 4) }
+        val terQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFD", 14); setPadding(16, 4, 16, 4) }
         val terQtyField = EditText(this).apply { hint = "1 Secondary = how many Tertiary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
         terQtyBox.addView(terQtyField); body.addView(terQtyBox)
         content.addView(scrollableBody, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -948,9 +990,9 @@ class PurchaseActivity : AppCompatActivity() {
         tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }; content.addView(footer)
         val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
-        footer.addView(TextView(this).apply { text = "Cancel"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, "#FAFBFC", 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }; setOnClickListener { dialog.dismiss() } })
+        footer.addView(TextView(this).apply { text = "Cancel"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, "#FAFBFD", 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }; setOnClickListener { dialog.dismiss() } })
         footer.addView(TextView(this).apply {
-            text = "Save"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); background = roundedBg(teal, 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
+            text = "Save"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); background = gradientBg(teal, "#0C8F8A", cornerBottom = 14, cornerTop = 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener {
                 val pname = nameField.text.toString().trim(); if (pname.isEmpty()) { nameField.error = "Required"; return@setOnClickListener }
                 val primaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"; var secondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"; val secondaryQty = secQtyField.text.toString().toDoubleOrNull() ?: 0.0; var tertiaryUnit = tertiarySpinner.selectedItem?.toString() ?: "None"; var tertiaryQty = terQtyField.text.toString().toDoubleOrNull() ?: 0.0
