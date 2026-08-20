@@ -22,10 +22,12 @@ import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.UnitType
+import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.smallestUnitName
+import com.grocerypos.v11.toSmallestUnits
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlin.math.floor
 import kotlin.math.roundToInt
 
 class ProductActivity : AppCompatActivity() {
@@ -699,6 +701,13 @@ class ProductActivity : AppCompatActivity() {
     }
 
     // ---------------- Unit conversion ----------------
+    //
+    // NOTE: All smallest-unit conversion/formatting now goes through the shared
+    // Product extension functions in Database.kt (toSmallestUnits, smallestUnitFactor,
+    // smallestUnitName, formatStockBreakdown) instead of re-implementing the same math
+    // locally. This keeps ProductActivity, PurchaseActivity and SaleActivity guaranteed
+    // to agree on how stock is stored/displayed — if the conversion logic ever changes,
+    // it only needs to change in one place.
 
     private fun normalizeUnitName(value: String): String =
         value.trim().lowercase()
@@ -735,116 +744,25 @@ class ProductActivity : AppCompatActivity() {
         }
 
     /**
-     * Number of smallest units represented by ONE primary unit.
-     *
-     * Example:
-     * primary=carton, secondary=outer, secondaryQty=50,
-     * tertiary=dabbi, tertiaryQty=10
-     * => 1 carton = 500 dabbi.
+     * A throwaway [Product] representing the unit chain currently selected in the form
+     * (primary/secondary/tertiary + quantities), so we can reuse the exact same
+     * Database.kt conversion/formatting helpers a saved [Product] would use — without
+     * duplicating that math here. [stock] is filled in by callers that need it.
      */
-    private fun smallestFactor(): Double {
-        val secondaryFactor =
-            if (
-                selectedSecondaryUnit != "None" &&
-                selectedSecondaryUnit.isNotBlank() &&
-                selectedSecondaryQty > 0
-            ) selectedSecondaryQty else 1.0
-
-        val tertiaryFactor =
-            if (
-                selectedTertiaryUnit != "None" &&
-                selectedTertiaryUnit.isNotBlank() &&
-                selectedTertiaryQty > 0
-            ) selectedTertiaryQty else 1.0
-
-        return secondaryFactor * tertiaryFactor
-    }
-
-    private fun unitFactorToSmallest(unit: String): Double {
-        if (unit == selectedPrimaryUnit) return smallestFactor()
-
-        if (
-            selectedSecondaryUnit != "None" &&
-            unit == selectedSecondaryUnit &&
-            selectedSecondaryQty > 0
-        ) {
-            return if (
-                selectedTertiaryUnit != "None" &&
-                selectedTertiaryUnit.isNotBlank() &&
-                selectedTertiaryQty > 0
-            ) selectedTertiaryQty else 1.0
-        }
-
-        if (
-            selectedTertiaryUnit != "None" &&
-            unit == selectedTertiaryUnit
-        ) {
-            return 1.0
-        }
-
-        // For a custom/unknown opening-stock unit, do not invent a conversion.
-        return 1.0
-    }
+    private fun draftProduct(stockValue: Int = 0) = Product(
+        barcode = "",
+        name = "",
+        stock = stockValue,
+        unit = selectedPrimaryUnit,
+        secondaryUnit = if (selectedSecondaryUnit == "None") "" else selectedSecondaryUnit,
+        secondaryUnitQty = selectedSecondaryQty,
+        tertiaryUnit = if (selectedTertiaryUnit == "None") "" else selectedTertiaryUnit,
+        tertiaryUnitQty = selectedTertiaryQty
+    )
 
     private fun openingStockToSmallest(quantity: Double, unit: String): Int {
         if (quantity <= 0) return 0
-        return (quantity * unitFactorToSmallest(unit)).roundToInt()
-    }
-
-    private fun smallestToBreakdown(totalSmallest: Int): String {
-        if (totalSmallest <= 0) {
-            return "0 $selectedTertiaryUnit".takeIf {
-                selectedTertiaryUnit != "None"
-            } ?: "0 $selectedPrimaryUnit"
-        }
-
-        val tertiaryConfigured =
-            selectedTertiaryUnit != "None" && selectedTertiaryQty > 0
-
-        val secondaryConfigured =
-            selectedSecondaryUnit != "None" && selectedSecondaryQty > 0
-
-        if (!secondaryConfigured) {
-            return "$totalSmallest $selectedPrimaryUnit"
-        }
-
-        val secondaryFactor =
-            if (tertiaryConfigured) selectedTertiaryQty else 1.0
-
-        val primaryFactor = selectedSecondaryQty * secondaryFactor
-
-        val primaryQty = floor(totalSmallest / primaryFactor)
-        var remainder = totalSmallest - primaryQty * primaryFactor
-
-        val secondaryQty =
-            if (tertiaryConfigured) floor(remainder / secondaryFactor)
-            else remainder
-
-        if (tertiaryConfigured) {
-            remainder -= secondaryQty * secondaryFactor
-        } else {
-            remainder = 0.0
-        }
-
-        val parts = mutableListOf<String>()
-
-        if (primaryQty > 0) {
-            parts.add("${trimNum(primaryQty)} $selectedPrimaryUnit")
-        }
-
-        if (secondaryQty > 0) {
-            parts.add("${trimNum(secondaryQty)} $selectedSecondaryUnit")
-        }
-
-        if (tertiaryConfigured && remainder > 0) {
-            parts.add("${trimNum(remainder)} $selectedTertiaryUnit")
-        }
-
-        return if (parts.isEmpty()) {
-            "$totalSmallest $selectedTertiaryUnit"
-        } else {
-            parts.joinToString(" + ")
-        }
+        return draftProduct().toSmallestUnits(quantity, unit).roundToInt()
     }
 
     private fun updateOpeningStockPreview() {
@@ -857,19 +775,12 @@ class ProductActivity : AppCompatActivity() {
         }
 
         val smallest = openingStockToSmallest(q, selectedOpeningStockUnit)
-        val smallestName =
-            if (selectedTertiaryUnit != "None" && selectedTertiaryUnit.isNotBlank()) {
-                selectedTertiaryUnit
-            } else if (selectedSecondaryUnit != "None" && selectedSecondaryUnit.isNotBlank()) {
-                selectedSecondaryUnit
-            } else {
-                selectedPrimaryUnit
-            }
+        val draft = draftProduct(smallest)
 
         stockPreview.text = Loc.t(
             this,
-            "Stored stock: $smallest $smallestName  •  Display: ${smallestToBreakdown(smallest)}",
-            "محفوظ اسٹاک: $smallest $smallestName  •  ڈسپلے: ${smallestToBreakdown(smallest)}"
+            "Stored stock: $smallest ${draft.smallestUnitName()}  •  Display: ${draft.formatStockBreakdown()}",
+            "محفوظ اسٹاک: $smallest ${draft.smallestUnitName()}  •  ڈسپلے: ${draft.formatStockBreakdown()}"
         )
     }
 
@@ -1268,8 +1179,8 @@ class ProductActivity : AppCompatActivity() {
 
         stockPreview.text = Loc.t(
             this,
-            "Current stock: ${productStockBreakdown(product)}",
-            "موجودہ اسٹاک: ${productStockBreakdown(product)}"
+            "Current stock: ${product.formatStockBreakdown()}",
+            "موجودہ اسٹاک: ${product.formatStockBreakdown()}"
         )
 
         formCardTitle.text =
@@ -1280,58 +1191,6 @@ class ProductActivity : AppCompatActivity() {
             "💾  " + Loc.t(this, "UPDATE PRODUCT", "پروڈکٹ اپ ڈیٹ کریں")
 
         scrollView.post { scrollView.smoothScrollTo(0, 0) }
-    }
-
-    private fun productStockBreakdown(product: Product): String {
-        val total = product.stock
-
-        val primary = product.unit.ifBlank { "pcs" }
-        val secondary = product.secondaryUnit
-        val tertiary = product.tertiaryUnit
-
-        val secondaryQty =
-            if (secondary.isNotBlank() && product.secondaryUnitQty > 0) {
-                product.secondaryUnitQty
-            } else 0.0
-
-        val tertiaryQty =
-            if (
-                tertiary.isNotBlank() &&
-                product.tertiaryUnitQty > 0 &&
-                secondaryQty > 0
-            ) product.tertiaryUnitQty else 0.0
-
-        if (secondaryQty <= 0) return "$total $primary"
-
-        val secondaryFactor = if (tertiaryQty > 0) tertiaryQty else 1.0
-        val primaryFactor = secondaryQty * secondaryFactor
-
-        val primaryCount = floor(total / primaryFactor)
-        var remainder = total - primaryCount * primaryFactor
-
-        val secondaryCount = floor(remainder / secondaryFactor)
-        if (tertiaryQty > 0) {
-            remainder -= secondaryCount * secondaryFactor
-        } else {
-            remainder = 0.0
-        }
-
-        val parts = mutableListOf<String>()
-
-        if (primaryCount > 0) {
-            parts.add("${trimNum(primaryCount)} $primary")
-        }
-
-        if (secondaryCount > 0) {
-            parts.add("${trimNum(secondaryCount)} $secondary")
-        }
-
-        if (tertiaryQty > 0 && remainder > 0) {
-            parts.add("${trimNum(remainder)} $tertiary")
-        }
-
-        return if (parts.isEmpty()) "$total $tertiary"
-        else parts.joinToString(" + ")
     }
 
     // ---------------- Save ----------------
@@ -1620,7 +1479,7 @@ class ProductActivity : AppCompatActivity() {
             card.addView(top)
 
             card.addView(TextView(this).apply {
-                val breakdown = productStockBreakdown(product)
+                val breakdown = product.formatStockBreakdown()
                 text = "📊  ${Loc.t(this@ProductActivity, "Stock", "اسٹاک")}: $breakdown"
                 textSize = 12f
                 setTextColor(Color.parseColor(textMuted))
