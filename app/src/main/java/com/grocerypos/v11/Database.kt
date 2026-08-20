@@ -353,5 +353,3 @@ abstract class PosDatabase : RoomDatabase() {
         }
     }
 }
-
-}
