@@ -391,189 +391,6 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(itemsContainer)
         root.addView(spacer(14))
 
-        val totalCard = premiumCard().apply { orientpercase(); textSize = 9.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f })
-        firmNameText = TextView(this).apply { text = "IBTISAAM Kiryana Store"; textSize = 13.5f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 2, 0, 0) }
-        firmCol.addView(firmNameText)
-        firmRow.addView(firmCol)
-        val balCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
-        balCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Party Balance", "پارٹی بیلنس").uppercase(); textSize = 9.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f })
-        supplierBalanceText = TextView(this).apply { text = "Rs 0.00"; textSize = 14f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textMuted)); setPadding(0, 2, 0, 0) }
-        balCol.addView(supplierBalanceText)
-        firmRow.addView(balCol)
-        firmBox.addView(firmRow)
-        root.addView(firmBox)
-
-        val partyBox = premiumCard()
-        partyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Party / Supplier", "پارٹی / سپلائر")))
-        val partyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        partyName = AutoCompleteTextView(this).apply {
-            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Party Name (Supplier) *", "پارٹی کا نام (سپلائر) *")
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15.5f
-            threshold = 1
-            imeOptions = EditorInfo.IME_ACTION_NEXT
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        partyRow.addView(partyName)
-        partyRow.addView(circleIcon("+", teal, 32) { promptAddSupplier() })
-        partyBox.addView(partyRow)
-        root.addView(partyBox)
-        root.addView(spacer(18))
-
-        itemEntrySection = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 22, 24, 22)
-            background = strokedBg(border, cardWhite, 20)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 12) }
-            applyElevation(this, 3f)
-        }
-
-        val addItemHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, 16) }
-        addItemsTrigger = TextView(this).apply {
-            text = "\u2795  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Add Item", "آئٹم شامل کریں")
-            textSize = 15f
-            setTextColor(Color.parseColor(teal))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        addItemHeaderRow.addView(addItemsTrigger)
-        addItemHeaderRow.addView(TextView(this).apply {
-            text = "\uD83D\uDCF7  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Scan Bill", "بل اسکین کریں")
-            textSize = 12.5f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = gradientBg(teal, "#0C8F8A", cornerBottom = 30, cornerTop = 30)
-            setPadding(22, 13, 22, 13)
-            applyElevation(this, 2f)
-            setOnClickListener { billScanLauncher.launch(Intent(this@PurchaseActivity, BillScanActivity::class.java)) }
-        })
-        itemEntrySection.addView(addItemHeaderRow)
-
-        val itemBox = innerField()
-        itemBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Item Name", "آئٹم کا نام")))
-        val itemNameRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        itemName = AutoCompleteTextView(this).apply {
-            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Type to search…", "تلاش کے لیے لکھیں…")
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15.5f
-            threshold = 1
-            imeOptions = EditorInfo.IME_ACTION_NEXT
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        itemNameRow.addView(itemName)
-        itemNameRow.addView(circleIcon("+", teal, 30) { openAddProductDialog(itemName.text.toString().trim()) })
-        itemBox.addView(itemNameRow)
-        itemEntrySection.addView(itemBox)
-
-        unitToggleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
-        itemEntrySection.addView(unitToggleRow)
-        itemEntrySection.addView(spacer(10))
-
-        val qtyUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val qtyBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
-        qtyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Quantity", "مقدار")))
-        qty = EditText(this).apply {
-            hint = "0"
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15.5f
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            imeOptions = EditorInfo.IME_ACTION_NEXT
-        }
-        qtyBox.addView(qty)
-        val unitBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) } }
-        unitBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Unit", "یونٹ")))
-        unitSpinner = Spinner(this)
-        unitBox.addView(unitSpinner)
-        qtyUnitRow.addView(qtyBox)
-        qtyUnitRow.addView(unitBox)
-        itemEntrySection.addView(qtyUnitRow)
-        itemEntrySection.addView(spacer(10))
-
-        val rateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val rateBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
-        rateBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Rate (Per Unit)", "ریٹ")))
-        rate = EditText(this).apply {
-            hint = "Price / Unit"
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15.5f
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            imeOptions = EditorInfo.IME_ACTION_NEXT
-        }
-        rateBox.addView(rate)
-
-        val totalLotBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) } }
-        totalLotBox.addView(labelRow("Total Lot Price"))
-        totalLotPrice = EditText(this).apply {
-            hint = "e.g. 5000 for 2 Ctn"
-            setHintTextColor(Color.parseColor(textMuted))
-            setTextColor(Color.parseColor(textDark))
-            background = null
-            textSize = 15.5f
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            imeOptions = EditorInfo.IME_ACTION_DONE
-        }
-        totalLotBox.addView(totalLotPrice)
-        rateRow.addView(rateBox)
-        rateRow.addView(totalLotBox)
-        itemEntrySection.addView(rateRow)
-
-        conversionInfo = TextView(this).apply {
-            text = ""; textSize = 12f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(16, 10, 16, 10); visibility = View.GONE
-            background = strokedBg("#CDEEEC", "#EFFBFA", 10)
-        }
-        itemEntrySection.addView(conversionInfo)
-        itemEntrySection.addView(spacer(6))
-
-        totalAmountText = TextView(this).apply { text = "Total Amount: Rs 0.00"; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)); setPadding(6, 8, 0, 10) }
-        itemEntrySection.addView(totalAmountText)
-
-        addItemButton = Button(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "ADD ITEM", "آئٹم شامل کریں")
-            setTextColor(Color.WHITE)
-            textSize = 14.5f
-            isAllCaps = false
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = gradientBg(teal, "#0C8F8A", cornerBottom = 14, cornerTop = 14)
-            setPadding(0, 26, 0, 26)
-            applyElevation(this, 3f)
-        }
-        itemEntrySection.addView(addItemButton)
-        root.addView(itemEntrySection)
-
-        billedItemsHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(22, 16, 22, 16)
-            background = gradientBg(navy, navyLight, cornerBottom = 14, cornerTop = 14)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 4, 0, 0) }
-            visibility = View.GONE
-            applyElevation(this, 2f)
-            setOnClickListener { toggleBilledItems() }
-        }
-        billedItemsHeader.addView(TextView(this).apply {
-            text = "\uD83D\uDCCB  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Billed Items", "بل شدہ آئٹمز")
-            textSize = 13.5f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        billedItemsChevron = TextView(this).apply { text = "\u25BE"; textSize = 16f; setTextColor(Color.WHITE) }
-        billedItemsHeader.addView(billedItemsChevron)
-        root.addView(billedItemsHeader)
-
-        itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
-        root.addView(itemsContainer)
-        root.addView(spacer(14))
-
         val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, "#FBFCFE", 18) }
         totalCard.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Total Amount", "کل رقم").uppercase()
@@ -905,7 +722,7 @@ class PurchaseActivity : AppCompatActivity() {
                 lines.clear()
                 items.forEach { pi ->
                     val product = try { db.productDao().find(pi.barcode) } catch (e: Exception) { Log.e("PurchaseActivity", "loadForEdit: product lookup failed for ${pi.barcode}", e); null }
-                    lines.add(PurchaseLine(product?.name ?: pi.barcode, pi.barcode, pi.qty.toDouble(), pi.unit.ifBlank { product?.unit ?: "" }, pi.unitCost, pi.amount, product?.unit ?: "", product?.secondaryUnit ?: "", product?.secondaryUnitQty ?: 0.0, product?.tertiaryUnit ?: "", product?.tertiaryUnitQty ?: 0.0))
+                    lines.add(PurchaseLine(product?.name ?: pi.barcode, pi.barcode, pi.qty, pi.unit.ifBlank { product?.unit ?: "" }, pi.unitCost, pi.amount, product?.unit ?: "", product?.secondaryUnit ?: "", product?.secondaryUnitQty ?: 0.0, product?.tertiaryUnit ?: "", product?.tertiaryUnitQty ?: 0.0))
                 }
                 renderItemsList(); updateGrandTotal(); deleteButton.visibility = View.VISIBLE
             } catch (e: Exception) {
@@ -960,6 +777,9 @@ class PurchaseActivity : AppCompatActivity() {
         lastMainQty = 0.0; lastMainRate = 0.0; refillAutoRate(); updateLineTotal()
         qty.setText(""); totalLotPrice.setText(""); qty.requestFocus()
     }
+    // ---- These to/from-"main unit" helpers are ONLY used to auto-fill the Rate field when the
+    // unit chip is switched during entry — they never touch stock, so the earlier rounding bug
+    // does not apply to them. Stock itself is now computed via Product.toSmallestUnits() at save time. ----
     private fun toMainUnitQty(entered: Double): Double {
         val product = selectedProduct ?: return entered
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
@@ -1175,12 +995,24 @@ class PurchaseActivity : AppCompatActivity() {
         val billNo = editBillNo ?: return
         android.app.AlertDialog.Builder(this).setTitle("Delete Purchase").setMessage("This will remove the bill and reverse its stock and supplier balance effect. Continue?").setPositiveButton("Delete") { _, _ -> deletePurchase(billNo) }.setNegativeButton("Cancel", null).show()
     }
+
+    // ---- Reverses stock exactly the way it was added: convert the item's ORIGINAL entered
+    // qty+unit into the product's current smallest unit, so editing/deleting a bill can never
+    // leave stock out of sync with what savePurchase() actually added. ----
+    private suspend fun reverseStockForItems(db: PosDatabase, items: List<PurchaseItem>) {
+        items.forEach { pi ->
+            val product = db.productDao().find(pi.barcode) ?: return@forEach
+            val smallestQty = product.toSmallestUnits(pi.qty, pi.unit.ifBlank { product.unit }).roundToInt()
+            db.productDao().decreaseForce(pi.barcode, smallestQty)
+        }
+    }
+
     private fun deletePurchase(billNo: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
             val purchase = originalPurchase ?: db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
-            items.forEach { db.productDao().decreaseForce(it.barcode, it.qty.toInt()) }
+            reverseStockForItems(db, items)
             val outstanding = purchase.total - purchase.paid
             if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
             db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
@@ -1220,22 +1052,33 @@ class PurchaseActivity : AppCompatActivity() {
             if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
             val original = originalPurchase
             if (original != null) {
-                originalItems.forEach { db.productDao().decreaseForce(it.barcode, it.qty.toInt()) }
+                reverseStockForItems(db, originalItems)
                 val originalOutstanding = original.total - original.paid
                 if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
                 db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
             }
             db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
-            db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.mainUnitQty(), unitCost = line.mainUnitRate(), amount = line.amount, unit = line.unit) })
+            // Store the actual entered qty/rate (matches the entered `unit`) rather than a
+            // primary-unit-converted value — this keeps Billed Items / edit-mode display and the
+            // DB row consistent with each other, and is exactly what reverseStockForItems() expects.
+            db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) })
             lines.forEach { line ->
                 val barcode = line.barcode ?: return@forEach
-                val before = db.productDao().find(barcode)
-                val purchasedQty = line.mainUnitQty().roundToInt()
-                db.productDao().increase(barcode, purchasedQty)
-                if (before != null && purchasedQty > 0) {
-                    val oldStock = before.stock; val oldCost = before.cost; val purchaseRate = line.mainUnitRate()
-                    val newCost = if (oldStock <= 0) { purchaseRate } else { ((oldStock * oldCost) + (purchasedQty * purchaseRate)) / (oldStock + purchasedQty).toDouble() }
-                    db.productDao().updateCost(barcode, newCost)
+                val before = db.productDao().find(barcode) ?: return@forEach
+                // Convert into the SMALLEST configured unit (multiplication only — never a divide
+                // that can round a fractional primary-unit amount down to 0).
+                val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit).roundToInt()
+                db.productDao().increase(barcode, purchasedSmallest)
+                if (purchasedSmallest > 0) {
+                    val oldStockSmallest = before.stock
+                    val factor = before.smallestUnitFactor()
+                    val oldCostPerSmallest = if (factor > 0) before.cost / factor else before.cost
+                    val purchaseRatePerSmallest = line.amount / purchasedSmallest
+                    val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
+                        else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest).toDouble()
+                    // `cost` stays expressed per PRIMARY unit (that's what "Purchase Rate" shows in
+                    // Product screen), so convert the smallest-unit weighted average back up.
+                    db.productDao().updateCost(barcode, newCostPerSmallest * factor)
                 }
             }
             val outstanding = grandTotal - amountPaid
