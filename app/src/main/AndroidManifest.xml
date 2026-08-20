@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- CAMERA & BLUETOOTH - EXISTING -->
+    <!-- EXISTING PERMISSIONS -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
@@ -10,9 +10,11 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
-    <!-- VOICE CONTROL - NEW - ADDED FOR PURCHASE VOICE -->
+    <!-- URDU VOICE + HORN/VEHICLE/GATHERING FILTER - NEW -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <application
         android:name=".PosApplication"
@@ -29,7 +31,7 @@
         <activity android:name=".ui.ReportsActivity" />
         <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />
         
-        <!-- NEW WINDOW FOR BILLED ITEMS - ADDED -->
+        <!-- BILLED ITEMS WINDOW -->
         <activity
             android:name=".ui.PurchaseAddItemWindowActivity"
             android:exported="false"
