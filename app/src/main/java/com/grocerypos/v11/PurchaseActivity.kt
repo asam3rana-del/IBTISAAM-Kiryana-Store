@@ -55,6 +55,7 @@ class PurchaseActivity : AppCompatActivity() {
         const val EXTRA_BILL_NO = "billNo"
         private const val PREFS_NAME = "purchase_draft_prefs"
         private const val KEY_DRAFT = "draft_json"
+        private const val TAG = "PurchaseActivity"
     }
 
     // ---------- Premium palette ----------
@@ -125,10 +126,35 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
+    // ---- Central crash guard: every DB / async block below runs through this so a failure
+    // shows a Toast + Logcat line ("PurchaseActivity" tag) instead of silently killing the
+    // activity. If Purchase ever force-closes again, check Logcat for TAG="PurchaseActivity". ----
+    private fun safeLaunch(label: String, block: suspend () -> Unit) {
+        lifecycleScope.launch {
+            try {
+                block()
+            } catch (e: Exception) {
+                Log.e(TAG, "safeLaunch[$label] failed", e)
+                Toast.makeText(this@PurchaseActivity, "Error in $label: ${e.message ?: e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        editBillNo = intent.getStringExtra(EXTRA_BILL_NO)
+        try {
+            editBillNo = intent.getStringExtra(EXTRA_BILL_NO)
+            buildUi()
+        } catch (e: Exception) {
+            // Last-resort guard: if UI construction itself throws, log it and show a Toast
+            // instead of a silent crash, then close the screen gracefully.
+            Log.e(TAG, "onCreate: fatal error building Purchase screen", e)
+            Toast.makeText(this, "Purchase screen error: ${e.message ?: e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            finish()
+        }
+    }
 
+    private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 0, 24, 80)
@@ -585,51 +611,64 @@ class PurchaseActivity : AppCompatActivity() {
 
     private fun draftPrefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private fun saveDraft() {
-        val hasContent = lines.isNotEmpty() || partyName.text.toString().isNotBlank() || itemName.text.toString().isNotBlank() || qty.text.toString().isNotBlank() || rate.text.toString().isNotBlank()
-        if (!hasContent) { clearDraft(); return }
-        val linesArray = JSONArray()
-        lines.forEach { line ->
-            linesArray.put(JSONObject().apply {
-                put("itemName", line.itemName); put("barcode", line.barcode ?: ""); put("qty", line.qty); put("unit", line.unit); put("rate", line.rate); put("amount", line.amount)
-                put("mainUnit", line.mainUnit); put("secondaryUnit", line.secondaryUnit); put("secondaryUnitQty", line.secondaryUnitQty)
-                put("tertiaryUnit", line.tertiaryUnit); put("tertiaryUnitQty", line.tertiaryUnitQty)
-            })
+        try {
+            val hasContent = lines.isNotEmpty() || partyName.text.toString().isNotBlank() || itemName.text.toString().isNotBlank() || qty.text.toString().isNotBlank() || rate.text.toString().isNotBlank()
+            if (!hasContent) { clearDraft(); return }
+            val linesArray = JSONArray()
+            lines.forEach { line ->
+                linesArray.put(JSONObject().apply {
+                    put("itemName", line.itemName); put("barcode", line.barcode ?: ""); put("qty", line.qty); put("unit", line.unit); put("rate", line.rate); put("amount", line.amount)
+                    put("mainUnit", line.mainUnit); put("secondaryUnit", line.secondaryUnit); put("secondaryUnitQty", line.secondaryUnitQty)
+                    put("tertiaryUnit", line.tertiaryUnit); put("tertiaryUnitQty", line.tertiaryUnitQty)
+                })
+            }
+            val draft = JSONObject().apply {
+                put("party", partyName.text.toString()); put("paid", paidInput.text.toString()); put("dateMillis", purchaseDateMillis)
+                put("pendingItemName", itemName.text.toString()); put("pendingQty", qty.text.toString()); put("pendingRate", rate.text.toString()); put("lines", linesArray)
+            }
+            draftPrefs().edit().putString(KEY_DRAFT, draft.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "saveDraft failed", e)
         }
-        val draft = JSONObject().apply {
-            put("party", partyName.text.toString()); put("paid", paidInput.text.toString()); put("dateMillis", purchaseDateMillis)
-            put("pendingItemName", itemName.text.toString()); put("pendingQty", qty.text.toString()); put("pendingRate", rate.text.toString()); put("lines", linesArray)
-        }
-        draftPrefs().edit().putString(KEY_DRAFT, draft.toString()).apply()
     }
     private fun clearDraft() { draftPrefs().edit().remove(KEY_DRAFT).apply() }
     private fun restoreDraftIfAny() {
-        val raw = draftPrefs().getString(KEY_DRAFT, null) ?: return
-        val draft = try { JSONObject(raw) } catch (e: Exception) { null } ?: return
-        if (draftRestored) return
-        draftRestored = true
-        suppressDraftSave = true
         try {
-            val party = draft.optString("party", ""); if (party.isNotBlank()) { partyName.setText(party); updateSupplierBalanceDisplay(party) }
-            val paid = draft.optString("paid", ""); if (paid.isNotBlank()) paidInput.setText(paid)
-            val savedDate = draft.optLong("dateMillis", 0L); if (savedDate > 0L) { purchaseDateMillis = savedDate; dateValueText.text = formatDate(purchaseDateMillis) }
-            val linesArray = draft.optJSONArray("lines")
-            if (linesArray != null) {
-                for (i in 0 until linesArray.length()) {
-                    try {
-                        val o = linesArray.getJSONObject(i)
-                        lines.add(PurchaseLine(o.optString("itemName"), o.optString("barcode").ifBlank { null }, o.optDouble("qty", 0.0), o.optString("unit"), o.optDouble("rate", 0.0), o.optDouble("amount", 0.0), o.optString("mainUnit"), o.optString("secondaryUnit"), o.optDouble("secondaryUnitQty", 0.0), o.optString("tertiaryUnit"), o.optDouble("tertiaryUnitQty", 0.0)))
-                    } catch (e: Exception) { Log.e("PurchaseActivity", "restoreDraftIfAny: skipping bad line $i", e) }
+            val raw = draftPrefs().getString(KEY_DRAFT, null) ?: return
+            val draft = try { JSONObject(raw) } catch (e: Exception) { null } ?: return
+            if (draftRestored) return
+            draftRestored = true
+            suppressDraftSave = true
+            try {
+                val party = draft.optString("party", ""); if (party.isNotBlank()) { partyName.setText(party); updateSupplierBalanceDisplay(party) }
+                val paid = draft.optString("paid", ""); if (paid.isNotBlank()) paidInput.setText(paid)
+                val savedDate = draft.optLong("dateMillis", 0L); if (savedDate > 0L) { purchaseDateMillis = savedDate; dateValueText.text = formatDate(purchaseDateMillis) }
+                val linesArray = draft.optJSONArray("lines")
+                if (linesArray != null) {
+                    for (i in 0 until linesArray.length()) {
+                        try {
+                            val o = linesArray.getJSONObject(i)
+                            lines.add(PurchaseLine(o.optString("itemName"), o.optString("barcode").ifBlank { null }, o.optDouble("qty", 0.0), o.optString("unit"), o.optDouble("rate", 0.0), o.optDouble("amount", 0.0), o.optString("mainUnit"), o.optString("secondaryUnit"), o.optDouble("secondaryUnitQty", 0.0), o.optString("tertiaryUnit"), o.optDouble("tertiaryUnitQty", 0.0)))
+                        } catch (e: Exception) { Log.e(TAG, "restoreDraftIfAny: skipping bad line $i", e) }
+                    }
+                    renderItemsList(); updateGrandTotal()
                 }
-                renderItemsList(); updateGrandTotal()
-            }
-            val pendingItemName = draft.optString("pendingItemName", ""); if (pendingItemName.isNotBlank()) { itemName.setText(pendingItemName); val match = products.find { it.name.equals(pendingItemName, ignoreCase = true) }; if (match != null) applyPickedProduct(match) }
-            val pendingQty = draft.optString("pendingQty", ""); if (pendingQty.isNotBlank()) qty.setText(pendingQty)
-            val pendingRate = draft.optString("pendingRate", ""); if (pendingRate.isNotBlank()) rate.setText(pendingRate)
-            updateLineTotal()
-        } finally { suppressDraftSave = false }
+                val pendingItemName = draft.optString("pendingItemName", ""); if (pendingItemName.isNotBlank()) { itemName.setText(pendingItemName); val match = products.find { it.name.equals(pendingItemName, ignoreCase = true) }; if (match != null) applyPickedProduct(match) }
+                val pendingQty = draft.optString("pendingQty", ""); if (pendingQty.isNotBlank()) qty.setText(pendingQty)
+                val pendingRate = draft.optString("pendingRate", ""); if (pendingRate.isNotBlank()) rate.setText(pendingRate)
+                updateLineTotal()
+            } finally { suppressDraftSave = false }
+        } catch (e: Exception) {
+            Log.e(TAG, "restoreDraftIfAny failed - clearing corrupt draft", e)
+            try { clearDraft() } catch (ignored: Exception) {}
+            suppressDraftSave = false
+        }
     }
 
-    private fun loadFirmName() { lifecycleScope.launch { val savedName = PosDatabase.get(this@PurchaseActivity).appSettingDao().get("shop_name")?.value; if (!savedName.isNullOrBlank()) firmNameText.text = savedName } }
+    private fun loadFirmName() = safeLaunch("loadFirmName") {
+        val savedName = PosDatabase.get(this@PurchaseActivity).appSettingDao().get("shop_name")?.value
+        if (!savedName.isNullOrBlank()) firmNameText.text = savedName
+    }
     private fun updateSupplierBalanceDisplay(name: String) {
         val supplier = suppliers.find { it.name.equals(name, ignoreCase = true) }
         if (supplier == null) { supplierBalanceText.text = "Rs 0.00"; supplierBalanceText.setTextColor(Color.parseColor(textMuted)); return }
@@ -708,52 +747,39 @@ class PurchaseActivity : AppCompatActivity() {
     private fun hideKeyboard() {
         currentFocus?.let { focused -> val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager; imm?.hideSoftInputFromWindow(focused.windowToken, 0); focused.clearFocus() }
     }
-    private fun loadForEdit(bill: String) {
-        lifecycleScope.launch {
-            try {
-                val db = PosDatabase.get(this@PurchaseActivity)
-                val purchase = db.purchaseDao().findPurchase(bill) ?: return@launch
-                val items = db.purchaseDao().itemsForBill(bill)
-                originalPurchase = purchase; originalItems = items
-                purchaseDateMillis = purchase.createdAt; dateValueText.text = formatDate(purchaseDateMillis)
-                val supplierName = purchase.supplierId?.let { id -> withTimeoutOrNull(8000) { db.supplierDao().all().first().find { it.id == id }?.name } } ?: ""
-                partyName.setText(supplierName); updateSupplierBalanceDisplay(supplierName)
-                paidInput.setText(if (purchase.paid > 0) Math.round(purchase.paid).toString() else "")
-                lines.clear()
-                items.forEach { pi ->
-                    val product = try { db.productDao().find(pi.barcode) } catch (e: Exception) { Log.e("PurchaseActivity", "loadForEdit: product lookup failed for ${pi.barcode}", e); null }
-                    lines.add(PurchaseLine(product?.name ?: pi.barcode, pi.barcode, pi.qty, pi.unit.ifBlank { product?.unit ?: "" }, pi.unitCost, pi.amount, product?.unit ?: "", product?.secondaryUnit ?: "", product?.secondaryUnitQty ?: 0.0, product?.tertiaryUnit ?: "", product?.tertiaryUnitQty ?: 0.0))
-                }
-                renderItemsList(); updateGrandTotal(); deleteButton.visibility = View.VISIBLE
-            } catch (e: Exception) {
-                Log.e("PurchaseActivity", "loadForEdit failed for bill=$bill", e)
-                Toast.makeText(this@PurchaseActivity, "Could not load this purchase (${e.message ?: "unknown error"})", Toast.LENGTH_LONG).show()
-            }
+    private fun loadForEdit(bill: String) = safeLaunch("loadForEdit") {
+        val db = PosDatabase.get(this@PurchaseActivity)
+        val purchase = db.purchaseDao().findPurchase(bill) ?: return@safeLaunch
+        val items = db.purchaseDao().itemsForBill(bill)
+        originalPurchase = purchase; originalItems = items
+        purchaseDateMillis = purchase.createdAt; dateValueText.text = formatDate(purchaseDateMillis)
+        val supplierName = purchase.supplierId?.let { id -> withTimeoutOrNull(8000) { db.supplierDao().all().first().find { it.id == id }?.name } } ?: ""
+        partyName.setText(supplierName); updateSupplierBalanceDisplay(supplierName)
+        paidInput.setText(if (purchase.paid > 0) Math.round(purchase.paid).toString() else "")
+        lines.clear()
+        items.forEach { pi ->
+            val product = try { db.productDao().find(pi.barcode) } catch (e: Exception) { Log.e(TAG, "loadForEdit: product lookup failed for ${pi.barcode}", e); null }
+            lines.add(PurchaseLine(product?.name ?: pi.barcode, pi.barcode, pi.qty, pi.unit.ifBlank { product?.unit ?: "" }, pi.unitCost, pi.amount, product?.unit ?: "", product?.secondaryUnit ?: "", product?.secondaryUnitQty ?: 0.0, product?.tertiaryUnit ?: "", product?.tertiaryUnitQty ?: 0.0))
+        }
+        renderItemsList(); updateGrandTotal(); deleteButton.visibility = View.VISIBLE
+    }
+    private fun loadSuppliers() = safeLaunch("loadSuppliers") {
+        PosDatabase.get(this@PurchaseActivity).supplierDao().all().collectLatest { list ->
+            suppliers = list
+            partyName.setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
+            updateSupplierBalanceDisplay(partyName.text.toString().trim())
         }
     }
-    private fun loadSuppliers() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@PurchaseActivity).supplierDao().all().collectLatest { list ->
-                suppliers = list
-                partyName.setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
-                updateSupplierBalanceDisplay(partyName.text.toString().trim())
-            }
+    private fun loadUnits() = safeLaunch("loadUnits") {
+        PosDatabase.get(this@PurchaseActivity).unitDao().all().collectLatest { list ->
+            allUnits = (listOf("pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi") + list.map { it.name }).distinct()
+            if (selectedProduct == null) { unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits) }
         }
     }
-    private fun loadUnits() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@PurchaseActivity).unitDao().all().collectLatest { list ->
-                allUnits = (listOf("pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi") + list.map { it.name }).distinct()
-                if (selectedProduct == null) { unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits) }
-            }
-        }
-    }
-    private fun loadProducts() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@PurchaseActivity).productDao().all().collectLatest { list ->
-                products = list
-                itemName.setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
-            }
+    private fun loadProducts() = safeLaunch("loadProducts") {
+        PosDatabase.get(this@PurchaseActivity).productDao().all().collectLatest { list ->
+            products = list
+            itemName.setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
         }
     }
     private fun onItemPicked(pickedName: String) {
@@ -871,15 +897,15 @@ class PurchaseActivity : AppCompatActivity() {
         hideKeyboard(); val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
         android.app.AlertDialog.Builder(this).setTitle(com.grocerypos.v11.util.Loc.t(this, "New Unit", "نیا یونٹ")).setView(input).setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Add", "شامل کریں")) { _, _ ->
             val v = input.text.toString().trim()
-            if (v.isNotEmpty()) lifecycleScope.launch { PosDatabase.get(this@PurchaseActivity).unitDao().insert(UnitType(v)); Toast.makeText(this@PurchaseActivity, com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Unit added", "یونٹ شامل ہو گیا"), Toast.LENGTH_SHORT).show(); onAdded(v) }
+            if (v.isNotEmpty()) safeLaunch("addUnit") { PosDatabase.get(this@PurchaseActivity).unitDao().insert(UnitType(v)); Toast.makeText(this@PurchaseActivity, com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Unit added", "یونٹ شامل ہو گیا"), Toast.LENGTH_SHORT).show(); onAdded(v) }
         }.setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null).show()
     }
     private fun handleScannedItems(json: String) {
-        val arr = try { JSONArray(json) } catch (e: Exception) { return }
-        lifecycleScope.launch {
+        val arr = try { JSONArray(json) } catch (e: Exception) { Log.e(TAG, "handleScannedItems: bad json", e); return }
+        safeLaunch("handleScannedItems") {
             val db = PosDatabase.get(this@PurchaseActivity); var matchedCount = 0
             for (i in 0 until arr.length()) {
-                val o = try { arr.getJSONObject(i) } catch (e: Exception) { Log.e("PurchaseActivity", "handleScannedItems: skipping bad item $i", e); continue }
+                val o = try { arr.getJSONObject(i) } catch (e: Exception) { Log.e(TAG, "handleScannedItems: skipping bad item $i", e); continue }
                 val scannedName = o.optString("name").trim(); val scannedQty = o.optDouble("qty", 0.0); val scannedRate = o.optDouble("rate", 0.0)
                 if (scannedName.isEmpty() || scannedQty <= 0) continue
                 var product = products.find { it.name.equals(scannedName, ignoreCase = true) } ?: products.find { it.name.contains(scannedName, ignoreCase = true) || scannedName.contains(it.name, ignoreCase = true) }
@@ -921,7 +947,7 @@ class PurchaseActivity : AppCompatActivity() {
         val input = EditText(this).apply { hint = "Supplier name"; setPadding(32, 24, 32, 24) }
         android.app.AlertDialog.Builder(this).setTitle("Add Supplier").setView(input).setPositiveButton("Add") { _, _ ->
             val name = input.text.toString().trim()
-            if (name.isNotBlank()) { lifecycleScope.launch { val s = Supplier(name = name); PosDatabase.get(this@PurchaseActivity).supplierDao().insert(s); partyName.setText(name) } }
+            if (name.isNotBlank()) { safeLaunch("addSupplier") { val s = Supplier(name = name); PosDatabase.get(this@PurchaseActivity).supplierDao().insert(s); partyName.setText(name) } }
         }.setNegativeButton("Cancel", null).show()
     }
     private fun openAddProductDialog(prefillName: String) {
@@ -936,7 +962,7 @@ class PurchaseActivity : AppCompatActivity() {
         body.addView(nameField); body.addView(spacer(18))
         body.addView(microLabel("CATEGORY"))
         val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2) }; val categorySpinnerDialog = Spinner(this); categorySpinnerBox.addView(categorySpinnerDialog); body.addView(categorySpinnerBox); body.addView(spacer(20))
-        lifecycleScope.launch { val cats = (listOf("General") + PosDatabase.get(this@PurchaseActivity).categoryDao().all().first().map { it.name }).distinct(); categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats) }
+        safeLaunch("loadCategoriesForDialog") { val cats = (listOf("General") + PosDatabase.get(this@PurchaseActivity).categoryDao().all().first().map { it.name }).distinct(); categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats) }
         body.addView(microLabel("PRIMARY UNIT"))
         val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val primarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
@@ -986,7 +1012,7 @@ class PurchaseActivity : AppCompatActivity() {
                 if (tertiaryUnit != "None" && secondaryUnit == "None") { Toast.makeText(this@PurchaseActivity, "Select Secondary first", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
                 if (secondaryUnit == "None") { tertiaryUnit = "None"; tertiaryQty = 0.0 }
                 val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = 0.0, wholesalePrice = 0.0, stock = 0, openingStock = 0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty)
-                lifecycleScope.launch { PosDatabase.get(this@PurchaseActivity).productDao().upsert(newProduct); Toast.makeText(this@PurchaseActivity, "Product added", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
+                safeLaunch("saveNewProduct") { PosDatabase.get(this@PurchaseActivity).productDao().upsert(newProduct); Toast.makeText(this@PurchaseActivity, "Product added", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
             }
         })
         dialog.show()
@@ -1007,17 +1033,15 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    private fun deletePurchase(billNo: String) {
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@PurchaseActivity)
-            val purchase = originalPurchase ?: db.purchaseDao().findPurchase(billNo) ?: return@launch
-            val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
-            reverseStockForItems(db, items)
-            val outstanding = purchase.total - purchase.paid
-            if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
-            db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
-            Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
-        }
+    private fun deletePurchase(billNo: String) = safeLaunch("deletePurchase") {
+        val db = PosDatabase.get(this@PurchaseActivity)
+        val purchase = originalPurchase ?: db.purchaseDao().findPurchase(billNo) ?: return@safeLaunch
+        val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
+        reverseStockForItems(db, items)
+        val outstanding = purchase.total - purchase.paid
+        if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
+        db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
+        Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
     }
     private fun savePurchase() {
         hideKeyboard()
@@ -1040,55 +1064,53 @@ class PurchaseActivity : AppCompatActivity() {
         proceedSave(party, grandTotal)
     }
 
-    private fun proceedSave(party: String, grandTotal: Double) {
+    private fun proceedSave(party: String, grandTotal: Double) = safeLaunch("proceedSave") {
         val discount = 0.0
         val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
         val paymentMethod = "Cash"
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
         var supplierId = matchedSupplier?.id
         val billNo = editBillNo ?: genBillNo()
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@PurchaseActivity)
-            if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
-            val original = originalPurchase
-            if (original != null) {
-                reverseStockForItems(db, originalItems)
-                val originalOutstanding = original.total - original.paid
-                if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
-                db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
-            }
-            db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
-            // Store the actual entered qty/rate (matches the entered `unit`) rather than a
-            // primary-unit-converted value — this keeps Billed Items / edit-mode display and the
-            // DB row consistent with each other, and is exactly what reverseStockForItems() expects.
-            db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) })
-            lines.forEach { line ->
-                val barcode = line.barcode ?: return@forEach
-                val before = db.productDao().find(barcode) ?: return@forEach
-                // Convert into the SMALLEST configured unit (multiplication only — never a divide
-                // that can round a fractional primary-unit amount down to 0).
-                val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit).roundToInt()
-                db.productDao().increase(barcode, purchasedSmallest)
-                if (purchasedSmallest > 0) {
-                    val oldStockSmallest = before.stock
-                    val factor = before.smallestUnitFactor()
-                    val oldCostPerSmallest = if (factor > 0) before.cost / factor else before.cost
-                    val purchaseRatePerSmallest = line.amount / purchasedSmallest
-                    val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
-                        else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest).toDouble()
-                    // `cost` stays expressed per PRIMARY unit (that's what "Purchase Rate" shows in
-                    // Product screen), so convert the smallest-unit weighted average back up.
-                    db.productDao().updateCost(barcode, newCostPerSmallest * factor)
-                }
-            }
-            val outstanding = grandTotal - amountPaid
-            if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
-            if (supplierId != null && amountPaid > 0) { db.paymentDao().insert(Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")) }
-            if (amountPaid > 0) { db.cashTransactionDao().insert(CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)) }
-            suppressDraftSave = true; clearDraft(); editBillNo = billNo
-            Toast.makeText(this@PurchaseActivity, if (original != null) "Purchase updated" else "Purchase saved", Toast.LENGTH_SHORT).show()
-            openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
+        val db = PosDatabase.get(this@PurchaseActivity)
+        if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
+        val original = originalPurchase
+        if (original != null) {
+            reverseStockForItems(db, originalItems)
+            val originalOutstanding = original.total - original.paid
+            if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
+            db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
         }
+        db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
+        // Store the actual entered qty/rate (matches the entered `unit`) rather than a
+        // primary-unit-converted value — this keeps Billed Items / edit-mode display and the
+        // DB row consistent with each other, and is exactly what reverseStockForItems() expects.
+        db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) })
+        lines.forEach { line ->
+            val barcode = line.barcode ?: return@forEach
+            val before = db.productDao().find(barcode) ?: return@forEach
+            // Convert into the SMALLEST configured unit (multiplication only — never a divide
+            // that can round a fractional primary-unit amount down to 0).
+            val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit).roundToInt()
+            db.productDao().increase(barcode, purchasedSmallest)
+            if (purchasedSmallest > 0) {
+                val oldStockSmallest = before.stock
+                val factor = before.smallestUnitFactor()
+                val oldCostPerSmallest = if (factor > 0) before.cost / factor else before.cost
+                val purchaseRatePerSmallest = line.amount / purchasedSmallest
+                val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
+                    else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest).toDouble()
+                // `cost` stays expressed per PRIMARY unit (that's what "Purchase Rate" shows in
+                // Product screen), so convert the smallest-unit weighted average back up.
+                db.productDao().updateCost(barcode, newCostPerSmallest * factor)
+            }
+        }
+        val outstanding = grandTotal - amountPaid
+        if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
+        if (supplierId != null && amountPaid > 0) { db.paymentDao().insert(Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")) }
+        if (amountPaid > 0) { db.cashTransactionDao().insert(CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)) }
+        suppressDraftSave = true; clearDraft(); editBillNo = billNo
+        Toast.makeText(this@PurchaseActivity, if (original != null) "Purchase updated" else "Purchase saved", Toast.LENGTH_SHORT).show()
+        openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
     }
 
     private fun openBillPreview(billNo: String, forSaving: Boolean, party: String = partyName.text.toString().trim(), grandTotal: Double = Math.round(lines.sumOf { it.amount }).toDouble(), discount: Double = 0.0, amountPaid: Double = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble(), paymentMethod: String = "Cash") {
