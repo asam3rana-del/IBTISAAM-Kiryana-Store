@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.room.*
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.flow.Flow
+
+typealias UnitType = UnitEntity
 
 @Entity(tableName = "products")
 data class Product(
@@ -46,7 +49,8 @@ data class Customer(
     val name: String = "",
     val phone: String = "",
     val balance: Double = 0.0,
-    val openingBalance: Double = 0.0
+    val openingBalance: Double = 0.0,
+    val creditLimit: Double = 0.0
 )
 
 @Entity(tableName = "suppliers")
@@ -133,17 +137,29 @@ data class ReturnRecord(
 data class Payment(@PrimaryKey(autoGenerate = true) val id: Int = 0, val reference: String = "", val amount: Double = 0.0)
 
 @Entity(tableName = "cash_transactions")
-data class CashTransaction(@PrimaryKey(autoGenerate = true) val id: Int = 0, val reference: String = "", val amount: Double = 0.0)
+data class CashTransaction(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val type: String = "IN",
+    val method: String = "cash",
+    val amount: Double = 0.0,
+    val reason: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val date: Long = System.currentTimeMillis(),
+    val reference: String = ""
+)
 
 data class SaleWithCustomer(val invoice: String, val customerName: String, val total: Double, val paymentMethod: String, val createdAt: Long, val status: String, val customerId: Long?, val paid: Double)
 data class PurchaseWithSupplier(val billNo: String, val supplierName: String, val total: Double, val createdAt: Long, val status: String, val paid: Double, val supplierId: Long?)
 data class TopProduct(val product: String, val totalQty: Int, val totalAmount: Double)
 data class DailySale(val day: String, val total: Double)
+data class AllTimeItemTotal(val product: String, val totalQty: Int, val totalAmount: Double)
+data class SaleRecord(val customerName: String, val qty: Int, val unitPrice: Double, val createdAt: Long)
+data class PurchaseRecord(val supplierName: String, val qty: Double, val unitCost: Double, val createdAt: Long)
 
 @Dao
 interface ProductDao {
     @Query("SELECT * FROM products ORDER BY name ASC")
-    fun all(): kotlinx.coroutines.flow.Flow<List<Product>>
+    fun all(): Flow<List<Product>>
     @Query("SELECT * FROM products WHERE barcode = :code LIMIT 1")
     suspend fun find(code: String): Product?
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -169,7 +185,7 @@ interface ProductDao {
 @Dao
 interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY name ASC")
-    fun all(): kotlinx.coroutines.flow.Flow<List<Category>>
+    fun all(): Flow<List<Category>>
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(c: Category)
 }
@@ -177,15 +193,19 @@ interface CategoryDao {
 @Dao
 interface UnitDao {
     @Query("SELECT * FROM units ORDER BY name ASC")
-    fun all(): kotlinx.coroutines.flow.Flow<List<UnitEntity>>
+    fun all(): Flow<List<UnitEntity>>
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(u: UnitEntity)
+    @Delete
+    suspend fun delete(u: UnitEntity)
+    @Query("DELETE FROM units WHERE name = :name")
+    suspend fun deleteByName(name: String)
 }
 
 @Dao
 interface UserDao {
     @Query("SELECT * FROM users ORDER BY username ASC")
-    fun all(): kotlinx.coroutines.flow.Flow<List<User>>
+    fun all(): Flow<List<User>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(user: User)
     @Query("DELETE FROM users WHERE username = :username")
@@ -201,15 +221,21 @@ interface AppSettingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun set(setting: AppSetting)
     @Query("SELECT * FROM app_settings")
-    fun all(): kotlinx.coroutines.flow.Flow<List<AppSetting>>
+    fun all(): Flow<List<AppSetting>>
 }
 
 @Dao
 interface CustomerDao {
-    @Query("SELECT * FROM customers")
-    fun all(): kotlinx.coroutines.flow.Flow<List<Customer>>
+    @Query("SELECT * FROM customers ORDER BY name ASC")
+    fun all(): Flow<List<Customer>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(c: Customer)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(c: Customer)
+    @Update
+    suspend fun update(c: Customer)
+    @Delete
+    suspend fun delete(c: Customer)
     @Query("UPDATE customers SET balance = balance + :amount WHERE id = :id")
     suspend fun addBalance(id: Long, amount: Double)
     @Query("SELECT * FROM customers WHERE id = :id LIMIT 1")
@@ -218,10 +244,16 @@ interface CustomerDao {
 
 @Dao
 interface SupplierDao {
-    @Query("SELECT * FROM suppliers")
-    fun all(): kotlinx.coroutines.flow.Flow<List<Supplier>>
+    @Query("SELECT * FROM suppliers ORDER BY name ASC")
+    fun all(): Flow<List<Supplier>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(s: Supplier)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(s: Supplier)
+    @Update
+    suspend fun update(s: Supplier)
+    @Delete
+    suspend fun delete(s: Supplier)
     @Query("UPDATE suppliers SET balance = balance + :amount WHERE id = :id")
     suspend fun addBalance(id: Long, amount: Double)
     @Query("SELECT * FROM suppliers WHERE id = :id LIMIT 1")
@@ -246,7 +278,6 @@ interface SaleDao {
     suspend fun deleteSale(invoice: String)
     @Query("DELETE FROM sale_items WHERE invoice = :invoice")
     suspend fun deleteItems(invoice: String)
-
     @Query("SELECT IFNULL(SUM(total),0) FROM sales WHERE createdAt BETWEEN :start AND :end")
     suspend fun totalSalesBetween(start: Long, end: Long): Double
     @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end")
@@ -259,6 +290,10 @@ interface SaleDao {
     suspend fun topProducts(start: Long, end: Long): List<TopProduct>
     @Query("SELECT date(createdAt/1000, 'unixepoch','localtime') as day, SUM(total) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day DESC")
     suspend fun dailySales(start: Long, end: Long): List<DailySale>
+    @Query("SELECT product as product, SUM(qty) as totalQty, SUM(amount) as totalAmount FROM sale_items GROUP BY product")
+    suspend fun allTimeItemTotals(): List<AllTimeItemTotal>
+    @Query("SELECT s.customerName as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON s.invoice = si.invoice WHERE si.barcode = :barcode ORDER BY s.createdAt DESC")
+    suspend fun saleRecordsForItem(barcode: String): List<SaleRecord>
 }
 
 @Dao
@@ -281,6 +316,10 @@ interface PurchaseDao {
     suspend fun insertItems(items: List<PurchaseItem>)
     @Query("SELECT IFNULL(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end")
     suspend fun totalBetween(start: Long, end: Long): Double
+    @Query("SELECT pi.barcode as product, SUM(pi.qty) as totalQty, SUM(pi.amount) as totalAmount FROM purchase_items pi GROUP BY pi.barcode")
+    suspend fun allTimeItemTotals(): List<AllTimeItemTotal>
+    @Query("SELECT pu.supplierName as supplierName, pi.qty as qty, pi.unitCost as unitCost, pu.createdAt as createdAt FROM purchase_items pi JOIN purchases pu ON pu.billNo = pi.billNo WHERE pi.barcode = :barcode ORDER BY pu.createdAt DESC")
+    suspend fun purchaseRecordsForItem(barcode: String): List<PurchaseRecord>
 }
 
 @Dao
@@ -303,11 +342,17 @@ interface PaymentDao {
 
 @Dao
 interface CashTransactionDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(t: CashTransaction)
+    @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC")
+    fun all(): Flow<List<CashTransaction>>
+    @Query("SELECT IFNULL(SUM(amount),0) FROM cash_transactions WHERE type = :type AND method = :method AND createdAt BETWEEN :start AND :end")
+    suspend fun totalBetween(type: String, method: String, start: Long, end: Long): Double
     @Query("DELETE FROM cash_transactions WHERE reference = :ref")
     suspend fun deleteByReference(ref: String)
 }
 
-@Database(entities = [Product::class, Category::class, UnitEntity::class, User::class, AppSetting::class, Customer::class, Supplier::class, Sale::class, SaleItem::class, Purchase::class, PurchaseItem::class, Expense::class, ReturnRecord::class, Payment::class, CashTransaction::class], version = 25, exportSchema = false)
+@Database(entities = [Product::class, Category::class, UnitEntity::class, User::class, AppSetting::class, Customer::class, Supplier::class, Sale::class, SaleItem::class, Purchase::class, PurchaseItem::class, Expense::class, ReturnRecord::class, Payment::class, CashTransaction::class], version = 26, exportSchema = false)
 abstract class PosDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun categoryDao(): CategoryDao
@@ -325,17 +370,17 @@ abstract class PosDatabase : RoomDatabase() {
 
     companion object {
         @Volatile private var INSTANCE: PosDatabase? = null
-        val MIGRATION = object : Migration(19, 25) {
+        val MIGRATION = object : Migration(19, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 try {
                     db.execSQL("CREATE TABLE IF NOT EXISTS users (username TEXT NOT NULL PRIMARY KEY, displayName TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'cashier', passwordHash TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS app_settings (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL DEFAULT '')")
-                    db.execSQL("CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', balance REAL NOT NULL DEFAULT 0, openingBalance REAL NOT NULL DEFAULT 0)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', balance REAL NOT NULL DEFAULT 0, openingBalance REAL NOT NULL DEFAULT 0, creditLimit REAL NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', balance REAL NOT NULL DEFAULT 0, openingBalance REAL NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, amount REAL NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '')")
                     db.execSQL("CREATE TABLE IF NOT EXISTS returns (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type TEXT NOT NULL DEFAULT 'sale', amount REAL NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference TEXT NOT NULL DEFAULT '', amount REAL NOT NULL DEFAULT 0)")
-                    db.execSQL("CREATE TABLE IF NOT EXISTS cash_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference TEXT NOT NULL DEFAULT '', amount REAL NOT NULL DEFAULT 0)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS cash_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type TEXT NOT NULL DEFAULT 'IN', method TEXT NOT NULL DEFAULT 'cash', amount REAL NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '', createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0, reference TEXT NOT NULL DEFAULT '')")
                     db.execSQL("CREATE TABLE IF NOT EXISTS purchases (billNo TEXT NOT NULL PRIMARY KEY, supplierId INTEGER, supplierName TEXT NOT NULL DEFAULT 'Unknown', total REAL NOT NULL DEFAULT 0, paid REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'completed', createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS purchase_items (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, billNo TEXT NOT NULL, barcode TEXT NOT NULL, qty REAL NOT NULL DEFAULT 0, unit TEXT NOT NULL DEFAULT '', unitCost REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0)")
                 } catch (e: Exception) {}
