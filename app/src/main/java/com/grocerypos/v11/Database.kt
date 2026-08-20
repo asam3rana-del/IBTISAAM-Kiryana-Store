@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Product::class, User::class], version = 12, exportSchema = false)
+@Database(entities = [Product::class, User::class], version = 13, exportSchema = false)
 abstract class PosDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun userDao(): UserDao
@@ -17,7 +17,7 @@ abstract class PosDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     PosDatabase::class.java,
-                    "pos_db_v11_ultra_final"
+                    "pos_final_v13.db"
                 ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 instance
