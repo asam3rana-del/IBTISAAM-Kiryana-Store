@@ -5,8 +5,7 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "products")
 data class Product(
-    @PrimaryKey
-    val barcode: String,
+    @PrimaryKey val barcode: String,
     val name: String,
     val category: String = "General",
     val unit: String = "ctn",
