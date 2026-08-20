@@ -124,6 +124,17 @@ data class Expense(
     val note: String = ""
 )
 
+@Entity(tableName = "return_lines")
+data class ReturnLine(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val reference: String = "",
+    val type: String = "sale",
+    val barcode: String = "",
+    val qty: Double = 0.0,
+    val amount: Double = 0.0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "returns")
 data class ReturnRecord(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -262,6 +273,9 @@ interface SupplierDao {
 
 @Dao
 interface SaleDao {
+    @Query("UPDATE sales SET status = 'returned' WHERE invoice = :invoice")
+    suspend fun markReturned(invoice: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun sale(s: Sale)
     @Insert
@@ -314,6 +328,8 @@ interface PurchaseDao {
     suspend fun insertPurchase(p: Purchase)
     @Insert
     suspend fun insertItems(items: List<PurchaseItem>)
+    @Query("UPDATE purchases SET status = 'returned' WHERE billNo = :billNo")
+    suspend fun markReturned(billNo: String)
     @Query("SELECT IFNULL(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end")
     suspend fun totalBetween(start: Long, end: Long): Double
     @Query("SELECT pi.barcode as product, SUM(pi.qty) as totalQty, SUM(pi.amount) as totalAmount FROM purchase_items pi GROUP BY pi.barcode")
@@ -330,6 +346,9 @@ interface ExpenseDao {
 
 @Dao
 interface ReturnDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(line: ReturnLine)
+
     @Query("SELECT IFNULL(SUM(amount),0) FROM returns WHERE type = :type AND createdAt BETWEEN :start AND :end")
     suspend fun totalByTypeBetween(type: String, start: Long, end: Long): Double
 }
@@ -352,7 +371,7 @@ interface CashTransactionDao {
     suspend fun deleteByReference(ref: String)
 }
 
-@Database(entities = [Product::class, Category::class, UnitEntity::class, User::class, AppSetting::class, Customer::class, Supplier::class, Sale::class, SaleItem::class, Purchase::class, PurchaseItem::class, Expense::class, ReturnRecord::class, Payment::class, CashTransaction::class], version = 26, exportSchema = false)
+@Database(entities = [Product::class, Category::class, UnitEntity::class, User::class, AppSetting::class, Customer::class, Supplier::class, Sale::class, SaleItem::class, Purchase::class, PurchaseItem::class, Expense::class, ReturnRecord::class, ReturnLine::class, Payment::class, CashTransaction::class], version = 27, exportSchema = false)
 abstract class PosDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun categoryDao(): CategoryDao
@@ -370,7 +389,7 @@ abstract class PosDatabase : RoomDatabase() {
 
     companion object {
         @Volatile private var INSTANCE: PosDatabase? = null
-        val MIGRATION = object : Migration(19, 26) {
+        val MIGRATION = object : Migration(19, 27) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 try {
                     db.execSQL("CREATE TABLE IF NOT EXISTS users (username TEXT NOT NULL PRIMARY KEY, displayName TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'cashier', passwordHash TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1)")
@@ -379,12 +398,17 @@ abstract class PosDatabase : RoomDatabase() {
                     db.execSQL("CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', balance REAL NOT NULL DEFAULT 0, openingBalance REAL NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, amount REAL NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '')")
                     db.execSQL("CREATE TABLE IF NOT EXISTS returns (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type TEXT NOT NULL DEFAULT 'sale', amount REAL NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS return_lines (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT 'sale', barcode TEXT NOT NULL DEFAULT '', qty REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference TEXT NOT NULL DEFAULT '', amount REAL NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS cash_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type TEXT NOT NULL DEFAULT 'IN', method TEXT NOT NULL DEFAULT 'cash', amount REAL NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '', createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0, reference TEXT NOT NULL DEFAULT '')")
                     db.execSQL("CREATE TABLE IF NOT EXISTS purchases (billNo TEXT NOT NULL PRIMARY KEY, supplierId INTEGER, supplierName TEXT NOT NULL DEFAULT 'Unknown', total REAL NOT NULL DEFAULT 0, paid REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'completed', createdAt INTEGER NOT NULL DEFAULT 0, date INTEGER NOT NULL DEFAULT 0)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS purchase_items (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, billNo TEXT NOT NULL, barcode TEXT NOT NULL, qty REAL NOT NULL DEFAULT 0, unit TEXT NOT NULL DEFAULT '', unitCost REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0)")
                 } catch (e: Exception) {}
             }
+        }
+        fun closeInstance() {
+            INSTANCE?.close()
+            INSTANCE = null
         }
         fun get(context: Context): PosDatabase {
             return INSTANCE ?: synchronized(this) {
