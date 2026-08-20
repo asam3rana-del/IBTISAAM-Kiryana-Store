@@ -1,281 +1,221 @@
-
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
-import android.app.DatePickerDialog
-import android.content.Context
-import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
-import android.text.Editable
 import android.text.InputType
-import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.grocerypos.v11.*
-import kotlinx.coroutines.flow.collectLatest
+import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.Product
+import com.grocerypos.v11.SaleItem
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-import kotlin.math.roundToInt
-
-data class SaleLine(
-    val barcode: String,
-    val itemName: String,
-    val qty: Double,
-    val unit: String,
-    val unitPrice: Double,
-    val cost: Double,
-    val amount: Double,
-    val mainUnit: String,
-    val secondaryUnit: String,
-    val secondaryUnitQty: Double
-)
-
-private fun SaleLine.isSecondary(): Boolean =
-    secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
-
-private fun SaleLine.mainUnitQty(): Double =
-    if (isSecondary()) qty / secondaryUnitQty else qty
-
-private fun SaleLine.mainUnitPrice(): Double =
-    if (isSecondary()) unitPrice * secondaryUnitQty else unitPrice
 
 class SaleActivity : AppCompatActivity() {
-    companion object {
-        const val EXTRA_INVOICE = "invoice"
-        private const val PREFS_NAME = "sale_draft_prefs"
-        private const val KEY_DRAFT = "draft_json"
-    }
-    private val bg = "#F4F6F8"
-    private val cardBg = "#FFFFFF"
-    private val navy = "#0F9B8E"
-    private val teal = "#0B2545"
-    private val green = "#1FA971"
-    private val red = "#E5484D"
-    private val textDark = "#0B2545"
-    private val textGray = "#7C8798"
-    private val border = "#E3E8EE"
-    private lateinit var dateValueText: TextView
-    private lateinit var customerName: AutoCompleteTextView
-    private lateinit var saleTypeSpinner: Spinner
-    private lateinit var itemName: AutoCompleteTextView
-    private lateinit var qty: EditText
-    private lateinit var unitSpinner: Spinner
-    private lateinit var unitPrice: EditText
-    private lateinit var itemsContainer: LinearLayout
-    private lateinit var subtotalText: TextView
-    private lateinit var discountInput: EditText
-    private lateinit var totalText: TextView
-    private lateinit var dueText: TextView
-    private lateinit var paidInput: EditText
-    private lateinit var firmNameText: TextView
-    private lateinit var partyBalanceText: TextView
-    private lateinit var saveButton: Button
-    private lateinit var deleteButton: Button
-    private var customers = listOf<Customer>()
-    private var products = listOf<Product>()
-    private val lines = mutableListOf<SaleLine>()
+
+    private val tealStart = "#14B8A6"
+    private val tealEnd = "#0F766E"
+    private val bg = "#F0FDFA"
+    private val textDark = "#0F172A"
+    private val textGray = "#64748B"
+    private val border = "#CCFBF1"
+    private val lightTeal = "#F0FDFA"
+    private val orangeStart = "#F59E0B"
+    private val orangeEnd = "#EF4444"
+
+    private lateinit var customerField: TextView
+    private lateinit var productField: TextView
+    private lateinit var unitInfo: TextView
+    private lateinit var qtyField: EditText
+    private lateinit var qtyTypeField: TextView
+    private lateinit var priceTypeField: TextView
+    private lateinit var priceField: EditText
+    private lateinit var discountField: EditText
+    private lateinit var totalField: TextView
+    private lateinit var cartContainer: LinearLayout
+    private lateinit var grandTotalField: TextView
+    private lateinit var saveButton: TextView
+
     private var selectedProduct: Product? = null
-    private var saleDateMillis = System.currentTimeMillis()
-    private var editInvoice: String? = null
-    private var originalSale: Sale? = null
-    private var originalItems: List<SaleItem> = emptyList()
-    private var lastMainPrice: Double = 0.0
-    private var suppressPriceWatcher = false
-    private var suppressDraftSave = false
-    private var draftRestored = false
+    private var selectedCustomer = "Walk-in Customer"
+    private var selectedQtyType = "dabbi"
+    private var selectedPriceType = "Retail" // Wholesale or Retail
+    private var cart = mutableListOf<SaleItem>()
+    private var allProducts: List<Product> = emptyList()
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        editInvoice = intent.getStringExtra(EXTRA_INVOICE)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 56, 24, 24); setBackgroundColor(Color.parseColor(bg)) }
-        val headerCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(22, 20, 22, 18); background = roundedBg(navy, 20)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 18) }
-        }
-        dateValueText = TextView(this).apply { text = formatDate(saleDateMillis); setTextColor(Color.WHITE); setOnClickListener { openDatePicker() } }
-        firmNameText = TextView(this).apply { text = "IBTISAAM Kiryana Store"; textSize = 20f; setTextColor(Color.WHITE) }
-        partyBalanceText = TextView(this).apply { text = "Balance: Rs 0.00"; visibility = View.GONE }
-        headerCard.addView(dateValueText); headerCard.addView(firmNameText); headerCard.addView(partyBalanceText)
-        root.addView(headerCard)
+        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.parseColor(bg)) }
 
-        customerName = AutoCompleteTextView(this).apply { hint = "Customer Name" }
-        root.addView(customerName)
-        saleTypeSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Retail", "Wholesale")) }
-        root.addView(saleTypeSpinner)
-        itemName = AutoCompleteTextView(this).apply { hint = "Item Name" }
-        qty = EditText(this).apply { hint = "Qty"; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        unitSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("pcs")) }
-        unitPrice = EditText(this).apply { hint = "Rate"; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        root.addView(itemName); root.addView(qty); root.addView(unitSpinner); root.addView(unitPrice)
-        val addBtn = Button(this).apply { text = "ADD ITEM"; setOnClickListener { addItem() } }
-        root.addView(addBtn)
-        itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(itemsContainer)
-        subtotalText = TextView(this).apply { text = "Rs 0.00" }
-        discountInput = EditText(this).apply { hint = "Discount" }
-        totalText = TextView(this).apply { text = "Rs 0.00" }
-        dueText = TextView(this).apply { text = "Rs 0.00" }
-        paidInput = EditText(this).apply { hint = "Paid" }
-        root.addView(subtotalText); root.addView(discountInput); root.addView(totalText); root.addView(dueText); root.addView(paidInput)
-        saveButton = Button(this).apply { text = "SAVE SALE"; setOnClickListener { saveSale() } }
-        deleteButton = Button(this).apply { text = "DELETE"; visibility = if (editInvoice != null) View.VISIBLE else View.GONE; setOnClickListener { confirmDeleteSale() } }
-        root.addView(saveButton); root.addView(deleteButton)
-        setContentView(ScrollView(this).apply { addView(root) })
-        loadCustomers(); loadProducts()
-        editInvoice?.let { loadForEdit(it) }
-        itemName.setOnItemClickListener { _, _, pos, _ -> onItemPicked(itemName.adapter.getItem(pos).toString()) }
-        if (editInvoice == null) restoreDraftIfAny()
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22,26,22,26)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(orangeStart), Color.parseColor(tealStart))).apply { cornerRadii = floatArrayOf(0f,0f,0f,0f,0f,0f,32f,32f) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { elevation = 10f; outlineProvider = ViewOutlineProvider.BACKGROUND }
+        }
+        header.addView(TextView(this).apply { text = "🧾 Sale - Ultra Premium"; textSize = 20f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD) })
+        header.addView(TextView(this).apply { text = "Customer • Product • Ctn/Outer/Dabbi • Wholesale / Retail"; textSize = 11f; setTextColor(Color.parseColor("#FEF3C7")); setPadding(0,6,0,0) })
+        outer.addView(header)
+
+        val scroll = ScrollView(this).apply { layoutParams = LinearLayout.LayoutParams(-1,0,1f) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16,18,16,24) }
+
+        // CUSTOMER ULTRA CARD
+        val custCard = ultraCard("👤", "Customer", "#8B5CF6", "#EC4899")
+        customerField = TextView(this).apply {
+            text = "👤 Customer: Walk-in Customer"; textSize = 13.5f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, Typeface.BOLD)
+            setPadding(18,16,18,16); background = GradientDrawable().apply { setColor(Color.parseColor(lightTeal)); cornerRadius = 14f; setStroke(2, Color.parseColor(border)) }
+            setOnClickListener { pickCustomer() }
+        }
+        custCard.addView(customerField)
+        root.addView(custCard); root.addView(spacer(16))
+
+        // PRODUCT ULTRA CARD
+        val prodCard = ultraCard("📦", "Product - Category + Stock", "#F59E0B", "#EF4444")
+        productField = TextView(this).apply {
+            text = "📦 Select Product for Sale"; textSize = 13.5f; setTextColor(Color.parseColor("#94A3B8")); setTypeface(typeface, Typeface.BOLD)
+            setPadding(18,16,18,16); background = GradientDrawable().apply { setColor(Color.parseColor(lightTeal)); cornerRadius = 14f; setStroke(2, Color.parseColor(border)) }
+            setOnClickListener { pickProduct() }
+        }
+        prodCard.addView(productField)
+        prodCard.addView(spacer(8))
+        unitInfo = TextView(this).apply { text = "📐 Stock: 0 | Ctn 50 Outer 10 Dabbi"; textSize = 10.5f; setTextColor(Color.parseColor(tealStart)); setPadding(4,6,0,0) }
+        prodCard.addView(unitInfo)
+        root.addView(prodCard); root.addView(spacer(16))
+
+        // QTY + PRICE TYPE ULTRA CARD
+        val qtyCard = ultraCard("🔢", "Quantity & Price Type", "#06B6D4", "#3B82F6")
+        val qtyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0,10,0,0) }
+        qtyField = EditText(this).apply {
+            hint = "Qty"; textSize = 14f; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(18,16,18,16); background = GradientDrawable().apply { setColor(Color.parseColor(lightTeal)); cornerRadius = 14f; setStroke(2, Color.parseColor(border)) }
+            layoutParams = LinearLayout.LayoutParams(0,-2,1f).apply { setMargins(0,0,8,0) }
+            addTextChangedListener(object : android.text.TextWatcher { override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}; override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}; override fun afterTextChanged(s: android.text.Editable?) { calcTotal() } })
+        }
+        qtyTypeField = TextView(this).apply {
+            text = "📦 dabbi ▼"; textSize = 11f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER
+            setPadding(14,16,14,16); background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(tealStart), Color.parseColor("#06B6D4"))).apply { cornerRadius = 14f }
+            layoutParams = LinearLayout.LayoutParams(-2,-2).apply { setMargins(0,0,8,0) }
+            setOnClickListener { pickQtyType() }
+        }
+        priceTypeField = TextView(this).apply {
+            text = "🏪 Retail ▼"; textSize = 11f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER
+            setPadding(14,16,14,16); background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(orangeStart), Color.parseColor(orangeEnd))).apply { cornerRadius = 14f }
+            layoutParams = LinearLayout.LayoutParams(-2,-2)
+            setOnClickListener { pickPriceType() }
+        }
+        qtyRow.addView(qtyField); qtyRow.addView(qtyTypeField); qtyRow.addView(priceTypeField)
+        qtyCard.addView(qtyRow)
+        root.addView(qtyCard); root.addView(spacer(16))
+
+        // PRICE + DISCOUNT ULTRA CARD
+        val priceCard = ultraCard("💰", "Price • Discount • Total", "#10B981", "#06B6D4")
+        val pRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0,10,0,0) }
+        priceField = EditText(this).apply { hint = "Price 💰"; textSize = 13f; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL; setPadding(16,14,16,14); background = GradientDrawable().apply { setColor(Color.parseColor(lightTeal)); cornerRadius = 12f; setStroke(2, Color.parseColor(border)) }; layoutParams = LinearLayout.LayoutParams(0,-2,1f).apply { setMargins(0,0,8,0) }; addTextChangedListener(object : android.text.TextWatcher { override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}; override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}; override fun afterTextChanged(s: android.text.Editable?) { calcTotal() } }) }
+        discountField = EditText(this).apply { hint = "Disc %"; textSize = 13f; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL; setPadding(16,14,16,14); background = GradientDrawable().apply { setColor(Color.parseColor("#FEF3C7")); cornerRadius = 12f; setStroke(2, Color.parseColor("#FCD34D")) }; layoutParams = LinearLayout.LayoutParams(0,-2,1f) }
+        pRow.addView(priceField); pRow.addView(discountField)
+        priceCard.addView(pRow)
+        priceCard.addView(spacer(10))
+        totalField = TextView(this).apply { text = "💵 Total: Rs 0"; textSize = 14f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER; setPadding(14,14,14,14); background = GradientDrawable().apply { setColor(Color.parseColor("#D1FAE5")); cornerRadius = 12f; setStroke(1, Color.parseColor("#6EE7B7")) } }
+        priceCard.addView(totalField)
+        root.addView(priceCard); root.addView(spacer(16))
+
+        val addBtn = TextView(this).apply {
+            text = "➕ ADD TO CART - ULTRA"; textSize = 13f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER
+            setPadding(0,16,0,16); background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.parseColor(orangeStart), Color.parseColor(orangeEnd))).apply { cornerRadius = 14f }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { elevation = 6f }
+            setOnClickListener { addToCart() }
+        }
+        root.addView(addBtn); root.addView(spacer(16))
+
+        val cartCard = ultraCard("🛒", "Cart - Sale Items", "#14B8A6", "#0F766E")
+        cartContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        cartCard.addView(cartContainer)
+        root.addView(cartCard); root.addView(spacer(12))
+
+        grandTotalField = TextView(this).apply { text = "💰 Grand Total: Rs 0"; textSize = 16f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER; setPadding(0,18,0,18); background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(textDark), Color.parseColor("#1E293B"))).apply { cornerRadius = 16f } }
+        root.addView(grandTotalField); root.addView(spacer(16))
+
+        saveButton = TextView(this).apply {
+            text = "✅ COMPLETE SALE - ULTRA"; textSize = 15f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER
+            setPadding(0,20,0,20); background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(tealStart), Color.parseColor(tealEnd))).apply { cornerRadius = 18f }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { elevation = 10f }
+            setOnClickListener { saveSale() }
+        }
+        root.addView(saveButton)
+
+        scroll.addView(root); outer.addView(scroll); setContentView(outer)
+        loadProducts()
     }
 
-    private fun formatDate(millis: Long) = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(millis))
-    private fun openDatePicker() {
-        val cal = Calendar.getInstance().apply { timeInMillis = saleDateMillis }
-        DatePickerDialog(this, { _, y, m, d -> cal.set(y, m, d); saleDateMillis = cal.timeInMillis; dateValueText.text = formatDate(saleDateMillis) }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
-    }
-    private fun loadCustomers() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@SaleActivity).customerDao().all().collectLatest { list ->
-                customers = list
-                customerName.setAdapter(ArrayAdapter(this@SaleActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
-            }
+    private fun ultraCard(icon: String, title: String, c1: String, c2: String): LinearLayout {
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(3,3,3,3)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(c1), Color.parseColor(c2))).apply { cornerRadius = 22f }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { elevation = 6f; outlineProvider = ViewOutlineProvider.BACKGROUND }
         }
+        val inner = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(18,16,18,18); background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = 19f } }
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        head.addView(TextView(this).apply { text = icon; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(10,10,10,10); background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(c1), Color.parseColor(c2))).apply { shape = GradientDrawable.OVAL }; layoutParams = LinearLayout.LayoutParams((36*resources.displayMetrics.density).toInt(), (36*resources.displayMetrics.density).toInt()) })
+        head.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10,1) })
+        head.addView(TextView(this).apply { text = title; textSize = 11f; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, Typeface.BOLD) })
+        inner.addView(head)
+        outer.addView(inner)
+        return inner
     }
-    private fun loadProducts() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@SaleActivity).productDao().all().collectLatest { list ->
-                products = list
-                itemName.setAdapter(ArrayAdapter(this@SaleActivity, android.R.layout.simple_dropdown_item_1line, list.map { it.name }))
-            }
-        }
+    private fun spacer(h: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(-1, (h*resources.displayMetrics.density).toInt()) }
+
+    private fun pickCustomer() { val custs = arrayOf("Walk-in Customer","Regular","Wholesale Customer","Credit Customer"); AlertDialog.Builder(this).setTitle("👤 Select Customer").setItems(custs) { _, i -> selectedCustomer = custs[i]; customerField.text = "👤 Customer: $selectedCustomer" }.show() }
+    private fun pickQtyType() { val types = arrayOf("ctn","outer/lari","dabbi/pcs"); AlertDialog.Builder(this).setTitle("📦 Qty Type").setItems(types) { _, i -> selectedQtyType = types[i]; qtyTypeField.text = "📦 ${types[i]} ▼"; calcTotal() }.show() }
+    private fun pickPriceType() { val types = arrayOf("Retail","Wholesale"); AlertDialog.Builder(this).setTitle("💰 Price Type").setItems(types) { _, i -> selectedPriceType = types[i]; priceTypeField.text = if (types[i]=="Retail") "🏪 Retail ▼" else "📦 Wholesale ▼"; updatePrice(); calcTotal() }.show() }
+    private fun pickProduct() {
+        if (allProducts.isEmpty()) { Toast.makeText(this, "No products", Toast.LENGTH_SHORT).show(); return }
+        val names = allProducts.map { "${it.name} - ${it.category} | Stock:${it.stock} | W:${it.wholesalePrice} R:${it.salePrice}" }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("📦 Select Product").setItems(names) { _, i ->
+            selectedProduct = allProducts[i]
+            productField.text = "📦 ${selectedProduct!!.name} | ${selectedProduct!!.category}"
+            productField.setTextColor(Color.parseColor(textDark))
+            unitInfo.text = "📦 Stock: ${selectedProduct!!.stock} ${selectedProduct!!.tertiaryUnit} | ${selectedProduct!!.unit} ${selectedProduct!!.secondaryUnitQty.toInt()} ${selectedProduct!!.secondaryUnit} ${selectedProduct!!.tertiaryUnitQty.toInt()} ${selectedProduct!!.tertiaryUnit} | W:${selectedProduct!!.wholesalePrice} R:${selectedProduct!!.salePrice}"
+            updatePrice(); calcTotal()
+        }.show()
     }
-    private fun onItemPicked(name: String) {
-        val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
-        selectedProduct = product
-        val unitChoices = mutableListOf(product.unit)
-        if (product.secondaryUnit.isNotEmpty()) unitChoices.add(product.secondaryUnit)
-        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
-        lastMainPrice = 0.0; refillAutoPrice()
+    private fun updatePrice() {
+        val p = selectedProduct?: return
+        priceField.setText(if (selectedPriceType == "Wholesale") p.wholesalePrice.toString() else p.salePrice.toString())
     }
-    private fun toMainUnitPrice(entered: Double): Double {
-        val product = selectedProduct ?: return entered
-        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        return if (chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0) entered * product.secondaryUnitQty else entered
+    private fun calcTotal() {
+        val p = selectedProduct?: return
+        val qty = qtyField.text.toString().toDoubleOrNull()?: 0.0
+        val price = priceField.text.toString().toDoubleOrNull()?: 0.0
+        var totalDabbi = qty
+        if (selectedQtyType.contains("ctn")) totalDabbi = qty * p.secondaryUnitQty * p.tertiaryUnitQty
+        else if (selectedQtyType.contains("outer") || selectedQtyType.contains("lari")) totalDabbi = qty * p.tertiaryUnitQty
+        val total = totalDabbi * price
+        totalField.text = "💵 Total: Rs $total ($totalDabbi ${p.tertiaryUnit}) | $selectedPriceType @ $price | Stock: ${p.stock}"
     }
-    private fun fromMainUnitPrice(mainPrice: Double, chosenUnit: String): Double {
-        val product = selectedProduct ?: return mainPrice
-        return if (chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0) mainPrice / product.secondaryUnitQty else mainPrice
+    private fun addToCart() {
+        val p = selectedProduct?: run { Toast.makeText(this, "Select product", Toast.LENGTH_SHORT).show(); return }
+        val qty = qtyField.text.toString().toDoubleOrNull()?: run { Toast.makeText(this, "Enter qty", Toast.LENGTH_SHORT).show(); return }
+        if (qty <= 0) return
+        val price = priceField.text.toString().toDoubleOrNull()?: 0.0
+        var totalDabbi = qty
+        if (selectedQtyType.contains("ctn")) totalDabbi = qty * p.secondaryUnitQty * p.tertiaryUnitQty
+        else if (selectedQtyType.contains("outer")) totalDabbi = qty * p.tertiaryUnitQty
+        if (totalDabbi > p.stock) { Toast.makeText(this, "Stock kam hai! Stock: ${p.stock}", Toast.LENGTH_SHORT).show(); return }
+        val item = SaleItem(barcode = p.barcode, name = p.name, qty = totalDabbi, price = price, total = totalDabbi * price, qtyType = selectedQtyType, priceType = selectedPriceType)
+        cart.add(item); showCart(); qtyField.text.clear()
     }
-    private fun refillAutoPrice() {
-        val product = selectedProduct ?: return
-        val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
-        val basePrice = if (isWholesale) product.wholesalePrice else product.salePrice
-        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val base = if (lastMainPrice > 0) lastMainPrice else basePrice
-        val price = fromMainUnitPrice(base, chosenUnit)
-        suppressPriceWatcher = true; unitPrice.setText(if (price > 0) "%.2f".format(price) else ""); suppressPriceWatcher = false
-    }
-    private fun addItem() {
-        val n = itemName.text.toString().trim(); val q = qty.text.toString().toDoubleOrNull() ?: 0.0; val price = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
-        val product = products.find { it.name.equals(n, ignoreCase = true) } ?: return
-        if (q <= 0) return
-        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val amount = q * price
-        lines.add(SaleLine(product.barcode, product.name, q, chosenUnit, price, product.cost, amount, product.unit, product.secondaryUnit, product.secondaryUnitQty))
-        renderItemsList(); updateTotals()
-        itemName.text.clear(); qty.text.clear(); unitPrice.text.clear(); selectedProduct = null
-    }
-    private fun renderItemsList() {
-        itemsContainer.removeAllViews()
-        lines.forEachIndexed { index, line ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 16, 20, 16); background = strokedBg(border, cardBg, 14) }
-            row.addView(TextView(this@SaleActivity).apply { text = "${line.itemName} - ${line.qty} ${line.unit} x ${line.unitPrice} = ${line.amount}" })
-            row.addView(TextView(this@SaleActivity).apply { text = "Remove"; setOnClickListener { lines.removeAt(index); renderItemsList(); updateTotals() } })
-            itemsContainer.addView(row)
-        }
-    }
-    private fun updateTotals() {
-        val subtotal = lines.sumOf { it.amount }
-        val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
-        subtotalText.text = "Rs %.2f".format(subtotal)
-        val total = (subtotal - discount).coerceAtLeast(0.0)
-        totalText.text = "Rs %.2f".format(total)
-        val paid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
-        dueText.text = "Rs %.2f".format((total - paid).coerceAtLeast(0.0))
-    }
-    private fun draftPrefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private fun saveDraft() {
-        if (suppressDraftSave) return
-        try {
-            val arr = JSONArray()
-            lines.forEach { line -> arr.put(JSONObject().apply { put("barcode", line.barcode); put("itemName", line.itemName); put("qty", line.qty); put("unit", line.unit); put("unitPrice", line.unitPrice); put("cost", line.cost); put("amount", line.amount); put("mainUnit", line.mainUnit); put("secondaryUnit", line.secondaryUnit); put("secondaryUnitQty", line.secondaryUnitQty) }) }
-            val draft = JSONObject().apply { put("customer", customerName.text.toString()); put("lines", arr) }
-            draftPrefs().edit().putString(KEY_DRAFT, draft.toString()).apply()
-        } catch (_: Exception) {}
-    }
-    private fun clearDraft() { draftPrefs().edit().remove(KEY_DRAFT).apply() }
-    private fun restoreDraftIfAny() {
-        val raw = draftPrefs().getString(KEY_DRAFT, null) ?: return
-        try {
-            val draft = JSONObject(raw)
-            val arr = draft.optJSONArray("lines") ?: return
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                lines.add(SaleLine(o.optString("barcode"), o.optString("itemName"), o.optDouble("qty", 0.0), o.optString("unit"), o.optDouble("unitPrice", 0.0), o.optDouble("cost", 0.0), o.optDouble("amount", 0.0), o.optString("mainUnit"), o.optString("secondaryUnit"), o.optDouble("secondaryUnitQty", 0.0)))
-            }
-            renderItemsList(); updateTotals()
-        } catch (_: Exception) {}
-    }
-    private fun loadForEdit(invoice: String) {
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@SaleActivity)
-            val sale = db.saleDao().findSale(invoice) ?: return@launch
-            val items = db.saleDao().itemsForInvoice(invoice)
-            originalSale = sale; originalItems = items
-            customerName.setText(db.customerDao().all().first().find { it.id == sale.customerId }?.name ?: "")
-            lines.clear()
-            items.forEach { si ->
-                val product = db.productDao().find(si.barcode)
-                lines.add(SaleLine(si.barcode, si.product, si.qty.toDouble(), product?.unit ?: "", si.unitPrice, si.cost, si.amount, product?.unit ?: "", product?.secondaryUnit ?: "", product?.secondaryUnitQty ?: 0.0))
-            }
-            renderItemsList(); updateTotals()
-        }
-    }
-    private fun saveSale() {
-        if (lines.isEmpty()) return
-        val total = lines.sumOf { it.amount }
-        val paid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
-        val invoice = editInvoice ?: ("INV" + System.currentTimeMillis().toString())
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@SaleActivity)
-            db.saleDao().sale(Sale(invoice = invoice, customerId = null, subtotal = total, discount = 0.0, tax = 0.0, total = total, paid = paid, paymentMethod = "cash", saleType = "retail", createdAt = saleDateMillis))
-            db.saleDao().items(lines.map { SaleItem(invoice = invoice, barcode = it.barcode, product = it.itemName, qty = it.mainUnitQty().roundToInt(), unitPrice = it.mainUnitPrice(), cost = it.cost, amount = it.amount) })
-            lines.forEach { db.productDao().decrease(it.barcode, it.mainUnitQty().roundToInt()) }
-            clearDraft(); finish()
-        }
-    }
-    private fun confirmDeleteSale() {
-        AlertDialog.Builder(this).setTitle("Delete Sale").setPositiveButton("Delete") { _, _ ->
-            lifecycleScope.launch {
-                val db = PosDatabase.get(this@SaleActivity)
-                val sale = db.saleDao().findSale(editInvoice!!) ?: return@launch
-                db.saleDao().itemsForInvoice(editInvoice!!).forEach { db.productDao().increase(it.barcode, it.qty) }
-                db.saleDao().deleteItems(editInvoice!!); db.saleDao().deleteSale(editInvoice!!); finish()
-            }
-        }.setNegativeButton("Cancel", null).show()
-    }
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(colorHex)); cornerRadius = radius.toFloat() }
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(fillHex)); setStroke(2, Color.parseColor(strokeHex)); cornerRadius = radius.toFloat() }
-}
+    private fun showCart() {
+        cartContainer.removeAllViews()
+        var grand = 0.0
+        for ((idx, item) in cart.withIndex()) {
+            grand += item.total
+            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(14,12,14,12); background = GradientDrawable().apply { setColor(Color.parseColor
