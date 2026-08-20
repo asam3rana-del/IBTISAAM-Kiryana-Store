@@ -20,6 +20,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class ProductActivity : AppCompatActivity() {
+    companion object {
+        const val EXTRA_EDIT_BARCODE = "edit_barcode"
+    }
+
 
     private val bg = "#F4F6F8"
     private val navy = "#0B2545"
@@ -188,6 +192,26 @@ class ProductActivity : AppCompatActivity() {
             addView(col)
         }
         setContentView(root)
+        // Edit mode from ItemsActivity / CategoriesUnitsActivity
+        val editBarcodeIntent = intent.getStringExtra(EXTRA_EDIT_BARCODE)
+        if (editBarcodeIntent != null) {
+            lifecycleScope.launch {
+                val p = PosDatabase.get(this@ProductActivity).productDao().find(editBarcodeIntent)
+                if (p != null) {
+                    editing = p
+                    nameField.setText(p.name)
+                    primaryUnitField.setText(p.unit)
+                    secondaryUnitField.setText(p.secondaryUnit)
+                    secondaryQtyField.setText(if(p.secondaryUnitQty==0.0)"" else p.secondaryUnitQty.toString())
+                    tertiaryUnitField.setText(p.tertiaryUnit)
+                    tertiaryQtyField.setText(if(p.tertiaryUnitQty==0.0)"" else p.tertiaryUnitQty.toString())
+                    stockField.setText(p.stock.toString())
+                    costField.setText(p.cost.toString())
+                    salePriceField.setText(p.salePrice.toString())
+                    saveButton.text = "اپڈیٹ کریں - " + p.name
+                }
+            }
+        }
         loadProducts()
     }
 
@@ -283,8 +307,4 @@ class ProductActivity : AppCompatActivity() {
     private fun spacer(h: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (h*3)) }
 }
 
-fun View.setMargins(l: Int, t: Int, r: Int, b: Int) {
-    if (layoutParams is LinearLayout.LayoutParams) {
-        (layoutParams as LinearLayout.LayoutParams).setMargins(l,t,r,b)
-    }
-}
+// setMargins extension removed to avoid overload ambiguity - use LayoutParams.setMargins directly
