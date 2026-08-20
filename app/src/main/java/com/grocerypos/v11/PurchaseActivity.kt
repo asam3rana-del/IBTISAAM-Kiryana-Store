@@ -47,24 +47,6 @@ data class PurchaseLine(
     val tertiaryUnitQty: Double = 0.0
 )
 
-private fun PurchaseLine.isSecondary(): Boolean =
-    secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
-
-private fun PurchaseLine.isTertiary(): Boolean =
-    tertiaryUnit.isNotEmpty() && unit == tertiaryUnit && tertiaryUnitQty > 0 && secondaryUnitQty > 0
-
-private fun PurchaseLine.mainUnitQty(): Double = when {
-    isTertiary() -> qty / (secondaryUnitQty * tertiaryUnitQty)
-    isSecondary() -> qty / secondaryUnitQty
-    else -> qty
-}
-
-private fun PurchaseLine.mainUnitRate(): Double = when {
-    isTertiary() -> rate * secondaryUnitQty * tertiaryUnitQty
-    isSecondary() -> rate * secondaryUnitQty
-    else -> rate
-}
-
 private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
 
 class PurchaseActivity : AppCompatActivity() {
@@ -227,6 +209,189 @@ class PurchaseActivity : AppCompatActivity() {
         val firmRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val firmCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         firmCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Firm Name", "فرم کا نام").uppercase(); textSize = 9.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f })
+        firmNameText = TextView(this).apply { text = "IBTISAAM Kiryana Store"; textSize = 13.5f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 2, 0, 0) }
+        firmCol.addView(firmNameText)
+        firmRow.addView(firmCol)
+        val balCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
+        balCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Party Balance", "پارٹی بیلنس").uppercase(); textSize = 9.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f })
+        supplierBalanceText = TextView(this).apply { text = "Rs 0.00"; textSize = 14f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textMuted)); setPadding(0, 2, 0, 0) }
+        balCol.addView(supplierBalanceText)
+        firmRow.addView(balCol)
+        firmBox.addView(firmRow)
+        root.addView(firmBox)
+
+        val partyBox = premiumCard()
+        partyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Party / Supplier", "پارٹی / سپلائر")))
+        val partyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        partyName = AutoCompleteTextView(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Party Name (Supplier) *", "پارٹی کا نام (سپلائر) *")
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15.5f
+            threshold = 1
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        partyRow.addView(partyName)
+        partyRow.addView(circleIcon("+", teal, 32) { promptAddSupplier() })
+        partyBox.addView(partyRow)
+        root.addView(partyBox)
+        root.addView(spacer(18))
+
+        itemEntrySection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 22, 24, 22)
+            background = strokedBg(border, cardWhite, 20)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 12) }
+            applyElevation(this, 3f)
+        }
+
+        val addItemHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, 16) }
+        addItemsTrigger = TextView(this).apply {
+            text = "\u2795  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Add Item", "آئٹم شامل کریں")
+            textSize = 15f
+            setTextColor(Color.parseColor(teal))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        addItemHeaderRow.addView(addItemsTrigger)
+        addItemHeaderRow.addView(TextView(this).apply {
+            text = "\uD83D\uDCF7  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Scan Bill", "بل اسکین کریں")
+            textSize = 12.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = gradientBg(teal, "#0C8F8A", cornerBottom = 30, cornerTop = 30)
+            setPadding(22, 13, 22, 13)
+            applyElevation(this, 2f)
+            setOnClickListener { billScanLauncher.launch(Intent(this@PurchaseActivity, BillScanActivity::class.java)) }
+        })
+        itemEntrySection.addView(addItemHeaderRow)
+
+        val itemBox = innerField()
+        itemBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Item Name", "آئٹم کا نام")))
+        val itemNameRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        itemName = AutoCompleteTextView(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Type to search…", "تلاش کے لیے لکھیں…")
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15.5f
+            threshold = 1
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        itemNameRow.addView(itemName)
+        itemNameRow.addView(circleIcon("+", teal, 30) { openAddProductDialog(itemName.text.toString().trim()) })
+        itemBox.addView(itemNameRow)
+        itemEntrySection.addView(itemBox)
+
+        unitToggleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
+        itemEntrySection.addView(unitToggleRow)
+        itemEntrySection.addView(spacer(10))
+
+        val qtyUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val qtyBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
+        qtyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Quantity", "مقدار")))
+        qty = EditText(this).apply {
+            hint = "0"
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15.5f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+        }
+        qtyBox.addView(qty)
+        val unitBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) } }
+        unitBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Unit", "یونٹ")))
+        unitSpinner = Spinner(this)
+        unitBox.addView(unitSpinner)
+        qtyUnitRow.addView(qtyBox)
+        qtyUnitRow.addView(unitBox)
+        itemEntrySection.addView(qtyUnitRow)
+        itemEntrySection.addView(spacer(10))
+
+        val rateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val rateBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
+        rateBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Rate (Per Unit)", "ریٹ")))
+        rate = EditText(this).apply {
+            hint = "Price / Unit"
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15.5f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+        }
+        rateBox.addView(rate)
+
+        val totalLotBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) } }
+        totalLotBox.addView(labelRow("Total Lot Price"))
+        totalLotPrice = EditText(this).apply {
+            hint = "e.g. 5000 for 2 Ctn"
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15.5f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_DONE
+        }
+        totalLotBox.addView(totalLotPrice)
+        rateRow.addView(rateBox)
+        rateRow.addView(totalLotBox)
+        itemEntrySection.addView(rateRow)
+
+        conversionInfo = TextView(this).apply {
+            text = ""; textSize = 12f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(16, 10, 16, 10); visibility = View.GONE
+            background = strokedBg("#CDEEEC", "#EFFBFA", 10)
+        }
+        itemEntrySection.addView(conversionInfo)
+        itemEntrySection.addView(spacer(6))
+
+        totalAmountText = TextView(this).apply { text = "Total Amount: Rs 0.00"; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)); setPadding(6, 8, 0, 10) }
+        itemEntrySection.addView(totalAmountText)
+
+        addItemButton = Button(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "ADD ITEM", "آئٹم شامل کریں")
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            isAllCaps = false
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = gradientBg(teal, "#0C8F8A", cornerBottom = 14, cornerTop = 14)
+            setPadding(0, 26, 0, 26)
+            applyElevation(this, 3f)
+        }
+        itemEntrySection.addView(addItemButton)
+        root.addView(itemEntrySection)
+
+        billedItemsHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(22, 16, 22, 16)
+            background = gradientBg(navy, navyLight, cornerBottom = 14, cornerTop = 14)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 4, 0, 0) }
+            visibility = View.GONE
+            applyElevation(this, 2f)
+            setOnClickListener { toggleBilledItems() }
+        }
+        billedItemsHeader.addView(TextView(this).apply {
+            text = "\uD83D\uDCCB  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Billed Items", "بل شدہ آئٹمز")
+            textSize = 13.5f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        billedItemsChevron = TextView(this).apply { text = "\u25BE"; textSize = 16f; setTextColor(Color.WHITE) }
+        billedItemsHeader.addView(billedItemsChevron)
+        root.addView(billedItemsHeader)
+
+        itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
+        root.addView(itemsContainer)
+        root.addView(spacer(14))
+
+        val totalCard = premiumCard().apply { orientpercase(); textSize = 9.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f })
         firmNameText = TextView(this).apply { text = "IBTISAAM Kiryana Store"; textSize = 13.5f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 2, 0, 0) }
         firmCol.addView(firmNameText)
         firmRow.addView(firmCol)
