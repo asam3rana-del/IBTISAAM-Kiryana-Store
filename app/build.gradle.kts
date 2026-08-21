@@ -70,4 +70,11 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.biometric:biometric:1.1.0")
+
+    // ===== Offline-first sync (SyncApi, SyncWorker, SyncRepository) =====
+    // Retrofit + Gson: powers SyncEndpoints (push/pull to your backend server).
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    // WorkManager: powers SyncWorker (periodic + immediate background sync).
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }
