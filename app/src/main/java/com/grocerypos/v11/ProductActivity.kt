@@ -28,6 +28,7 @@ import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.smallestUnitName
 import com.grocerypos.v11.toSmallestUnits
 import com.grocerypos.v11.util.Loc
+import com.grocerypos.v11.ui.widget.useNumericKeypad
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -392,6 +393,13 @@ class ProductActivity : AppCompatActivity() {
         }
         ratesCard.addView(stockNote)
         root.addView(ratesCard)
+
+        // ---- Custom numeric keypad instead of the system keyboard for pure-number fields.
+        // Text fields (name, category, item search) keep the normal Gboard flow untouched. ----
+        cost.useNumericKeypad()
+        wholesalePrice.useNumericKeypad()
+        salePrice.useNumericKeypad()
+        stock.useNumericKeypad()
 
         // ---- Keyboard-first flow: pressing Next/Enter on the keyboard jumps straight to the
         // next field, all the way through to Save — no need to tap into each box by hand. ----
@@ -1022,6 +1030,10 @@ class ProductActivity : AppCompatActivity() {
         primaryField.setText(selectedPrimaryUnit)
         secondaryField.setText(if (selectedSecondaryUnit == "None") "" else selectedSecondaryUnit)
         tertiaryField.setText(if (selectedTertiaryUnit == "None") "" else selectedTertiaryUnit)
+
+        // ---- Custom numeric keypad for the two conversion-quantity fields in this dialog. ----
+        secondaryQtyField.useNumericKeypad()
+        tertiaryQtyField.useNumericKeypad()
 
         fun autoSecondary() {
             val p = primaryField.text.toString().trim()
