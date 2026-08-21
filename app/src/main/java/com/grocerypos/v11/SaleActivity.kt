@@ -12,6 +12,7 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -75,6 +76,8 @@ class SaleActivity : AppCompatActivity() {
     private lateinit var unitSpinner: Spinner
     private lateinit var unitPrice: EditText
     private lateinit var itemsContainer: LinearLayout
+    private lateinit var billedItemsTrigger: TextView
+    private var billedItemsDialog: AlertDialog? = null
     private lateinit var subtotalText: TextView
     private lateinit var discountInput: EditText
     private lateinit var totalText: TextView
@@ -302,8 +305,35 @@ class SaleActivity : AppCompatActivity() {
         root.addView(itemEntrySection)
         root.addView(spacer(16))
 
+        // ---- Billed items are no longer rendered inline in the main scroll (that used
+        // to sit right under a floating summary card and could get hidden behind the
+        // keyboard while typing). Instead this is just a trigger row; tapping it opens
+        // the items list in its own dialog/window (see openBilledItemsDialog()). ----
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(itemsContainer)
+
+        val billedItemsBox = outlinedBox()
+        val billedItemsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        billedItemsRow.addView(TextView(this).apply {
+            text = "🧾  "
+            textSize = 15f
+        })
+        billedItemsTrigger = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Billed Items (0)", "بل کردہ آئٹمز (0)")
+            textSize = 14.5f
+            setTextColor(Color.parseColor(teal))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        billedItemsRow.addView(billedItemsTrigger)
+        billedItemsRow.addView(TextView(this).apply {
+            text = "\u203A"
+            textSize = 18f
+            setTextColor(Color.parseColor(teal))
+        })
+        billedItemsBox.addView(billedItemsRow)
+        billedItemsBox.setOnClickListener { openBilledItemsDialog() }
+        root.addView(billedItemsBox)
+        root.addView(spacer(14))
 
         val subtotalRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(6, 8, 6, 8) }
         subtotalRow.addView(TextView(this).apply {
@@ -319,9 +349,10 @@ class SaleActivity : AppCompatActivity() {
         root.addView(subtotalRow)
         root.addView(spacer(12))
 
-        // ---- Total / Discount / Paid / Due now live in the floating bottom-left
-        // summary card (see summaryCard()) instead of inline here. The controls
-        // are created standalone and attached to that card further below. ----
+        // ---- Total / Discount / Paid / Due controls (created standalone, attached
+        // into summaryCard() below). No longer a floating overlay — it now sits
+        // inline in the normal scroll flow, so it can never cover the keyboard or
+        // hide other controls. ----
         totalText = TextView(this).apply {
             text = "Rs 0.00"; textSize = 16.5f
             setTextColor(Color.parseColor(textDark))
@@ -359,6 +390,9 @@ class SaleActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
 
+        root.addView(summaryCard())
+        root.addView(spacer(16))
+
         saveButton = Button(this).apply {
             text = if (editInvoice != null) com.grocerypos.v11.util.Loc.t(this@SaleActivity, "UPDATE SALE", "سیل اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@SaleActivity, "SAVE SALE", "سیل محفوظ کریں")
             setTextColor(Color.WHITE)
@@ -386,21 +420,13 @@ class SaleActivity : AppCompatActivity() {
         saveDeleteRow.addView(saveButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) })
         saveDeleteRow.addView(deleteButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply { setMargins(8, 0, 0, 0) })
         root.addView(saveDeleteRow)
-        // Extra bottom space so the floating summary card (bottom-left) never
-        // permanently blocks the save/delete row — user can scroll past it.
-        root.addView(spacer(150))
+        root.addView(spacer(24))
 
         val scrollView = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bg))
             addView(root)
         }
-        val screenRoot = FrameLayout(this)
-        screenRoot.addView(scrollView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        screenRoot.addView(summaryCard(), FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
-            setMargins(dp(16), 0, 0, dp(20))
-        })
-        setContentView(screenRoot)
+        setContentView(scrollView)
 
         loadCustomers()
         loadProducts()
@@ -695,15 +721,20 @@ class SaleActivity : AppCompatActivity() {
         addItemsTrigger.text = if (itemEntrySection.visibility == View.VISIBLE) "  Hide Item Entry" else "  Add Items"
     }
 
-    // ---- Floating bottom-left "bill summary" card: Total / Discount / Paid / Due.
-    // Cash-vs-credit is no longer a manual toggle — it's derived from Paid vs Total
-    // (Due = Total − Paid; Due > 0 means part/all of the sale is on credit). ----
+    // ---- "Bill summary" card: Total / Discount / Paid / Due. Now attached inline in
+    // the normal scroll flow (not a floating overlay), so it can never sit on top of
+    // the keyboard or block a field while typing. Cash-vs-credit is derived from
+    // Paid vs Total (Due = Total − Paid; Due > 0 means part/all of the sale is on
+    // credit). ----
     private fun summaryCard(): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(16))
             background = premiumCardBg()
-            applyElevation(this, 14f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, dp(4)) }
+            applyElevation(this, 6f)
         }
         card.addView(TextView(this).apply {
             text = "BILL SUMMARY"
@@ -969,6 +1000,10 @@ class SaleActivity : AppCompatActivity() {
         if (editInvoice == null) saveDraft()
     }
 
+    // ---- Renders the current bill lines into itemsContainer. This container is only
+    // ever attached to the screen while the "Billed Items" dialog is open (see
+    // openBilledItemsDialog()) — it is intentionally kept out of the main scroll so it
+    // never sits behind the keyboard while the user is typing in the item-entry form. ----
     private fun renderItemsList() {
         itemsContainer.removeAllViews()
         lines.forEachIndexed { index, line ->
@@ -1012,10 +1047,77 @@ class SaleActivity : AppCompatActivity() {
                         renderItemsList()
                         updateTotals()
                         if (editInvoice == null) saveDraft()
+                        if (lines.isEmpty()) billedItemsDialog?.dismiss()
                     }
                 })
             })
         }
+        updateBilledItemsTrigger()
+    }
+
+    private fun updateBilledItemsTrigger() {
+        if (!::billedItemsTrigger.isInitialized) return
+        val count = lines.size
+        val total = lines.sumOf { it.amount }
+        billedItemsTrigger.text = com.grocerypos.v11.util.Loc.t(
+            this,
+            "Billed Items (%d) — Rs %.2f".format(count, total),
+            "بل کردہ آئٹمز (%d) — Rs %.2f".format(count, total)
+        )
+    }
+
+    // ---- Opens the billed-items list in its own dialog/window instead of showing it
+    // inline in the main scroll. Keeps typing in the item-entry form free of the
+    // keyboard ever covering the list or the bill summary. ----
+    private fun openBilledItemsDialog() {
+        if (lines.isEmpty()) {
+            Toast.makeText(
+                this,
+                com.grocerypos.v11.util.Loc.t(this, "No items added yet", "ابھی تک کوئی آئٹم شامل نہیں"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
+        renderItemsList()
+
+        val scroll = ScrollView(this).apply {
+            setPadding(dp(16), dp(12), dp(16), dp(4))
+            addView(itemsContainer)
+        }
+
+        val dialogHeader = LinearLayout(this).apply {
+            setPadding(dp(24), dp(22), dp(24), dp(22))
+            background = roundedBg(navy, 0)
+        }
+        dialogHeader.addView(TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Billed Items", "بل کردہ آئٹمز")
+            textSize = 17f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+
+        val wrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor(cardBg))
+            addView(dialogHeader)
+            addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(420)))
+            addView(Button(this@SaleActivity).apply {
+                text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Close", "بند کریں")
+                isAllCaps = false
+                setTextColor(Color.parseColor(textGray))
+                setBackgroundColor(Color.TRANSPARENT)
+                setOnClickListener { billedItemsDialog?.dismiss() }
+            })
+        }
+
+        billedItemsDialog = AlertDialog.Builder(this).setView(wrapper).create()
+        billedItemsDialog?.setOnDismissListener {
+            (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
+            billedItemsDialog = null
+        }
+        billedItemsDialog?.show()
     }
 
     // Recomputes subtotal/total display only (does NOT touch the paid field).
@@ -1040,6 +1142,7 @@ class SaleActivity : AppCompatActivity() {
             suppressPaidWatcher = false
         }
         refreshDue()
+        updateBilledItemsTrigger()
     }
 
     // Due = Total − Paid. Due > 0 means part/all credit — this is what now
@@ -1075,7 +1178,13 @@ class SaleActivity : AppCompatActivity() {
         val method = if (paid <= 0.009) "credit" else (paymentMethodSpinner.selectedItem?.toString() ?: "Cash")
         var customer = customers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
         val saleType = if (saleTypeSpinner.selectedItem?.toString() == "Wholesale") "wholesale" else "retail"
-        val invoice = editInvoice ?: ("INV" + System.currentTimeMillis().toString())
+        // ---- Ref number now starts with a 4-digit month+year (MMyy) so bills are easy
+        // to trace by when they were made, followed by a unique suffix. e.g. a sale
+        // made in Aug 2026 starts with "0826…". ----
+        val invoice = editInvoice ?: run {
+            val mmYY = SimpleDateFormat("MMyy", Locale.getDefault()).format(Date(saleDateMillis))
+            mmYY + System.currentTimeMillis().toString().takeLast(8)
+        }
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
