@@ -18,6 +18,7 @@ import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.Supplier
+import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -57,6 +58,10 @@ import java.util.Locale
  *      - Supplier closing > 0  => shop owes the supplier (payable)      -> You'll Give
  *      - Supplier closing < 0  => supplier owes the shop (e.g. credit)  -> You'll Get
  *    See updateSummaryTotals() and dashboardPartyRow() below.
+ * 7. Items tab stock display: Product.stock is the SMALLEST-unit count, not a primary-unit
+ *    count, so "${stock} ${unit}" (raw smallest count + primary unit label) was misleading.
+ *    Now uses Product.formatStockBreakdown() (same helper Product/Purchase/Sale screens use)
+ *    so the Items tab always agrees with the rest of the app.
  *
  * Manifest: PartyTransactionActivity must be added:
  *   <activity android:name=".ui.PartyTransactionActivity" android:exported="false" />
@@ -123,6 +128,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         val salePrice: Double,
         val wholesalePrice: Double,
         val stock: Int,
+        val stockDisplay: String,
         val soldQty: Int,
         val soldAmt: Double,
         val purQty: Int,
@@ -901,6 +907,10 @@ class PartyDashboardActivity : AppCompatActivity() {
                     salePrice = p.salePrice,
                     wholesalePrice = p.wholesalePrice,
                     stock = p.stock,
+                    // Product.stock is a SMALLEST-unit count, not a primary-unit count, so it
+                    // must never be paired with `p.unit` directly — formatStockBreakdown() is
+                    // the same helper Product/Purchase/Sale screens use for this.
+                    stockDisplay = p.formatStockBreakdown(),
                     soldQty = sold?.totalQty ?: 0,
                     soldAmt = sold?.totalAmount ?: 0.0,
                     purQty = pur?.totalQty ?: 0,
@@ -950,7 +960,7 @@ class PartyDashboardActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             topRow.addView(TextView(this@PartyDashboardActivity).apply {
-                text = "Stock: ${c.stock} ${c.unit}"
+                text = "Stock: ${c.stockDisplay}"
                 textSize = 11.5f
                 setTextColor(Color.parseColor(labelGray))
             })
@@ -1028,7 +1038,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         }
         line(Loc.t(this, "Category", "\u06A9\u06CC\u0679\u06AF\u0631\u06CC"), c.category.ifBlank { "-" })
         line(Loc.t(this, "Unit", "\u06CC\u0648\u0646\u0679"), c.unit)
-        line(Loc.t(this, "Current Stock", "\u0645\u0648\u062C\u0648\u062F\u06C1 \u0627\u0633\u0679\u0627\u06A9"), "${c.stock} ${c.unit}")
+        line(Loc.t(this, "Current Stock", "\u0645\u0648\u062C\u0648\u062F\u06C1 \u0627\u0633\u0679\u0627\u06A9"), c.stockDisplay)
         line(Loc.t(this, "Purchase Rate", "\u062E\u0631\u06CC\u062F \u0631\u06CC\u0679"), "Rs %.2f".format(c.cost), orange)
         line(Loc.t(this, "Retail Sale Rate", "\u0631\u06CC\u0679\u06CC\u0644 \u0631\u06CC\u0679"), "Rs %.2f".format(c.salePrice), blue)
         line(Loc.t(this, "Wholesale Rate", "\u06C1\u0648\u0644 \u0633\u06CC\u0644 \u0631\u06CC\u0679"), "Rs %.2f".format(c.wholesalePrice), "#7B61FF")
