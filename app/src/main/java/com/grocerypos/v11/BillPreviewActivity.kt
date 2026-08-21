@@ -19,23 +19,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Receipt-style preview shown right after a Sale or Purchase is saved.
- * Reads everything it needs from the Intent extras the caller passes —
- * no extra DB queries for party name etc, so it can't drift out of sync
- * with what was actually just saved.
- *
- * One line item is encoded as: name\u0003qty\u0003unit\u0003rate\u0003amount
- * Multiple lines are joined with \u0002 (same delimiter style already
- * used for held bills elsewhere in the app).
- */
 class BillPreviewActivity : AppCompatActivity() {
 
     companion object {
-        const val EXTRA_TYPE = "type"                 // "sale" or "purchase"
-        const val EXTRA_REFERENCE = "reference"        // invoice or billNo
+        const val EXTRA_TYPE = "type"
+        const val EXTRA_REFERENCE = "reference"
         const val EXTRA_PARTY_NAME = "party_name"
-        const val EXTRA_PARTY_LABEL = "party_label"    // "Customer" or "Supplier"
+        const val EXTRA_PARTY_LABEL = "party_label"
         const val EXTRA_DATE_MILLIS = "date_millis"
         const val EXTRA_SUBTOTAL = "subtotal"
         const val EXTRA_DISCOUNT = "discount"
@@ -89,7 +79,6 @@ class BillPreviewActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= HEADER =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -125,7 +114,6 @@ class BillPreviewActivity : AppCompatActivity() {
         })
         root.addView(header)
 
-        // ================= RECEIPT CARD =================
         val receiptCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(26, 24, 26, 20)
@@ -162,7 +150,6 @@ class BillPreviewActivity : AppCompatActivity() {
 
         receiptCard.addView(dashedDivider())
 
-        // ---- Items header row ----
         receiptCard.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(TextView(this@BillPreviewActivity).apply {
@@ -236,7 +223,6 @@ class BillPreviewActivity : AppCompatActivity() {
         root.addView(receiptCard)
         root.addView(spacer(22))
 
-        // ================= BUTTONS =================
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
             text = "🖨️  PRINT"
@@ -314,31 +300,37 @@ class BillPreviewActivity : AppCompatActivity() {
                 return@launch
             }
 
+            val width = 32
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             val sb = StringBuilder()
-            sb.append(center(shopName, 32)).append("\n")
-            if (shopAddress.isNotBlank()) sb.append(center(shopAddress, 32)).append("\n")
-            if (shopPhone.isNotBlank()) sb.append(center(shopPhone, 32)).append("\n")
-            sb.append("--------------------------------\n")
-            sb.append(if (type == "sale") "SALE RECEIPT\n" else "PURCHASE RECEIPT\n")
+
+            sb.append(center(shopName, width)).append("\n")
+            if (shopAddress.isNotBlank()) sb.append(center(shopAddress, width)).append("\n")
+            if (shopPhone.isNotBlank()) sb.append(center(shopPhone, width)).append("\n")
+            sb.append("-".repeat(width)).append("\n")
+            sb.append(center(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT", width)).append("\n")
+            sb.append("-".repeat(width)).append("\n")
             sb.append("Ref: $reference\n")
             sb.append("Date: ${fmt.format(Date(dateMillis))}\n")
             if (partyName.isNotBlank()) sb.append("$partyLabel: $partyName\n")
-            sb.append("--------------------------------\n")
+            if (paymentMethod.isNotBlank()) sb.append("Payment: ${paymentMethod.replaceFirstChar { it.uppercase() }}\n")
+            sb.append("-".repeat(width)).append("\n")
+
             for (line in lines) {
                 sb.append(line.name).append("\n")
-                sb.append("  ${line.qty} ${line.unit} x %.2f".format(line.rate))
-                sb.append(row("", "%.2f".format(line.amount), 32)).append("\n")
+                val left = "${line.qty} ${line.unit} x %.2f".format(line.rate)
+                sb.append(row(left, "%.2f".format(line.amount), width)).append("\n")
             }
-            sb.append("--------------------------------\n")
-            sb.append(row("Subtotal", "Rs %.2f".format(subtotal), 32)).append("\n")
-            if (discount > 0) sb.append(row("Discount", "-Rs %.2f".format(discount), 32)).append("\n")
-            sb.append(row("TOTAL", "Rs %.2f".format(total), 32)).append("\n")
-            sb.append(row("Paid", "Rs %.2f".format(paid), 32)).append("\n")
+
+            sb.append("-".repeat(width)).append("\n")
+            sb.append(row("Subtotal", "Rs %.2f".format(subtotal), width)).append("\n")
+            if (discount > 0) sb.append(row("Discount", "-Rs %.2f".format(discount), width)).append("\n")
+            sb.append(row("TOTAL", "Rs %.2f".format(total), width)).append("\n")
+            sb.append(row("Paid", "Rs %.2f".format(paid), width)).append("\n")
             val balance = total - paid
-            if (balance > 0.009) sb.append(row("Balance", "Rs %.2f".format(balance), 32)).append("\n")
-            sb.append("--------------------------------\n")
-            sb.append(center(receiptFooter.ifBlank { "Shukriya!" }, 32)).append("\n")
+            if (balance > 0.009) sb.append(row("Balance Due", "Rs %.2f".format(balance), width)).append("\n")
+            sb.append("-".repeat(width)).append("\n")
+            sb.append(center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }, width)).append("\n")
 
             val ok = PrinterHelper.printUrduText(
                 this@BillPreviewActivity,
@@ -381,7 +373,6 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    // ================= UI HELPERS =================
     private fun kv(label: String, value: String, bold: Boolean = false, valueColor: String? = null) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, 5, 0, 5)
