@@ -184,7 +184,29 @@ class HistoryActivity : AppCompatActivity() {
     private fun returnedBanner() = LinearLayout(this).apply { setPadding(dp(12), dp(8), dp(12), dp(8)); background = roundedBackground("#FFEBEE", 10); layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0,0,0,dp(12)) }; addView(TextView(this@HistoryActivity).apply { text = "RETURNED"; setTextColor(Color.parseColor("#C62828")); setTypeface(typeface, android.graphics.Typeface.BOLD) }) }
     private fun kv(l: String, v: String) = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(TextView(this@HistoryActivity).apply { text = l; setTextColor(Color.GRAY); layoutParams = LinearLayout.LayoutParams(0,-2,1f) }); addView(TextView(this@HistoryActivity).apply { text = v }) }
     private fun sectionTitle(t: String) = TextView(this).apply { text = t; setTypeface(typeface, android.graphics.Typeface.BOLD) }
-    private fun itemRow(n: String, q: String, a: String) = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; val col = LinearLayout(this@HistoryActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0,-2,1f) }; col.addView(TextView(this@HistoryActivity).apply { text = n }); col.addView(TextView(this@HistoryActivity).apply { text = q; setTextColor(Color.GRAY) }); addView(col); addView(TextView(this@HistoryActivity).apply { text = a }) }
+    private fun itemRow(n: String, q: String, a: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(6), 0, dp(6))
+        val top = LinearLayout(this@HistoryActivity).apply { orientation = LinearLayout.HORIZONTAL }
+        top.addView(TextView(this@HistoryActivity).apply {
+            text = n; textSize = 14f
+            setTextColor(Color.parseColor("#1A1D2E"))
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        })
+        top.addView(TextView(this@HistoryActivity).apply {
+            text = a; textSize = 14f
+            setTextColor(Color.parseColor("#1A1D2E"))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        addView(top)
+        addView(TextView(this@HistoryActivity).apply {
+            text = q; textSize = 12.5f
+            setTextColor(Color.GRAY)
+            gravity = Gravity.END
+            setPadding(0, dp(2), 0, 0)
+        })
+        addView(divider())
+    }
     private fun spacer() = View(this).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(12)) }
     private fun row(title: String, subtitle: String, amount: Double, date: String, color: String, returned: Boolean, onClick: () -> Unit) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); setOnClickListener { onClick() }
