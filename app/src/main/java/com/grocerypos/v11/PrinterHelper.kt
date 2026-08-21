@@ -24,6 +24,7 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
+import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -57,6 +58,12 @@ object PrinterHelper {
 
     // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi)
     private const val PRINTER_DOTS_WIDTH = 384
+
+    // Optional bundled Urdu font for correct Nastaliq/Naskh shaping when printing.
+    // Place a font file at app/src/main/assets/fonts/NotoNastaliqUrdu-Regular.ttf
+    // (or change this path) to use it; if missing, we fall back to the system
+    // default font, which still renders Urdu via Android's own script fallback.
+    private const val URDU_FONT_ASSET_PATH = "fonts/NotoNastaliqUrdu-Regular.ttf"
 
     // ================= BLUETOOTH =================
 
@@ -223,14 +230,60 @@ object PrinterHelper {
     // ================= URDU PRINTING (rendered as image) =================
 
     /**
+     * True if the text contains any Arabic-script characters (covers Urdu, since
+     * Urdu is written using the Arabic script plus a few extra letters, all of
+     * which fall in these Unicode blocks). Used to decide the paragraph reading
+     * direction so the printed image lines up right-to-left, the same way the
+     * on-screen TextViews already do automatically.
+     */
+    private fun containsArabicScript(text: String): Boolean {
+        for (ch in text) {
+            val code = ch.code
+            if (code in 0x0600..0x06FF ||   // Arabic
+                code in 0x0750..0x077F ||   // Arabic Supplement
+                code in 0x08A0..0x08FF ||   // Arabic Extended-A
+                code in 0xFB50..0xFDFF ||   // Arabic Presentation Forms-A
+                code in 0xFE70..0xFEFF      // Arabic Presentation Forms-B
+            ) return true
+        }
+        return false
+    }
+
+    private var cachedUrduTypeface: Typeface? = null
+    private var triedLoadingUrduFont = false
+
+    /**
+     * Loads a bundled Urdu font from assets for correct Nastaliq/Naskh shaping.
+     * If no font is bundled at [URDU_FONT_ASSET_PATH], silently falls back to
+     * Typeface.DEFAULT — Android will still shape the Urdu glyphs correctly via
+     * its own system font fallback, just possibly in a different-looking style
+     * than a proper Nastaliq font.
+     */
+    private fun resolveUrduTypeface(context: Context): Typeface {
+        cachedUrduTypeface?.let { return it }
+        if (triedLoadingUrduFont) return Typeface.DEFAULT
+        triedLoadingUrduFont = true
+        return try {
+            val tf = Typeface.createFromAsset(context.assets, URDU_FONT_ASSET_PATH)
+            cachedUrduTypeface = tf
+            tf
+        } catch (e: Exception) {
+            Typeface.DEFAULT
+        }
+    }
+
+    /**
      * Renders Urdu (or any Unicode) text into a bitmap using Android's own text
      * engine, which handles Arabic/Urdu shaping + RTL correctly — something the
      * printer firmware cannot do on its own.
      *
-     * For proper Nastaliq shaping, pass a Typeface loaded from a bundled font asset,
-     * e.g. Typeface.createFromAsset(context.assets, "NotoNastaliqUrdu-Regular.ttf")
+     * Paragraph direction is auto-detected per print job: if the text contains
+     * Urdu/Arabic characters we lay it out RTL (matching how it actually reads),
+     * otherwise LTR. This is what previously made the print look different from
+     * the on-screen receipt — the on-screen TextViews pick their direction
+     * automatically, but the printer image was always forced LTR.
      */
-    private fun renderTextToBitmap(text: String, fontSizePx: Float = 28f, typeface: Typeface = Typeface.DEFAULT): Bitmap {
+    private fun renderTextToBitmap(text: String, fontSizePx: Float = 30f, typeface: Typeface = Typeface.DEFAULT): Bitmap {
         val paint = TextPaint().apply {
             isAntiAlias = true
             textSize = fontSizePx
@@ -238,10 +291,16 @@ object PrinterHelper {
             this.typeface = typeface
         }
 
+        val direction = if (containsArabicScript(text))
+            TextDirectionHeuristics.RTL
+        else
+            TextDirectionHeuristics.LTR
+
         val layout = StaticLayout.Builder
             .obtain(text, 0, text.length, paint, PRINTER_DOTS_WIDTH)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL) // StaticLayout auto-detects RTL runs
-            .setLineSpacing(0f, 1.1f)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL) // start-of-line, direction-aware
+            .setTextDirection(direction)
+            .setLineSpacing(0f, 1.15f)
             .build()
 
         val bitmap = Bitmap.createBitmap(PRINTER_DOTS_WIDTH, layout.height, Bitmap.Config.ARGB_8888)
@@ -286,15 +345,20 @@ object PrinterHelper {
         return header + imageData
     }
 
-    /** Prints Urdu (or mixed Urdu/English) text by rendering it as an image first. */
+    /**
+     * Prints Urdu (or mixed Urdu/English) text by rendering it as an image first.
+     * Pass an explicit [typeface] to force one; otherwise a bundled Urdu font is
+     * used automatically if present (see [resolveUrduTypeface]).
+     */
     fun printUrduText(
         context: Context,
         type: PrinterType,
         address: String,
         text: String,
-        typeface: Typeface = Typeface.DEFAULT
+        typeface: Typeface? = null
     ): Boolean {
-        val bitmap = renderTextToBitmap(text, typeface = typeface)
+        val resolvedTypeface = typeface ?: resolveUrduTypeface(context)
+        val bitmap = renderTextToBitmap(text, typeface = resolvedTypeface)
         val payload = ESC_INIT + bitmapToEscPosRaster(bitmap) + FEED_AND_CUT
         return sendRawBytes(context, type, address, payload)
     }
