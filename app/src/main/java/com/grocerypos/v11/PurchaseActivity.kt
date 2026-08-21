@@ -544,19 +544,24 @@ class PurchaseActivity : AppCompatActivity() {
         editBillNo?.let { loadForEdit(it) }
 
         partyName.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_NEXT) { itemName.requestFocus(); itemName.showDropDown(); true } else false
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { itemName.requestFocus(); safeShowDropDown(itemName); true } else false
         }
 
         itemName.setOnItemClickListener { _, _, position, _ ->
             onItemPicked(itemName.adapter.getItem(position).toString())
             qty.requestFocus()
         }
-        itemName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) itemName.showDropDown() }
+        itemName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(itemName) }
         itemName.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) { qty.requestFocus(); true } else false
         }
         itemName.addTextChangedListener(simpleWatcher {
-            if (itemName.text.length >= 1) itemName.showDropDown()
+            // Only pop the dropdown while the user is actually typing in this field — NOT when
+            // text is set programmatically (e.g. restoreDraftIfAny()/applyPickedProduct() calling
+            // setText()). Calling showDropDown() from a programmatic setText() during onCreate,
+            // before the window is fully attached, is what caused the
+            // "PopupWindow not attached to window manager" crash.
+            if (itemName.hasFocus() && itemName.text.length >= 1) safeShowDropDown(itemName)
             val match = products.find { it.name.equals(itemName.text.toString().trim(), ignoreCase = true) }
             if (match == null) {
                 selectedProduct = null
@@ -585,11 +590,11 @@ class PurchaseActivity : AppCompatActivity() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
-        partyName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) partyName.showDropDown() }
+        partyName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(partyName) }
         partyName.setOnItemClickListener { _, _, position, _ -> updateSupplierBalanceDisplay(partyName.adapter.getItem(position).toString()) }
         partyName.addTextChangedListener(simpleWatcher {
             updateSupplierBalanceDisplay(partyName.text.toString().trim())
-            if (partyName.text.length >= 1) partyName.showDropDown()
+            if (partyName.hasFocus() && partyName.text.length >= 1) safeShowDropDown(partyName)
         })
 
         qty.addTextChangedListener(simpleWatcher {
@@ -760,6 +765,21 @@ class PurchaseActivity : AppCompatActivity() {
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun afterTextChanged(s: Editable?) = onChange()
     }
+    // ---- Fix for a real crash seen in production: "PopupWindow not attached to window manager".
+    // AutoCompleteTextView's dropdown is itself a PopupWindow; calling showDropDown() while the
+    // anchor view isn't attached/laid out yet (e.g. during onCreate, or a fast focus/detach race)
+    // can throw IllegalArgumentException deep inside the framework. isAttachedToWindow limits most
+    // of those cases, and the try/catch is a safety net for the rest — worst case the dropdown
+    // just doesn't pop open that one time, instead of crashing the whole app. ----
+    private fun safeShowDropDown(view: AutoCompleteTextView) {
+        if (!view.isAttachedToWindow) return
+        try {
+            view.showDropDown()
+        } catch (e: Exception) {
+            Log.e(TAG, "safeShowDropDown failed for ${view.hint}", e)
+        }
+    }
+
     private fun formatDate(millis: Long) = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(millis))
     private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
     private fun openDatePicker() {
