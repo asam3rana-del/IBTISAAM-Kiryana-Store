@@ -6,6 +6,8 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -22,6 +24,7 @@ import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -34,6 +37,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var youllGetValue: TextView
     private lateinit var youllGiveValue: TextView
+
+    private lateinit var searchResultsBox: LinearLayout
+    private var allProductsCache: List<com.grocerypos.v11.Product>? = null
 
     private val bgColor = "#F0F1F8"
     private val cardWhite = "#FFFFFF"
@@ -65,27 +71,26 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bgColor))
         }
 
-        // ================= HEADER =================
+        // ================= HEADER — back to a compact size =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(26, 56, 26, 46)
+            setPadding(26, 46, 26, 32)
             elevation = 14f
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.parseColor(headerStart), Color.parseColor(headerMid), Color.parseColor(headerEnd))
             ).apply {
-                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 44f, 44f, 44f, 44f)
+                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 40f, 40f, 40f, 40f)
             }
         }
 
-        // ---- top row: gear (left) ... premium logo + small admin-panel tag (right) ----
         val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
         topRow.addView(FrameLayout(this).apply {
-            val size = (44 * resources.displayMetrics.density).toInt()
+            val size = (40 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(size, size)
             elevation = 8f
             val chipBg = GradientDrawable().apply {
@@ -102,48 +107,45 @@ class MainActivity : AppCompatActivity() {
             )
             addView(TextView(this@MainActivity).apply {
                 text = "⚙️"
-                textSize = 19f
+                textSize = 17f
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
             setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
         })
 
-        topRow.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-        })
+        topRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
 
         topRow.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(premiumLogoBadge(46))
+            addView(premiumLogoBadge(40))
             addView(TextView(this@MainActivity).apply {
                 text = role.replaceFirstChar { it.uppercase() } + " Panel"
-                textSize = 9.5f
+                textSize = 9f
                 setTextColor(Color.parseColor("#C7CAF5"))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
-                setPadding(0, 6, 0, 0)
+                setPadding(0, 5, 0, 0)
             })
         })
 
         header.addView(topRow)
 
-        // ---- shop name: big, centered ----
         shopNameHeader = TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
-            textSize = 25f
+            textSize = 19.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
-            setPadding(8, 22, 8, 0)
-            setShadowLayer(8f, 0f, 3f, Color.parseColor("#40000000"))
+            setPadding(8, 16, 8, 0)
+            setShadowLayer(6f, 0f, 2f, Color.parseColor("#40000000"))
         }
         header.addView(shopNameHeader)
 
         header.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams((46 * resources.displayMetrics.density).toInt(), (3 * resources.displayMetrics.density).toInt()).apply {
-                topMargin = (12 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams((38 * resources.displayMetrics.density).toInt(), (3 * resources.displayMetrics.density).toInt()).apply {
+                topMargin = (9 * resources.displayMetrics.density).toInt()
                 gravity = Gravity.CENTER_HORIZONTAL
             }
             background = GradientDrawable().apply {
@@ -159,8 +161,13 @@ class MainActivity : AppCompatActivity() {
             setPadding(28, 26, 28, 40)
         }
 
-        // ================= ITEM RATE SEARCH — moved to top =================
+        // ================= ITEM RATE SEARCH — live, inline, no second screen =================
         body.addView(premiumSearchBar())
+        searchResultsBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        body.addView(searchResultsBox)
         body.addView(spacer(26))
 
         // ================= STAT CARDS =================
@@ -250,6 +257,7 @@ class MainActivity : AppCompatActivity() {
         loadDashboard()
         loadShopName()
         loadPartySummary()
+        allProductsCache = null // refresh cache in case products changed elsewhere
     }
 
     private fun showCrashDialog(crashText: String) {
@@ -268,6 +276,33 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("Dismiss") { _, _ -> com.grocerypos.v11.util.CrashHandler.clearLastCrash(this) }
             .setCancelable(false)
             .show()
+    }
+
+    // ---- premium metallic circular icon badge, reused everywhere for a consistent ultra-premium look ----
+    private fun premiumIconBadge(emoji: String, accentHex: String, sizeDp: Int, textSizeSp: Float): FrameLayout {
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        return FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            elevation = 8f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                colors = intArrayOf(
+                    lighten(accentHex, 0.9f),
+                    lighten(accentHex, 0.35f),
+                    Color.parseColor(accentHex),
+                    darken(accentHex, 0.35f)
+                )
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                orientation = GradientDrawable.Orientation.TL_BR
+                setStroke((1 * resources.displayMetrics.density).toInt(), lighten(accentHex, 0.6f))
+            }
+            addView(TextView(this@MainActivity).apply {
+                text = emoji
+                textSize = textSizeSp
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            })
+        }
     }
 
     // ---- premium circular logo badge: gold double-ring + navy-gold gradient fill ----
@@ -294,7 +329,7 @@ class MainActivity : AppCompatActivity() {
             }
             addView(TextView(this@MainActivity).apply {
                 text = "IK"
-                textSize = 15f
+                textSize = 13f
                 setTextColor(Color.parseColor(goldAccent))
                 setTypeface(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
@@ -304,53 +339,110 @@ class MainActivity : AppCompatActivity() {
         return outer
     }
 
-    // ---- premium search bar, tap opens Item Rate Search ----
+    // ---- live search bar: typing filters products immediately and results render right below,
+    // no second search screen involved. Tapping a result opens Item Rate Search prefilled. ----
     private fun premiumSearchBar(): LinearLayout {
-        return LinearLayout(this).apply {
+        val row = LinearLayout(this)
+        val input = EditText(this).apply {
+            hint = "Search Item Rate…"
+            textSize = 14.5f
+            setTextColor(Color.parseColor(textDark))
+            setHintTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = null
+            isSingleLine = true
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        row.apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(22, 20, 22, 20)
+            setPadding(20, 16, 20, 16)
             elevation = 8f
-            val bg = roundedBackgroundBordered(cardWhite, 30)
-            background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.parseColor(headerEnd)).withAlpha(30),
-                bg, bg
-            )
-            isClickable = true
+            background = roundedBackgroundBordered(cardWhite, 30)
 
-            addView(FrameLayout(this@MainActivity).apply {
-                val size = (36 * resources.displayMetrics.density).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size).apply { setMargins(0, 0, 14, 0) }
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    colors = intArrayOf(lighten("#0F9B8E", 0.85f), Color.parseColor("#DEF6F2"))
-                    gradientType = GradientDrawable.LINEAR_GRADIENT
-                    orientation = GradientDrawable.Orientation.TL_BR
-                }
-                addView(TextView(this@MainActivity).apply {
-                    text = "🔎"
-                    textSize = 16f
-                    gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            addView(premiumIconBadge("🔎", "#0F9B8E", 36, 16f).apply {
+                (layoutParams as LinearLayout.LayoutParams).setMargins(0, 0, 14, 0)
+            })
+            addView(input)
+        }
+
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                runItemSearch(s?.toString().orEmpty())
+            }
+        })
+
+        return row
+    }
+
+    // Filters the product list as the user types and renders matches directly under the search
+    // bar — this replaces the old flow where tapping opened a separate screen to search again.
+    // NOTE: assumes Product has `name` and `salePrice` fields via db.productDao().all(); adjust
+    // field names here if your Product entity differs.
+    private fun runItemSearch(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) {
+            searchResultsBox.removeAllViews()
+            searchResultsBox.visibility = View.GONE
+            return
+        }
+        lifecycleScope.launch {
+            val products = allProductsCache ?: PosDatabase.get(this@MainActivity).productDao().all().first().also { allProductsCache = it }
+            val matches = products.filter { it.name.contains(trimmed, ignoreCase = true) }.take(6)
+
+            searchResultsBox.removeAllViews()
+            if (matches.isEmpty()) {
+                searchResultsBox.addView(TextView(this@MainActivity).apply {
+                    text = "No matching items"
+                    textSize = 13f
+                    setTextColor(Color.parseColor(textMuted))
+                    setPadding(24, 18, 24, 18)
                 })
-            })
-
-            addView(TextView(this@MainActivity).apply {
-                text = "Search Item Rate…"
-                textSize = 14.5f
-                setTextColor(Color.parseColor(textMuted))
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-
-            addView(TextView(this@MainActivity).apply {
-                text = "›"
-                textSize = 20f
-                setTextColor(Color.parseColor(headerEnd))
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-            })
-
-            setOnClickListener { startActivity(Intent(this@MainActivity, ItemSearchActivity::class.java)) }
+            } else {
+                matches.forEachIndexed { index, product ->
+                    searchResultsBox.addView(LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(22, 16, 22, 16)
+                        isClickable = true
+                        background = android.graphics.drawable.RippleDrawable(
+                            android.content.res.ColorStateList.valueOf(Color.parseColor(headerEnd)).withAlpha(25),
+                            null, null
+                        )
+                        addView(TextView(this@MainActivity).apply {
+                            text = product.name
+                            textSize = 13.5f
+                            setTextColor(Color.parseColor(textDark))
+                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        })
+                        addView(TextView(this@MainActivity).apply {
+                            text = "Rs %.2f".format(product.salePrice)
+                            textSize = 13.5f
+                            setTextColor(Color.parseColor("#1257C4"))
+                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        })
+                        setOnClickListener { startActivity(Intent(this@MainActivity, ItemSearchActivity::class.java)) }
+                    })
+                    if (index != matches.lastIndex) {
+                        searchResultsBox.addView(View(this@MainActivity).apply {
+                            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
+                                leftMargin = 22; rightMargin = 22
+                            }
+                            setBackgroundColor(Color.parseColor("#ECEEF6"))
+                        })
+                    }
+                }
+            }
+            searchResultsBox.background = roundedBackgroundBordered(cardWhite, 20)
+            searchResultsBox.elevation = 6f
+            val m = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            m.topMargin = (8 * resources.displayMetrics.density).toInt()
+            searchResultsBox.layoutParams = m
+            searchResultsBox.visibility = View.VISIBLE
         }
     }
 
@@ -363,7 +455,7 @@ class MainActivity : AppCompatActivity() {
         setPadding(4, 0, 0, 14)
     }
 
-    // ---- swipeable carousel: HorizontalScrollView holding two floating hero cards ----
+    // ---- swipeable carousel (SALE + PURCHASE ONLY): HorizontalScrollView holding two floating cards ----
     private fun buildSwipeableQuickActions(): HorizontalScrollView {
         val cardWidth = (resources.displayMetrics.widthPixels * 0.72f).toInt()
 
@@ -396,7 +488,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- single floating card: icon badge overlaps the top edge for a "floating" effect ----
     private fun floatingQuickActionCard(action: QuickAction, widthPx: Int): FrameLayout {
         val iconSize = (64 * resources.displayMetrics.density).toInt()
         val topOverlap = iconSize / 2
@@ -444,22 +535,9 @@ class MainActivity : AppCompatActivity() {
         }
         outer.addView(card)
 
-        // floating icon badge, elevated above the card, overlapping its top edge
-        outer.addView(FrameLayout(this).apply {
+        outer.addView(premiumIconBadge(action.emoji, action.accentHex, 64, 28f).apply {
             layoutParams = FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER_HORIZONTAL or Gravity.TOP)
             elevation = 22f
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                colors = intArrayOf(Color.WHITE, Color.parseColor("#F4F4FF"))
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
-            }
-            addView(TextView(this@MainActivity).apply {
-                text = action.emoji
-                textSize = 28f
-                gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-            })
         })
 
         return outer
@@ -573,23 +651,7 @@ class MainActivity : AppCompatActivity() {
             background = ripple
             isClickable = true
 
-            addView(FrameLayout(this@MainActivity).apply {
-                val size = (58 * resources.displayMetrics.density).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size)
-                elevation = 9f
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    colors = intArrayOf(lighten(tile.accentHex, 0.85f), Color.parseColor(tile.tintHex))
-                    gradientType = GradientDrawable.LINEAR_GRADIENT
-                    orientation = GradientDrawable.Orientation.TL_BR
-                }
-                addView(TextView(this@MainActivity).apply {
-                    text = tile.emoji
-                    textSize = 24f
-                    gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-                })
-            })
+            addView(premiumIconBadge(tile.emoji, tile.accentHex, 58, 24f))
 
             addView(TextView(this@MainActivity).apply {
                 text = tile.label
@@ -623,22 +685,8 @@ class MainActivity : AppCompatActivity() {
             elevation = 7f
         }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        topRow.addView(FrameLayout(this).apply {
-            val size = (42 * resources.displayMetrics.density).toInt()
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            elevation = 6f
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                colors = intArrayOf(lighten(accentHex, 0.85f), Color.parseColor(tintHex))
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
-            }
-            addView(TextView(this@MainActivity).apply {
-                text = emoji
-                textSize = 18f
-                gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-            })
+        topRow.addView(premiumIconBadge(emoji, accentHex, 42, 18f).apply {
+            (layoutParams as LinearLayout.LayoutParams).setMargins(0, 0, 0, 0)
         })
         topRow.addView(TextView(this).apply {
             text = "  $label"
@@ -695,6 +743,14 @@ class MainActivity : AppCompatActivity() {
         val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt()
         val g = (Color.green(base) + (255 - Color.green(base)) * factor).toInt()
         val b = (Color.blue(base) + (255 - Color.blue(base)) * factor).toInt()
+        return Color.rgb(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
+    }
+
+    private fun darken(hex: String, factor: Float): Int {
+        val base = Color.parseColor(hex)
+        val r = (Color.red(base) * (1 - factor)).toInt()
+        val g = (Color.green(base) * (1 - factor)).toInt()
+        val b = (Color.blue(base) * (1 - factor)).toInt()
         return Color.rgb(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
     }
 
