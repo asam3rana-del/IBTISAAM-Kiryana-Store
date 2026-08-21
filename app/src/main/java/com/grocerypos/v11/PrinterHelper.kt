@@ -11,6 +11,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Typeface
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
@@ -18,13 +22,16 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.io.OutputStream
 import java.util.UUID
 
 /**
- * Handles printing plain-text ESC/POS receipts to a 58mm thermal printer,
+ * Handles printing plain-text and Urdu ESC/POS receipts to a 58mm thermal printer,
  * over either Bluetooth (paired device) or USB (host mode).
  *
  * Manifest permissions needed (Bluetooth):
@@ -47,6 +54,9 @@ object PrinterHelper {
     private val ESC_INIT = byteArrayOf(0x1B, 0x40)
     // Feed a few lines then partial cut (GS V 1) - supported by most 58mm printers
     private val FEED_AND_CUT = byteArrayOf(0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x01)
+
+    // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi)
+    private const val PRINTER_DOTS_WIDTH = 384
 
     // ================= BLUETOOTH =================
 
@@ -80,7 +90,7 @@ object PrinterHelper {
     }
 
     @SuppressLint("MissingPermission")
-    private fun printBluetooth(context: Context, macAddress: String, text: String): Boolean {
+    private fun sendBluetoothBytes(context: Context, macAddress: String, payload: ByteArray): Boolean {
         if (!hasBluetoothPermission(context)) return false
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: return false
         var socket: BluetoothSocket? = null
@@ -90,9 +100,7 @@ object PrinterHelper {
             socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
             socket.connect()
             val out: OutputStream = socket.outputStream
-            out.write(ESC_INIT)
-            out.write(text.toByteArray(Charsets.UTF_8))
-            out.write(FEED_AND_CUT)
+            out.write(payload)
             out.flush()
             true
         } catch (e: Exception) {
@@ -162,8 +170,8 @@ object PrinterHelper {
         return null
     }
 
-    /** Sends raw ESC/POS text to a USB printer. Call requestUsbPermission first if needed. */
-    private fun printUsb(context: Context, deviceName: String, text: String): Boolean {
+    /** Sends raw ESC/POS bytes to a USB printer. Call requestUsbPermission first if needed. */
+    private fun sendUsbBytes(context: Context, deviceName: String, payload: ByteArray): Boolean {
         val manager = context.getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
         val device = manager.deviceList.values.find { it.deviceName == deviceName } ?: return false
         if (!manager.hasPermission(device)) return false
@@ -173,7 +181,6 @@ object PrinterHelper {
         return try {
             connection = manager.openDevice(device) ?: return false
             connection.claimInterface(usbInterface, true)
-            val payload = ESC_INIT + text.toByteArray(Charsets.UTF_8) + FEED_AND_CUT
             val sent = connection.bulkTransfer(endpoint, payload, payload.size, 5000)
             connection.releaseInterface(usbInterface)
             sent >= 0
@@ -185,13 +192,20 @@ object PrinterHelper {
         }
     }
 
-    // ================= UNIFIED =================
+    // ================= UNIFIED BYTE SEND =================
+
+    private fun sendRawBytes(context: Context, type: PrinterType, address: String, payload: ByteArray): Boolean {
+        return when (type) {
+            PrinterType.BLUETOOTH -> sendBluetoothBytes(context, address, payload)
+            PrinterType.USB -> sendUsbBytes(context, address, payload)
+        }
+    }
+
+    // ================= PLAIN TEXT PRINTING (ASCII/English) =================
 
     fun printText(context: Context, type: PrinterType, address: String, text: String): Boolean {
-        return when (type) {
-            PrinterType.BLUETOOTH -> printBluetooth(context, address, text)
-            PrinterType.USB -> printUsb(context, address, text)
-        }
+        val payload = ESC_INIT + text.toByteArray(Charsets.UTF_8) + FEED_AND_CUT
+        return sendRawBytes(context, type, address, payload)
     }
 
     fun testPrint(context: Context, type: PrinterType, address: String, shopName: String = "IBTISAAM Kiryana Store"): Boolean {
@@ -204,5 +218,84 @@ object PrinterHelper {
         sb.append("Connection: ").append(type.name).append("\n")
         sb.append("--------------------------------\n\n\n")
         return printText(context, type, address, sb.toString())
+    }
+
+    // ================= URDU PRINTING (rendered as image) =================
+
+    /**
+     * Renders Urdu (or any Unicode) text into a bitmap using Android's own text
+     * engine, which handles Arabic/Urdu shaping + RTL correctly — something the
+     * printer firmware cannot do on its own.
+     *
+     * For proper Nastaliq shaping, pass a Typeface loaded from a bundled font asset,
+     * e.g. Typeface.createFromAsset(context.assets, "NotoNastaliqUrdu-Regular.ttf")
+     */
+    private fun renderTextToBitmap(text: String, fontSizePx: Float = 28f, typeface: Typeface = Typeface.DEFAULT): Bitmap {
+        val paint = TextPaint().apply {
+            isAntiAlias = true
+            textSize = fontSizePx
+            color = Color.BLACK
+            this.typeface = typeface
+        }
+
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, paint, PRINTER_DOTS_WIDTH)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL) // StaticLayout auto-detects RTL runs
+            .setLineSpacing(0f, 1.1f)
+            .build()
+
+        val bitmap = Bitmap.createBitmap(PRINTER_DOTS_WIDTH, layout.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+        layout.draw(canvas)
+        return bitmap
+    }
+
+    /**
+     * Converts a Bitmap into ESC/POS raster-image bytes (GS v 0), 1-bit monochrome,
+     * using simple luminance threshold.
+     */
+    private fun bitmapToEscPosRaster(bitmap: Bitmap): ByteArray {
+        val width = bitmap.width
+        val height = bitmap.height
+        val bytesPerRow = (width + 7) / 8
+
+        val header = byteArrayOf(
+            0x1D, 0x76, 0x30, 0x00,                 // GS v 0, mode 0 (normal)
+            (bytesPerRow and 0xFF).toByte(),
+            ((bytesPerRow shr 8) and 0xFF).toByte(),
+            (height and 0xFF).toByte(),
+            ((height shr 8) and 0xFF).toByte()
+        )
+
+        val imageData = ByteArray(bytesPerRow * height)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val pixel = bitmap.getPixel(x, y)
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                val luminance = r * 0.3 + g * 0.59 + b * 0.11
+                if (luminance < 128) {
+                    val byteIndex = y * bytesPerRow + (x / 8)
+                    val bitIndex = 7 - (x % 8)
+                    imageData[byteIndex] = (imageData[byteIndex].toInt() or (1 shl bitIndex)).toByte()
+                }
+            }
+        }
+        return header + imageData
+    }
+
+    /** Prints Urdu (or mixed Urdu/English) text by rendering it as an image first. */
+    fun printUrduText(
+        context: Context,
+        type: PrinterType,
+        address: String,
+        text: String,
+        typeface: Typeface = Typeface.DEFAULT
+    ): Boolean {
+        val bitmap = renderTextToBitmap(text, typeface = typeface)
+        val payload = ESC_INIT + bitmapToEscPosRaster(bitmap) + FEED_AND_CUT
+        return sendRawBytes(context, type, address, payload)
     }
 }
