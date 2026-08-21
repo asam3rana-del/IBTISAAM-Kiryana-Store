@@ -142,6 +142,10 @@ class PurchaseActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        // Phone-only crash debugging: catches ANY crash (this screen or elsewhere) and lets us
+        // view/share the full error next time this screen opens, with no Logcat/computer needed.
+        com.grocerypos.v11.util.CrashHandler.install(this)
+        com.grocerypos.v11.util.CrashHandler.getLastCrash(this)?.let { crashText -> showCrashDialog(crashText) }
         try {
             editBillNo = intent.getStringExtra(EXTRA_BILL_NO)
             buildUi()
@@ -152,6 +156,24 @@ class PurchaseActivity : AppCompatActivity() {
             Toast.makeText(this, "Purchase screen error: ${e.message ?: e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
             finish()
         }
+    }
+
+    private fun showCrashDialog(crashText: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Pichli baar app crash hui thi")
+            .setMessage(if (crashText.length > 3000) crashText.take(3000) + "\n\n…(truncated, use Share for full text)" else crashText)
+            .setPositiveButton("Share") { _, _ ->
+                startActivity(Intent.createChooser(com.grocerypos.v11.util.CrashHandler.shareIntent(crashText), "Share crash log"))
+                com.grocerypos.v11.util.CrashHandler.clearLastCrash(this)
+            }
+            .setNeutralButton("Copy") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("crash", crashText))
+                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Dismiss") { _, _ -> com.grocerypos.v11.util.CrashHandler.clearLastCrash(this) }
+            .setCancelable(false)
+            .show()
     }
 
     private fun buildUi() {
