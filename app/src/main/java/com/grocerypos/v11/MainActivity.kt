@@ -195,9 +195,9 @@ class MainActivity : AppCompatActivity() {
         body.addView(statsRow)
         body.addView(spacer(30))
 
-        // ================= QUICK ACTIONS: SALE + PURCHASE — swipeable floating carousel =================
-        body.addView(sectionLabel("QUICK ACTIONS  •  swipe →"))
-        body.addView(buildSwipeableQuickActions())
+        // ================= QUICK ACTIONS: SALE + PURCHASE — plain side-by-side, no icons =================
+        body.addView(sectionLabel("QUICK ACTIONS"))
+        body.addView(buildQuickActionsRow())
         body.addView(spacer(30))
 
         // ================= CUSTOMERS & SUPPLIERS =================
@@ -455,60 +455,42 @@ class MainActivity : AppCompatActivity() {
         setPadding(4, 0, 0, 14)
     }
 
-    // ---- swipeable carousel (SALE + PURCHASE ONLY): HorizontalScrollView holding two floating cards ----
-    private fun buildSwipeableQuickActions(): HorizontalScrollView {
-        val cardWidth = (resources.displayMetrics.widthPixels * 0.72f).toInt()
-
-        val saleQuick = QuickAction("🛒", "Sale", "Start a new sale", "#00B4D8", "#0077B6")
+    // ---- plain side-by-side Sale/Purchase cards: no swipe, no icon badges ----
+    private fun buildQuickActionsRow(): LinearLayout {
+        val saleQuick = QuickAction("", "Sale", "Start a new sale", "#00B4D8", "#0077B6")
         { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) }
         val purchaseQuick: QuickAction? = if (role == "admin" || role == "manager") {
-            QuickAction("🧾", "Purchase", "Record a purchase", "#D6408F", "#8E2A6C")
+            QuickAction("", "Purchase", "Record a purchase", "#D6408F", "#8E2A6C")
             { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) }
         } else null
 
-        val track = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(4, 24, 4, 10)
-            clipToPadding = false
-            clipChildren = false
-        }
-
-        track.addView(floatingQuickActionCard(saleQuick, cardWidth).apply {
-            (layoutParams as? LinearLayout.LayoutParams)?.marginEnd = (14 * resources.displayMetrics.density).toInt()
-        })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         if (purchaseQuick != null) {
-            track.addView(floatingQuickActionCard(purchaseQuick, cardWidth))
+            row.addView(quickActionCard(saleQuick).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 9, 0) }
+            })
+            row.addView(quickActionCard(purchaseQuick).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9, 0, 0, 0) }
+            })
+        } else {
+            row.addView(quickActionCard(saleQuick).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            })
         }
-
-        return HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            clipToPadding = false
-            clipChildren = false
-            addView(track)
-        }
+        return row
     }
 
-    private fun floatingQuickActionCard(action: QuickAction, widthPx: Int): FrameLayout {
-        val iconSize = (64 * resources.displayMetrics.density).toInt()
-        val topOverlap = iconSize / 2
-
-        val outer = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(widthPx, LinearLayout.LayoutParams.WRAP_CONTENT)
-        }
-
-        val card = LinearLayout(this).apply {
+    private fun quickActionCard(action: QuickAction): LinearLayout {
+        return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = topOverlap
-            }
-            setPadding(20, (topOverlap / resources.displayMetrics.density).toInt() + 22, 20, 26)
-            elevation = 16f
+            setPadding(20, 30, 20, 28)
+            elevation = 12f
 
             val base = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.parseColor(action.accentHex), Color.parseColor(action.accentHex2))
-            ).apply { cornerRadius = 32f }
+            ).apply { cornerRadius = 30f }
 
             background = android.graphics.drawable.RippleDrawable(
                 android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(60),
@@ -518,29 +500,21 @@ class MainActivity : AppCompatActivity() {
 
             addView(TextView(this@MainActivity).apply {
                 text = action.title
-                textSize = 18f
+                textSize = 19f
                 setTextColor(Color.WHITE)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
-                setPadding(0, 8, 0, 3)
             })
             addView(TextView(this@MainActivity).apply {
                 text = action.subtitle
                 textSize = 11.5f
                 setTextColor(Color.parseColor("#F5F5F5"))
                 gravity = Gravity.CENTER
+                setPadding(0, 4, 0, 0)
             })
 
             setOnClickListener { action.onClick() }
         }
-        outer.addView(card)
-
-        outer.addView(premiumIconBadge(action.emoji, action.accentHex, 64, 28f).apply {
-            layoutParams = FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER_HORIZONTAL or Gravity.TOP)
-            elevation = 22f
-        })
-
-        return outer
     }
 
     private fun buildCustomerSupplierSection(): LinearLayout {
