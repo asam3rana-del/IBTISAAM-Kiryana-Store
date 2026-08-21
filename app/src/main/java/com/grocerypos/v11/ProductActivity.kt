@@ -9,10 +9,12 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -34,6 +36,7 @@ class ProductActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_EDIT_BARCODE = "editBarcode"
+        private const val TAG = "ProductActivity"
     }
 
     // Premium palette — kept compatible with Purchase/Sale.
@@ -51,7 +54,7 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var formCardTitle: TextView
     private lateinit var name: EditText
     private lateinit var selectUnitBtn: TextView
-    private lateinit var categorySpinner: Spinner
+    private lateinit var categoryField: AutoCompleteTextView
     private lateinit var cost: EditText
     private lateinit var wholesalePrice: EditText
     private lateinit var salePrice: EditText
@@ -64,11 +67,13 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var searchField: EditText
     private lateinit var listContainer: LinearLayout
     private lateinit var noResultsCard: LinearLayout
+    private lateinit var productsSectionAnchor: View
 
     private var units = listOf(
         "pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi",
         "gram", "g", "ml", "litre", "liter", "pao", "quintal", "ton", "gross"
     )
+    private var categoryNames: List<String> = listOf("General")
 
     // Unit chain:
     // Primary -> Secondary -> Tertiary
@@ -82,6 +87,10 @@ class ProductActivity : AppCompatActivity() {
     private var selectedOpeningStockUnit = "pcs"
     private var editingProduct: Product? = null
     private var allProducts: List<Product> = emptyList()
+
+    // Barcode of the product that was most recently saved — used to visually highlight it in
+    // the list below so the user doesn't have to hunt for what they just added/edited.
+    private var justSavedBarcode: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -189,6 +198,22 @@ class ProductActivity : AppCompatActivity() {
         })
 
         header.addView(col)
+
+        // ---- Quick jump straight to the products list below, without manual scrolling — this
+        // is also where the user lands right after saving a product. ----
+        header.addView(TextView(this).apply {
+            text = "📋 " + Loc.t(this@ProductActivity, "View List", "فہرست دیکھیں")
+            textSize = 11.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#33FFFFFF"))
+                cornerRadius = 30f
+            }
+            setPadding(20, 12, 20, 12)
+            setOnClickListener { scrollToProductsList() }
+        })
+
         root.addView(header)
     }
 
@@ -239,6 +264,7 @@ class ProductActivity : AppCompatActivity() {
             background = null
             textSize = 15f
             maxLines = 1
+            imeOptions = EditorInfo.IME_ACTION_NEXT
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
@@ -260,15 +286,28 @@ class ProductActivity : AppCompatActivity() {
         val categoryCard = premiumCard()
         categoryCard.addView(sectionLabel("🗂️", Loc.t(this, "Category", "کیٹیگری")))
 
-        val spinnerBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val categoryBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = strokedBg(border, "#FAFBFC", 12)
-            setPadding(16, 2, 16, 2)
+            setPadding(18, 4, 18, 4)
         }
 
-        categorySpinner = Spinner(this)
-        spinnerBox.addView(categorySpinner)
-        categoryCard.addView(spinnerBox)
+        // ---- Editable + auto-suggest instead of a fixed dropdown-only Spinner: existing
+        // categories show as suggestions while typing, but a brand-new category can just be
+        // typed directly — no separate "+" dialog needed to keep moving. ----
+        categoryField = AutoCompleteTextView(this).apply {
+            hint = Loc.t(this@ProductActivity, "Type or pick a category", "کیٹیگری لکھیں یا منتخب کریں")
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15f
+            threshold = 1
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        categoryBox.addView(categoryField)
+        categoryCard.addView(categoryBox)
         categoryCard.addView(spacer(10))
         categoryCard.addView(
             pillLink("✚  " + Loc.t(this, "Add New Category", "نئی کیٹیگری شامل کریں")) {
@@ -300,6 +339,7 @@ class ProductActivity : AppCompatActivity() {
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_DONE
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             addTextChangedListener(simpleWatcher { updateOpeningStockPreview() })
         }
@@ -346,11 +386,38 @@ class ProductActivity : AppCompatActivity() {
         }
         ratesCard.addView(stockNote)
         root.addView(ratesCard)
+
+        // ---- Keyboard-first flow: pressing Next/Enter on the keyboard jumps straight to the
+        // next field, all the way through to Save — no need to tap into each box by hand. ----
+        name.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { categoryField.requestFocus(); true } else false
+        }
+        categoryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(categoryField) }
+        categoryField.addTextChangedListener(simpleWatcher {
+            if (categoryField.hasFocus() && categoryField.text.length >= 1) safeShowDropDown(categoryField)
+        })
+        categoryField.setOnItemClickListener { _, _, _, _ -> cost.requestFocus() }
+        categoryField.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { cost.requestFocus(); true } else false
+        }
+        cost.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { wholesalePrice.requestFocus(); true } else false
+        }
+        wholesalePrice.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { salePrice.requestFocus(); true } else false
+        }
+        salePrice.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { stock.requestFocus(); true } else false
+        }
+        stock.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) { hideKeyboard(); saveProduct(); true } else false
+        }
     }
 
     private fun buildProductsSection(root: LinearLayout) {
         root.addView(spacer(4))
-        root.addView(sectionLabel("🗃️", Loc.t(this, "Products", "پروڈکٹس")))
+        productsSectionAnchor = sectionLabel("🗃️", Loc.t(this, "Products", "پروڈکٹس"))
+        root.addView(productsSectionAnchor)
         root.addView(spacer(10))
 
         val searchBox = LinearLayout(this).apply {
@@ -493,6 +560,7 @@ class ProductActivity : AppCompatActivity() {
         background = null
         textSize = 15f
         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        imeOptions = EditorInfo.IME_ACTION_NEXT
     }
 
     private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
@@ -530,22 +598,45 @@ class ProductActivity : AppCompatActivity() {
         override fun afterTextChanged(s: Editable?) = onChange()
     }
 
+    private fun hideKeyboard() {
+        currentFocus?.let { focused ->
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            imm?.hideSoftInputFromWindow(focused.windowToken, 0)
+            focused.clearFocus()
+        }
+    }
+
+    // ---- Same crash guard used in PurchaseActivity: AutoCompleteTextView's dropdown is a
+    // PopupWindow, and calling showDropDown() while the view isn't attached (or during a fast
+    // focus/detach race) can crash the whole app with "PopupWindow not attached to window
+    // manager". isAttachedToWindow + try/catch make that impossible here. ----
+    private fun safeShowDropDown(view: AutoCompleteTextView) {
+        if (!view.isAttachedToWindow) return
+        try {
+            view.showDropDown()
+        } catch (e: Exception) {
+            Log.e(TAG, "safeShowDropDown failed for ${view.hint}", e)
+        }
+    }
+
+    private fun scrollToProductsList() {
+        if (!::productsSectionAnchor.isInitialized || !::scrollView.isInitialized) return
+        scrollView.post { scrollView.smoothScrollTo(0, productsSectionAnchor.top) }
+    }
+
     // ---------------- Categories / units ----------------
 
     private fun loadCategories() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).categoryDao().all().collectLatest { list ->
-                val names = (listOf("General") + list.map { it.name }).distinct()
-                categorySpinner.adapter = ArrayAdapter(
-                    this@ProductActivity,
-                    android.R.layout.simple_spinner_dropdown_item,
-                    names
+                categoryNames = (listOf("General") + list.map { it.name }).distinct()
+                categoryField.setAdapter(
+                    ArrayAdapter(
+                        this@ProductActivity,
+                        android.R.layout.simple_dropdown_item_1line,
+                        categoryNames
+                    )
                 )
-
-                editingProduct?.let { p ->
-                    val index = names.indexOf(p.category)
-                    if (index >= 0) categorySpinner.setSelection(index)
-                }
             }
         }
     }
@@ -700,6 +791,21 @@ class ProductActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Saves a newly-typed unit name to the DB (so it becomes a suggestion everywhere) if it
+     * isn't already known. Safe to call with "None"/blank — those are ignored. */
+    private fun ensureUnitSaved(value: String) {
+        if (value.isBlank() || value.equals("None", ignoreCase = true)) return
+        if (units.any { it.equals(value, ignoreCase = true) }) return
+        units = (units + value).distinct()
+        lifecycleScope.launch {
+            try {
+                PosDatabase.get(this@ProductActivity).unitDao().insert(UnitType(value))
+            } catch (e: Exception) {
+                Log.e(TAG, "ensureUnitSaved failed for '$value'", e)
+            }
+        }
+    }
+
     // ---------------- Unit conversion ----------------
     //
     // NOTE: All smallest-unit conversion/formatting now goes through the shared
@@ -815,18 +921,20 @@ class ProductActivity : AppCompatActivity() {
         val scroll = ScrollView(this)
         scroll.addView(body)
 
-        // Primary
+        // Primary — editable + auto-suggest (type a known unit or a brand-new one directly).
         body.addView(dialogLabel("PRIMARY UNIT", "بنیادی یونٹ"))
-
-        val primarySpinner = Spinner(this)
-        body.addView(spinnerContainer(primarySpinner))
+        val primaryField = unitAutoCompleteField(
+            Loc.t(this, "Type or pick unit, e.g. pcs, kg, box", "یونٹ لکھیں یا منتخب کریں، مثلاً pcs, kg, box")
+        )
+        body.addView(primaryField)
         body.addView(spacer(20))
 
         // Secondary
         body.addView(dialogLabel("SECONDARY UNIT (smaller quantity, optional)", "ثانوی یونٹ (چھوٹی مقدار، اختیاری)"))
-
-        val secondarySpinner = Spinner(this)
-        body.addView(spinnerContainer(secondarySpinner))
+        val secondaryField = unitAutoCompleteField(
+            Loc.t(this, "Leave blank if not needed", "اگر ضرورت نہیں تو خالی چھوڑ دیں")
+        )
+        body.addView(secondaryField)
         body.addView(spacer(12))
 
         val secondaryQtyField = numberDialogField(
@@ -835,16 +943,18 @@ class ProductActivity : AppCompatActivity() {
                 "1 Primary = how many Secondary? e.g. 1 box = 12 pcs",
                 "1 بنیادی یونٹ = کتنے ثانوی؟ مثلاً 1 box = 12 pcs"
             ),
-            selectedSecondaryQty
+            selectedSecondaryQty,
+            EditorInfo.IME_ACTION_NEXT
         )
         body.addView(secondaryQtyField)
         body.addView(spacer(20))
 
         // Tertiary
         body.addView(dialogLabel("TERTIARY UNIT (smallest quantity, optional)", "تیسرا یونٹ (سب سے چھوٹی مقدار، اختیاری)"))
-
-        val tertiarySpinner = Spinner(this)
-        body.addView(spinnerContainer(tertiarySpinner))
+        val tertiaryField = unitAutoCompleteField(
+            Loc.t(this, "Leave blank if not needed", "اگر ضرورت نہیں تو خالی چھوڑ دیں")
+        )
+        body.addView(tertiaryField)
         body.addView(spacer(12))
 
         val tertiaryQtyField = numberDialogField(
@@ -853,7 +963,8 @@ class ProductActivity : AppCompatActivity() {
                 "1 Secondary = how many Tertiary?",
                 "1 ثانوی یونٹ = کتنے تیسرے یونٹس؟"
             ),
-            selectedTertiaryQty
+            selectedTertiaryQty,
+            EditorInfo.IME_ACTION_DONE
         )
         body.addView(tertiaryQtyField)
 
@@ -870,41 +981,19 @@ class ProductActivity : AppCompatActivity() {
 
         val dialog = AlertDialog.Builder(this).setView(content).create()
 
-        val primaryOptions = units.distinct()
-        primarySpinner.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            primaryOptions
-        )
+        val unitSuggestions = units.distinct()
+        primaryField.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, unitSuggestions))
+        secondaryField.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, unitSuggestions))
+        tertiaryField.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, unitSuggestions))
 
-        val secondaryOptions = listOf("None") + units.distinct()
-        secondarySpinner.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            secondaryOptions
-        )
-
-        val tertiaryOptions = listOf("None") + units.distinct()
-        tertiarySpinner.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            tertiaryOptions
-        )
-
-        primarySpinner.setSelection(
-            primaryOptions.indexOf(selectedPrimaryUnit).coerceAtLeast(0)
-        )
-        secondarySpinner.setSelection(
-            secondaryOptions.indexOf(selectedSecondaryUnit).coerceAtLeast(0)
-        )
-        tertiarySpinner.setSelection(
-            tertiaryOptions.indexOf(selectedTertiaryUnit).coerceAtLeast(0)
-        )
+        primaryField.setText(selectedPrimaryUnit)
+        secondaryField.setText(if (selectedSecondaryUnit == "None") "" else selectedSecondaryUnit)
+        tertiaryField.setText(if (selectedTertiaryUnit == "None") "" else selectedTertiaryUnit)
 
         fun autoSecondary() {
-            val p = primarySpinner.selectedItem?.toString() ?: return
-            val s = secondarySpinner.selectedItem?.toString() ?: return
-            if (s == "None") return
+            val p = primaryField.text.toString().trim()
+            val s = secondaryField.text.toString().trim()
+            if (p.isBlank() || s.isBlank()) return
             val standard = standardUnitQty(p, s) ?: return
             if (secondaryQtyField.text.toString().isBlank()) {
                 secondaryQtyField.setText(trimNum(standard))
@@ -912,57 +1001,160 @@ class ProductActivity : AppCompatActivity() {
         }
 
         fun autoTertiary() {
-            val s = secondarySpinner.selectedItem?.toString() ?: return
-            val t = tertiarySpinner.selectedItem?.toString() ?: return
-            if (s == "None" || t == "None") return
+            val s = secondaryField.text.toString().trim()
+            val t = tertiaryField.text.toString().trim()
+            if (s.isBlank() || t.isBlank()) return
             val standard = standardUnitQty(s, t) ?: return
             if (tertiaryQtyField.text.toString().isBlank()) {
                 tertiaryQtyField.setText(trimNum(standard))
             }
         }
 
-        primarySpinner.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: AdapterView<*>?,
-                    view: View?,
-                    position: Int,
-                    id: Long
-                ) {
-                    autoSecondary()
-                }
+        // Validates the three fields, commits them to selectedPrimaryUnit/etc., saves any
+        // brand-new unit names to the DB, and closes the dialog. Shared by both the on-screen
+        // "Save" tap and pressing the keyboard's Done button on the last field.
+        fun trySaveUnitSelection() {
+            val p = primaryField.text.toString().trim()
+            var s = secondaryField.text.toString().trim().ifBlank { "None" }
+            var t = tertiaryField.text.toString().trim().ifBlank { "None" }
+            val sq = secondaryQtyField.text.toString().toDoubleOrNull() ?: 0.0
+            val tq = tertiaryQtyField.text.toString().toDoubleOrNull() ?: 0.0
 
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            if (p.isBlank()) {
+                Toast.makeText(
+                    this@ProductActivity,
+                    Loc.t(this@ProductActivity, "Select Primary Unit", "بنیادی یونٹ منتخب کریں"),
+                    Toast.LENGTH_SHORT
+                ).show()
+                primaryField.requestFocus()
+                return
             }
 
-        secondarySpinner.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: AdapterView<*>?,
-                    view: View?,
-                    position: Int,
-                    id: Long
-                ) {
-                    autoSecondary()
-                    autoTertiary()
-                }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            if (s != "None" && s.equals(p, ignoreCase = true)) {
+                Toast.makeText(
+                    this@ProductActivity,
+                    Loc.t(this@ProductActivity, "Secondary must be different", "ثانوی یونٹ مختلف ہونا چاہیے"),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
             }
 
-        tertiarySpinner.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: AdapterView<*>?,
-                    view: View?,
-                    position: Int,
-                    id: Long
-                ) {
-                    autoTertiary()
-                }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            if (s != "None" && sq <= 0) {
+                secondaryQtyField.error =
+                    Loc.t(this@ProductActivity, "Enter quantity", "مقدار درج کریں")
+                secondaryQtyField.requestFocus()
+                return
             }
+
+            if (t != "None" && s == "None") {
+                Toast.makeText(
+                    this@ProductActivity,
+                    Loc.t(this@ProductActivity, "Select Secondary first", "پہلے ثانوی یونٹ منتخب کریں"),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+
+            if (t != "None" && t.equals(s, ignoreCase = true)) {
+                Toast.makeText(
+                    this@ProductActivity,
+                    Loc.t(this@ProductActivity, "Tertiary must be different", "تیسرا یونٹ مختلف ہونا چاہیے"),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+
+            if (t != "None" && tq <= 0) {
+                tertiaryQtyField.error =
+                    Loc.t(this@ProductActivity, "Enter quantity", "مقدار درج کریں")
+                tertiaryQtyField.requestFocus()
+                return
+            }
+
+            if (s == "None") {
+                t = "None"
+            }
+
+            selectedPrimaryUnit = p
+            selectedSecondaryUnit = s
+            selectedSecondaryQty = if (s == "None") 0.0 else sq
+            selectedTertiaryUnit = t
+            selectedTertiaryQty = if (t == "None") 0.0 else tq
+
+            ensureUnitSaved(p)
+            if (s != "None") ensureUnitSaved(s)
+            if (t != "None") ensureUnitSaved(t)
+
+            if (
+                selectedOpeningStockUnit.isBlank() ||
+                selectedOpeningStockUnit == selectedPrimaryUnit
+            ) {
+                selectedOpeningStockUnit = selectedPrimaryUnit
+            }
+
+            selectUnitBtn.text = buildString {
+                append("📏 $selectedPrimaryUnit")
+                if (selectedSecondaryUnit != "None") {
+                    append(" / $selectedSecondaryUnit")
+                }
+                if (selectedTertiaryUnit != "None") {
+                    append(" / $selectedTertiaryUnit")
+                }
+            }
+
+            refreshStockUnitAdapter()
+            updateOpeningStockPreview()
+
+            val conversion = buildString {
+                if (selectedSecondaryUnit != "None") {
+                    append("1 $selectedPrimaryUnit = ${trimNum(selectedSecondaryQty)} $selectedSecondaryUnit")
+                }
+                if (selectedTertiaryUnit != "None") {
+                    if (isNotEmpty()) append("   •   ")
+                    append("1 $selectedSecondaryUnit = ${trimNum(selectedTertiaryQty)} $selectedTertiaryUnit")
+                }
+            }
+
+            if (conversion.isNotEmpty()) {
+                Toast.makeText(
+                    this@ProductActivity,
+                    conversion,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+
+            hideKeyboard()
+            dialog.dismiss()
+        }
+
+        primaryField.addTextChangedListener(simpleWatcher { autoSecondary() })
+        secondaryField.addTextChangedListener(simpleWatcher { autoSecondary(); autoTertiary() })
+        tertiaryField.addTextChangedListener(simpleWatcher { autoTertiary() })
+
+        primaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(primaryField) }
+        secondaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(secondaryField) }
+        tertiaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(tertiaryField) }
+
+        // ---- Keyboard-first flow inside the dialog too: Next chains straight through every
+        // field, and Done on the very last field saves the whole unit selection. ----
+        primaryField.setOnItemClickListener { _, _, _, _ -> secondaryField.requestFocus() }
+        primaryField.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { secondaryField.requestFocus(); true } else false
+        }
+        secondaryField.setOnItemClickListener { _, _, _, _ -> secondaryQtyField.requestFocus() }
+        secondaryField.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { secondaryQtyField.requestFocus(); true } else false
+        }
+        secondaryQtyField.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { tertiaryField.requestFocus(); true } else false
+        }
+        tertiaryField.setOnItemClickListener { _, _, _, _ -> tertiaryQtyField.requestFocus() }
+        tertiaryField.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { tertiaryQtyField.requestFocus(); true } else false
+        }
+        tertiaryQtyField.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) { trySaveUnitSelection(); true } else false
+        }
 
         autoSecondary()
         autoTertiary()
@@ -992,116 +1184,21 @@ class ProductActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
                 setMargins(8, 0, 0, 0)
             }
-
-            setOnClickListener {
-                val p = primarySpinner.selectedItem?.toString()?.trim().orEmpty()
-                var s = secondarySpinner.selectedItem?.toString()?.trim() ?: "None"
-                var t = tertiarySpinner.selectedItem?.toString()?.trim() ?: "None"
-
-                val sq = secondaryQtyField.text.toString().toDoubleOrNull() ?: 0.0
-                val tq = tertiaryQtyField.text.toString().toDoubleOrNull() ?: 0.0
-
-                if (p.isBlank()) {
-                    Toast.makeText(
-                        this@ProductActivity,
-                        Loc.t(this@ProductActivity, "Select Primary Unit", "بنیادی یونٹ منتخب کریں"),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setOnClickListener
-                }
-
-                if (s != "None" && s == p) {
-                    Toast.makeText(
-                        this@ProductActivity,
-                        Loc.t(this@ProductActivity, "Secondary must be different", "ثانوی یونٹ مختلف ہونا چاہیے"),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setOnClickListener
-                }
-
-                if (s != "None" && sq <= 0) {
-                    secondaryQtyField.error =
-                        Loc.t(this@ProductActivity, "Enter quantity", "مقدار درج کریں")
-                    return@setOnClickListener
-                }
-
-                if (t != "None" && s == "None") {
-                    Toast.makeText(
-                        this@ProductActivity,
-                        Loc.t(this@ProductActivity, "Select Secondary first", "پہلے ثانوی یونٹ منتخب کریں"),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setOnClickListener
-                }
-
-                if (t != "None" && t == s) {
-                    Toast.makeText(
-                        this@ProductActivity,
-                        Loc.t(this@ProductActivity, "Tertiary must be different", "تیسرا یونٹ مختلف ہونا چاہیے"),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setOnClickListener
-                }
-
-                if (t != "None" && tq <= 0) {
-                    tertiaryQtyField.error =
-                        Loc.t(this@ProductActivity, "Enter quantity", "مقدار درج کریں")
-                    return@setOnClickListener
-                }
-
-                if (s == "None") {
-                    t = "None"
-                }
-
-                selectedPrimaryUnit = p
-                selectedSecondaryUnit = s
-                selectedSecondaryQty = if (s == "None") 0.0 else sq
-                selectedTertiaryUnit = t
-                selectedTertiaryQty = if (t == "None") 0.0 else tq
-
-                if (
-                    selectedOpeningStockUnit.isBlank() ||
-                    selectedOpeningStockUnit == selectedPrimaryUnit
-                ) {
-                    selectedOpeningStockUnit = selectedPrimaryUnit
-                }
-
-                selectUnitBtn.text = buildString {
-                    append("📏 $selectedPrimaryUnit")
-                    if (selectedSecondaryUnit != "None") {
-                        append(" / $selectedSecondaryUnit")
-                    }
-                    if (selectedTertiaryUnit != "None") {
-                        append(" / $selectedTertiaryUnit")
-                    }
-                }
-
-                refreshStockUnitAdapter()
-                updateOpeningStockPreview()
-
-                val conversion = buildString {
-                    if (selectedSecondaryUnit != "None") {
-                        append("1 $selectedPrimaryUnit = ${trimNum(selectedSecondaryQty)} $selectedSecondaryUnit")
-                    }
-                    if (selectedTertiaryUnit != "None") {
-                        if (isNotEmpty()) append("   •   ")
-                        append("1 $selectedSecondaryUnit = ${trimNum(selectedTertiaryQty)} $selectedTertiaryUnit")
-                    }
-                }
-
-                if (conversion.isNotEmpty()) {
-                    Toast.makeText(
-                        this@ProductActivity,
-                        conversion,
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-
-                dialog.dismiss()
-            }
+            setOnClickListener { trySaveUnitSelection() }
         })
 
         dialog.show()
+    }
+
+    private fun unitAutoCompleteField(hintText: String) = AutoCompleteTextView(this).apply {
+        hint = hintText
+        setHintTextColor(Color.parseColor(textMuted))
+        setTextColor(Color.parseColor(textDark))
+        background = strokedBg(border, "#FAFBFC", 12)
+        setPadding(16, 14, 16, 14)
+        textSize = 14f
+        threshold = 1
+        imeOptions = EditorInfo.IME_ACTION_NEXT
     }
 
     private fun dialogLabel(en: String, ur: String) = TextView(this).apply {
@@ -1119,7 +1216,7 @@ class ProductActivity : AppCompatActivity() {
         addView(spinner)
     }
 
-    private fun numberDialogField(hintText: String, oldValue: Double) =
+    private fun numberDialogField(hintText: String, oldValue: Double, imeAction: Int = EditorInfo.IME_ACTION_NEXT) =
         EditText(this).apply {
             hint = hintText
             setHintTextColor(Color.parseColor(textMuted))
@@ -1128,6 +1225,7 @@ class ProductActivity : AppCompatActivity() {
             setPadding(16, 14, 16, 14)
             textSize = 14f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = imeAction
             if (oldValue > 0) setText(trimNum(oldValue))
         }
 
@@ -1156,14 +1254,7 @@ class ProductActivity : AppCompatActivity() {
 
         refreshStockUnitAdapter()
 
-        categorySpinner.adapter?.let { adapter ->
-            for (i in 0 until adapter.count) {
-                if (adapter.getItem(i).toString() == product.category) {
-                    categorySpinner.setSelection(i)
-                    break
-                }
-            }
-        }
+        categoryField.setText(product.category)
 
         cost.setText(if (product.cost > 0) product.cost.toString() else "")
         wholesalePrice.setText(
@@ -1204,6 +1295,7 @@ class ProductActivity : AppCompatActivity() {
                 Loc.t(this, "Product Name is required", "پروڈکٹ کا نام ضروری ہے"),
                 Toast.LENGTH_SHORT
             ).show()
+            name.requestFocus()
             return
         }
 
@@ -1257,6 +1349,7 @@ class ProductActivity : AppCompatActivity() {
 
         val existing = editingProduct
         val barcode = existing?.barcode ?: "P" + System.currentTimeMillis()
+        val categoryValue = categoryField.text.toString().trim().ifBlank { "General" }
 
         /*
          * IMPORTANT:
@@ -1282,7 +1375,7 @@ class ProductActivity : AppCompatActivity() {
         val product = Product(
             barcode = barcode,
             name = productName,
-            category = categorySpinner.selectedItem?.toString() ?: "General",
+            category = categoryValue,
             cost = cost.text.toString().toDoubleOrNull() ?: 0.0,
             salePrice = salePrice.text.toString().toDoubleOrNull() ?: 0.0,
             wholesalePrice = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0,
@@ -1301,9 +1394,15 @@ class ProductActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                PosDatabase.get(this@ProductActivity)
-                    .productDao()
-                    .upsert(product)
+                val db = PosDatabase.get(this@ProductActivity)
+
+                // A category typed fresh (not picked from suggestions) gets saved so it shows
+                // up as a suggestion from now on — same idea as units.
+                if (categoryValue != "General" && categoryNames.none { it.equals(categoryValue, ignoreCase = true) }) {
+                    db.categoryDao().insert(Category(categoryValue))
+                }
+
+                db.productDao().upsert(product)
 
                 Toast.makeText(
                     this@ProductActivity,
@@ -1315,7 +1414,11 @@ class ProductActivity : AppCompatActivity() {
                     Toast.LENGTH_SHORT
                 ).show()
 
+                // Jump straight to the products list and highlight the one just saved, instead
+                // of leaving the user to scroll down and hunt for it manually.
+                justSavedBarcode = barcode
                 clearForm()
+                scrollView.postDelayed({ scrollToProductsList() }, 300)
             } catch (e: Exception) {
                 Toast.makeText(
                     this@ProductActivity,
@@ -1402,9 +1505,7 @@ class ProductActivity : AppCompatActivity() {
         saveButton.text =
             "💾  " + Loc.t(this, "SAVE PRODUCT", "پروڈکٹ محفوظ کریں")
 
-        categorySpinner.adapter?.let {
-            if (it.count > 0) categorySpinner.setSelection(0)
-        }
+        categoryField.setText("")
 
         scrollView.post { scrollView.smoothScrollTo(0, 0) }
     }
@@ -1444,10 +1545,15 @@ class ProductActivity : AppCompatActivity() {
         noResultsCard.visibility = View.GONE
 
         products.forEach { product ->
+            val isJustSaved = product.barcode == justSavedBarcode
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(20, 16, 20, 16)
-                background = strokedBg(border, cardWhite, 14)
+                background = if (isJustSaved) {
+                    strokedBg(teal, "#E9FBF9", 14)
+                } else {
+                    strokedBg(border, cardWhite, 14)
+                }
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
                     setMargins(0, 0, 0, 10)
                 }
@@ -1460,9 +1566,9 @@ class ProductActivity : AppCompatActivity() {
             }
 
             top.addView(TextView(this).apply {
-                text = product.name
+                text = if (isJustSaved) "✓ ${product.name}" else product.name
                 textSize = 14.5f
-                setTextColor(Color.parseColor(textDark))
+                setTextColor(Color.parseColor(if (isJustSaved) teal else textDark))
                 setTypeface(typeface, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             })
