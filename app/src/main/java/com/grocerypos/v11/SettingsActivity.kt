@@ -28,13 +28,14 @@ import java.util.Locale
 
 class SettingsActivity : AppCompatActivity() {
 
-    // ================= PALETTE =================
+    // ================= PALETTE (matches Product/Purchase/Sale premium look) =================
     private val bg = "#F4F6F8"
-    private val cardBg = "#FFFFFF"
+    private val cardWhite = "#FFFFFF"
     private val navy = "#0B2545"
-    private val headerBlue = "#1565C0"     // drawer header background
+    private val navyLight = "#1C2C4F"
     private val teal = "#0F9B8E"
     private val red = "#E5484D"
+    private val amber = "#F5A524"
     private val badgeRed = "#E53950"
     private val textDark = "#0B2545"
     private val textGray = "#7C8798"
@@ -72,13 +73,12 @@ class SettingsActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= DRAWER-STYLE HEADER =================
+        // ================= PREMIUM GRADIENT HEADER =================
         root.addView(buildHeader())
 
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 8, 0, 8)
-            setBackgroundColor(Color.parseColor(cardBg))
+            setPadding(18, 4, 18, 8)
         }
 
         // ---- Parties (real) ----
@@ -126,7 +126,7 @@ class SettingsActivity : AppCompatActivity() {
             comingSoon("My Online Store")
         })
 
-        list.addView(divider())
+        list.addView(spacer(8))
 
         // ---- Sync & Share (no screen yet) ----
         list.addView(menuRow("🔄", "Sync & Share") {
@@ -151,22 +151,25 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(backupRow)
         list.addView(backupContent)
 
-        list.addView(divider())
+        list.addView(spacer(8))
 
         // ---- Plans & Pricing (no screen yet) ----
         list.addView(menuRow("🏷️", "Plans & Pricing") {
             comingSoon("Plans & Pricing")
         })
 
-        list.addView(divider())
+        list.addView(spacer(8))
 
         // ---- Logout ----
-        list.addView(menuRow("🚪", "Logout", textColorHex = red) {
+        list.addView(menuRow("🚪", "Logout", textColorHex = red, iconBgHex = red) {
             doLogout()
         })
 
+        list.addView(spacer(20))
+
         root.addView(ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            setBackgroundColor(Color.parseColor(bg))
             addView(list)
         })
 
@@ -207,17 +210,14 @@ class SettingsActivity : AppCompatActivity() {
         finish()
     }
 
-    // ================= HEADER =================
+    // ================= PREMIUM GRADIENT HEADER (matches Product/Purchase/Sale headers) =================
     private fun buildHeader(): LinearLayout {
         val header = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor(headerBlue))
-            setPadding(20, 44, 20, 22)
-        }
-
-        val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(26, 46, 22, 26)
+            background = gradientBg(navy, navyLight, cornerBottom = 26)
+            applyElevation(this, 8f)
         }
 
         val iconCircle = FrameLayout(this).apply {
@@ -234,33 +234,35 @@ class SettingsActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         })
-        topRow.addView(iconCircle)
+        header.addView(iconCircle)
 
         val textCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 0, 0, 0)
+            setPadding(18, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         textCol.addView(TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
-            textSize = 17f
+            textSize = 17.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
         })
         textCol.addView(TextView(this).apply {
-            text = "Point of Sale"
-            textSize = 12f
-            setTextColor(Color.parseColor("#C9DDF5"))
-            setPadding(0, 2, 0, 0)
+            text = "POINT OF SALE"
+            textSize = 10.5f
+            setTextColor(Color.parseColor("#A7B4CC"))
+            setTypeface(typeface, Typeface.BOLD)
+            letterSpacing = 0.08f
+            setPadding(0, 5, 0, 0)
         })
-        topRow.addView(textCol)
-        header.addView(topRow)
+        header.addView(textCol)
 
         return header
     }
 
-    // ================= MENU ROW HELPERS =================
+    // ================= MENU ROW HELPERS (premium card rows) =================
 
-    /** A simple, non-expanding menu row: icon + label (+ optional NEW badge / chevron / trailing text). */
+    /** A simple, non-expanding premium card row: icon-in-circle + label (+ optional NEW badge / chevron / trailing text). */
     private fun menuRow(
         icon: String,
         label: String,
@@ -268,20 +270,18 @@ class SettingsActivity : AppCompatActivity() {
         showChevron: Boolean = false,
         trailingText: String? = null,
         textColorHex: String = textDark,
+        iconBgHex: String = teal,
         onClick: () -> Unit
     ): LinearLayout {
-        val row = LinearLayout(this).apply {
+        val row = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 22, 20, 22)
+            setPadding(18, 16, 18, 16)
             isClickable = true
             isFocusable = true
         }
-        row.addView(TextView(this).apply {
-            text = icon
-            textSize = 18f
-            setPadding(0, 0, 24, 0)
-        })
+        row.addView(iconBadge(icon, iconBgHex))
+        row.addView(spacerH(16))
         row.addView(TextView(this).apply {
             text = label
             textSize = 14.5f
@@ -297,20 +297,17 @@ class SettingsActivity : AppCompatActivity() {
             row.addView(TextView(this).apply {
                 text = trailingText
                 textSize = 18f
-                setTextColor(Color.parseColor(textGray))
+                setTextColor(Color.parseColor(teal))
+                setTypeface(typeface, Typeface.BOLD)
             })
         } else if (showChevron) {
-            row.addView(TextView(this).apply {
-                text = "⌄"
-                textSize = 16f
-                setTextColor(Color.parseColor(textGray))
-            })
+            row.addView(chevronText())
         }
         row.setOnClickListener { onClick() }
         return row
     }
 
-    /** A menu row with an optional subtitle line that expands/collapses a target view when tapped. */
+    /** A premium card row with an optional subtitle line that expands/collapses a target view when tapped. */
     private fun expandableMenuRow(
         icon: String,
         label: String,
@@ -318,18 +315,15 @@ class SettingsActivity : AppCompatActivity() {
         subtitle: String? = null,
         target: View
     ): LinearLayout {
-        val row = LinearLayout(this).apply {
+        val row = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 22, 20, 22)
+            setPadding(18, 16, 18, 16)
             isClickable = true
             isFocusable = true
         }
-        row.addView(TextView(this).apply {
-            text = icon
-            textSize = 18f
-            setPadding(0, 0, 24, 0)
-        })
+        row.addView(iconBadge(icon, navy))
+        row.addView(spacerH(16))
 
         val textCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -356,11 +350,7 @@ class SettingsActivity : AppCompatActivity() {
             row.addView(spacerH(10))
         }
 
-        val chevron = TextView(this).apply {
-            text = "⌄"
-            textSize = 16f
-            setTextColor(Color.parseColor(textGray))
-        }
+        val chevron = chevronText()
         row.addView(chevron)
 
         row.setOnClickListener {
@@ -369,6 +359,25 @@ class SettingsActivity : AppCompatActivity() {
             chevron.text = if (expanding) "⌃" else "⌄"
         }
         return row
+    }
+
+    private fun iconBadge(icon: String, colorHex: String) = TextView(this).apply {
+        text = icon
+        textSize = 17f
+        gravity = Gravity.CENTER
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(lightenTint(colorHex)))
+        }
+        val px = (40 * resources.displayMetrics.density).toInt()
+        width = px; height = px
+    }
+
+    private fun chevronText() = TextView(this).apply {
+        text = "⌄"
+        textSize = 16f
+        setTextColor(Color.parseColor(teal))
+        setTypeface(typeface, Typeface.BOLD)
     }
 
     private fun newBadge() = TextView(this).apply {
@@ -380,11 +389,6 @@ class SettingsActivity : AppCompatActivity() {
         background = roundedBg(badgeRed, 20)
     }
 
-    private fun divider() = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (1 * resources.displayMetrics.density).toInt())
-        setBackgroundColor(Color.parseColor(border))
-    }
-
     private fun spacerH(widthDp: Int) = View(this).apply {
         val px = (widthDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(px, 1)
@@ -394,12 +398,11 @@ class SettingsActivity : AppCompatActivity() {
     private fun buildSettingsContent(): LinearLayout {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 4, 16, 16)
-            setBackgroundColor(Color.parseColor(bg))
+            setPadding(0, 4, 0, 8)
         }
 
         // ---- Shop Info ----
-        val shopCard = sectionCard("Shop Information")
+        val shopCard = premiumCard("🏪", "Shop Information")
         shopNameField = plainField("Shop Name")
         phoneField = plainField("Phone")
         addressField = plainField("Address")
@@ -407,30 +410,29 @@ class SettingsActivity : AppCompatActivity() {
         currencyField = plainField("Currency")
         taxField = plainField("Tax %")
 
-        shopCard.addView(fieldBox("Shop Name", shopNameField))
-        shopCard.addView(spacer(8))
-        shopCard.addView(fieldBox("Phone", phoneField))
-        shopCard.addView(spacer(8))
-        shopCard.addView(fieldBox("Address", addressField))
-        shopCard.addView(spacer(8))
-        shopCard.addView(fieldBox("Receipt Footer", footerField))
-        shopCard.addView(spacer(8))
-        shopCard.addView(fieldBox("Currency", currencyField))
-        shopCard.addView(spacer(8))
-        shopCard.addView(fieldBox("Tax %", taxField))
+        shopCard.addView(iconFieldBox("🏪", "Shop Name", shopNameField))
         shopCard.addView(spacer(10))
+        shopCard.addView(iconFieldBox("📞", "Phone", phoneField))
+        shopCard.addView(spacer(10))
+        shopCard.addView(iconFieldBox("📍", "Address", addressField))
+        shopCard.addView(spacer(10))
+        shopCard.addView(iconFieldBox("🧾", "Receipt Footer", footerField))
+        shopCard.addView(spacer(10))
+        shopCard.addView(iconFieldBox("💱", "Currency", currencyField))
+        shopCard.addView(spacer(10))
+        shopCard.addView(iconFieldBox("📊", "Tax %", taxField))
+        shopCard.addView(spacer(12))
         shopCard.addView(primaryButton("SAVE SETTINGS", navy) { saveShopSettings() })
         container.addView(shopCard)
-        container.addView(spacer(10))
         loadShopSettings()
 
         // ---- Printer ----
-        val printerCard = sectionCard("Printer Setup (58mm Bluetooth)")
+        val printerCard = premiumCard("🖨️", "Printer Setup (58mm Bluetooth)")
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = strokedBg(border, "#FAFBFC", 12)
-            setPadding(16, 10, 16, 10)
+            setPadding(16, 12, 16, 12)
         }
         printerStatusDot = TextView(this).apply {
             text = "●"
@@ -447,7 +449,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         statusRow.addView(printerStatusText)
         printerCard.addView(statusRow)
-        printerCard.addView(spacer(10))
+        printerCard.addView(spacer(12))
         loadPrinterStatus()
 
         val printerBtnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -459,33 +461,16 @@ class SettingsActivity : AppCompatActivity() {
         })
         printerCard.addView(printerBtnRow)
         container.addView(printerCard)
-        container.addView(spacer(10))
 
         // ---- Security (Login Method) ----
-        val securityCard = sectionCard("Security — Login Method")
+        val securityCard = premiumCard("🔐", "Security — Login Method")
         loginMethodGroup = RadioGroup(this).apply { orientation = LinearLayout.VERTICAL }
-        passwordOnlyRadio = RadioButton(this).apply {
-            text = "Password Only"
-            setTextColor(Color.parseColor(textDark))
-            textSize = 13.5f
-        }
-        fingerprintOnlyRadio = RadioButton(this).apply {
-            text = "Fingerprint Only"
-            setTextColor(Color.parseColor(textDark))
-            textSize = 13.5f
-        }
-        bothRadio = RadioButton(this).apply {
-            text = "Both (Password + Fingerprint)"
-            setTextColor(Color.parseColor(textDark))
-            textSize = 13.5f
-        }
+        passwordOnlyRadio = radioOption("Password Only")
+        fingerprintOnlyRadio = radioOption("Fingerprint Only")
+        bothRadio = radioOption("Both (Password + Fingerprint)")
         // "No Password" — app opens straight to the dashboard, no login screen at all
         // (see LoginActivity.onCreate — it checks this setting before building any UI).
-        noPasswordRadio = RadioButton(this).apply {
-            text = "No Password (App won't lock)"
-            setTextColor(Color.parseColor(textDark))
-            textSize = 13.5f
-        }
+        noPasswordRadio = radioOption("No Password (App won't lock)")
         loginMethodGroup.addView(passwordOnlyRadio)
         loginMethodGroup.addView(fingerprintOnlyRadio)
         loginMethodGroup.addView(bothRadio)
@@ -506,11 +491,10 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         container.addView(securityCard)
-        container.addView(spacer(10))
         loadLoginMethodSetting()
 
         // ---- Change Username / Password ----
-        val loginCard = sectionCard("Change Login (Username / Password)")
+        val loginCard = premiumCard("🔑", "Change Login (Username / Password)")
         val session = getSharedPreferences("session", MODE_PRIVATE)
         val loggedInUsername = session.getString("username", "") ?: ""
 
@@ -524,26 +508,25 @@ class SettingsActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
 
-        loginCard.addView(fieldBox("Current Username", currentUsernameField, muted = true))
-        loginCard.addView(spacer(8))
-        loginCard.addView(fieldBox("New Username", newUsernameField))
-        loginCard.addView(spacer(8))
-        loginCard.addView(passwordFieldBox("New Password", newPasswordField))
+        loginCard.addView(iconFieldBox("👤", "Current Username", currentUsernameField, muted = true))
         loginCard.addView(spacer(10))
+        loginCard.addView(iconFieldBox("🆕", "New Username", newUsernameField))
+        loginCard.addView(spacer(10))
+        loginCard.addView(passwordFieldBox("🔒", "New Password", newPasswordField))
+        loginCard.addView(spacer(12))
         loginCard.addView(primaryButton("UPDATE LOGIN", navy) { updateLogin(loggedInUsername) })
         container.addView(loginCard)
-        container.addView(spacer(10))
 
         // ---- Language ----
-        val languageCard = sectionCard("Language")
+        val languageCard = premiumCard("🌐", "Language")
         val langRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val englishBtn = tabButton("English") {}
-        val urduBtn = tabButton("اردو") {}
+        val englishBtn = pillToggleButton("English")
+        val urduBtn = pillToggleButton("اردو")
         fun refreshLanguageButtons() {
             val isUrdu = com.grocerypos.v11.util.Loc.isUrdu(this)
-            englishBtn.background = if (!isUrdu) roundedBg(navy, 14) else roundedBg("#EAEDF1", 14)
+            englishBtn.background = if (!isUrdu) roundedBg(navy, 30) else strokedBg(border, "#FAFBFC", 30)
             englishBtn.setTextColor(if (!isUrdu) Color.WHITE else Color.parseColor(textGray))
-            urduBtn.background = if (isUrdu) roundedBg(navy, 14) else roundedBg("#EAEDF1", 14)
+            urduBtn.background = if (isUrdu) roundedBg(navy, 30) else strokedBg(border, "#FAFBFC", 30)
             urduBtn.setTextColor(if (isUrdu) Color.WHITE else Color.parseColor(textGray))
         }
         englishBtn.setOnClickListener {
@@ -563,10 +546,9 @@ class SettingsActivity : AppCompatActivity() {
         languageCard.addView(langRow)
         refreshLanguageButtons()
         container.addView(languageCard)
-        container.addView(spacer(10))
 
         // ---- Users ----
-        val usersCard = sectionCard("Users & Account")
+        val usersCard = premiumCard("👥", "Users & Account")
         usersCard.addView(secondaryButton("MANAGE USERS", navy) {
             startActivity(Intent(this@SettingsActivity, UserManagementActivity::class.java))
         })
@@ -579,42 +561,62 @@ class SettingsActivity : AppCompatActivity() {
     private fun buildBackupContent(): LinearLayout {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 4, 16, 16)
-            setBackgroundColor(Color.parseColor(bg))
+            setPadding(0, 4, 0, 8)
         }
-        val backupCard = sectionCard("Backup & Restore")
+        val backupCard = premiumCard("🗄️", "Backup & Restore")
         backupCard.addView(primaryButton("BACKUP NOW", teal) { onBackupClicked() })
-        backupCard.addView(spacer(8))
+        backupCard.addView(spacer(10))
         backupCard.addView(primaryButton("RESTORE BACKUP", red) { onRestoreClicked() })
-        backupCard.addView(TextView(this).apply {
-            text = "⚠️ Restore purani backup laata hai aur is waqt ka sara naya data (jo backup ke baad add hua) permanently mita deta hai. Sirf tab use karein jab aapko waqai purani state par jaana ho."
-            textSize = 11f
-            setTextColor(Color.parseColor(red))
-            setPadding(4, 10, 4, 0)
+        backupCard.addView(spacer(12))
+        backupCard.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = strokedBg("#F4C9CB", "#FDEEEE", 12)
+            setPadding(16, 12, 16, 12)
+            addView(TextView(this@SettingsActivity).apply { text = "⚠️  "; textSize = 13f })
+            addView(TextView(this@SettingsActivity).apply {
+                text = "Restore purani backup laata hai aur is waqt ka sara naya data (jo backup ke baad add hua) permanently mita deta hai. Sirf tab use karein jab aapko waqai purani state par jaana ho."
+                textSize = 11.5f
+                setTextColor(Color.parseColor(red))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
         })
         container.addView(backupCard)
         return container
     }
 
     // ================= UI HELPERS =================
-    private fun sectionCard(title: String) = LinearLayout(this).apply {
+
+    /** Premium card container — matches Product/Purchase/Sale's premiumCard() pattern. */
+    private fun premiumCard() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(20, 16, 20, 16)
-        background = strokedBg(border, cardBg, 16)
+        background = strokedBg(border, cardWhite, 16)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        )
+        ).apply { setMargins(0, 0, 0, 12) }
         applyElevation(this, 2f)
-        addView(sectionLabel(title))
-        addView(spacer(2))
     }
 
-    private fun sectionLabel(label: String) = TextView(this).apply {
-        text = label
-        textSize = 13.5f
-        setTextColor(Color.parseColor(textDark))
-        setTypeface(typeface, Typeface.BOLD)
-        setPadding(0, 0, 0, 10)
+    /** Premium card with a small icon-badge section title inside — used for the Settings sub-sections. */
+    private fun premiumCard(icon: String, title: String) = premiumCard().apply {
+        setPadding(20, 18, 20, 18)
+        addView(sectionLabel(icon, title))
+        addView(spacer(4))
+    }
+
+    private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, 0, 0, 12)
+        addView(TextView(this@SettingsActivity).apply {
+            text = "$icon  "
+            textSize = 14f
+        })
+        addView(TextView(this@SettingsActivity).apply {
+            text = label
+            textSize = 13.5f
+            setTextColor(Color.parseColor(teal))
+            setTypeface(typeface, Typeface.BOLD)
+        })
     }
 
     private fun microLabel(label: String) = TextView(this).apply {
@@ -634,22 +636,27 @@ class SettingsActivity : AppCompatActivity() {
         textSize = 14.5f
     }
 
-    private fun fieldBox(label: String, field: EditText, muted: Boolean = false) = LinearLayout(this).apply {
+    /** Icon-prefixed labeled field box — matches ProductActivity's fieldBox(icon) pattern. */
+    private fun iconFieldBox(icon: String, label: String, field: EditText, muted: Boolean = false) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = strokedBg(border, if (muted) "#F1F3F5" else "#FAFBFC", 12)
         setPadding(16, 10, 16, 10)
         addView(microLabel(label))
+        val row = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        row.addView(TextView(this@SettingsActivity).apply { text = "$icon  "; textSize = 14f })
         (field.parent as? ViewGroup)?.removeView(field)
-        field.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        addView(field)
+        field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        row.addView(field)
+        addView(row)
     }
 
-    private fun passwordFieldBox(label: String, field: EditText) = LinearLayout(this).apply {
+    private fun passwordFieldBox(icon: String, label: String, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = strokedBg(border, "#FAFBFC", 12)
         setPadding(16, 10, 16, 10)
         addView(microLabel(label))
         val row = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        row.addView(TextView(this@SettingsActivity).apply { text = "$icon  "; textSize = 14f })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         row.addView(field)
@@ -658,8 +665,9 @@ class SettingsActivity : AppCompatActivity() {
             text = "SHOW"
             textSize = 10.5f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor(teal))
-            setPadding(16, 0, 4, 0)
+            setTextColor(Color.WHITE)
+            background = roundedBg(teal, 20)
+            setPadding(16, 6, 16, 6)
             var visible = false
             setOnClickListener {
                 visible = !visible
@@ -671,8 +679,16 @@ class SettingsActivity : AppCompatActivity() {
                 text = if (visible) "HIDE" else "SHOW"
             }
         }
+        row.addView(spacerH(8))
         row.addView(toggle)
         addView(row)
+    }
+
+    private fun radioOption(label: String) = RadioButton(this).apply {
+        text = label
+        setTextColor(Color.parseColor(textDark))
+        textSize = 13.5f
+        setPadding(8, 10, 0, 10)
     }
 
     private fun primaryButton(label: String, colorHex: String, onClick: () -> Unit) = Button(this).apply {
@@ -682,9 +698,9 @@ class SettingsActivity : AppCompatActivity() {
         isAllCaps = false
         setTypeface(typeface, Typeface.BOLD)
         background = roundedBg(colorHex, 14)
-        setPadding(0, 18, 0, 18)
+        setPadding(0, 20, 0, 20)
         setOnClickListener { onClick() }
-        applyElevation(this, 2f)
+        applyElevation(this, 3f)
     }
 
     private fun secondaryButton(label: String, colorHex: String, onClick: () -> Unit) = Button(this).apply {
@@ -698,14 +714,15 @@ class SettingsActivity : AppCompatActivity() {
         setOnClickListener { onClick() }
     }
 
-    private fun tabButton(label: String, onClick: () -> Unit) = Button(this).apply {
+    /** Pill-style toggle button — matches the unit chip / spinner pill pattern used elsewhere. */
+    private fun pillToggleButton(label: String) = Button(this).apply {
         text = label
         textSize = 12.5f
         isAllCaps = false
         setTypeface(typeface, Typeface.BOLD)
-        setPadding(0, 12, 0, 12)
+        setPadding(0, 14, 0, 14)
         minHeight = 0
-        setOnClickListener { onClick() }
+        stateListAnimator = null
     }
 
     private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
@@ -717,6 +734,28 @@ class SettingsActivity : AppCompatActivity() {
         setColor(Color.parseColor(fillHex))
         setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
         cornerRadius = radius.toFloat()
+    }
+
+    private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(startHex), Color.parseColor(endHex))
+    ).apply {
+        val density = resources.displayMetrics.density
+        cornerRadii = floatArrayOf(
+            cornerTop * density, cornerTop * density,
+            cornerTop * density, cornerTop * density,
+            cornerBottom * density, cornerBottom * density,
+            cornerBottom * density, cornerBottom * density
+        )
+    }
+
+    /** Same lightening approach as CashActivity's stat-card tint — used for menu-row icon badges. */
+    private fun lightenTint(colorHex: String): String {
+        val base = Color.parseColor(colorHex)
+        val factor = 0.82f
+        val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt().coerceIn(0, 255)
+        val g = (Color.green(base) + (255 - Color.green(base)) * factor).toInt().coerceIn(0, 255)
+        val bl = (Color.blue(base) + (255 - Color.blue(base)) * factor).toInt().coerceIn(0, 255)
+        return String.format("#%02X%02X%02X", r, g, bl)
     }
 
     private fun applyElevation(view: View, dp: Float) {
