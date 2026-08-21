@@ -45,39 +45,26 @@ data class Product(
 )
 
 // ================= 3-tier unit conversion helpers =================
-// From DB version 19 onward, `stock` (and `openingStock`) are counted in the SMALLEST configured
-// unit for that product — tertiary if set, else secondary, else the primary unit itself.
-// This is what actually fixes the "purchase in Outer -> wrong stock" bug: converting a purchased
-// quantity DOWN into the primary unit (e.g. 10 Outer / 50 = 0.2 Ctn) and rounding that to an Int
-// silently turns it into 0. Converting UP into the smallest unit instead (10 Outer x 10 Dabbi = 100
-// Dabbi) is always a whole number, so nothing gets lost — and the primary/secondary/tertiary
-// display the user sees never has to change, only how stock is stored internally.
-
-/** How many smallest units make up 1 primary unit (e.g. 1 Ctn = 50 Outer, 1 Outer = 10 Dabbi -> 500). */
 fun Product.smallestUnitFactor(): Double {
     if (secondaryUnit.isBlank() || secondaryUnitQty <= 0) return 1.0
     return if (tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0) secondaryUnitQty * tertiaryUnitQty else secondaryUnitQty
 }
 
-/** How many smallest units make up 1 secondary unit (1 when there's no tertiary tier). */
 fun Product.smallestPerSecondary(): Double =
     if (tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0) tertiaryUnitQty else 1.0
 
-/** The name of whichever unit stock is actually kept in. */
 fun Product.smallestUnitName(): String = when {
     tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0 && secondaryUnitQty > 0 -> tertiaryUnit
     secondaryUnit.isNotBlank() && secondaryUnitQty > 0 -> secondaryUnit
     else -> unit
 }
 
-/** Converts a quantity entered in [enteredUnit] (primary/secondary/tertiary) into smallest units. */
 fun Product.toSmallestUnits(qty: Double, enteredUnit: String): Double = when {
     enteredUnit == tertiaryUnit && tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0 && secondaryUnitQty > 0 -> qty
     enteredUnit == secondaryUnit && secondaryUnitQty > 0 -> qty * smallestPerSecondary()
-    else -> qty * smallestUnitFactor() // treated as the primary unit
+    else -> qty * smallestUnitFactor()
 }
 
-/** Converts the stored smallest-unit stock count into a "X Ctn Y Outer Z Dabbi" style breakdown for display. */
 fun Product.formatStockBreakdown(): String {
     val total = stock
     if (secondaryUnit.isBlank() || secondaryUnitQty <= 0) return "$total $unit"
@@ -139,6 +126,7 @@ data class SaleItem(
     val barcode:String,
     val product:String,
     val qty:Int,
+    val unit:String="",
     val unitPrice:Double,
     val cost:Double,
     val amount:Double
@@ -438,16 +426,19 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
 }
 val MIGRATION_18_19 = object : Migration(18, 19) {
     override fun migrate(database: SupportSQLiteDatabase) {
-        // Stock used to be counted purely in the PRIMARY unit. From this version it is counted in the
-        // SMALLEST configured unit (tertiary if set, else secondary, else primary) so a purchase/sale
-        // made in a smaller unit never rounds down to a stock change of 0. Convert every existing
-        // product's stored stock using its OWN conversion chain so on-device totals stay the same
-        // real-world quantity, just expressed in the smaller unit.
         val factorExpr = "(CASE WHEN secondaryUnit != '' AND secondaryUnitQty > 0 THEN " +
             "secondaryUnitQty * (CASE WHEN tertiaryUnit != '' AND tertiaryUnitQty > 0 THEN tertiaryUnitQty ELSE 1 END) " +
             "ELSE 1 END)"
         database.execSQL("UPDATE products SET stock = CAST(ROUND(stock * $factorExpr) AS INTEGER)")
         database.execSQL("UPDATE products SET openingStock = CAST(ROUND(openingStock * $factorExpr) AS INTEGER)")
+    }
+}
+val MIGRATION_19_20 = object : Migration(19, 20) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // Mirrors purchase_items.unit — sale_items ab bhi apna entered unit record karta
+        // hai, taake save/edit/delete stock ko divide-then-round ke bajaye Purchase jaisi
+        // multiply-only toSmallestUnits() logic se hi handle kare.
+        database.execSQL("ALTER TABLE sale_items ADD COLUMN unit TEXT NOT NULL DEFAULT ''")
     }
 }
 
@@ -456,7 +447,7 @@ val MIGRATION_18_19 = object : Migration(18, 19) {
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class],
-    version=19, exportSchema=false
+    version=20, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -479,7 +470,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }
