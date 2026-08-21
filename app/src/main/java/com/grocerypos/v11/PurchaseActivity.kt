@@ -642,11 +642,21 @@ class PurchaseActivity : AppCompatActivity() {
             }
         })
         paidInput.addTextChangedListener(simpleWatcher { updateGrandTotal() })
-        // ---- FIX: scroll the Paid Amount field above the keyboard as soon as it's focused, so
-        // the digits being typed stay visible instead of hiding behind the keyboard. ----
+        // ---- FIX: scroll the Paid Amount field above the keyboard so the digits being typed
+        // stay visible instead of hiding behind the keyboard.
+        // A single postDelayed() scroll (the earlier attempt) is unreliable: adjustResize
+        // shrinks/animates the window over multiple layout passes, and a fixed 250ms guess can
+        // fire before that settles — so the scroll lands in the wrong place, exactly what was
+        // seen in the screenshot (keyboard still covering the field). Instead we attach a
+        // global layout listener that re-corrects the scroll position on EVERY layout pass
+        // while the field is focused, so it keeps tracking the keyboard as it animates in and
+        // settles on the right spot regardless of device speed/animation duration. ----
         paidInput.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                scrollArea.postDelayed({ scrollArea.smoothScrollTo(0, paymentSection.top) }, 250)
+            if (hasFocus) scrollArea.post { scrollArea.scrollTo(0, paymentSection.top) }
+        }
+        scrollArea.viewTreeObserver.addOnGlobalLayoutListener {
+            if (paidInput.hasFocus()) {
+                scrollArea.scrollTo(0, paymentSection.top)
             }
         }
 
