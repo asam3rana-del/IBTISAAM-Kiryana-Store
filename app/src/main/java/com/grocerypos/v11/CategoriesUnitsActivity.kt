@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -207,8 +208,12 @@ class CategoriesUnitsActivity : AppCompatActivity() {
             setPadding(0, 6, 0, 4)
         })
 
+        // ---- FIX: Product.stock is a SMALLEST-unit count, not a primary-unit count, so it
+        // must never be paired with `p.unit` directly (was showing e.g. "500 carton" when the
+        // 500 was actually dabbi count). formatStockBreakdown() is the same helper Product/
+        // Purchase/Sale/Dashboard screens use, so this now always agrees with the rest of the app.
         addView(TextView(this@CategoriesUnitsActivity).apply {
-            text = "📊 " + Loc.t(this@CategoriesUnitsActivity, "Stock", "اسٹاک") + ": ${p.stock} ${p.unit}"
+            text = "📊 " + Loc.t(this@CategoriesUnitsActivity, "Stock", "اسٹاک") + ": ${p.formatStockBreakdown()}"
             textSize = 12f
             setTextColor(Color.parseColor(textGray))
         })
