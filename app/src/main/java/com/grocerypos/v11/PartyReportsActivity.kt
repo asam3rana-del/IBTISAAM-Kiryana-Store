@@ -349,7 +349,11 @@ class PartyReportsActivity : AppCompatActivity() {
                     sales.forEach { s ->
                         db.saleDao().itemsForInvoice(s.invoice).forEach { it ->
                             revenue += it.amount
-                            cost += it.cost * it.qty
+                            // ---- FIX: `SaleItem.cost` ab is LINE ka TOTAL COGS hai (amount
+                            // jaisa), per-unit rate nahi — SaleActivity.addItem() dekhein.
+                            // Isliye yahan qty se dobara multiply NAHI karna, warna cost
+                            // hamesha real value se qty guna badi calculate hoti thi. ----
+                            cost += it.cost
                         }
                     }
                     val profit = revenue - cost
