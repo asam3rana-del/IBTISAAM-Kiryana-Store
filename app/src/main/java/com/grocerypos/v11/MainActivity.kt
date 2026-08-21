@@ -1,6 +1,7 @@
 package com.grocerypos.v11
 
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -22,8 +23,6 @@ import com.grocerypos.v11.ui.ItemSearchActivity
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
-import java.io.PrintWriter
-import java.io.StringWriter
 import java.util.Calendar
 
 class MainActivity : AppCompatActivity() {
@@ -55,8 +54,13 @@ class MainActivity : AppCompatActivity() {
         }
         role = session.getString("role", "cashier") ?: "cashier"
 
-        installCrashHandler()
-        showLastCrashIfAny()
+        // Phone-only crash debugging: this is the FIRST screen the app opens, so installing the
+        // global handler here means ANY crash on ANY screen gets caught. Next time the app is
+        // reopened, MainActivity checks for a saved crash and shows it with Copy/Share buttons —
+        // no Logcat or computer needed. (PurchaseActivity uses the same CrashHandler, so both
+        // screens share one crash log — nothing gets overwritten or lost.)
+        com.grocerypos.v11.util.CrashHandler.install(this)
+        com.grocerypos.v11.util.CrashHandler.getLastCrash(this)?.let { crashText -> showCrashDialog(crashText) }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -283,6 +287,26 @@ class MainActivity : AppCompatActivity() {
         loadDashboard()
         loadShopName()
         loadPartySummary()
+    }
+
+    // ---- Phone-only crash log viewer: same dialog style as PurchaseActivity, so behavior is
+    // consistent wherever the crash gets caught and shown. ----
+    private fun showCrashDialog(crashText: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Pichli baar app crash hui thi")
+            .setMessage(if (crashText.length > 3000) crashText.take(3000) + "\n\n…(truncated, use Share for full text)" else crashText)
+            .setPositiveButton("Share") { _, _ ->
+                startActivity(Intent.createChooser(com.grocerypos.v11.util.CrashHandler.shareIntent(crashText), "Share crash log"))
+                com.grocerypos.v11.util.CrashHandler.clearLastCrash(this)
+            }
+            .setNeutralButton("Copy") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("crash", crashText))
+                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Dismiss") { _, _ -> com.grocerypos.v11.util.CrashHandler.clearLastCrash(this) }
+            .setCancelable(false)
+            .show()
     }
 
     // ================= CUSTOMERS & SUPPLIERS SECTION =================
@@ -644,29 +668,5 @@ class MainActivity : AppCompatActivity() {
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun installCrashHandler() {
-        val prefs = getSharedPreferences("crash_log", MODE_PRIVATE)
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            val sw = StringWriter()
-            throwable.printStackTrace(PrintWriter(sw))
-            prefs.edit().putString("last_crash", sw.toString()).apply()
-            defaultHandler?.uncaughtException(thread, throwable)
-        }
-    }
-
-    private fun showLastCrashIfAny() {
-        val prefs = getSharedPreferences("crash_log", MODE_PRIVATE)
-        val crash = prefs.getString("last_crash", null)
-        if (crash != null) {
-            prefs.edit().remove("last_crash").apply()
-            AlertDialog.Builder(this)
-                .setTitle("Last Crash Log (screenshot this)")
-                .setMessage(crash)
-                .setPositiveButton("OK", null)
-                .show()
-        }
     }
 }
