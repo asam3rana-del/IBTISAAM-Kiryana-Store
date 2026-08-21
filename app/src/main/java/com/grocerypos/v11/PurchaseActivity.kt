@@ -49,7 +49,15 @@ data class PurchaseLine(
     val tertiaryUnitQty: Double = 0.0
 )
 
-private fun genBillNo(): String = "PUR" + System.currentTimeMillis()
+// ---- Trackable invoice numbers: PUR-<Mon><YY>-<0001>, e.g. "PUR-Aug26-0001".
+// Sequence restarts each calendar month (counts only bills already using this prefix, so
+// older timestamp-based bill numbers from before this change are simply ignored/not renumbered).
+private suspend fun genBillNo(db: PosDatabase): String {
+    val prefix = "PUR-" + SimpleDateFormat("MMMyy", Locale.getDefault()).format(Date()) + "-"
+    val existingCount = db.purchaseDao().allPurchases().count { it.billNo.startsWith(prefix) }
+    val seq = (existingCount + 1).toString().padStart(4, '0')
+    return "$prefix$seq"
+}
 
 class PurchaseActivity : AppCompatActivity() {
 
@@ -1144,8 +1152,8 @@ class PurchaseActivity : AppCompatActivity() {
         val paymentMethod = "Cash"
         val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
         var supplierId = matchedSupplier?.id
-        val billNo = editBillNo ?: genBillNo()
         val db = PosDatabase.get(this@PurchaseActivity)
+        val billNo = editBillNo ?: genBillNo(db)
         if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
         val original = originalPurchase
         if (original != null) {
