@@ -92,6 +92,12 @@ class ProductActivity : AppCompatActivity() {
     // the list below so the user doesn't have to hunt for what they just added/edited.
     private var justSavedBarcode: String? = null
 
+    // Set true right after a save; consumed by renderProducts() to scroll precisely to the
+    // just-saved card once it exists in the freshly rendered list, instead of only jumping to
+    // the top of the Products section (which could still leave the saved item scrolled out of
+    // view further down the list).
+    private var pendingScrollToSaved = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -899,8 +905,7 @@ class ProductActivity : AppCompatActivity() {
         }
 
         val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL
             setPadding(28, 26, 28, 26)
             background = roundedBg(navy, 0)
         }
@@ -911,31 +916,51 @@ class ProductActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
         })
+
+        header.addView(TextView(this).apply {
+            text = Loc.t(
+                this@ProductActivity,
+                "Set how this product's units convert into each other",
+                "یہ پروڈکٹ کے یونٹس ایک دوسرے میں کیسے تبدیل ہوں گے، ترتیب دیں"
+            )
+            textSize = 11.5f
+            setTextColor(Color.parseColor("#9FB4CC"))
+            setPadding(0, 4, 0, 0)
+        })
         content.addView(header)
 
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 26, 28, 8)
+            setPadding(20, 22, 20, 6)
+            setBackgroundColor(Color.parseColor(bg))
         }
 
         val scroll = ScrollView(this)
         scroll.addView(body)
 
         // Primary — editable + auto-suggest (type a known unit or a brand-new one directly).
-        body.addView(dialogLabel("PRIMARY UNIT", "بنیادی یونٹ"))
+        val primaryCard = premiumCard()
+        primaryCard.addView(sectionLabel("📏", Loc.t(this, "Primary Unit", "بنیادی یونٹ")))
         val primaryField = unitAutoCompleteField(
             Loc.t(this, "Type or pick unit, e.g. pcs, kg, box", "یونٹ لکھیں یا منتخب کریں، مثلاً pcs, kg, box")
         )
-        body.addView(primaryField)
-        body.addView(spacer(20))
+        primaryCard.addView(fieldBox(primaryField, "🔤"))
+        body.addView(primaryCard)
+        body.addView(spacer(14))
 
         // Secondary
-        body.addView(dialogLabel("SECONDARY UNIT (smaller quantity, optional)", "ثانوی یونٹ (چھوٹی مقدار، اختیاری)"))
+        val secondaryCard = premiumCard()
+        secondaryCard.addView(
+            sectionLabel(
+                "🔹",
+                Loc.t(this, "Secondary Unit (smaller quantity, optional)", "ثانوی یونٹ (چھوٹی مقدار، اختیاری)")
+            )
+        )
         val secondaryField = unitAutoCompleteField(
             Loc.t(this, "Leave blank if not needed", "اگر ضرورت نہیں تو خالی چھوڑ دیں")
         )
-        body.addView(secondaryField)
-        body.addView(spacer(12))
+        secondaryCard.addView(fieldBox(secondaryField, "🔤"))
+        secondaryCard.addView(spacer(12))
 
         val secondaryQtyField = numberDialogField(
             Loc.t(
@@ -946,16 +971,23 @@ class ProductActivity : AppCompatActivity() {
             selectedSecondaryQty,
             EditorInfo.IME_ACTION_NEXT
         )
-        body.addView(secondaryQtyField)
-        body.addView(spacer(20))
+        secondaryCard.addView(fieldBox(secondaryQtyField, "🔁"))
+        body.addView(secondaryCard)
+        body.addView(spacer(14))
 
         // Tertiary
-        body.addView(dialogLabel("TERTIARY UNIT (smallest quantity, optional)", "تیسرا یونٹ (سب سے چھوٹی مقدار، اختیاری)"))
+        val tertiaryCard = premiumCard()
+        tertiaryCard.addView(
+            sectionLabel(
+                "🔸",
+                Loc.t(this, "Tertiary Unit (smallest quantity, optional)", "تیسرا یونٹ (سب سے چھوٹی مقدار، اختیاری)")
+            )
+        )
         val tertiaryField = unitAutoCompleteField(
             Loc.t(this, "Leave blank if not needed", "اگر ضرورت نہیں تو خالی چھوڑ دیں")
         )
-        body.addView(tertiaryField)
-        body.addView(spacer(12))
+        tertiaryCard.addView(fieldBox(tertiaryField, "🔤"))
+        tertiaryCard.addView(spacer(12))
 
         val tertiaryQtyField = numberDialogField(
             Loc.t(
@@ -966,7 +998,8 @@ class ProductActivity : AppCompatActivity() {
             selectedTertiaryQty,
             EditorInfo.IME_ACTION_DONE
         )
-        body.addView(tertiaryQtyField)
+        tertiaryCard.addView(fieldBox(tertiaryQtyField, "🔁"))
+        body.addView(tertiaryCard)
 
         content.addView(
             scroll,
@@ -1194,26 +1227,11 @@ class ProductActivity : AppCompatActivity() {
         hint = hintText
         setHintTextColor(Color.parseColor(textMuted))
         setTextColor(Color.parseColor(textDark))
-        background = strokedBg(border, "#FAFBFC", 12)
-        setPadding(16, 14, 16, 14)
-        textSize = 14f
+        setTypeface(typeface, Typeface.BOLD)
+        background = null
+        textSize = 15f
         threshold = 1
         imeOptions = EditorInfo.IME_ACTION_NEXT
-    }
-
-    private fun dialogLabel(en: String, ur: String) = TextView(this).apply {
-        text = Loc.t(this@ProductActivity, en, ur)
-        textSize = 11.5f
-        setTextColor(Color.parseColor(textMuted))
-        setTypeface(typeface, Typeface.BOLD)
-        setPadding(0, 0, 0, 8)
-    }
-
-    private fun spinnerContainer(spinner: Spinner) = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        background = strokedBg(border, "#FAFBFC", 12)
-        setPadding(14, 2, 14, 2)
-        addView(spinner)
     }
 
     private fun numberDialogField(hintText: String, oldValue: Double, imeAction: Int = EditorInfo.IME_ACTION_NEXT) =
@@ -1221,9 +1239,8 @@ class ProductActivity : AppCompatActivity() {
             hint = hintText
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
-            background = strokedBg(border, "#FAFBFC", 12)
-            setPadding(16, 14, 16, 14)
-            textSize = 14f
+            background = null
+            textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = imeAction
             if (oldValue > 0) setText(trimNum(oldValue))
@@ -1415,10 +1432,12 @@ class ProductActivity : AppCompatActivity() {
                 ).show()
 
                 // Jump straight to the products list and highlight the one just saved, instead
-                // of leaving the user to scroll down and hunt for it manually.
+                // of leaving the user to scroll down and hunt for it manually. The actual scroll
+                // happens inside renderProducts() once the highlighted card exists in the newly
+                // rendered list, so we land exactly on the card instead of just the section top.
                 justSavedBarcode = barcode
+                pendingScrollToSaved = true
                 clearForm()
-                scrollView.postDelayed({ scrollToProductsList() }, 300)
             } catch (e: Exception) {
                 Toast.makeText(
                     this@ProductActivity,
@@ -1544,6 +1563,8 @@ class ProductActivity : AppCompatActivity() {
 
         noResultsCard.visibility = View.GONE
 
+        var savedCardView: View? = null
+
         products.forEach { product ->
             val isJustSaved = product.barcode == justSavedBarcode
             val card = LinearLayout(this).apply {
@@ -1661,6 +1682,22 @@ class ProductActivity : AppCompatActivity() {
 
             card.addView(actions)
             listContainer.addView(card)
+
+            if (isJustSaved) savedCardView = card
+        }
+
+        // The card views were just added, so layout hasn't happened yet on this pass — wait
+        // two frames (one for listContainer's children, one for the ScrollView content) before
+        // reading .top, otherwise we'd scroll to a stale position of 0.
+        val cardToReveal = savedCardView
+        if (pendingScrollToSaved && cardToReveal != null) {
+            pendingScrollToSaved = false
+            scrollView.post {
+                scrollView.post {
+                    val targetY = (cardToReveal.top - 24.dp()).coerceAtLeast(0)
+                    scrollView.smoothScrollTo(0, targetY)
+                }
+            }
         }
     }
 }
