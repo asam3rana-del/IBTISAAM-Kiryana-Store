@@ -13,6 +13,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -128,11 +130,20 @@ class PurchaseActivity : AppCompatActivity() {
 
     // ---- Central crash guard: every DB / async block below runs through this so a failure
     // shows a Toast + Logcat line ("PurchaseActivity" tag) instead of silently killing the
-    // activity. If Purchase ever force-closes again, check Logcat for TAG="PurchaseActivity". ----
+    // activity. If Purchase ever force-closes again, check Logcat for TAG="PurchaseActivity".
+    // ---- FIX: CancellationException must NEVER be treated as a real error. It's thrown
+    // automatically whenever this activity's coroutine scope is cancelled (e.g. finish() being
+    // called right after a successful save, which cancels the still-running loadSuppliers() /
+    // loadUnits() / loadProducts() Flow collectors). Previously the generic `catch (e: Exception)`
+    // caught it too and showed bogus "Error loading supplier/unit/product" toasts right after every
+    // save. It is now rethrown so coroutine cancellation works normally and only real failures
+    // produce a Toast/Log entry. ----
     private fun safeLaunch(label: String, block: suspend () -> Unit) {
         lifecycleScope.launch {
             try {
                 block()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "safeLaunch[$label] failed", e)
                 Toast.makeText(this@PurchaseActivity, "Error in $label: ${e.message ?: e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
@@ -142,6 +153,10 @@ class PurchaseActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        // ---- FIX: keyboard was covering the Paid Amount field (and other bottom fields) so the
+        // user couldn't see what they were typing. adjustResize makes the window shrink instead
+        // of the keyboard simply overlapping content. ----
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         // Phone-only crash debugging: catches ANY crash (this screen or elsewhere) and lets us
         // view/share the full error next time this screen opens, with no Logcat/computer needed.
         com.grocerypos.v11.util.CrashHandler.install(this)
@@ -627,6 +642,13 @@ class PurchaseActivity : AppCompatActivity() {
             }
         })
         paidInput.addTextChangedListener(simpleWatcher { updateGrandTotal() })
+        // ---- FIX: scroll the Paid Amount field above the keyboard as soon as it's focused, so
+        // the digits being typed stay visible instead of hiding behind the keyboard. ----
+        paidInput.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                scrollArea.postDelayed({ scrollArea.smoothScrollTo(0, paymentSection.top) }, 250)
+            }
+        }
 
         if (editBillNo == null) restoreDraftIfAny()
     }
