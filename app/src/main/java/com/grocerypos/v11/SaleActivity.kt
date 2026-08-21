@@ -67,8 +67,6 @@ class SaleActivity : AppCompatActivity() {
 
     private lateinit var dateValueText: TextView
     private lateinit var customerName: AutoCompleteTextView
-    private lateinit var cashBtn: Button
-    private lateinit var creditBtn: Button
     private lateinit var saleTypeSpinner: Spinner
     private lateinit var addItemsTrigger: TextView
     private lateinit var itemEntrySection: LinearLayout
@@ -80,10 +78,9 @@ class SaleActivity : AppCompatActivity() {
     private lateinit var subtotalText: TextView
     private lateinit var discountInput: EditText
     private lateinit var totalText: TextView
-    private lateinit var totalCard: LinearLayout
-    private lateinit var paymentSection: LinearLayout
     private lateinit var paidInput: EditText
     private lateinit var paymentMethodSpinner: Spinner
+    private lateinit var dueAmountText: TextView
     private lateinit var firmNameText: TextView
     private lateinit var saveButton: Button
     private lateinit var deleteButton: Button
@@ -101,6 +98,7 @@ class SaleActivity : AppCompatActivity() {
 
     private var lastMainPrice: Double = 0.0
     private var suppressPriceWatcher = false
+    private var suppressPaidWatcher = false
 
     private var suppressDraftSave = false
     private var draftRestored = false
@@ -119,11 +117,11 @@ class SaleActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(26, 22, 22, 22)
-            background = roundedBg(navy, 20)
+            background = premiumGradientBg(navy, "#123C6B", 26)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 18) }
-            applyElevation(this, 6f)
+            applyElevation(this, 10f)
         }
         val headerTextCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -156,7 +154,7 @@ class SaleActivity : AppCompatActivity() {
 
         val dateBox = outlinedBox()
         dateBox.setOnClickListener { openDatePicker() }
-        dateBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Date", "تاریخ")))
+        dateBox.addView(labelRow("📅 " + com.grocerypos.v11.util.Loc.t(this, "Date", "تاریخ")))
         val dateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         dateValueText = TextView(this).apply {
             text = formatDate(saleDateMillis)
@@ -193,7 +191,7 @@ class SaleActivity : AppCompatActivity() {
         root.addView(firmBox)
 
         val custBox = outlinedBox()
-        custBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Customer", "کسٹمر")))
+        custBox.addView(labelRow("👤 " + com.grocerypos.v11.util.Loc.t(this, "Customer", "کسٹمر")))
         val custRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         customerName = AutoCompleteTextView(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Customer Name (Walk-in)", "کسٹمر کا نام (واک ان)")
@@ -201,6 +199,7 @@ class SaleActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
             textSize = 15f
+            threshold = 1
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         custRow.addView(customerName)
@@ -208,30 +207,6 @@ class SaleActivity : AppCompatActivity() {
         custBox.addView(custRow)
         root.addView(custBox)
         root.addView(spacer(14))
-
-        val cashCreditToggle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        cashBtn = Button(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "CASH", "نقد"); textSize = 12f; setTextColor(Color.WHITE)
-            background = roundedBg(teal, 20)
-            setPadding(24, 14, 24, 14); minWidth = 0; minHeight = 0
-            isAllCaps = false
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setOnClickListener { setSaleMode(true) }
-            applyElevation(this, 4f)
-        }
-        creditBtn = Button(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "CREDIT", "ادھار"); textSize = 12f; setTextColor(Color.parseColor(textGray))
-            background = roundedBg("#EEF0F7", 20)
-            setPadding(24, 14, 24, 14); minWidth = 0; minHeight = 0
-            isAllCaps = false
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setOnClickListener { setSaleMode(false) }
-        }
-        cashCreditToggle.addView(cashBtn)
-        cashCreditToggle.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
-        cashCreditToggle.addView(creditBtn)
-        root.addView(cashCreditToggle)
-        root.addView(spacer(18))
 
         val saleTypeBox = outlinedBox()
         saleTypeBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Sale Type", "سیل کی قسم")))
@@ -260,7 +235,7 @@ class SaleActivity : AppCompatActivity() {
         itemEntrySection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val itemBox = outlinedBox()
-        itemBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Item Name", "آئٹم کا نام")))
+        itemBox.addView(labelRow("📦 " + com.grocerypos.v11.util.Loc.t(this, "Item Name", "آئٹم کا نام")))
         itemName = AutoCompleteTextView(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Type to search…", "تلاش کے لیے لکھیں…")
             setHintTextColor(Color.parseColor(textGray))
@@ -319,10 +294,10 @@ class SaleActivity : AppCompatActivity() {
             textSize = 14f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(teal, 14)
+            background = premiumGradientBg(teal, greenDark, 16)
             setPadding(0, 24, 0, 24)
             setOnClickListener { addItem() }
-            applyElevation(this, 3f)
+            applyElevation(this, 4f)
         })
         root.addView(itemEntrySection)
         root.addView(spacer(16))
@@ -342,77 +317,47 @@ class SaleActivity : AppCompatActivity() {
         }
         subtotalRow.addView(subtotalText)
         root.addView(subtotalRow)
+        root.addView(spacer(12))
 
-        val discountBox = outlinedBox().apply { setPadding(18, 4, 18, 4) }
-        val discRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        // ---- Total / Discount / Paid / Due now live in the floating bottom-left
+        // summary card (see summaryCard()) instead of inline here. The controls
+        // are created standalone and attached to that card further below. ----
+        totalText = TextView(this).apply {
+            text = "Rs 0.00"; textSize = 16.5f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
         discountInput = EditText(this).apply {
-            hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Discount (Rs)", "رعایت (روپے)")
+            hint = "0.00"
             setHintTextColor(Color.parseColor(textGray))
             setTextColor(Color.parseColor(textDark))
             background = null
+            textSize = 13.5f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        discRow.addView(discountInput)
-        discountBox.addView(discRow)
-        root.addView(discountBox)
         discountInput.addTextChangedListener(simpleWatcher { updateTotals() })
-        root.addView(spacer(12))
-
-        totalCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(22, 20, 22, 20)
-            background = roundedBg(teal, 16)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            applyElevation(this, 6f)
-        }
-        totalCard.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Total Amount", "کل رقم"); textSize = 15.5f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        totalText = TextView(this).apply {
-            text = "Rs 0.00"; textSize = 18f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }
-        totalCard.addView(totalText)
-        root.addView(totalCard)
-        root.addView(spacer(14))
-
-        paymentSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val payRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val methodBox = outlinedBox().apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,6,0) }
-            setPadding(18, 6, 18, 6)
-        }
-        methodBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Method", "طریقہ")))
-        paymentMethodSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
-        }
-        methodBox.addView(paymentMethodSpinner)
-        val paidBox = outlinedBox().apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6,0,0,0) }
-            setPadding(18, 6, 18, 6)
-        }
-        paidBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Amount Paid", "ادا شدہ رقم")))
         paidInput = EditText(this).apply {
             hint = "0.00"
             setHintTextColor(Color.parseColor(textGray))
             setTextColor(Color.parseColor(textDark))
             background = null
+            textSize = 13.5f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
-        paidBox.addView(paidInput)
-        payRow.addView(methodBox)
-        payRow.addView(paidBox)
-        paymentSection.addView(payRow)
-        root.addView(paymentSection)
-        root.addView(spacer(18))
+        paidInput.addTextChangedListener(simpleWatcher {
+            if (!suppressPaidWatcher) {
+                refreshDue()
+                if (editInvoice == null) saveDraft()
+            }
+        })
+        paymentMethodSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
+        }
+        dueAmountText = TextView(this).apply {
+            text = "Rs 0.00"; textSize = 16.5f
+            setTextColor(Color.parseColor(green))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
 
         saveButton = Button(this).apply {
             text = if (editInvoice != null) com.grocerypos.v11.util.Loc.t(this@SaleActivity, "UPDATE SALE", "سیل اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@SaleActivity, "SAVE SALE", "سیل محفوظ کریں")
@@ -420,7 +365,7 @@ class SaleActivity : AppCompatActivity() {
             textSize = 15.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(navy, 16)
+            background = premiumGradientBg(navy, "#123C6B", 18)
             setPadding(0, 26, 0, 26)
             setOnClickListener { saveSale() }
             applyElevation(this, 8f)
@@ -431,7 +376,7 @@ class SaleActivity : AppCompatActivity() {
             textSize = 15.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = roundedBg(red, 16)
+            background = premiumGradientBg(red, redDark, 18)
             setPadding(0, 26, 0, 26)
             visibility = if (editInvoice != null) View.VISIBLE else View.GONE
             setOnClickListener { confirmDeleteSale() }
@@ -441,18 +386,30 @@ class SaleActivity : AppCompatActivity() {
         saveDeleteRow.addView(saveButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) })
         saveDeleteRow.addView(deleteButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply { setMargins(8, 0, 0, 0) })
         root.addView(saveDeleteRow)
-        root.addView(spacer(40))
+        // Extra bottom space so the floating summary card (bottom-left) never
+        // permanently blocks the save/delete row — user can scroll past it.
+        root.addView(spacer(150))
 
-        setContentView(ScrollView(this).apply {
+        val scrollView = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bg))
             addView(root)
+        }
+        val screenRoot = FrameLayout(this)
+        screenRoot.addView(scrollView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        screenRoot.addView(summaryCard(), FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            setMargins(dp(16), 0, 0, dp(20))
         })
+        setContentView(screenRoot)
 
         loadCustomers()
         loadProducts()
         loadFirmName()
-        setSaleMode(true)
+        updateTotals()
         editInvoice?.let { loadForEdit(it) }
+
+        customerName.setOnClickListener { if (customers.isNotEmpty()) customerName.showDropDown() }
+        customerName.setOnFocusChangeListener { _, hasFocus -> if (hasFocus && customers.isNotEmpty()) customerName.showDropDown() }
 
         itemName.setOnItemClickListener { _, _, position, _ ->
             val name = itemName.adapter.getItem(position).toString()
@@ -493,6 +450,16 @@ class SaleActivity : AppCompatActivity() {
         if (editInvoice == null && !suppressDraftSave) {
             saveDraft()
         }
+    }
+
+    // Extra safety net: back press (button or gesture) can happen before onPause
+    // finishes on some devices/launchers, so save explicitly here too.
+    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
+    override fun onBackPressed() {
+        if (editInvoice == null && !suppressDraftSave) {
+            saveDraft()
+        }
+        super.onBackPressed()
     }
 
     private fun draftPrefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -559,8 +526,6 @@ class SaleActivity : AppCompatActivity() {
 
             val saleType = draft.optString("saleType", "Retail")
             saleTypeSpinner.setSelection(if (saleType == "Wholesale") 1 else 0)
-
-            setSaleMode(draft.optBoolean("isCashSale", true))
 
             val discount = draft.optString("discount", "")
             if (discount.isNotBlank()) discountInput.setText(discount)
@@ -649,9 +614,10 @@ class SaleActivity : AppCompatActivity() {
             customerName.setText(custName)
 
             saleTypeSpinner.setSelection(if (sale.saleType == "wholesale") 1 else 0)
-            setSaleMode(sale.paymentMethod != "credit")
             discountInput.setText(if (sale.discount > 0) "%.2f".format(sale.discount) else "")
-            paidInput.setText(if (sale.paid > 0) "%.2f".format(sale.paid) else "")
+            suppressPaidWatcher = true
+            paidInput.setText(if (sale.paid > 0) "%.2f".format(sale.paid) else "0.00")
+            suppressPaidWatcher = false
             val methodIndex = if (sale.paymentMethod.equals("bank", ignoreCase = true)) 1 else 0
             paymentMethodSpinner.setSelection(methodIndex)
 
@@ -677,7 +643,8 @@ class SaleActivity : AppCompatActivity() {
                 )
             }
             renderItemsList()
-            updateTotals()
+            recomputeAmounts()
+            refreshDue()
             deleteButton.visibility = View.VISIBLE
         }
     }
@@ -686,11 +653,11 @@ class SaleActivity : AppCompatActivity() {
     private fun outlinedBox() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(22, 16, 22, 16)
-        background = strokedBg(border, cardBg, 16)
+        background = strokedBg(border, cardBg, 18)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, 0, 0, 12) }
-        applyElevation(this, 2f)
+        applyElevation(this, 3f)
     }
 
     private fun labelRow(label: String) = TextView(this).apply {
@@ -728,6 +695,66 @@ class SaleActivity : AppCompatActivity() {
         addItemsTrigger.text = if (itemEntrySection.visibility == View.VISIBLE) "  Hide Item Entry" else "  Add Items"
     }
 
+    // ---- Floating bottom-left "bill summary" card: Total / Discount / Paid / Due.
+    // Cash-vs-credit is no longer a manual toggle — it's derived from Paid vs Total
+    // (Due = Total − Paid; Due > 0 means part/all of the sale is on credit). ----
+    private fun summaryCard(): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(16))
+            background = premiumCardBg()
+            applyElevation(this, 14f)
+        }
+        card.addView(TextView(this).apply {
+            text = "BILL SUMMARY"
+            textSize = 10f
+            setTextColor(Color.parseColor(teal))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.08f
+            setPadding(0, 0, 0, dp(10))
+        })
+        card.addView(summaryRow("Total", totalText))
+        card.addView(spacer(8))
+        card.addView(summaryRow("Discount", discountInput.apply {
+            layoutParams = LinearLayout.LayoutParams(dp(90), LinearLayout.LayoutParams.WRAP_CONTENT)
+        }))
+        card.addView(spacer(8))
+        val paidRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(this@SaleActivity).apply {
+                text = "Paid"; textSize = 12f
+                setTextColor(Color.parseColor(textGray))
+                layoutParams = LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT)
+            })
+            addView(paidInput.apply {
+                layoutParams = LinearLayout.LayoutParams(dp(68), LinearLayout.LayoutParams.WRAP_CONTENT)
+            })
+            addView(paymentMethodSpinner.apply {
+                layoutParams = LinearLayout.LayoutParams(dp(66), LinearLayout.LayoutParams.WRAP_CONTENT)
+            })
+        }
+        card.addView(paidRow)
+        card.addView(spacer(8))
+        card.addView(View(this).apply {
+            setBackgroundColor(Color.parseColor(border))
+            layoutParams = LinearLayout.LayoutParams(dp(170), dp(1)).apply { setMargins(0, dp(2), 0, dp(8)) }
+        })
+        card.addView(summaryRow("Due", dueAmountText))
+        return card
+    }
+
+    private fun summaryRow(label: String, valueView: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(TextView(this@SaleActivity).apply {
+            text = label; textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            layoutParams = LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT)
+        })
+        addView(valueView)
+    }
+
     private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(colorHex))
         cornerRadius = radius.toFloat()
@@ -744,6 +771,17 @@ class SaleActivity : AppCompatActivity() {
         setColor(Color.parseColor(colorHex))
     }
 
+    private fun premiumGradientBg(fromHex: String, toHex: String, radiusDp: Int) = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(Color.parseColor(fromHex), Color.parseColor(toHex))
+    ).apply { cornerRadius = dp(radiusDp).toFloat() }
+
+    private fun premiumCardBg() = GradientDrawable().apply {
+        setColor(Color.parseColor(cardBg))
+        cornerRadius = dp(22).toFloat()
+        setStroke(dp(1), Color.parseColor("#D7ECE8"))
+    }
+
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             view.elevation = dp * resources.displayMetrics.density
@@ -755,6 +793,8 @@ class SaleActivity : AppCompatActivity() {
         val px = (heightDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -771,23 +811,6 @@ class SaleActivity : AppCompatActivity() {
             saleDateMillis = cal.timeInMillis
             dateValueText.text = formatDate(saleDateMillis)
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
-    }
-
-    private fun setSaleMode(cash: Boolean) {
-        isCashSale = cash
-        if (cash) {
-            cashBtn.background = roundedBg(teal, 20); cashBtn.setTextColor(Color.WHITE)
-            applyElevation(cashBtn, 4f)
-            creditBtn.background = roundedBg("#EEF0F7", 20); creditBtn.setTextColor(Color.parseColor(textGray))
-            creditBtn.elevation = 0f
-            paymentSection.visibility = View.VISIBLE
-        } else {
-            creditBtn.background = roundedBg(red, 20); creditBtn.setTextColor(Color.WHITE)
-            applyElevation(creditBtn, 4f)
-            cashBtn.background = roundedBg("#EEF0F7", 20); cashBtn.setTextColor(Color.parseColor(textGray))
-            cashBtn.elevation = 0f
-            paymentSection.visibility = View.GONE
-        }
     }
 
     private fun loadCustomers() {
@@ -952,7 +975,7 @@ class SaleActivity : AppCompatActivity() {
             itemsContainer.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(20, 16, 20, 16)
-                background = strokedBg(border, cardBg, 14)
+                background = strokedBg(border, cardBg, 18)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 10) }
@@ -995,13 +1018,39 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateTotals() {
+    // Recomputes subtotal/total display only (does NOT touch the paid field).
+    // Returns the current total.
+    private fun recomputeAmounts(): Double {
         val subtotal = lines.sumOf { it.amount }
         val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
         subtotalText.text = "Rs %.2f".format(subtotal)
         val total = (subtotal - discount).coerceAtLeast(0.0)
         totalText.text = "Rs %.2f".format(total)
-        if (isCashSale) paidInput.setText("%.2f".format(total))
+        return total
+    }
+
+    // Full refresh used during interactive editing (adding/removing items,
+    // changing discount): also defaults Paid to the new Total if the user
+    // hasn't typed a paid amount yet.
+    private fun updateTotals() {
+        val total = recomputeAmounts()
+        if (paidInput.text.toString().isBlank()) {
+            suppressPaidWatcher = true
+            paidInput.setText(if (total > 0) "%.2f".format(total) else "")
+            suppressPaidWatcher = false
+        }
+        refreshDue()
+    }
+
+    // Due = Total − Paid. Due > 0 means part/all credit — this is what now
+    // determines cash-vs-credit instead of the old toggle.
+    private fun refreshDue() {
+        val total = recomputeAmounts()
+        val paid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
+        val due = (total - paid).coerceAtLeast(0.0)
+        dueAmountText.text = "Rs %.2f".format(due)
+        dueAmountText.setTextColor(Color.parseColor(if (due > 0.009) red else green))
+        isCashSale = due <= 0.009
     }
 
     // ================= Save =================
@@ -1011,16 +1060,19 @@ class SaleActivity : AppCompatActivity() {
             return
         }
         val enteredCustomer = customerName.text.toString().trim()
-        if (!isCashSale && enteredCustomer.isEmpty()) {
-            Toast.makeText(this, "Credit sale ke liye Customer zaroori hai", Toast.LENGTH_SHORT).show()
-            return
-        }
 
         val subtotal = lines.sumOf { it.amount }
         val discount = (discountInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, subtotal)
         val total = (subtotal - discount).coerceAtLeast(0.0)
-        val paid = if (isCashSale) (paidInput.text.toString().toDoubleOrNull() ?: total) else 0.0
-        val method = if (isCashSale) (paymentMethodSpinner.selectedItem?.toString() ?: "Cash") else "credit"
+        val paid = (paidInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, total)
+        val due = (total - paid).coerceAtLeast(0.0)
+
+        if (due > 0.009 && enteredCustomer.isEmpty()) {
+            Toast.makeText(this, "Due amount ke liye Customer zaroori hai", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val method = if (paid <= 0.009) "credit" else (paymentMethodSpinner.selectedItem?.toString() ?: "Cash")
         var customer = customers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
         val saleType = if (saleTypeSpinner.selectedItem?.toString() == "Wholesale") "wholesale" else "retail"
         val invoice = editInvoice ?: ("INV" + System.currentTimeMillis().toString())
@@ -1244,7 +1296,6 @@ class SaleActivity : AppCompatActivity() {
             customerName.setText(header[0])
             val saleTypeIndex = if (header[1] == "Wholesale") 1 else 0
             saleTypeSpinner.setSelection(saleTypeIndex)
-            setSaleMode(header[2] != "CREDIT")
             discountInput.setText(header[3])
         }
 
@@ -1285,10 +1336,8 @@ class SaleActivity : AppCompatActivity() {
         itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
         selectedProduct = null
         lastMainPrice = 0.0
-        setSaleMode(true)
-        subtotalText.text = "Rs 0.00"
-        totalText.text = "Rs 0.00"
         paidInput.text.clear()
+        updateTotals()
         saleDateMillis = System.currentTimeMillis()
         dateValueText.text = formatDate(saleDateMillis)
         clearDraft()
