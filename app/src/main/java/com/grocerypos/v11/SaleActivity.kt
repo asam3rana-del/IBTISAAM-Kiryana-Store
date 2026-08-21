@@ -1,14 +1,12 @@
 package com.grocerypos.v11.ui
 
-import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.StateListDrawable
-import android.os.Bundle
 import android.os.Build
+import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -16,6 +14,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
@@ -45,44 +44,18 @@ data class SaleLine(
     val tertiaryUnitQty: Double = 0.0
 )
 
-// ---- Unit-conversion helpers: a SaleLine may be entered in the secondary or tertiary
-// unit (e.g. "grams" while the product's stock is tracked in "pcs"). These convert the
-// entered qty/price back to the product's main unit before it touches the DB / stock.
-// Chain: 1 main = secondaryUnitQty secondary; 1 secondary = tertiaryUnitQty tertiary. ----
-private fun SaleLine.isSecondary(): Boolean =
-    secondaryUnit.isNotEmpty() && unit == secondaryUnit && secondaryUnitQty > 0
-
-private fun SaleLine.isTertiary(): Boolean =
-    tertiaryUnit.isNotEmpty() && unit == tertiaryUnit && tertiaryUnitQty > 0 && secondaryUnitQty > 0
-
-private fun SaleLine.mainUnitQty(): Double = when {
-    isTertiary() -> qty / (secondaryUnitQty * tertiaryUnitQty)
-    isSecondary() -> qty / secondaryUnitQty
-    else -> qty
-}
-
-private fun SaleLine.mainUnitPrice(): Double = when {
-    isTertiary() -> unitPrice * secondaryUnitQty * tertiaryUnitQty
-    isSecondary() -> unitPrice * secondaryUnitQty
-    else -> unitPrice
-}
-
 class SaleActivity : AppCompatActivity() {
 
     companion object {
-        // ---- NEW: lets other screens (PartyDashboardActivity, PartyTransactionActivity)
-        // open an existing sale for viewing/editing by invoice number. ----
         const val EXTRA_INVOICE = "invoice"
         private const val PREFS_NAME = "sale_draft_prefs"
         private const val KEY_DRAFT = "draft_json"
     }
 
-    // ---- NAVY + TEAL + WHITE PALETTE — same as PurchaseActivity, so Sale and
-    // Purchase now share one visual language across the app. ----
     private val bg = "#F4F6F8"
     private val cardBg = "#FFFFFF"
-    private val navy = "#0B2545"     // primary brand — header, Save button
-    private val teal = "#0F9B8E"     // secondary accent — chips, Add Item, totals, "+" icons
+    private val navy = "#0B2545"
+    private val teal = "#0F9B8E"
     private val green = "#1FA971"
     private val greenDark = "#158A5A"
     private val red = "#E5484D"
@@ -112,7 +85,6 @@ class SaleActivity : AppCompatActivity() {
     private lateinit var paidInput: EditText
     private lateinit var paymentMethodSpinner: Spinner
     private lateinit var firmNameText: TextView
-    // ---- NEW: made into lateinit vars (were built inline) so Delete can sit beside Save. ----
     private lateinit var saveButton: Button
     private lateinit var deleteButton: Button
 
@@ -123,24 +95,13 @@ class SaleActivity : AppCompatActivity() {
     private var isCashSale = true
     private var saleDateMillis = System.currentTimeMillis()
 
-    // ---- NEW: edit-mode state — set when this screen was opened to view/edit an
-    // existing sale rather than create a new one. ----
     private var editInvoice: String? = null
     private var originalSale: Sale? = null
     private var originalItems: List<SaleItem> = emptyList()
 
-    // ---- tracks the last-entered unit price converted to a "per MAIN unit" price, so
-    // switching the unit spinner (e.g. kg -> bag) auto-converts the price proportionally
-    // from whatever the user actually typed, instead of always snapping back to the
-    // product's saved sale/wholesale price and discarding a manual override. ----
     private var lastMainPrice: Double = 0.0
     private var suppressPriceWatcher = false
 
-    // ---- draft persistence: guards against process death (e.g. fingerprint prompt,
-    // switching apps, or the OS killing the app in the background) wiping out an
-    // in-progress sale that hasn't been saved/held yet. Separate from the explicit
-    // "Hold" feature, which is a manual, user-initiated save. Only relevant for a
-    // brand-new sale — edit mode loads its own data via loadForEdit(). ----
     private var suppressDraftSave = false
     private var draftRestored = false
 
@@ -154,7 +115,6 @@ class SaleActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= HEADER (flat navy, teal chips) =================
         val headerCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -194,7 +154,6 @@ class SaleActivity : AppCompatActivity() {
         headerCard.addView(headerActions)
         root.addView(headerCard)
 
-        // ================= DATE =================
         val dateBox = outlinedBox()
         dateBox.setOnClickListener { openDatePicker() }
         dateBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Date", "تاریخ")))
@@ -215,7 +174,6 @@ class SaleActivity : AppCompatActivity() {
         dateBox.addView(dateRow)
         root.addView(dateBox)
 
-        // ================= FIRM NAME (loaded from saved Shop Info) =================
         val firmBox = outlinedBox().apply { setPadding(20, 14, 20, 14) }
         val firmRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val firmCol = LinearLayout(this).apply {
@@ -234,7 +192,6 @@ class SaleActivity : AppCompatActivity() {
         firmBox.addView(firmRow)
         root.addView(firmBox)
 
-        // ================= CUSTOMER NAME =================
         val custBox = outlinedBox()
         custBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Customer", "کسٹمر")))
         val custRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -252,7 +209,6 @@ class SaleActivity : AppCompatActivity() {
         root.addView(custBox)
         root.addView(spacer(14))
 
-        // ---- Cash / Credit ----
         val cashCreditToggle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         cashBtn = Button(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "CASH", "نقد"); textSize = 12f; setTextColor(Color.WHITE)
@@ -277,7 +233,6 @@ class SaleActivity : AppCompatActivity() {
         root.addView(cashCreditToggle)
         root.addView(spacer(18))
 
-        // ================= SALE TYPE =================
         val saleTypeBox = outlinedBox()
         saleTypeBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Sale Type", "سیل کی قسم")))
         saleTypeSpinner = Spinner(this).apply {
@@ -287,7 +242,6 @@ class SaleActivity : AppCompatActivity() {
         root.addView(saleTypeBox)
         root.addView(spacer(16))
 
-        // ================= "Add Items" trigger =================
         val addItemsBox = outlinedBox()
         val addItemsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         addItemsRow.addView(circleIcon("+", teal, 30))
@@ -303,7 +257,6 @@ class SaleActivity : AppCompatActivity() {
         root.addView(addItemsBox)
         root.addView(spacer(14))
 
-        // ================= ITEM ENTRY (collapsible) =================
         itemEntrySection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val itemBox = outlinedBox()
@@ -374,11 +327,9 @@ class SaleActivity : AppCompatActivity() {
         root.addView(itemEntrySection)
         root.addView(spacer(16))
 
-        // ================= BILL ITEMS =================
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(itemsContainer)
 
-        // ================= SUBTOTAL / DISCOUNT / TOTAL =================
         val subtotalRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(6, 8, 6, 8) }
         subtotalRow.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Subtotal", "سب ٹوٹل"); textSize = 14f
@@ -433,7 +384,6 @@ class SaleActivity : AppCompatActivity() {
         root.addView(totalCard)
         root.addView(spacer(14))
 
-        // ================= PAYMENT (compact) =================
         paymentSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val payRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val methodBox = outlinedBox().apply {
@@ -464,7 +414,6 @@ class SaleActivity : AppCompatActivity() {
         root.addView(paymentSection)
         root.addView(spacer(18))
 
-        // ================= SAVE + DELETE =================
         saveButton = Button(this).apply {
             text = if (editInvoice != null) com.grocerypos.v11.util.Loc.t(this@SaleActivity, "UPDATE SALE", "سیل اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@SaleActivity, "SAVE SALE", "سیل محفوظ کریں")
             setTextColor(Color.WHITE)
@@ -476,8 +425,6 @@ class SaleActivity : AppCompatActivity() {
             setOnClickListener { saveSale() }
             applyElevation(this, 8f)
         }
-        // ---- NEW: Delete — only shown in edit mode. Reverses stock + customer balance
-        // + the cash-in record before removing the bill, mirroring PurchaseActivity. ----
         deleteButton = Button(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "DELETE", "حذف کریں")
             setTextColor(Color.WHITE)
@@ -505,7 +452,6 @@ class SaleActivity : AppCompatActivity() {
         loadProducts()
         loadFirmName()
         setSaleMode(true)
-        // ---- NEW: if opened for an existing invoice, load it into the form. ----
         editInvoice?.let { loadForEdit(it) }
 
         itemName.setOnItemClickListener { _, _, position, _ ->
@@ -519,9 +465,6 @@ class SaleActivity : AppCompatActivity() {
                 unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
             }
         })
-        // ---- Records the user-entered price (converted to "per MAIN unit" terms) on
-        // every edit, so a manual override survives a later unit switch instead of being
-        // discarded in favor of the product's saved sale/wholesale price. ----
         unitPrice.addTextChangedListener(simpleWatcher {
             if (!suppressPriceWatcher) {
                 val entered = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
@@ -534,19 +477,12 @@ class SaleActivity : AppCompatActivity() {
         }
         saleTypeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                // Sale Type (Retail/Wholesale) changes the BASE price, so any manual
-                // override should reset here — otherwise switching type would keep
-                // showing a price computed for the old type.
                 lastMainPrice = 0.0
                 refillAutoPrice()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
-        // ---- Restore an unsaved draft. Recovers in-progress entries lost when the OS
-        // killed the app in the background (fingerprint unlock, app switch, low memory)
-        // before the user could tap Save or Hold. Skipped in edit mode — loadForEdit()
-        // above already populated the form from the DB. ----
         if (editInvoice == null) {
             restoreDraftIfAny()
         }
@@ -554,16 +490,10 @@ class SaleActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Snapshot whatever is currently on screen so a process death while backgrounded
-        // doesn't wipe out an in-progress sale. Cleared once the sale is actually saved
-        // (see saveSale()) or explicitly held (see holdBill()/clearAll()). Skipped in
-        // edit mode — edits reload from the DB via loadForEdit(), not the draft.
         if (editInvoice == null && !suppressDraftSave) {
             saveDraft()
         }
     }
-
-    // ---- Draft persistence (SharedPreferences, JSON-encoded) ----
 
     private fun draftPrefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -668,7 +598,6 @@ class SaleActivity : AppCompatActivity() {
                 updateTotals()
             }
 
-            // Restore whatever was mid-entry in the item-entry row (not yet added as a line).
             val pendingItemName = draft.optString("pendingItemName", "")
             if (pendingItemName.isNotBlank()) {
                 itemName.setText(pendingItemName)
@@ -701,10 +630,9 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    // ---- NEW: load an existing sale into the form for viewing/editing. Fetches
-    // customers/products directly (instead of relying on the `customers`/`products`
-    // class vars) so it doesn't race with loadCustomers()/loadProducts(), which are
-    // async Flow collectors started just before this is called. ----
+    // ---- Loads an existing sale into the form. `unit` ab si.unit se aata hai (stored
+    // entered unit), current product ke primary unit se force-nahi hota — SaleItem.unit
+    // ab Purchase ki tarah persist hota hai. ----
     private fun loadForEdit(invoice: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
@@ -736,7 +664,7 @@ class SaleActivity : AppCompatActivity() {
                         barcode = si.barcode,
                         itemName = si.product,
                         qty = si.qty.toDouble(),
-                        unit = product?.unit ?: "",
+                        unit = si.unit.ifBlank { product?.unit ?: "" },
                         unitPrice = si.unitPrice,
                         cost = si.cost,
                         amount = si.amount,
@@ -897,8 +825,6 @@ class SaleActivity : AppCompatActivity() {
             .show()
     }
 
-    // ---- Item selection: unit choices now include the tertiary tier too, provided a
-    // secondary unit exists (tertiary is defined relative to secondary, not primary). ----
     private fun onItemPicked(name: String) {
         val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
         selectedProduct = product
@@ -914,9 +840,6 @@ class SaleActivity : AppCompatActivity() {
         refillAutoPrice()
     }
 
-    // ---- Converts a "price per currently-selected unit" to a "price per MAIN unit",
-    // and back. Mirrors the qty conversion but inverted (price scales the opposite way
-    // qty does: smaller unit -> smaller price). ----
     private fun toMainUnitPrice(entered: Double): Double {
         val product = selectedProduct ?: return entered
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
@@ -942,12 +865,6 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Picking the product suggests the sale/wholesale price as a starting point;
-    // once the user types their OWN price, lastMainPrice takes over so switching units
-    // converts proportionally from what was actually entered instead of snapping back
-    // to the product's saved price. Example: 1 bag = 50 kg, sale price per bag is 5000,
-    // user overrides to 5500 on "bag" -> switching to "kg" auto-fills 110 (5500 / 50),
-    // and switching back to "bag" restores 5500. ----
     private fun refillAutoPrice() {
         val product = selectedProduct ?: return
         val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
@@ -978,12 +895,6 @@ class SaleActivity : AppCompatActivity() {
 
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
 
-        // ---- FIX: Product.stock is now counted in the product's SMALLEST configured
-        // unit (see Database.kt), not the primary unit. Validate against that directly
-        // via Product.toSmallestUnits() (multiplication only) instead of converting the
-        // entered qty DOWN into primary-unit terms and comparing against a stock number
-        // that no longer means "primary units" — that mismatch would make the check
-        // either wrongly block valid sales or wrongly allow oversold ones. ----
         val alreadyInCartSmallest = lines.filter { it.barcode == product.barcode }
             .sumOf { product.toSmallestUnits(it.qty, it.unit) }
         val neededSmallest = product.toSmallestUnits(q, chosenUnit)
@@ -999,6 +910,14 @@ class SaleActivity : AppCompatActivity() {
         }
 
         val amount = q * price
+        // ---- `cost` yahan is LINE ka TOTAL COGS hai (amount jaisa), per-unit rate nahi —
+        // Product.toSmallestUnits() (multiply-only) se compute, PurchaseActivity jaisi
+        // approach, kabhi divide-then-round nahi. ----
+        val smallestQtyForCost = product.toSmallestUnits(q, chosenUnit)
+        val factor = product.smallestUnitFactor()
+        val costPerSmallest = if (factor > 0) product.cost / factor else product.cost
+        val lineCost = smallestQtyForCost * costPerSmallest
+
         lines.add(
             SaleLine(
                 barcode = product.barcode,
@@ -1006,7 +925,7 @@ class SaleActivity : AppCompatActivity() {
                 qty = q,
                 unit = chosenUnit,
                 unitPrice = price,
-                cost = product.cost,
+                cost = lineCost,
                 amount = amount,
                 mainUnit = product.unit,
                 secondaryUnit = product.secondaryUnit,
@@ -1104,27 +1023,19 @@ class SaleActivity : AppCompatActivity() {
         val method = if (isCashSale) (paymentMethodSpinner.selectedItem?.toString() ?: "Cash") else "credit"
         var customer = customers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
         val saleType = if (saleTypeSpinner.selectedItem?.toString() == "Wholesale") "wholesale" else "retail"
-        // ---- CHANGE: reuse the invoice being edited, if any, instead of always
-        // generating a fresh one. ----
         val invoice = editInvoice ?: ("INV" + System.currentTimeMillis().toString())
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
 
-            // ---- NEW: if editing, reverse the ORIGINAL bill's stock + customer-balance
-            // effect first (before re-validating stock against the new lines), then
-            // delete its old rows — mirrors PurchaseActivity's edit/update flow.
-            // ---- FIX: reversal must add back SMALLEST units, matching how the original
-            // deduction was made (see decrease() call below). sale_items only stores the
-            // primary-unit-equivalent qty (si.qty), so it's converted up via the current
-            // product's own conversion chain — same approach PurchaseActivity uses in
-            // reverseStockForItems(). ----
+            // ---- Edit mode: reverse ORIGINAL bill's stock via its own stored unit
+            // (si.unit), same toSmallestUnits() multiply-only approach as Purchase. ----
             val original = originalSale
             if (original != null) {
                 originalItems.forEach { si ->
                     val p = db.productDao().find(si.barcode)
                     if (p != null) {
-                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), p.unit).roundToInt()
+                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit }).roundToInt()
                         db.productDao().increase(si.barcode, smallestQty)
                     }
                 }
@@ -1137,14 +1048,6 @@ class SaleActivity : AppCompatActivity() {
                 db.cashTransactionDao().deleteByReference(invoice)
             }
 
-            // ---- FIX: re-validate stock right before committing, against the LATEST
-            // DB values (not the possibly-stale `products` list snapshot from whenever
-            // the screen loaded), and now in the product's SMALLEST-unit terms — matching
-            // what Product.stock actually represents. Aggregates multiple lines of the
-            // same product first, converting each via toSmallestUnits() (multiplication,
-            // never a divide that can round a fractional amount down to 0). If ANY item
-            // comes up short, the whole sale is rejected — nothing is saved, so there's
-            // no risk of a half-recorded bill with wrong stock. ----
             val productsByBarcode = mutableMapOf<String, Product>()
             for ((barcode, group) in lines.groupBy { it.barcode }) {
                 val current = db.productDao().find(barcode)
@@ -1184,26 +1087,23 @@ class SaleActivity : AppCompatActivity() {
                 )
             )
 
+            // ---- Store the actual entered qty/unit/rate (matches PurchaseItem pattern) —
+            // no divide-into-primary-unit conversion, so a fractional-primary-unit qty can
+            // never round down to 0. ----
             val saleItems = lines.map {
                 SaleItem(
                     invoice = invoice,
                     barcode = it.barcode,
                     product = it.itemName,
-                    qty = it.mainUnitQty().roundToInt(),
-                    unitPrice = it.mainUnitPrice(),
+                    qty = it.qty.roundToInt(),
+                    unit = it.unit,
+                    unitPrice = it.unitPrice,
                     cost = it.cost,
                     amount = it.amount
                 )
             }
             db.saleDao().items(saleItems)
 
-            // ---- FIX: deduct in SMALLEST units via toSmallestUnits() (multiplication),
-            // not it.mainUnitQty().roundToInt() (division into primary units, which is
-            // exactly the "10 Outer / 50 = 0.2 -> rounds to 0, stock never moves" bug).
-            // decrease() is guarded (won't go below zero) — already re-validated above,
-            // so this should always succeed, but if it somehow doesn't (another sale
-            // slipped in between the check and here), we still don't silently pretend
-            // the stock moved. ----
             for (line in lines) {
                 val product = productsByBarcode[line.barcode] ?: db.productDao().find(line.barcode)
                 if (product == null) continue
@@ -1234,8 +1134,6 @@ class SaleActivity : AppCompatActivity() {
                 )
             }
 
-            // Sale is safely persisted now — clear the recovery draft so a future launch
-            // doesn't try to restore an already-saved sale.
             suppressDraftSave = true
             clearDraft()
             editInvoice = invoice
@@ -1246,7 +1144,6 @@ class SaleActivity : AppCompatActivity() {
                 Toast.LENGTH_SHORT
             ).show()
 
-            // ---- Open the receipt-style Bill Preview instead of just finishing ----
             val itemsEncoded = lines.joinToString("\u0002") {
                 listOf(it.itemName, formatQty(it.qty), it.unit, it.unitPrice, it.amount).joinToString("\u0003")
             }
@@ -1268,9 +1165,6 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    // ---- NEW: Delete (edit mode only) — reverses stock + customer balance + the cash-in
-    // record, then removes the bill. Mirrors PurchaseActivity.confirmDeletePurchase().
-    // ---- FIX: same SMALLEST-unit reversal as the edit path in saveSale() above. ----
     private fun confirmDeleteSale() {
         val invoice = editInvoice ?: return
         AlertDialog.Builder(this)
@@ -1290,7 +1184,7 @@ class SaleActivity : AppCompatActivity() {
             items.forEach { si ->
                 val p = db.productDao().find(si.barcode)
                 if (p != null) {
-                    val smallestQty = p.toSmallestUnits(si.qty.toDouble(), p.unit).roundToInt()
+                    val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit }).roundToInt()
                     db.productDao().increase(si.barcode, smallestQty)
                 }
             }
@@ -1325,9 +1219,6 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Encoding includes the tertiary tier now (fields 10 & 11). Old held bills
-    // saved before this change only have 10 fields per line — decodeHold() below
-    // defaults tertiary to "" / 0.0 for those via getOrNull, so they still recall fine. ----
     private fun encodeHold(): String {
         val header = listOf(
             customerName.text.toString(),
