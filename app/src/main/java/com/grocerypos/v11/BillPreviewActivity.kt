@@ -340,7 +340,12 @@ class BillPreviewActivity : AppCompatActivity() {
             sb.append("--------------------------------\n")
             sb.append(center(receiptFooter.ifBlank { "Shukriya!" }, 32)).append("\n")
 
-            val ok = PrinterHelper.printText(this@BillPreviewActivity, PrinterHelper.PrinterType.BLUETOOTH, mac, sb.toString())
+            val ok = PrinterHelper.printUrduText(
+                this@BillPreviewActivity,
+                PrinterHelper.PrinterType.BLUETOOTH,
+                mac,
+                sb.toString()
+            )
             Toast.makeText(
                 this@BillPreviewActivity,
                 if (ok) "Print bhej diya" else "Print fail ho gaya. Printer check karein.",
