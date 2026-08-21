@@ -127,7 +127,16 @@ class HistoryActivity : AppCompatActivity() {
             if (purchase.status == "returned") body.addView(returnedBanner())
             body.addView(kv("Total", "Rs %.2f".format(purchase.total))); body.addView(kv("Paid", "Rs %.2f".format(purchase.paid)))
             body.addView(spacer()); body.addView(sectionTitle("Items"))
-            for (it in items) { val u = if (it.unit.isBlank()) "" else " ${it.unit}"; body.addView(itemRow(it.barcode, "${it.qty}$u x ${it.unitCost}", "Rs %.2f".format(it.amount))) }
+            // ---- FIX: was showing the raw barcode (it.barcode) instead of the product name.
+            // PurchaseItem only stores the barcode, so look up the product to get its name —
+            // same pattern already used by PurchaseHistoryActivity.loadBillItems(). Falls back
+            // to the barcode only if the product record itself is missing/deleted. ----
+            for (it in items) {
+                val product = db.productDao().find(it.barcode)
+                val displayName = product?.name ?: it.barcode
+                val u = if (it.unit.isBlank()) "" else " ${it.unit}"
+                body.addView(itemRow(displayName, "${it.qty}$u x ${it.unitCost}", "Rs %.2f".format(it.amount)))
+            }
             val dialog = AlertDialog.Builder(this@HistoryActivity).setView(content).create()
             val footer = content.getChildAt(2) as LinearLayout
             footer.addView(Button(this@HistoryActivity).apply { text = "Close"; layoutParams = LinearLayout.LayoutParams(0,-2,1f); setOnClickListener { dialog.dismiss() } })
