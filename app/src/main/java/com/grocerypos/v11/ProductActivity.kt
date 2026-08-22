@@ -2,6 +2,7 @@ package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -14,6 +15,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -69,10 +71,23 @@ class ProductActivity : AppCompatActivity() {
     private lateinit var noResultsCard: LinearLayout
     private lateinit var productsSectionAnchor: View
 
-    private var units = listOf(
-        "pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi",
-        "gram", "g", "ml", "litre", "liter", "pao", "quintal", "ton", "gross"
-    )
+    // ---- Wraps the search box + product list + "no results" card. Kept GONE by default so
+    // the saved-products list doesn't sit permanently under the form — it only becomes visible
+    // when the user taps "View List" in the header (see toggleProductsList()). ----
+    private lateinit var productsSectionContainer: LinearLayout
+
+    // ---- Tracks whichever EditText currently has focus so the ScrollView's global layout
+    // listener (registered once, below) can keep re-applying the "stay above keyboard" scroll
+    // on every layout pass while the keyboard is animating open/closed — not just once on the
+    // initial focus event. This is what stops fields like Retail Sale Rate from getting hidden
+    // behind the keyboard. ----
+    private var focusedFieldForScroll: View? = null
+
+    // ---- No hardcoded English defaults (pcs, ctn, box, gram, ml, ...). Only units the user
+    // has actually added (via "New Unit" in the unit dialog, or by typing a fresh unit name,
+    // see ensureUnitSaved) are loaded from the DB and offered as suggestions. ----
+    private var units: List<String> = emptyList()
+
     private var categoryNames: List<String> = listOf("General")
 
     // Unit chain:
@@ -95,11 +110,16 @@ class ProductActivity : AppCompatActivity() {
     // Set true right after a save; consumed by renderProducts() to scroll precisely to the
     // just-saved card once it exists in the freshly rendered list, instead of only jumping to
     // the top of the Products section (which could still leave the saved item scrolled out of
-    // view further down the list).
+    // view further down the list). Only actually scrolls if the products section is currently
+    // visible — it does NOT force the (now hidden-by-default) list open on its own.
     private var pendingScrollToSaved = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // ---- Lets the OS resize/pan the layout as the keyboard opens, which is what makes
+        // the manual "stay above keyboard" scrolling below actually work reliably. ----
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         val contentRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -121,6 +141,13 @@ class ProductActivity : AppCompatActivity() {
             )
             addView(scrollContent)
             isFillViewport = true
+        }
+
+        // ---- Generic "keep the focused field visible above the keyboard" tracking — re-applies
+        // the scroll on every layout pass while the keyboard animates, so it self-corrects
+        // instead of relying on a single guessed scroll amount from the focus event alone. ----
+        scrollView.viewTreeObserver.addOnGlobalLayoutListener {
+            focusedFieldForScroll?.let { scrollFieldIntoView(it) }
         }
 
         saveButton = Button(this).apply {
@@ -205,8 +232,9 @@ class ProductActivity : AppCompatActivity() {
 
         header.addView(col)
 
-        // ---- Quick jump straight to the products list below, without manual scrolling — this
-        // is also where the user lands right after saving a product. ----
+        // ---- Reveals the (hidden-by-default) products list below and scrolls straight to it.
+        // This is now the ONLY way the list becomes visible — it no longer shows permanently
+        // under the form. ----
         header.addView(TextView(this).apply {
             text = "📋 " + Loc.t(this@ProductActivity, "View List", "فہرست دیکھیں")
             textSize = 11.5f
@@ -217,7 +245,7 @@ class ProductActivity : AppCompatActivity() {
                 cornerRadius = 30f
             }
             setPadding(20, 12, 20, 12)
-            setOnClickListener { scrollToProductsList() }
+            setOnClickListener { toggleProductsList() }
         })
 
         root.addView(header)
@@ -398,7 +426,13 @@ class ProductActivity : AppCompatActivity() {
         name.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) { categoryField.requestFocus(); true } else false
         }
-        categoryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(categoryField) }
+        categoryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                safeShowDropDown(categoryField)
+                focusedFieldForScroll = categoryField
+                scrollView.post { scrollFieldIntoView(categoryField) }
+            }
+        }
         categoryField.addTextChangedListener(simpleWatcher {
             if (categoryField.hasFocus() && categoryField.text.length >= 1) safeShowDropDown(categoryField)
         })
@@ -418,6 +452,41 @@ class ProductActivity : AppCompatActivity() {
         stock.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) { hideKeyboard(); saveProduct(); true } else false
         }
+
+        // ---- Keeps each of these fields clear of the keyboard while typing — this is what
+        // fixes Retail Sale Rate (and the others) getting hidden behind the keyboard. Every
+        // focus event updates focusedFieldForScroll, and the global layout listener registered
+        // in onCreate() keeps re-applying the scroll as the keyboard animates open. ----
+        name.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                focusedFieldForScroll = name
+                scrollView.post { scrollFieldIntoView(name) }
+            }
+        }
+        cost.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                focusedFieldForScroll = cost
+                scrollView.post { scrollFieldIntoView(cost) }
+            }
+        }
+        wholesalePrice.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                focusedFieldForScroll = wholesalePrice
+                scrollView.post { scrollFieldIntoView(wholesalePrice) }
+            }
+        }
+        salePrice.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                focusedFieldForScroll = salePrice
+                scrollView.post { scrollFieldIntoView(salePrice) }
+            }
+        }
+        stock.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                focusedFieldForScroll = stock
+                scrollView.post { scrollFieldIntoView(stock) }
+            }
+        }
     }
 
     private fun buildProductsSection(root: LinearLayout) {
@@ -425,6 +494,14 @@ class ProductActivity : AppCompatActivity() {
         productsSectionAnchor = sectionLabel("🗃️", Loc.t(this, "Products", "پروڈکٹس"))
         root.addView(productsSectionAnchor)
         root.addView(spacer(10))
+
+        // ---- Everything below (search box, the list itself, "no results") lives inside this
+        // container so it can be hidden as one unit. GONE by default — only becomes visible via
+        // toggleProductsList(), triggered by the header's "View List" button. ----
+        productsSectionContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
 
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -466,18 +543,24 @@ class ProductActivity : AppCompatActivity() {
             setOnClickListener { searchField.text.clear() }
         }
         searchBox.addView(clearSearchBtn)
-        root.addView(searchBox)
+        productsSectionContainer.addView(searchBox)
 
         searchField.addTextChangedListener(simpleWatcher {
             val q = searchField.text.toString()
             clearSearchBtn.visibility = if (q.isNotEmpty()) View.VISIBLE else View.GONE
             renderProducts(filterProducts(q))
         })
+        searchField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                focusedFieldForScroll = searchField
+                scrollView.post { scrollFieldIntoView(searchField) }
+            }
+        }
 
         listContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        root.addView(listContainer)
+        productsSectionContainer.addView(listContainer)
 
         noResultsCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -503,7 +586,9 @@ class ProductActivity : AppCompatActivity() {
                 setPadding(0, 10, 0, 0)
             })
         }
-        root.addView(noResultsCard)
+        productsSectionContainer.addView(noResultsCard)
+
+        root.addView(productsSectionContainer)
         root.addView(spacer(24))
     }
 
@@ -630,6 +715,32 @@ class ProductActivity : AppCompatActivity() {
         scrollView.post { scrollView.smoothScrollTo(0, productsSectionAnchor.top) }
     }
 
+    // ---- Called by the header's "View List" button. Makes the (otherwise hidden) products
+    // section visible and scrolls straight to it. ----
+    private fun toggleProductsList() {
+        if (!::productsSectionContainer.isInitialized) return
+        productsSectionContainer.visibility = View.VISIBLE
+        scrollToProductsList()
+    }
+
+    // ---- Scrolls scrollView just enough so `target` stays clear of the on-screen keyboard.
+    // Only nudges the minimum needed (keeps target's bottom clear if the keyboard covers it,
+    // or brings it back down if it's scrolled above the visible area) — never over-scrolls. ----
+    private fun scrollFieldIntoView(target: View) {
+        if (!::scrollView.isInitialized || !target.isAttachedToWindow) return
+        val visibleFrame = Rect()
+        scrollView.getWindowVisibleDisplayFrame(visibleFrame)
+        val location = IntArray(2)
+        target.getLocationOnScreen(location)
+        val top = location[1]
+        val bottom = top + target.height
+        val extraPadding = (24 * resources.displayMetrics.density).toInt()
+        when {
+            bottom > visibleFrame.bottom -> scrollView.scrollBy(0, (bottom - visibleFrame.bottom) + extraPadding)
+            top < visibleFrame.top -> scrollView.scrollBy(0, top - visibleFrame.top - extraPadding)
+        }
+    }
+
     // ---------------- Categories / units ----------------
 
     private fun loadCategories() {
@@ -647,16 +758,13 @@ class ProductActivity : AppCompatActivity() {
         }
     }
 
+    // ---- Only loads units the user has actually saved (via the unit dialog's "New Unit" flow,
+    // or by typing a fresh name — see ensureUnitSaved). No hardcoded English defaults are mixed
+    // in anymore, so the suggestion list only ever shows what this shop actually uses. ----
     private fun loadUnits() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).unitDao().all().collectLatest { list ->
-                units = (
-                    listOf(
-                        "pcs", "kg", "box", "dozen", "carton", "ctn",
-                        "outer", "dabbi", "gram", "g", "ml",
-                        "litre", "liter", "pao", "quintal", "ton", "gross"
-                    ) + list.map { it.name }
-                ).filter { it.isNotBlank() }.distinct()
+                units = list.map { it.name }.filter { it.isNotBlank() }.distinct()
 
                 if (stockUnitSpinner.adapter == null) {
                     setStockUnitAdapter()
@@ -1431,10 +1539,9 @@ class ProductActivity : AppCompatActivity() {
                     Toast.LENGTH_SHORT
                 ).show()
 
-                // Jump straight to the products list and highlight the one just saved, instead
-                // of leaving the user to scroll down and hunt for it manually. The actual scroll
-                // happens inside renderProducts() once the highlighted card exists in the newly
-                // rendered list, so we land exactly on the card instead of just the section top.
+                // Marks which card to highlight if/when the user opens the list — does NOT
+                // force the (hidden-by-default) products section open on its own; see the
+                // visibility check inside renderProducts().
                 justSavedBarcode = barcode
                 pendingScrollToSaved = true
                 clearForm()
@@ -1688,14 +1795,22 @@ class ProductActivity : AppCompatActivity() {
 
         // The card views were just added, so layout hasn't happened yet on this pass — wait
         // two frames (one for listContainer's children, one for the ScrollView content) before
-        // reading .top, otherwise we'd scroll to a stale position of 0.
+        // reading .top, otherwise we'd scroll to a stale position of 0. Only actually scrolls
+        // if the products section is currently visible — it does NOT auto-open the (now
+        // hidden-by-default) list on its own; the user must tap "View List" for that.
         val cardToReveal = savedCardView
-        if (pendingScrollToSaved && cardToReveal != null) {
+        if (pendingScrollToSaved) {
             pendingScrollToSaved = false
-            scrollView.post {
+            if (
+                cardToReveal != null &&
+                ::productsSectionContainer.isInitialized &&
+                productsSectionContainer.visibility == View.VISIBLE
+            ) {
                 scrollView.post {
-                    val targetY = (cardToReveal.top - 24.dp()).coerceAtLeast(0)
-                    scrollView.smoothScrollTo(0, targetY)
+                    scrollView.post {
+                        val targetY = (cardToReveal.top - 24.dp()).coerceAtLeast(0)
+                        scrollView.smoothScrollTo(0, targetY)
+                    }
                 }
             }
         }
