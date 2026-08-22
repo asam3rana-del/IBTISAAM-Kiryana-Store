@@ -39,18 +39,78 @@ class ProductActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_EDIT_BARCODE = "editBarcode"
         private const val TAG = "ProductActivity"
+        private const val PREFS_NAME = "app_prefs"
+        private const val KEY_DARK_MODE = "dark_mode"
     }
 
-    // Premium palette — kept compatible with Purchase/Sale.
-    private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val textDark = "#0B2545"
-    private val textMuted = "#7C8798"
-    private val border = "#E3E8EE"
-    private val amber = "#F5A524"
+    // ---- Premium palette — kept compatible with Purchase/Sale. These are now `var`s instead
+    // of `val`s because their values depend on the current theme (light/dark) and get assigned
+    // once in onCreate(), before any UI is built, from either lightPalette or darkPalette below.
+    // Navy/teal/red/amber stay identical across themes since navy is already dark and the
+    // accent colors read fine on both backgrounds. ----
+    private var bg = "#F4F6F8"
+    private var cardWhite = "#FFFFFF"
+    private var navy = "#0B2545"
+    private var teal = "#0F9B8E"
+    private var red = "#E5484D"
+    private var textDark = "#0B2545"
+    private var textMuted = "#7C8798"
+    private var border = "#E3E8EE"
+    private var amber = "#F5A524"
+
+    // ---- Extra theme-aware roles for literals that used to be hardcoded hex strings scattered
+    // through the layout code (field backgrounds, header subtitle, header badge overlay, and
+    // the light-teal "just saved" card highlight). ----
+    private var fieldFill = "#FAFBFC"
+    private var headerSubtitleColor = "#9FB4CC"
+    private var headerBadgeOverlay = "#33FFFFFF"
+    private var savedHighlightBg = "#E9FBF9"
+
+    private var isDarkMode = false
+
+    private fun loadThemePrefs() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        isDarkMode = prefs.getBoolean(KEY_DARK_MODE, false)
+
+        if (isDarkMode) {
+            bg = "#10151F"
+            cardWhite = "#1B2334"
+            navy = "#0B2545"
+            teal = "#14B8A6"
+            red = "#F0666B"
+            textDark = "#EAEFF7"
+            textMuted = "#8B95A8"
+            border = "#2A3346"
+            amber = "#F5A524"
+            fieldFill = "#161D2C"
+            headerSubtitleColor = "#9FB4CC"
+            headerBadgeOverlay = "#33FFFFFF"
+            savedHighlightBg = "#12332F"
+        } else {
+            bg = "#F4F6F8"
+            cardWhite = "#FFFFFF"
+            navy = "#0B2545"
+            teal = "#0F9B8E"
+            red = "#E5484D"
+            textDark = "#0B2545"
+            textMuted = "#7C8798"
+            border = "#E3E8EE"
+            amber = "#F5A524"
+            fieldFill = "#FAFBFC"
+            headerSubtitleColor = "#9FB4CC"
+            headerBadgeOverlay = "#33FFFFFF"
+            savedHighlightBg = "#E9FBF9"
+        }
+    }
+
+    // ---- Flips the stored theme preference and recreates the activity so every color-dependent
+    // view gets rebuilt from scratch with the new palette — simplest reliable approach given the
+    // UI is built entirely in code with hardcoded colors rather than theme-reactive resources. ----
+    private fun toggleTheme() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_DARK_MODE, !isDarkMode).apply()
+        recreate()
+    }
 
     private lateinit var scrollView: ScrollView
     private lateinit var formCardTitle: TextView
@@ -120,6 +180,10 @@ class ProductActivity : AppCompatActivity() {
         // ---- Lets the OS resize/pan the layout as the keyboard opens, which is what makes
         // the manual "stay above keyboard" scrolling below actually work reliably. ----
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+
+        // ---- Must run before any of the build*() calls below, since they all read the color
+        // vars (bg, cardWhite, textDark, etc.) while constructing views. ----
+        loadThemePrefs()
 
         val contentRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -226,11 +290,28 @@ class ProductActivity : AppCompatActivity() {
         col.addView(TextView(this).apply {
             text = Loc.t(this@ProductActivity, "Inventory Management", "انوینٹری مینجمنٹ")
             textSize = 11f
-            setTextColor(Color.parseColor("#9FB4CC"))
+            setTextColor(Color.parseColor(headerSubtitleColor))
             setPadding(0, 3, 0, 0)
         })
 
         header.addView(col)
+
+        // ---- Light/dark toggle. Shows the icon for the mode you'd switch TO, matching the
+        // usual convention (sun while in dark mode, moon while in light mode). ----
+        header.addView(TextView(this).apply {
+            text = if (isDarkMode) "☀️" else "🌙"
+            textSize = 15f
+            setPadding(14, 12, 14, 12)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(headerBadgeOverlay))
+                cornerRadius = 30f
+            }
+            setOnClickListener { toggleTheme() }
+        })
+
+        header.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(10.dp(), 1)
+        })
 
         // ---- Reveals the (hidden-by-default) products list below and scrolls straight to it.
         // This is now the ONLY way the list becomes visible — it no longer shows permanently
@@ -241,7 +322,7 @@ class ProductActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#33FFFFFF"))
+                setColor(Color.parseColor(headerBadgeOverlay))
                 cornerRadius = 30f
             }
             setPadding(20, 12, 20, 12)
@@ -288,7 +369,7 @@ class ProductActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(18, 6, 6, 6)
-            background = strokedBg(border, "#FAFBFC", 12)
+            background = strokedBg(border, fieldFill, 12)
         }
 
         name = EditText(this).apply {
@@ -323,7 +404,7 @@ class ProductActivity : AppCompatActivity() {
         val categoryBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, "#FAFBFC", 12)
+            background = strokedBg(border, fieldFill, 12)
             setPadding(18, 4, 18, 4)
         }
 
@@ -381,7 +462,7 @@ class ProductActivity : AppCompatActivity() {
         val stockBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, "#FAFBFC", 12)
+            background = strokedBg(border, fieldFill, 12)
             setPadding(18, 4, 8, 4)
         }
 
@@ -607,7 +688,7 @@ class ProductActivity : AppCompatActivity() {
     private fun fieldBox(field: EditText, icon: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = strokedBg(border, "#FAFBFC", 12)
+        background = strokedBg(border, fieldFill, 12)
         setPadding(18, 4, 18, 4)
         addView(TextView(this@ProductActivity).apply {
             text = "$icon  "
@@ -1032,7 +1113,7 @@ class ProductActivity : AppCompatActivity() {
                 "یہ پروڈکٹ کے یونٹس ایک دوسرے میں کیسے تبدیل ہوں گے، ترتیب دیں"
             )
             textSize = 11.5f
-            setTextColor(Color.parseColor("#9FB4CC"))
+            setTextColor(Color.parseColor(headerSubtitleColor))
             setPadding(0, 4, 0, 0)
         })
         content.addView(header)
@@ -1306,7 +1387,7 @@ class ProductActivity : AppCompatActivity() {
             textSize = 14f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, Typeface.BOLD)
-            background = strokedBg(border, "#FAFBFC", 14)
+            background = strokedBg(border, fieldFill, 14)
             setPadding(0, 22, 0, 22)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
                 setMargins(0, 0, 8, 0)
@@ -1678,7 +1759,7 @@ class ProductActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(20, 16, 20, 16)
                 background = if (isJustSaved) {
-                    strokedBg(teal, "#E9FBF9", 14)
+                    strokedBg(teal, savedHighlightBg, 14)
                 } else {
                     strokedBg(border, cardWhite, 14)
                 }
