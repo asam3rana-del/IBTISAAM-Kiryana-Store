@@ -26,10 +26,27 @@ class CashActivity : AppCompatActivity() {
     private val textMuted = "#8A8FA3"
     private val green = "#2E7D32"
     private val red = "#C62828"
+    private val teal = "#0F9B8E"
+
+    private val expenseCategories = listOf(
+        "Food Authority License Fees",
+        "Utility Bills",
+        "Wages",
+        "Fuel Expense",
+        "Pick up Maintenance",
+        "Fines",
+        "Rent",
+        "Income Tax Fees",
+        "Miscellaneous"
+    )
 
     private lateinit var amount: EditText
     private lateinit var reason: EditText
     private lateinit var methodSpinner: Spinner
+    private lateinit var categorySpinner: Spinner
+    private lateinit var miscToggle: TextView
+    private lateinit var miscDescBox: LinearLayout
+    private lateinit var miscDesc: EditText
     private lateinit var inTotalText: TextView
     private lateinit var outTotalText: TextView
     private lateinit var listContainer: LinearLayout
@@ -86,6 +103,61 @@ class CashActivity : AppCompatActivity() {
         }
         methodBox.addView(methodSpinner)
         formCard.addView(methodBox)
+
+        // ---- Expense category (used mainly for CASH OUT entries) ----
+        formCard.addView(sectionLabel(Loc.t(this, "Expense Category", "خرچہ کیٹیگری")))
+        val categoryBox = outlinedBox()
+        categorySpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@CashActivity, android.R.layout.simple_spinner_dropdown_item, expenseCategories)
+        }
+        categoryBox.addView(categorySpinner)
+        formCard.addView(categoryBox)
+
+        // ---- Miscellaneous description: collapsed by default, expands on tap ----
+        miscToggle = TextView(this).apply {
+            text = "📝  " + Loc.t(this@CashActivity, "Add description", "تفصیل شامل کریں")
+            textSize = 12f
+            setTextColor(Color.parseColor(teal))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(4, 0, 0, 10)
+            visibility = View.GONE
+            setOnClickListener {
+                miscDescBox.visibility = View.VISIBLE
+                miscToggle.visibility = View.GONE
+                miscDesc.requestFocus()
+            }
+        }
+        formCard.addView(miscToggle)
+
+        miscDescBox = outlinedBox().apply { visibility = View.GONE }
+        miscDesc = EditText(this).apply {
+            hint = Loc.t(this@CashActivity, "Describe this expense", "اس خرچے کی تفصیل لکھیں")
+            background = null
+            minLines = 2
+            maxLines = 4
+            gravity = Gravity.TOP or Gravity.START
+        }
+        miscDescBox.addView(miscDesc)
+        formCard.addView(miscDescBox)
+
+        categorySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val isMisc = expenseCategories.getOrNull(position) == "Miscellaneous"
+                if (isMisc) {
+                    if (miscDesc.text.isNullOrBlank()) {
+                        miscToggle.visibility = View.VISIBLE
+                        miscDescBox.visibility = View.GONE
+                    } else {
+                        miscToggle.visibility = View.GONE
+                        miscDescBox.visibility = View.VISIBLE
+                    }
+                } else {
+                    miscToggle.visibility = View.GONE
+                    miscDescBox.visibility = View.GONE
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
 
         val reasonBox = outlinedBox()
         reason = EditText(this).apply { hint = Loc.t(this@CashActivity, "Reason / Note (optional)", "وجہ / نوٹ (اختیاری)"); background = null }
@@ -232,15 +304,33 @@ class CashActivity : AppCompatActivity() {
             return
         }
         val method = methodSpinner.selectedItem?.toString() ?: "cash"
+        val category = categorySpinner.selectedItem?.toString() ?: ""
+        val misc = miscDesc.text.toString().trim()
         val note = reason.text.toString().trim()
+
+        val fullReason = buildString {
+            if (category.isNotEmpty()) append(category)
+            if (category == "Miscellaneous" && misc.isNotEmpty()) {
+                if (isNotEmpty()) append(" - ")
+                append(misc)
+            }
+            if (note.isNotEmpty()) {
+                if (isNotEmpty()) append(" | ")
+                append(note)
+            }
+        }
 
         lifecycleScope.launch {
             PosDatabase.get(this@CashActivity).cashTransactionDao().insert(
-                CashTransaction(type = type, method = method, amount = amt, reason = note)
+                CashTransaction(type = type, method = method, amount = amt, reason = fullReason)
             )
             Toast.makeText(this@CashActivity, Loc.t(this@CashActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             amount.text.clear()
             reason.text.clear()
+            miscDesc.text.clear()
+            miscDescBox.visibility = View.GONE
+            miscToggle.visibility = View.GONE
+            categorySpinner.setSelection(0)
             loadTodayTotals()
         }
     }
