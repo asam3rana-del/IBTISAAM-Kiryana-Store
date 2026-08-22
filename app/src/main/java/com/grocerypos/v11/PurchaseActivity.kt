@@ -157,13 +157,6 @@ class PurchaseActivity : ThemedActivity() {
 
     private var isSaving = false
 
-    // ---- Generic "keep this field visible above the keyboard" tracking. Whichever field is
-    // currently focused sets these two, and the ScrollView's global layout listener re-applies
-    // the scroll on every keyboard animation frame (not just once on focus) so it keeps tracking
-    // correctly regardless of device speed. alignTop=true pins the target's TOP to the visible
-    // area (used for item-entry fields, so the whole Add Item card scrolls into view exactly like
-    // it should); alignTop=false only nudges the minimum needed to keep the target's bottom clear
-    // of the keyboard (used for Paid Amount, where we don't want to over-scroll past it).
     private var scrollTargetView: View? = null
     private var scrollAlignTop: Boolean = true
 
@@ -604,8 +597,6 @@ class PurchaseActivity : ThemedActivity() {
             onItemPicked(itemName.adapter.getItem(position).toString())
             qty.requestFocus()
         }
-        // ---- CHANGE: partyName -> itemName now also nudges the scroll up a bit so the item
-        // entry card is visible instead of sitting partly under the keyboard/dropdown. ----
         itemName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
                 safeShowDropDown(itemName)
@@ -641,9 +632,6 @@ class PurchaseActivity : ThemedActivity() {
         rate.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) { totalLotPrice.requestFocus(); true } else false
         }
-        // ---- CHANGE: whenever the Rate field gets focus, select ALL of its text (whether it
-        // was auto-filled from the product's last cost or typed earlier) so the user can just
-        // start typing to overwrite it directly — no manual clear/backspace needed. ----
         rate.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
                 rate.post { rate.selectAll() }
@@ -724,10 +712,6 @@ class PurchaseActivity : ThemedActivity() {
                 scrollArea.post { scrollToShowView(paymentSection, false) }
             }
         }
-        // ---- Generic keyboard-follow: re-applies the last requested scroll target on every
-        // layout pass while the keyboard is animating, so it self-corrects instead of relying on
-        // one single guessed scroll amount. Covers Party Name, Item Name/Qty/Rate/Total Lot Price,
-        // and Paid Amount alike. ----
         scrollArea.viewTreeObserver.addOnGlobalLayoutListener {
             scrollTargetView?.let { scrollToShowView(it, scrollAlignTop) }
         }
@@ -735,11 +719,6 @@ class PurchaseActivity : ThemedActivity() {
         if (editBillNo == null) restoreDraftIfAny()
     }
 
-    // ---- Scrolls scrollArea just enough so `target` stays clear of the on-screen keyboard.
-    // alignTop=true pins target's TOP near the visible area's top (used for item-entry fields,
-    // so the whole Add Item card — including the ADD ITEM button — scrolls into view, matching
-    // what's expected). alignTop=false only nudges the minimum needed to keep target's bottom
-    // clear of the keyboard (used for Paid Amount, which sits lower on the screen). ----
     private fun scrollToShowView(target: View, alignTop: Boolean) {
         if (!::scrollArea.isInitialized) return
         val visibleFrame = Rect()
@@ -831,7 +810,6 @@ class PurchaseActivity : ThemedActivity() {
         supplierBalanceText.setTextColor(Color.parseColor(if (supplier.balance > 0) red else successGreen))
     }
 
-    // ---------- Premium style helpers ----------
     private fun premiumCard() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(22, 18, 22, 18)
@@ -855,8 +833,6 @@ class PurchaseActivity : ThemedActivity() {
         this.text = label; textSize = 16f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = ovalBg(colorHex); val px = (sizeDp * resources.displayMetrics.density).toInt(); width = px; height = px; if (onClick != null) setOnClickListener { onClick() }
     }
 
-    // ---- CHANGE: when the Billed Items window is closed, cursor jumps straight to Paid
-    // Amount and the keyboard opens there — no extra tap needed. ----
     private fun showBilledItemsDialog() {
         if (lines.isEmpty()) return
         (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
@@ -1016,9 +992,6 @@ class PurchaseActivity : ThemedActivity() {
             else -> entered
         }
     }
-    // ---- CHANGE: after auto-filling the Rate field from the product's last cost, the whole
-    // value is pre-selected — so if the price changed, the user can just start typing and it
-    // overwrites instantly, no manual clearing needed. ----
     private fun refillAutoRate() {
         val product = selectedProduct ?: return
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
@@ -1075,10 +1048,6 @@ class PurchaseActivity : ThemedActivity() {
         }
     }
     private fun normalizeUnitName(u: String) = u.trim().lowercase()
-    // ---- CHANGE: added pao -> gram conversion (1 pao = 250 grams) alongside the existing
-    // kg -> pao (1 kg = 4 pao) so the standard chain is complete both directions, per request.
-    // Any wrong auto-filled value is still directly editable — see secQtyField/terQtyField
-    // select-all-on-focus below — so this is a starting suggestion, not a locked value. ----
     private fun standardUnitQty(fromUnit: String, toUnit: String): Double? {
         val f = normalizeUnitName(fromUnit); val t = normalizeUnitName(toUnit)
         val gramNames = setOf("gram", "grams", "g", "gm"); val pieceNames = setOf("pcs", "pc", "piece", "pieces"); val mlNames = setOf("ml", "milliliter", "millilitre"); val kgNames = setOf("kg", "kgs", "kilogram", "kilograms"); val litreNames = setOf("litre", "liter", "l", "ltr"); val paoNames = setOf("pao", "pav")
@@ -1187,9 +1156,6 @@ class PurchaseActivity : ThemedActivity() {
         body.addView(secondaryRow); body.addView(spacer(16))
         val secQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, fieldFill, 14); setPadding(16, 4, 16, 4) }
         val secQtyField = EditText(this).apply { hint = "1 Primary = how many Secondary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        // ---- CHANGE: select-all whenever this field gets focus, so an auto-filled/repeated
-        // suggested value (e.g. 1000 for kg->gram, 250 for pao->gram) can be overwritten by
-        // just typing — no manual clearing needed. ----
         secQtyField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) secQtyField.post { secQtyField.selectAll() } }
         secQtyBox.addView(secQtyField); body.addView(secQtyBox); body.addView(spacer(20))
         body.addView(microLabel("TERTIARY UNIT"))
