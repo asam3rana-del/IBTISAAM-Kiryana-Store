@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 class PurchaseHistoryActivity : AppCompatActivity() {
     private val bg = "#F4F6F8"
@@ -84,15 +85,41 @@ class PurchaseHistoryActivity : AppCompatActivity() {
         }
     }
     private fun confirmDelete(no: String) { android.app.AlertDialog.Builder(this).setTitle("Delete purchase").setMessage("Delete this purchase? Stock reverse hoga.").setPositiveButton("Delete") { _,_ -> deleteBill(no) }.setNegativeButton("Cancel",null).show() }
+
+    // ---- FIX: previously called decreaseForce(barcode, pi.qty.toInt()) directly, which
+    // treats the ENTERED qty (e.g. "2 Ctn") as if it were already in smallest stock units.
+    // For any product with a secondary/tertiary unit this reversed the wrong amount of
+    // stock. Now uses Product.toSmallestUnits(qty, unit) — same multiply-only conversion
+    // used everywhere else in the app (PurchaseActivity, SaleActivity) — so it correctly
+    // adapts to however many tiers a given product actually has (1, 2, or 3). Also now
+    // reverses the cash_transactions entry for this bill, which PurchaseActivity's own
+    // delete does but this screen was previously missing. ----
     private fun deleteBill(no: String) {
         lifecycleScope.launch {
-            val db = PosDatabase.get(this@PurchaseHistoryActivity); val pur = db.purchaseDao().findPurchase(no) ?: return@launch; val items = db.purchaseDao().itemsForBill(no)
-            items.forEach { db.productDao().decreaseForce(it.barcode, it.qty.toInt().coerceAtLeast(1)) }
-            val outstanding = pur.total - pur.paid; if (pur.supplierId != null && outstanding > 0) db.supplierDao().addBalance(pur.supplierId, -outstanding)
-            db.purchaseDao().deleteItems(no); db.purchaseDao().deletePurchase(no); db.paymentDao().deleteByReference(no)
-            expandedBills.remove(no); billBodyViews.remove(no); Toast.makeText(this@PurchaseHistoryActivity, "Deleted", Toast.LENGTH_SHORT).show(); refresh()
+            val db = PosDatabase.get(this@PurchaseHistoryActivity)
+            val pur = db.purchaseDao().findPurchase(no) ?: return@launch
+            val items = db.purchaseDao().itemsForBill(no)
+
+            items.forEach { pi ->
+                val product = db.productDao().find(pi.barcode) ?: return@forEach
+                val smallestQty = product.toSmallestUnits(pi.qty, pi.unit.ifBlank { product.unit }).roundToInt()
+                db.productDao().decreaseForce(pi.barcode, smallestQty)
+            }
+
+            val outstanding = pur.total - pur.paid
+            if (pur.supplierId != null && outstanding > 0) db.supplierDao().addBalance(pur.supplierId, -outstanding)
+
+            db.purchaseDao().deleteItems(no)
+            db.purchaseDao().deletePurchase(no)
+            db.paymentDao().deleteByReference(no)
+            db.cashTransactionDao().deleteByReference(no)
+
+            expandedBills.remove(no); billBodyViews.remove(no)
+            Toast.makeText(this@PurchaseHistoryActivity, "Deleted", Toast.LENGTH_SHORT).show()
+            refresh()
         }
     }
+
     private fun outlinedBox() = LinearLayout(this).apply { setPadding(dp(16),dp(12),dp(12),dp(12)); background = strokedBg(border,cardWhite,12); layoutParams = LinearLayout.LayoutParams(-1,-2).apply { setMargins(0,0,0,dp(8)) } }
     private fun strokedBg(s: String, f: String, r: Int) = GradientDrawable().apply { setColor(Color.parseColor(f)); setStroke((1.2f * resources.displayMetrics.density).toInt(), Color.parseColor(s)); cornerRadius = r * resources.displayMetrics.density }
     private fun roundedBg(c: String, r: Int) = GradientDrawable().apply { setColor(Color.parseColor(c)); cornerRadius = r * resources.displayMetrics.density }
