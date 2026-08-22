@@ -340,7 +340,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---- live search bar: typing filters products immediately and results render right below,
-    // no second search screen involved. Tapping a result opens Item Rate Search prefilled. ----
+    // no second search screen involved. Tapping a result opens Item Rate Search prefilled with
+    // that exact product, so it shows the result directly with no retyping needed. ----
     private fun premiumSearchBar(): LinearLayout {
         val row = LinearLayout(this)
         val input = EditText(this).apply {
@@ -379,9 +380,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Filters the product list as the user types and renders matches directly under the search
-    // bar — this replaces the old flow where tapping opened a separate screen to search again.
-    // NOTE: assumes Product has `name` and `salePrice` fields via db.productDao().all(); adjust
-    // field names here if your Product entity differs.
+    // bar. Tapping a match now passes that product's id + name to ItemSearchActivity, which
+    // opens straight into that item's rate history — no need to type the name again there.
     private fun runItemSearch(query: String) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) {
@@ -425,7 +425,12 @@ class MainActivity : AppCompatActivity() {
                             setTextColor(Color.parseColor("#1257C4"))
                             setTypeface(typeface, android.graphics.Typeface.BOLD)
                         })
-                        setOnClickListener { startActivity(Intent(this@MainActivity, ItemSearchActivity::class.java)) }
+                        setOnClickListener {
+                            val intent = Intent(this@MainActivity, ItemSearchActivity::class.java)
+                            intent.putExtra("product_id", product.id)
+                            intent.putExtra("product_name", product.name)
+                            startActivity(intent)
+                        }
                     })
                     if (index != matches.lastIndex) {
                         searchResultsBox.addView(View(this@MainActivity).apply {
