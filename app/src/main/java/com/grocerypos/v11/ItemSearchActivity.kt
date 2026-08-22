@@ -49,13 +49,13 @@ class ItemSearchActivity : AppCompatActivity() {
     private var products = listOf<Product>()
 
     // Extras passed in from Dashboard's live search result tap
-    private var preselectProductId: Int = -1
+    private var preselectProductBarcode: String? = null
     private var preselectProductName: String? = null
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
-        preselectProductId = intent.getIntExtra("product_id", -1)
+        preselectProductBarcode = intent.getStringExtra("product_barcode")
         preselectProductName = intent.getStringExtra("product_name")
 
         val root = LinearLayout(this).apply {
@@ -146,13 +146,13 @@ class ItemSearchActivity : AppCompatActivity() {
                 // If opened directly from Dashboard's search result with a specific
                 // product, jump straight to its history instead of showing the
                 // type-to-search box empty — no retyping needed.
-                if (preselectProductId != -1) {
-                    val match = products.firstOrNull { it.id == preselectProductId }
+                if (preselectProductBarcode != null) {
+                    val match = products.firstOrNull { it.barcode == preselectProductBarcode }
                         ?: preselectProductName?.let { name -> products.firstOrNull { it.name == name } }
                     if (match != null) {
                         searchInput.setText(match.name)
                         showItemHistory(match)
-                        preselectProductId = -1 // only auto-open once
+                        preselectProductBarcode = null // only auto-open once
                         preselectProductName = null
                         return@collectLatest
                     }
