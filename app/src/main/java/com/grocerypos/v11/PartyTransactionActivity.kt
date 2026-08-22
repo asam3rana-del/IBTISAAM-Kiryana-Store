@@ -1,14 +1,17 @@
 package com.grocerypos.v11.ui
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
@@ -30,6 +33,11 @@ import java.util.Locale
  * SaleActivity with extra "invoice" / PurchaseActivity with extra "billNo". Tell me
  * if those keys are different and I'll fix the two ADJUST-EXTRA-KEY lines below.
  *
+ * *** ASSUMPTION *** — the "Edit Party Name" button assumes PosDatabase exposes a
+ * partyDao() with a suspend fun find(id: Long): Party? and a suspend fun update(party: Party).
+ * If your Party DAO/entity uses different method or field names, tell me and I'll fix the
+ * two ADJUST-PARTY-DAO lines below.
+ *
  * Manifest registration required:
  *   <activity android:name=".ui.PartyTransactionActivity" android:exported="false" />
  */
@@ -43,8 +51,10 @@ class PartyTransactionActivity : AppCompatActivity() {
     private val green = "#4CAF50"
     private val orange = "#F5A15C"
     private val red = "#E57373"
+    private val teal = "#0F9B8E"
 
     private lateinit var listContainer: LinearLayout
+    private lateinit var partyNameLabel: TextView
     private var partyId: Long = -1
     private var partyName: String = ""
     private var isCustomer: Boolean = true
@@ -70,11 +80,27 @@ class PartyTransactionActivity : AppCompatActivity() {
             setPadding(0, 0, 16, 0)
             setOnClickListener { finish() }
         })
-        headerRow.addView(TextView(this).apply {
+        partyNameLabel = TextView(this).apply {
             text = partyName
             textSize = 19f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor(textDark))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headerRow.addView(partyNameLabel)
+
+        // ---- Edit party name button — opens a small dialog to rename this party. ----
+        headerRow.addView(TextView(this).apply {
+            text = "\u270F\uFE0F  " + Loc.t(this@PartyTransactionActivity, "Edit", "\u062A\u0631\u0645\u06CC\u0645")
+            textSize = 12.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(teal))
+                cornerRadius = 30f
+            }
+            setPadding(22, 12, 22, 12)
+            setOnClickListener { promptEditPartyName() }
         })
         root.addView(headerRow)
 
@@ -100,6 +126,63 @@ class PartyTransactionActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadTransactions()
+    }
+
+    // ---------------- Edit party name ----------------
+
+    private fun promptEditPartyName() {
+        val input = EditText(this).apply {
+            setPadding(32, 24, 32, 24)
+            setText(partyName)
+            setSelection(text.length)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Edit Name", "\u0646\u0627\u0645 \u062A\u0631\u0645\u06CC\u0645 \u06A9\u0631\u06CC\u06BA"))
+            .setView(input)
+            .setPositiveButton(Loc.t(this, "Save", "\u0645\u062D\u0641\u0648\u0638 \u06A9\u0631\u06CC\u06BA")) { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isEmpty()) {
+                    Toast.makeText(this, Loc.t(this, "Name cannot be empty", "\u0646\u0627\u0645 \u062E\u0627\u0644\u06CC \u0646\u06C1\u06CC\u06BA \u06C1\u0648 \u0633\u06A9\u062A\u0627"), Toast.LENGTH_SHORT).show()
+                } else {
+                    saveNewPartyName(newName)
+                }
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
+            .show()
+    }
+
+    private fun saveNewPartyName(newName: String) {
+        lifecycleScope.launch {
+            try {
+                val db = PosDatabase.get(this@PartyTransactionActivity)
+                val party = db.partyDao().find(partyId) // ADJUST-PARTY-DAO
+                if (party != null) {
+                    db.partyDao().update(party.copy(name = newName)) // ADJUST-PARTY-DAO
+
+                    partyName = newName
+                    partyNameLabel.text = newName
+
+                    Toast.makeText(
+                        this@PartyTransactionActivity,
+                        Loc.t(this@PartyTransactionActivity, "Name updated", "\u0646\u0627\u0645 \u0627\u067E \u0688\u06CC\u0679 \u06C1\u0648 \u06AF\u06CC\u0627"),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this@PartyTransactionActivity,
+                        Loc.t(this@PartyTransactionActivity, "Party not found", "\u067E\u0627\u0631\u0679\u06CC \u0646\u06C1\u06CC\u06BA \u0645\u0644\u06CC"),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@PartyTransactionActivity,
+                    "Could not update name: ${e.message ?: "unknown error"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     private fun loadTransactions() {
