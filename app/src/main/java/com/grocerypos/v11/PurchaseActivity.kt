@@ -12,6 +12,7 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
@@ -52,11 +53,20 @@ data class PurchaseLine(
 // ---- Trackable invoice numbers: PUR-<Mon><YY>-<0001>, e.g. "PUR-Aug26-0001".
 // Sequence restarts each calendar month (counts only bills already using this prefix, so
 // older timestamp-based bill numbers from before this change are simply ignored/not renumbered).
+// FIX: previously this only counted existing bills and used count+1, which could collide
+// (double-tap Save, or a deleted bill leaving a gap) and throw a UNIQUE constraint error.
+// Now it actively checks the DB for the candidate number and keeps incrementing until it
+// finds one that is truly free, so a collision can no longer reach the insert.
 private suspend fun genBillNo(db: PosDatabase): String {
     val prefix = "PUR-" + SimpleDateFormat("MMMyy", Locale.getDefault()).format(Date()) + "-"
-    val existingCount = db.purchaseDao().allPurchases().count { it.billNo.startsWith(prefix) }
-    val seq = (existingCount + 1).toString().padStart(4, '0')
-    return "$prefix$seq"
+    val existing = db.purchaseDao().allPurchases().map { it.billNo }.toHashSet()
+    var seqNum = existing.count { it.startsWith(prefix) } + 1
+    var candidate = prefix + seqNum.toString().padStart(4, '0')
+    while (existing.contains(candidate)) {
+        seqNum++
+        candidate = prefix + seqNum.toString().padStart(4, '0')
+    }
+    return candidate
 }
 
 class PurchaseActivity : AppCompatActivity() {
@@ -109,6 +119,7 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var deleteButton: Button
     private lateinit var overflowButton: TextView
     private lateinit var scrollArea: ScrollView
+    private lateinit var rootContent: LinearLayout
 
     private var suppliers = listOf<Supplier>()
     private var products = listOf<Product>()
@@ -128,6 +139,11 @@ class PurchaseActivity : AppCompatActivity() {
     private var originalItems: List<PurchaseItem> = emptyList()
     private var suppressDraftSave = false
     private var draftRestored = false
+
+    // ---- FIX: guards against double-tap on Save. Without this, tapping Save twice quickly
+    // (or a slow first save + impatient second tap) could kick off two concurrent saves that
+    // both generate the same bill number and one fails with a UNIQUE constraint error. ----
+    private var isSaving = false
 
     private val billScanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
@@ -205,6 +221,7 @@ class PurchaseActivity : AppCompatActivity() {
             setPadding(24, 0, 24, 80)
             setBackgroundColor(Color.parseColor(bg))
         }
+        rootContent = root
 
         // ---------- Premium gradient header ----------
         val header = LinearLayout(this).apply {
@@ -394,6 +411,13 @@ class PurchaseActivity : AppCompatActivity() {
             textSize = 15.5f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_NEXT
+            // ---- FIX: rate is often auto-filled from the product's last saved rate. Previously
+            // the user had to manually clear it before typing a new rate. Now tapping into the
+            // field selects the existing text so the very first digit typed replaces it. ----
+            setSelectAllOnFocus(true)
+        }
+        rate.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) rate.post { rate.selectAll() }
         }
         rateBox.addView(rate)
 
@@ -659,12 +683,22 @@ class PurchaseActivity : AppCompatActivity() {
         // global layout listener that re-corrects the scroll position on EVERY layout pass
         // while the field is focused, so it keeps tracking the keyboard as it animates in and
         // settles on the right spot regardless of device speed/animation duration. ----
+        // ---- FIX: previous version scrolled to paymentSection.top, but paidInput is nested a
+        // few layouts deep inside paymentSection, so that offset undershot and the keyboard
+        // still covered the digits being typed. Now we compute paidInput's real position
+        // relative to the scrollable root (viewTopRelativeTo) and scroll so the field itself —
+        // not just its containing card — sits clearly above the keyboard, on every layout pass
+        // while it stays focused (keeps tracking as the keyboard animates in). ----
+        fun scrollToRevealPaidInput() {
+            val target = (viewTopRelativeTo(paidInput, rootContent) - dp(48)).coerceAtLeast(0)
+            scrollArea.scrollTo(0, target)
+        }
         paidInput.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) scrollArea.post { scrollArea.scrollTo(0, paymentSection.top) }
+            if (hasFocus) scrollArea.post { scrollToRevealPaidInput() }
         }
         scrollArea.viewTreeObserver.addOnGlobalLayoutListener {
             if (paidInput.hasFocus()) {
-                scrollArea.scrollTo(0, paymentSection.top)
+                scrollToRevealPaidInput()
             }
         }
 
@@ -800,6 +834,22 @@ class PurchaseActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { view.elevation = dp * resources.displayMetrics.density; view.outlineProvider = ViewOutlineProvider.BACKGROUND }
     }
     private fun spacer(heightDp: Int) = View(this).apply { val px = (heightDp * resources.displayMetrics.density).toInt(); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px) }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    // ---- Walks up the view tree summing .top offsets to get view's true vertical position
+    // relative to ancestor. A nested view's own .top is only relative to its immediate parent,
+    // which is why the earlier "scroll to paymentSection.top" fix undershot — paidInput sits a
+    // few nested layouts deep inside paymentSection, so its real on-screen offset was larger
+    // than paymentSection.top alone. ----
+    private fun viewTopRelativeTo(view: View, ancestor: View): Int {
+        var v: View = view
+        var top = 0
+        while (v !== ancestor) {
+            top += v.top
+            val parent = v.parent as? View ?: break
+            v = parent
+        }
+        return top
+    }
     private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -1126,6 +1176,9 @@ class PurchaseActivity : AppCompatActivity() {
         Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
     }
     private fun savePurchase() {
+        // ---- FIX: block re-entry while a save is already in flight (double-tap protection). ----
+        if (isSaving) return
+
         hideKeyboard()
         val party = partyName.text.toString().trim()
         if (party.isEmpty()) { partyName.error = "Required"; return }
@@ -1139,60 +1192,74 @@ class PurchaseActivity : AppCompatActivity() {
                 .setTitle("Confirm Credit Purchase")
                 .setMessage("You have not entered Paid Amount.\nTotal: Rs %.0f\n\nThis bill will be saved as CREDIT (Udhaar).\nSupplier balance will increase.\n\nAre you sure?".format(grandTotal))
                 .setPositiveButton("Yes, Save as Credit") { _, _ -> proceedSave(party, grandTotal) }
-                .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); scrollArea.post { scrollArea.smoothScrollTo(0, paymentSection.top); paidInput.requestFocus() } }
+                .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); scrollArea.post { val target = (viewTopRelativeTo(paidInput, rootContent) - dp(48)).coerceAtLeast(0); scrollArea.smoothScrollTo(0, target); paidInput.requestFocus() } }
                 .show()
             return
         }
         proceedSave(party, grandTotal)
     }
 
-    private fun proceedSave(party: String, grandTotal: Double) = safeLaunch("proceedSave") {
-        val discount = 0.0
-        val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
-        val paymentMethod = "Cash"
-        val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
-        var supplierId = matchedSupplier?.id
-        val db = PosDatabase.get(this@PurchaseActivity)
-        val billNo = editBillNo ?: genBillNo(db)
-        if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
-        val original = originalPurchase
-        if (original != null) {
-            reverseStockForItems(db, originalItems)
-            val originalOutstanding = original.total - original.paid
-            if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
-            db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
-        }
-        db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
-        // Store the actual entered qty/rate (matches the entered `unit`) rather than a
-        // primary-unit-converted value — this keeps Billed Items / edit-mode display and the
-        // DB row consistent with each other, and is exactly what reverseStockForItems() expects.
-        db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) })
-        lines.forEach { line ->
-            val barcode = line.barcode ?: return@forEach
-            val before = db.productDao().find(barcode) ?: return@forEach
-            // Convert into the SMALLEST configured unit (multiplication only — never a divide
-            // that can round a fractional primary-unit amount down to 0).
-            val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit).roundToInt()
-            db.productDao().increase(barcode, purchasedSmallest)
-            if (purchasedSmallest > 0) {
-                val oldStockSmallest = before.stock
-                val factor = before.smallestUnitFactor()
-                val oldCostPerSmallest = if (factor > 0) before.cost / factor else before.cost
-                val purchaseRatePerSmallest = line.amount / purchasedSmallest
-                val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
-                    else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest).toDouble()
-                // `cost` stays expressed per PRIMARY unit (that's what "Purchase Rate" shows in
-                // Product screen), so convert the smallest-unit weighted average back up.
-                db.productDao().updateCost(barcode, newCostPerSmallest * factor)
+    private fun proceedSave(party: String, grandTotal: Double) {
+        // ---- FIX: set the guard + disable the button right away (before the coroutine even
+        // starts), and always release it in a finally block — including on the "add new
+        // supplier / retry" paths — so a slow save or a thrown error can never leave the button
+        // stuck disabled, and a second tap while saving is in-flight can never start a second
+        // save that races to generate/insert the same bill number. ----
+        isSaving = true
+        saveButton.isEnabled = false
+        safeLaunch("proceedSave") {
+            try {
+                val discount = 0.0
+                val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
+                val paymentMethod = "Cash"
+                val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
+                var supplierId = matchedSupplier?.id
+                val db = PosDatabase.get(this@PurchaseActivity)
+                val billNo = editBillNo ?: genBillNo(db)
+                if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
+                val original = originalPurchase
+                if (original != null) {
+                    reverseStockForItems(db, originalItems)
+                    val originalOutstanding = original.total - original.paid
+                    if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
+                    db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
+                }
+                db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
+                // Store the actual entered qty/rate (matches the entered `unit`) rather than a
+                // primary-unit-converted value — this keeps Billed Items / edit-mode display and the
+                // DB row consistent with each other, and is exactly what reverseStockForItems() expects.
+                db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) })
+                lines.forEach { line ->
+                    val barcode = line.barcode ?: return@forEach
+                    val before = db.productDao().find(barcode) ?: return@forEach
+                    // Convert into the SMALLEST configured unit (multiplication only — never a divide
+                    // that can round a fractional primary-unit amount down to 0).
+                    val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit).roundToInt()
+                    db.productDao().increase(barcode, purchasedSmallest)
+                    if (purchasedSmallest > 0) {
+                        val oldStockSmallest = before.stock
+                        val factor = before.smallestUnitFactor()
+                        val oldCostPerSmallest = if (factor > 0) before.cost / factor else before.cost
+                        val purchaseRatePerSmallest = line.amount / purchasedSmallest
+                        val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
+                            else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest).toDouble()
+                        // `cost` stays expressed per PRIMARY unit (that's what "Purchase Rate" shows in
+                        // Product screen), so convert the smallest-unit weighted average back up.
+                        db.productDao().updateCost(barcode, newCostPerSmallest * factor)
+                    }
+                }
+                val outstanding = grandTotal - amountPaid
+                if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
+                if (supplierId != null && amountPaid > 0) { db.paymentDao().insert(Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")) }
+                if (amountPaid > 0) { db.cashTransactionDao().insert(CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)) }
+                suppressDraftSave = true; clearDraft(); editBillNo = billNo
+                Toast.makeText(this@PurchaseActivity, if (original != null) "Purchase updated" else "Purchase saved", Toast.LENGTH_SHORT).show()
+                openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
+            } finally {
+                isSaving = false
+                saveButton.isEnabled = true
             }
         }
-        val outstanding = grandTotal - amountPaid
-        if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
-        if (supplierId != null && amountPaid > 0) { db.paymentDao().insert(Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")) }
-        if (amountPaid > 0) { db.cashTransactionDao().insert(CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)) }
-        suppressDraftSave = true; clearDraft(); editBillNo = billNo
-        Toast.makeText(this@PurchaseActivity, if (original != null) "Purchase updated" else "Purchase saved", Toast.LENGTH_SHORT).show()
-        openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
     }
 
     private fun openBillPreview(billNo: String, forSaving: Boolean, party: String = partyName.text.toString().trim(), grandTotal: Double = Math.round(lines.sumOf { it.amount }).toDouble(), discount: Double = 0.0, amountPaid: Double = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble(), paymentMethod: String = "Cash") {
