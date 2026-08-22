@@ -89,6 +89,7 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var dateValueText: TextView
     private lateinit var firmNameText: TextView
     private lateinit var supplierBalanceText: TextView
+    private lateinit var partyBox: LinearLayout
     private lateinit var partyName: AutoCompleteTextView
     private lateinit var itemEntrySection: LinearLayout
     private lateinit var addItemsTrigger: TextView
@@ -134,6 +135,16 @@ class PurchaseActivity : AppCompatActivity() {
     private var draftRestored = false
 
     private var isSaving = false
+
+    // ---- Generic "keep this field visible above the keyboard" tracking. Whichever field is
+    // currently focused sets these two, and the ScrollView's global layout listener re-applies
+    // the scroll on every keyboard animation frame (not just once on focus) so it keeps tracking
+    // correctly regardless of device speed. alignTop=true pins the target's TOP to the visible
+    // area (used for item-entry fields, so the whole Add Item card scrolls into view exactly like
+    // it should); alignTop=false only nudges the minimum needed to keep the target's bottom clear
+    // of the keyboard (used for Paid Amount, where we don't want to over-scroll past it).
+    private var scrollTargetView: View? = null
+    private var scrollAlignTop: Boolean = true
 
     private val billScanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
@@ -279,7 +290,7 @@ class PurchaseActivity : AppCompatActivity() {
         firmBox.addView(firmRow)
         root.addView(firmBox)
 
-        val partyBox = premiumCard()
+        partyBox = premiumCard()
         partyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Party / Supplier", "پارٹی / سپلائر")))
         val partyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         partyName = AutoCompleteTextView(this).apply {
@@ -425,9 +436,6 @@ class PurchaseActivity : AppCompatActivity() {
         itemEntrySection.addView(addItemButton)
         root.addView(itemEntrySection)
 
-        // ---- CHANGE: "Billed Items" is now just a summary bar. Tapping it opens the full
-        // list in a SEPARATE window (dialog) instead of expanding inline in this same scroll —
-        // this is what was requested ("billed item separate window ma show ho jae"). ----
         billedItemsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -451,9 +459,6 @@ class PurchaseActivity : AppCompatActivity() {
         root.addView(billedItemsHeader)
         root.addView(spacer(14))
 
-        // itemsContainer is built here but is NOT attached to root — it only gets attached
-        // (inside a ScrollView) when showBilledItemsDialog() is opened, so the list itself
-        // lives in its own separate window rather than inline on this screen.
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
 
         val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, "#FBFCFE", 18) }
@@ -517,8 +522,6 @@ class PurchaseActivity : AppCompatActivity() {
         dueAmountText = TextView(this).apply { text = "Rs 0"; textSize = 18f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         dueCard.addView(dueAmountText)
         root.addView(dueCard)
-        // ---- extra bottom spacer so the payment card + due card can always scroll well clear
-        // of the numeric keypad, giving scrollToShowPaidInput() enough room to work with. ----
         root.addView(spacer(220))
 
         saveButton = Button(this).apply {
@@ -570,7 +573,16 @@ class PurchaseActivity : AppCompatActivity() {
             onItemPicked(itemName.adapter.getItem(position).toString())
             qty.requestFocus()
         }
-        itemName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(itemName) }
+        // ---- CHANGE: partyName -> itemName now also nudges the scroll up a bit so the item
+        // entry card is visible instead of sitting partly under the keyboard/dropdown. ----
+        itemName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                safeShowDropDown(itemName)
+                scrollTargetView = itemEntrySection
+                scrollAlignTop = true
+                scrollArea.post { scrollToShowView(itemEntrySection, true) }
+            }
+        }
         itemName.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) { qty.requestFocus(); true } else false
         }
@@ -588,11 +600,36 @@ class PurchaseActivity : AppCompatActivity() {
         qty.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) { rate.requestFocus(); true } else false
         }
+        qty.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                scrollTargetView = itemEntrySection
+                scrollAlignTop = true
+                scrollArea.post { scrollToShowView(itemEntrySection, true) }
+            }
+        }
         rate.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) { totalLotPrice.requestFocus(); true } else false
         }
+        // ---- CHANGE: whenever the Rate field gets focus, select ALL of its text (whether it
+        // was auto-filled from the product's last cost or typed earlier) so the user can just
+        // start typing to overwrite it directly — no manual clear/backspace needed. ----
+        rate.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                rate.post { rate.selectAll() }
+                scrollTargetView = itemEntrySection
+                scrollAlignTop = true
+                scrollArea.post { scrollToShowView(itemEntrySection, true) }
+            }
+        }
         totalLotPrice.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) { addItem(); true } else false
+        }
+        totalLotPrice.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                scrollTargetView = itemEntrySection
+                scrollAlignTop = true
+                scrollArea.post { scrollToShowView(itemEntrySection, true) }
+            }
         }
 
         addItemButton.setOnClickListener { addItem() }
@@ -604,7 +641,14 @@ class PurchaseActivity : AppCompatActivity() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
-        partyName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(partyName) }
+        partyName.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                safeShowDropDown(partyName)
+                scrollTargetView = partyBox
+                scrollAlignTop = true
+                scrollArea.post { scrollToShowView(partyBox, true) }
+            }
+        }
         partyName.setOnItemClickListener { _, _, position, _ -> updateSupplierBalanceDisplay(partyName.adapter.getItem(position).toString()) }
         partyName.addTextChangedListener(simpleWatcher {
             updateSupplierBalanceDisplay(partyName.text.toString().trim())
@@ -642,41 +686,44 @@ class PurchaseActivity : AppCompatActivity() {
         })
         paidInput.addTextChangedListener(simpleWatcher { updateGrandTotal() })
 
-        // ---- FIX: paid-amount field was getting fully covered by the numeric keypad, making
-        // it impossible to see the amount being typed. Instead of a fixed scroll target, this
-        // now measures the keyboard's actual visible-frame boundary on screen and keeps
-        // nudging the ScrollView (on focus AND on every keyboard-animation layout pass) until
-        // the whole Paid Amount card sits above the keyboard with a bit of breathing room. ----
         paidInput.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) scrollArea.post { scrollToShowPaidInput() }
+            if (hasFocus) {
+                scrollTargetView = paymentSection
+                scrollAlignTop = false
+                scrollArea.post { scrollToShowView(paymentSection, false) }
+            }
         }
+        // ---- Generic keyboard-follow: re-applies the last requested scroll target on every
+        // layout pass while the keyboard is animating, so it self-corrects instead of relying on
+        // one single guessed scroll amount. Covers Party Name, Item Name/Qty/Rate/Total Lot Price,
+        // and Paid Amount alike. ----
         scrollArea.viewTreeObserver.addOnGlobalLayoutListener {
-            if (paidInput.hasFocus()) scrollToShowPaidInput()
+            scrollTargetView?.let { scrollToShowView(it, scrollAlignTop) }
         }
 
         if (editBillNo == null) restoreDraftIfAny()
     }
 
-    // ---- Computes the keyboard's top edge from the window's visible display frame and scrolls
-    // just enough (using the payment card's live on-screen position, recalculated every call) so
-    // the whole "Paid Amount" card — label + entered digits — stays visible above the keyboard.
-    // Called repeatedly while the keyboard is animating in/out, so it self-corrects instead of
-    // relying on a single guessed scroll amount. ----
-    private fun scrollToShowPaidInput() {
-        if (!::paymentSection.isInitialized) return
+    // ---- Scrolls scrollArea just enough so `target` stays clear of the on-screen keyboard.
+    // alignTop=true pins target's TOP near the visible area's top (used for item-entry fields,
+    // so the whole Add Item card — including the ADD ITEM button — scrolls into view, matching
+    // what's expected). alignTop=false only nudges the minimum needed to keep target's bottom
+    // clear of the keyboard (used for Paid Amount, which sits lower on the screen). ----
+    private fun scrollToShowView(target: View, alignTop: Boolean) {
+        if (!::scrollArea.isInitialized) return
         val visibleFrame = Rect()
         scrollArea.getWindowVisibleDisplayFrame(visibleFrame)
         val location = IntArray(2)
-        paymentSection.getLocationOnScreen(location)
-        val sectionTop = location[1]
-        val sectionBottom = sectionTop + paymentSection.height
-        val extraPadding = (28 * resources.displayMetrics.density).toInt()
-        when {
-            sectionBottom > visibleFrame.bottom -> {
-                scrollArea.scrollBy(0, (sectionBottom - visibleFrame.bottom) + extraPadding)
-            }
-            sectionTop < visibleFrame.top -> {
-                scrollArea.scrollBy(0, sectionTop - visibleFrame.top - extraPadding)
+        target.getLocationOnScreen(location)
+        val top = location[1]
+        val bottom = top + target.height
+        val extraPadding = (24 * resources.displayMetrics.density).toInt()
+        if (alignTop) {
+            scrollArea.scrollBy(0, top - visibleFrame.top - extraPadding)
+        } else {
+            when {
+                bottom > visibleFrame.bottom -> scrollArea.scrollBy(0, (bottom - visibleFrame.bottom) + extraPadding)
+                top < visibleFrame.top -> scrollArea.scrollBy(0, top - visibleFrame.top - extraPadding)
             }
         }
     }
@@ -777,9 +824,8 @@ class PurchaseActivity : AppCompatActivity() {
         this.text = label; textSize = 16f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = ovalBg(colorHex); val px = (sizeDp * resources.displayMetrics.density).toInt(); width = px; height = px; if (onClick != null) setOnClickListener { onClick() }
     }
 
-    // ---- CHANGE: Billed Items now open as their own dialog window instead of expanding
-    // inline. itemsContainer is detached from any previous parent (a View can only have one
-    // parent) then wrapped in a scrollable dialog. ----
+    // ---- CHANGE: when the Billed Items window is closed, cursor jumps straight to Paid
+    // Amount and the keyboard opens there — no extra tap needed. ----
     private fun showBilledItemsDialog() {
         if (lines.isEmpty()) return
         (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
@@ -791,6 +837,17 @@ class PurchaseActivity : AppCompatActivity() {
             .setTitle(com.grocerypos.v11.util.Loc.t(this, "Billed Items", "بل شدہ آئٹمز"))
             .setView(wrapper)
             .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Close", "بند کریں"), null)
+            .setOnDismissListener {
+                paidInput.requestFocus()
+                paidInput.post {
+                    paidInput.selectAll()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                    imm?.showSoftInput(paidInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    scrollTargetView = paymentSection
+                    scrollAlignTop = false
+                    scrollArea.post { scrollToShowView(paymentSection, false) }
+                }
+            }
             .show()
     }
 
@@ -928,12 +985,18 @@ class PurchaseActivity : AppCompatActivity() {
             else -> entered
         }
     }
+    // ---- CHANGE: after auto-filling the Rate field from the product's last cost, the whole
+    // value is pre-selected — so if the price changed, the user can just start typing and it
+    // overwrites instantly, no manual clearing needed. ----
     private fun refillAutoRate() {
         val product = selectedProduct ?: return
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
         val base = if (lastMainRate > 0) lastMainRate else product.cost
         val r = fromMainUnitRate(base, chosenUnit)
-        suppressRateWatcher = true; rate.setText(if (r > 0) "%.2f".format(r) else ""); suppressRateWatcher = false
+        suppressRateWatcher = true
+        rate.setText(if (r > 0) "%.2f".format(r) else "")
+        suppressRateWatcher = false
+        if (r > 0) rate.post { rate.selectAll() }
     }
     private fun buildUnitChips(options: List<String>, selected: String) {
         unitToggleRow.removeAllViews()
@@ -981,11 +1044,25 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
     private fun normalizeUnitName(u: String) = u.trim().lowercase()
+    // ---- CHANGE: added pao -> gram conversion (1 pao = 250 grams) alongside the existing
+    // kg -> pao (1 kg = 4 pao) so the standard chain is complete both directions, per request.
+    // Any wrong auto-filled value is still directly editable — see secQtyField/terQtyField
+    // select-all-on-focus below — so this is a starting suggestion, not a locked value. ----
     private fun standardUnitQty(fromUnit: String, toUnit: String): Double? {
         val f = normalizeUnitName(fromUnit); val t = normalizeUnitName(toUnit)
-        val gramNames = setOf("gram", "grams", "g", "gm"); val pieceNames = setOf("pcs", "pc", "piece", "pieces"); val mlNames = setOf("ml", "milliliter", "millilitre"); val kgNames = setOf("kg", "kgs", "kilogram", "kilograms"); val litreNames = setOf("litre", "liter", "l", "ltr")
+        val gramNames = setOf("gram", "grams", "g", "gm"); val pieceNames = setOf("pcs", "pc", "piece", "pieces"); val mlNames = setOf("ml", "milliliter", "millilitre"); val kgNames = setOf("kg", "kgs", "kilogram", "kilograms"); val litreNames = setOf("litre", "liter", "l", "ltr"); val paoNames = setOf("pao", "pav")
         return when {
-            f == "dozen" && t in pieceNames -> 12.0; f == "gross" && t == "dozen" -> 12.0; f == "gross" && t in pieceNames -> 144.0; f in kgNames && t in gramNames -> 1000.0; f in litreNames && t in mlNames -> 1000.0; f == "quintal" && t in kgNames -> 100.0; f == "ton" && t in kgNames -> 1000.0; f == "pao" && t in gramNames -> 250.0; f in kgNames && t == "pao" -> 4.0; else -> null
+            f == "dozen" && t in pieceNames -> 12.0
+            f == "gross" && t == "dozen" -> 12.0
+            f == "gross" && t in pieceNames -> 144.0
+            f in kgNames && t in gramNames -> 1000.0
+            f in litreNames && t in mlNames -> 1000.0
+            f == "quintal" && t in kgNames -> 100.0
+            f == "ton" && t in kgNames -> 1000.0
+            f in kgNames && t in paoNames -> 4.0
+            f in paoNames && t in gramNames -> 250.0
+            f == "pao" && t == "gram" -> 250.0
+            else -> null
         }
     }
     private fun trimNum(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
@@ -1016,10 +1093,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ---- CHANGE: renders into itemsContainer as before, but that container now lives inside
-    // the Billed Items dialog rather than inline on the main screen. billedItemsHeader is
-    // updated to a live "N items · Rs total" summary so the user always sees a snapshot without
-    // opening the dialog. ----
     private fun renderItemsList() {
         itemsContainer.removeAllViews()
         billedItemsHeader.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
@@ -1083,6 +1156,10 @@ class PurchaseActivity : AppCompatActivity() {
         body.addView(secondaryRow); body.addView(spacer(16))
         val secQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFD", 14); setPadding(16, 4, 16, 4) }
         val secQtyField = EditText(this).apply { hint = "1 Primary = how many Secondary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
+        // ---- CHANGE: select-all whenever this field gets focus, so an auto-filled/repeated
+        // suggested value (e.g. 1000 for kg->gram, 250 for pao->gram) can be overwritten by
+        // just typing — no manual clearing needed. ----
+        secQtyField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) secQtyField.post { secQtyField.selectAll() } }
         secQtyBox.addView(secQtyField); body.addView(secQtyBox); body.addView(spacer(20))
         body.addView(microLabel("TERTIARY UNIT"))
         val tertiaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -1093,13 +1170,24 @@ class PurchaseActivity : AppCompatActivity() {
         body.addView(tertiaryRow); body.addView(spacer(16))
         val terQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFD", 14); setPadding(16, 4, 16, 4) }
         val terQtyField = EditText(this).apply { hint = "1 Secondary = how many Tertiary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
+        terQtyField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) terQtyField.post { terQtyField.selectAll() } }
         terQtyBox.addView(terQtyField); body.addView(terQtyBox)
         content.addView(scrollableBody, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         primarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
         val secondaryOptions = listOf("None") + allUnits; secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, secondaryOptions)
         val tertiaryOptions = listOf("None") + allUnits; tertiarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, tertiaryOptions)
-        fun autoFillSecondaryQty() { val p = primarySpinner.selectedItem?.toString() ?: return; val s = secondarySpinner.selectedItem?.toString() ?: return; if (s == "None") return; val std = standardUnitQty(p, s) ?: return; if (secQtyField.text.toString().isBlank()) secQtyField.setText(trimNum(std)) }
-        fun autoFillTertiaryQty() { val s = secondarySpinner.selectedItem?.toString() ?: return; val t = tertiarySpinner.selectedItem?.toString() ?: return; if (s == "None" || t == "None") return; val std = standardUnitQty(s, t) ?: return; if (terQtyField.text.toString().isBlank()) terQtyField.setText(trimNum(std)) }
+        fun autoFillSecondaryQty() {
+            val p = primarySpinner.selectedItem?.toString() ?: return; val s = secondarySpinner.selectedItem?.toString() ?: return; if (s == "None") return
+            val std = standardUnitQty(p, s) ?: return
+            secQtyField.setText(trimNum(std))
+            secQtyField.post { secQtyField.selectAll() }
+        }
+        fun autoFillTertiaryQty() {
+            val s = secondarySpinner.selectedItem?.toString() ?: return; val t = tertiarySpinner.selectedItem?.toString() ?: return; if (s == "None" || t == "None") return
+            val std = standardUnitQty(s, t) ?: return
+            terQtyField.setText(trimNum(std))
+            terQtyField.post { terQtyField.selectAll() }
+        }
         primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
         secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty(); autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
         tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
