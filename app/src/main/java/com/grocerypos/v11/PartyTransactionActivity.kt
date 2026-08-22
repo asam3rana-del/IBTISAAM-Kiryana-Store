@@ -33,10 +33,9 @@ import java.util.Locale
  * SaleActivity with extra "invoice" / PurchaseActivity with extra "billNo". Tell me
  * if those keys are different and I'll fix the two ADJUST-EXTRA-KEY lines below.
  *
- * *** ASSUMPTION *** — the "Edit Party Name" button assumes PosDatabase exposes a
- * partyDao() with a suspend fun find(id: Long): Party? and a suspend fun update(party: Party).
- * If your Party DAO/entity uses different method or field names, tell me and I'll fix the
- * two ADJUST-PARTY-DAO lines below.
+ * Edit Party Name button uses customerDao()/supplierDao() (picked via isCustomer) — each
+ * needs a suspend fun find(id: Long): Customer?/Supplier? and the existing suspend fun
+ * update(...). find() was added to both DAOs in Database.kt alongside this change.
  *
  * Manifest registration required:
  *   <activity android:name=".ui.PartyTransactionActivity" android:exported="false" />
@@ -156,10 +155,21 @@ class PartyTransactionActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val db = PosDatabase.get(this@PartyTransactionActivity)
-                val party = db.partyDao().find(partyId) // ADJUST-PARTY-DAO
-                if (party != null) {
-                    db.partyDao().update(party.copy(name = newName)) // ADJUST-PARTY-DAO
+                var found = false
 
+                if (isCustomer) {
+                    db.customerDao().find(partyId)?.let { customer ->
+                        found = true
+                        db.customerDao().update(customer.copy(name = newName))
+                    }
+                } else {
+                    db.supplierDao().find(partyId)?.let { supplier ->
+                        found = true
+                        db.supplierDao().update(supplier.copy(name = newName))
+                    }
+                }
+
+                if (found) {
                     partyName = newName
                     partyNameLabel.text = newName
 
