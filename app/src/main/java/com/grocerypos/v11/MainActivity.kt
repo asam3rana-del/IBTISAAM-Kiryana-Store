@@ -11,7 +11,6 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.ui.LoginActivity
 import com.grocerypos.v11.ui.SettingsActivity
@@ -22,13 +21,15 @@ import com.grocerypos.v11.ui.ReportsActivity
 import com.grocerypos.v11.ui.CashActivity
 import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
+import com.grocerypos.v11.ui.ThemedActivity
+import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ThemedActivity() {
 
     private lateinit var todaySaleValue: TextView
     private var todayProfitValue: TextView? = null
@@ -41,16 +42,41 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchResultsBox: LinearLayout
     private var allProductsCache: List<com.grocerypos.v11.Product>? = null
 
-    private val bgColor = "#F0F1F8"
-    private val cardWhite = "#FFFFFF"
-    private val textDark = "#151726"
-    private val textMuted = "#8A8FA3"
+    // ---- Theme-dependent — swapped between light/dark by loadThemePrefs() below, sourced from
+    // the app-wide ThemeManager so this screen stays in sync with every other screen. ----
+    private var bgColor = "#F0F1F8"
+    private var cardWhite = "#FFFFFF"
+    private var textDark = "#151726"
+    private var textMuted = "#8A8FA3"
+    private var border = "#ECEEF6"
+
+    // ---- Brand colors — the header gradient, gold accents, and get/give greens/reds are part
+    // of the app's identity and already read fine on both light and dark backgrounds (the
+    // header is a dark navy-purple gradient regardless of theme), so these stay fixed. ----
     private val partyGreen = "#1B8A4A"
     private val partyRed = "#D32F4A"
     private val headerStart = "#0F1450"
     private val headerMid = "#2A2E8F"
     private val headerEnd = "#4B4FCF"
     private val goldAccent = "#F2C94C"
+
+    // ---- Pulls this screen's theme-dependent colors from the app-wide ThemeManager (shared
+    // across every activity — see ThemeManager.kt / ThemedActivity.kt). ----
+    private fun loadThemePrefs() {
+        val p = ThemeManager.palette(this)
+        bgColor = p.bg
+        cardWhite = p.cardWhite
+        textDark = p.textDark
+        textMuted = p.textMuted
+        border = p.border
+    }
+
+    // ---- Flips the app-wide theme preference and recreates this activity. Any other open
+    // activity that extends ThemedActivity picks up the change automatically on resume. ----
+    private fun toggleTheme() {
+        ThemeManager.toggleDarkMode(this)
+        recreate()
+    }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -65,6 +91,10 @@ class MainActivity : AppCompatActivity() {
 
         com.grocerypos.v11.util.CrashHandler.install(this)
         com.grocerypos.v11.util.CrashHandler.getLastCrash(this)?.let { crashText -> showCrashDialog(crashText) }
+
+        // ---- Must run before any view construction below, since header/body colors are read
+        // from these vars while building the layout. ----
+        loadThemePrefs()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -112,6 +142,16 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
             setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+        })
+
+        topRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1)
+        })
+
+        // ---- Day/night toggle — shows the icon for the mode you'd switch TO. ----
+        topRow.addView(premiumIconBadge(if (ThemeManager.isDarkMode(this)) "☀️" else "🌙", "#6B74E0", 40, 17f).apply {
+            isClickable = true
+            setOnClickListener { toggleTheme() }
         })
 
         topRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
@@ -437,7 +477,7 @@ class MainActivity : AppCompatActivity() {
                             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
                                 leftMargin = 22; rightMargin = 22
                             }
-                            setBackgroundColor(Color.parseColor("#ECEEF6"))
+                            setBackgroundColor(Color.parseColor(border))
                         })
                     }
                 }
@@ -709,7 +749,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun roundedBackgroundBordered(colorHex: String, cornerRadius: Int, strokeColorHex: String = "#ECEEF6"): GradientDrawable {
+    private fun roundedBackgroundBordered(colorHex: String, cornerRadius: Int, strokeColorHex: String = border): GradientDrawable {
         return GradientDrawable().apply {
             setColor(Color.parseColor(colorHex))
             this.cornerRadius = cornerRadius.toFloat()

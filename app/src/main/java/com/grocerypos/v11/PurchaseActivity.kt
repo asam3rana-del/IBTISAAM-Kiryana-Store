@@ -19,10 +19,10 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
+import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -63,7 +63,7 @@ private suspend fun genBillNo(db: PosDatabase): String {
     return candidate
 }
 
-class PurchaseActivity : AppCompatActivity() {
+class PurchaseActivity : ThemedActivity() {
 
     companion object {
         const val EXTRA_BILL_NO = "billNo"
@@ -73,18 +73,39 @@ class PurchaseActivity : AppCompatActivity() {
     }
 
     // ---------- Premium palette ----------
-    private val bg = "#F5F7FA"
-    private val cardWhite = "#FFFFFF"
+    // ---- Theme-dependent — sourced from ThemeManager, kept in sync with every other screen. ----
+    private var bg = "#F5F7FA"
+    private var cardWhite = "#FFFFFF"
+    private var textDark = "#111827"
+    private var textMuted = "#8892A0"
+    private var border = "#E7EAF0"
+    private var red = "#E5484D"
+    private var fieldFill = "#FAFBFD"
+
+    // ---- Brand colors — this screen's own identity accents, fixed across themes (navy header
+    // is already dark, teal/gold/amber/green accents read fine on both backgrounds). ----
     private val navy = "#101B33"
     private val navyLight = "#1C2C4F"
     private val teal = "#0EA5A0"
     private val gold = "#C9A24B"
-    private val textDark = "#111827"
-    private val textMuted = "#8892A0"
-    private val border = "#E7EAF0"
-    private val red = "#E5484D"
     private val amberBadge = "#F4F1E8"
     private val successGreen = "#1E9E6B"
+
+    private fun loadThemePrefs() {
+        val p = ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        textDark = p.textDark
+        textMuted = p.textMuted
+        border = p.border
+        red = p.red
+        fieldFill = p.fieldFill
+    }
+
+    private fun toggleTheme() {
+        ThemeManager.toggleDarkMode(this)
+        recreate()
+    }
 
     private lateinit var dateValueText: TextView
     private lateinit var firmNameText: TextView
@@ -172,6 +193,7 @@ class PurchaseActivity : AppCompatActivity() {
         com.grocerypos.v11.util.CrashHandler.install(this)
         com.grocerypos.v11.util.CrashHandler.getLastCrash(this)?.let { crashText -> showCrashDialog(crashText) }
         try {
+            loadThemePrefs()
             editBillNo = intent.getStringExtra(EXTRA_BILL_NO)
             buildUi()
         } catch (e: Exception) {
@@ -236,6 +258,15 @@ class PurchaseActivity : AppCompatActivity() {
         header.addView(headerCol)
         header.addView(pillChip("History") {
             startActivity(Intent(this@PurchaseActivity, PurchaseHistoryActivity::class.java))
+        })
+        header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
+        header.addView(TextView(this).apply {
+            text = if (ThemeManager.isDarkMode(this@PurchaseActivity)) "☀️" else "🌙"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            background = ovalBg("#22FFFFFF")
+            val px = (34 * resources.displayMetrics.density).toInt(); width = px; height = px
+            setOnClickListener { toggleTheme() }
         })
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
         overflowButton = TextView(this).apply {
@@ -461,7 +492,7 @@ class PurchaseActivity : AppCompatActivity() {
 
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
 
-        val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, "#FBFCFE", 18) }
+        val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, fieldFill, 18) }
         totalCard.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Total Amount", "کل رقم").uppercase()
             textSize = 12f
@@ -510,7 +541,7 @@ class PurchaseActivity : AppCompatActivity() {
         paymentSection.addView(paidWarningText)
         root.addView(paymentSection)
 
-        val dueCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(22, 18, 22, 18); background = strokedBg(border, "#FBFCFE", 18) }
+        val dueCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(22, 18, 22, 18); background = strokedBg(border, fieldFill, 18) }
         dueCard.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Due Amount", "باقی رقم").uppercase()
             textSize = 12f
@@ -811,7 +842,7 @@ class PurchaseActivity : AppCompatActivity() {
     private fun innerField() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(18, 13, 18, 13)
-        background = strokedBg(border, "#FAFBFD", 14)
+        background = strokedBg(border, fieldFill, 14)
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 12) }
     }
     private fun labelRow(label: String) = TextView(this).apply {
@@ -1135,26 +1166,26 @@ class PurchaseActivity : AppCompatActivity() {
         val scrollableBody = ScrollView(this); val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 26, 28, 8) }; scrollableBody.addView(body)
         fun microLabel(text: String) = TextView(this).apply { this.text = text; textSize = 11.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 8); letterSpacing = 0.04f }
         body.addView(microLabel("PRODUCT NAME"))
-        val nameField = EditText(this).apply { setText(prefillName); setTextColor(Color.parseColor(textDark)); background = strokedBg(border, "#FAFBFD", 14); setPadding(18, 16, 18, 16); textSize = 15f }
+        val nameField = EditText(this).apply { setText(prefillName); setTextColor(Color.parseColor(textDark)); background = strokedBg(border, fieldFill, 14); setPadding(18, 16, 18, 16); textSize = 15f }
         body.addView(nameField); body.addView(spacer(18))
         body.addView(microLabel("CATEGORY"))
-        val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2) }; val categorySpinnerDialog = Spinner(this); categorySpinnerBox.addView(categorySpinnerDialog); body.addView(categorySpinnerBox); body.addView(spacer(20))
+        val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, fieldFill, 14); setPadding(14, 2, 14, 2) }; val categorySpinnerDialog = Spinner(this); categorySpinnerBox.addView(categorySpinnerDialog); body.addView(categorySpinnerBox); body.addView(spacer(20))
         safeLaunch("loadCategoriesForDialog") { val cats = (listOf("General") + PosDatabase.get(this@PurchaseActivity).categoryDao().all().first().map { it.name }).distinct(); categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats) }
         body.addView(microLabel("PRIMARY UNIT"))
         val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val primarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        val primarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, fieldFill, 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val primarySpinner = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
         primarySpinnerBox.addView(primarySpinner); primaryRow.addView(primarySpinnerBox); primaryRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
         primaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); primarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits); primarySpinner.setSelection(allUnits.indexOf(newUnit)) } })
         body.addView(primaryRow); body.addView(spacer(20))
         body.addView(microLabel("SECONDARY UNIT"))
         val secondaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val secondarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        val secondarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, fieldFill, 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val secondarySpinner = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
         secondarySpinnerBox.addView(secondarySpinner); secondaryRow.addView(secondarySpinnerBox); secondaryRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
         secondaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); val opts = listOf("None") + allUnits; secondarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, opts); secondarySpinner.setSelection(opts.indexOf(newUnit)) } })
         body.addView(secondaryRow); body.addView(spacer(16))
-        val secQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFD", 14); setPadding(16, 4, 16, 4) }
+        val secQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, fieldFill, 14); setPadding(16, 4, 16, 4) }
         val secQtyField = EditText(this).apply { hint = "1 Primary = how many Secondary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
         // ---- CHANGE: select-all whenever this field gets focus, so an auto-filled/repeated
         // suggested value (e.g. 1000 for kg->gram, 250 for pao->gram) can be overwritten by
@@ -1163,12 +1194,12 @@ class PurchaseActivity : AppCompatActivity() {
         secQtyBox.addView(secQtyField); body.addView(secQtyBox); body.addView(spacer(20))
         body.addView(microLabel("TERTIARY UNIT"))
         val tertiaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val tertiarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, "#FAFBFD", 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        val tertiarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, fieldFill, 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val tertiarySpinner = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
         tertiarySpinnerBox.addView(tertiarySpinner); tertiaryRow.addView(tertiarySpinnerBox); tertiaryRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
         tertiaryRow.addView(circleIcon("+", teal, 34) { promptAddUnitInline { newUnit -> allUnits = (allUnits + newUnit).distinct(); val opts = listOf("None") + allUnits; tertiarySpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, opts); tertiarySpinner.setSelection(opts.indexOf(newUnit)) } })
         body.addView(tertiaryRow); body.addView(spacer(16))
-        val terQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, "#FAFBFD", 14); setPadding(16, 4, 16, 4) }
+        val terQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, fieldFill, 14); setPadding(16, 4, 16, 4) }
         val terQtyField = EditText(this).apply { hint = "1 Secondary = how many Tertiary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
         terQtyField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) terQtyField.post { terQtyField.selectAll() } }
         terQtyBox.addView(terQtyField); body.addView(terQtyBox)
@@ -1193,7 +1224,7 @@ class PurchaseActivity : AppCompatActivity() {
         tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }; content.addView(footer)
         val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
-        footer.addView(TextView(this).apply { text = "Cancel"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, "#FAFBFD", 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }; setOnClickListener { dialog.dismiss() } })
+        footer.addView(TextView(this).apply { text = "Cancel"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, fieldFill, 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }; setOnClickListener { dialog.dismiss() } })
         footer.addView(TextView(this).apply {
             text = "Save"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); background = gradientBg(teal, "#0C8F8A", cornerBottom = 14, cornerTop = 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener {
