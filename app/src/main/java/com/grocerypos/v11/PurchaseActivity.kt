@@ -4,6 +4,7 @@ import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -50,13 +51,6 @@ data class PurchaseLine(
     val tertiaryUnitQty: Double = 0.0
 )
 
-// ---- Trackable invoice numbers: PUR-<Mon><YY>-<0001>, e.g. "PUR-Aug26-0001".
-// Sequence restarts each calendar month (counts only bills already using this prefix, so
-// older timestamp-based bill numbers from before this change are simply ignored/not renumbered).
-// FIX: previously this only counted existing bills and used count+1, which could collide
-// (double-tap Save, or a deleted bill leaving a gap) and throw a UNIQUE constraint error.
-// Now it actively checks the DB for the candidate number and keeps incrementing until it
-// finds one that is truly free, so a collision can no longer reach the insert.
 private suspend fun genBillNo(db: PosDatabase): String {
     val prefix = "PUR-" + SimpleDateFormat("MMMyy", Locale.getDefault()).format(Date()) + "-"
     val existing = db.purchaseDao().allPurchases().map { it.billNo }.toHashSet()
@@ -81,10 +75,10 @@ class PurchaseActivity : AppCompatActivity() {
     // ---------- Premium palette ----------
     private val bg = "#F5F7FA"
     private val cardWhite = "#FFFFFF"
-    private val navy = "#101B33"          // deep ink navy — headers / primary buttons
-    private val navyLight = "#1C2C4F"     // gradient partner for header
-    private val teal = "#0EA5A0"          // emerald-teal accent — links / secondary actions
-    private val gold = "#C9A24B"          // premium gold accent for highlights
+    private val navy = "#101B33"
+    private val navyLight = "#1C2C4F"
+    private val teal = "#0EA5A0"
+    private val gold = "#C9A24B"
     private val textDark = "#111827"
     private val textMuted = "#8892A0"
     private val border = "#E7EAF0"
@@ -108,6 +102,7 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var totalAmountText: TextView
     private lateinit var addItemButton: Button
     private lateinit var billedItemsHeader: LinearLayout
+    private lateinit var billedItemsSummaryText: TextView
     private lateinit var billedItemsChevron: TextView
     private lateinit var itemsContainer: LinearLayout
     private lateinit var grandTotalText: TextView
@@ -119,7 +114,6 @@ class PurchaseActivity : AppCompatActivity() {
     private lateinit var deleteButton: Button
     private lateinit var overflowButton: TextView
     private lateinit var scrollArea: ScrollView
-    private lateinit var rootContent: LinearLayout
 
     private var suppliers = listOf<Supplier>()
     private var products = listOf<Product>()
@@ -127,7 +121,6 @@ class PurchaseActivity : AppCompatActivity() {
     private val lines = mutableListOf<PurchaseLine>()
     private var purchaseDateMillis = System.currentTimeMillis()
     private var selectedProduct: Product? = null
-    private var itemsExpanded = true
 
     private var lastMainQty: Double = 0.0
     private var suppressQtyWatcher = false
@@ -140,9 +133,6 @@ class PurchaseActivity : AppCompatActivity() {
     private var suppressDraftSave = false
     private var draftRestored = false
 
-    // ---- FIX: guards against double-tap on Save. Without this, tapping Save twice quickly
-    // (or a slow first save + impatient second tap) could kick off two concurrent saves that
-    // both generate the same bill number and one fails with a UNIQUE constraint error. ----
     private var isSaving = false
 
     private val billScanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -152,16 +142,6 @@ class PurchaseActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Central crash guard: every DB / async block below runs through this so a failure
-    // shows a Toast + Logcat line ("PurchaseActivity" tag) instead of silently killing the
-    // activity. If Purchase ever force-closes again, check Logcat for TAG="PurchaseActivity".
-    // ---- FIX: CancellationException must NEVER be treated as a real error. It's thrown
-    // automatically whenever this activity's coroutine scope is cancelled (e.g. finish() being
-    // called right after a successful save, which cancels the still-running loadSuppliers() /
-    // loadUnits() / loadProducts() Flow collectors). Previously the generic `catch (e: Exception)`
-    // caught it too and showed bogus "Error loading supplier/unit/product" toasts right after every
-    // save. It is now rethrown so coroutine cancellation works normally and only real failures
-    // produce a Toast/Log entry. ----
     private fun safeLaunch(label: String, block: suspend () -> Unit) {
         lifecycleScope.launch {
             try {
@@ -177,20 +157,13 @@ class PurchaseActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        // ---- FIX: keyboard was covering the Paid Amount field (and other bottom fields) so the
-        // user couldn't see what they were typing. adjustResize makes the window shrink instead
-        // of the keyboard simply overlapping content. ----
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        // Phone-only crash debugging: catches ANY crash (this screen or elsewhere) and lets us
-        // view/share the full error next time this screen opens, with no Logcat/computer needed.
         com.grocerypos.v11.util.CrashHandler.install(this)
         com.grocerypos.v11.util.CrashHandler.getLastCrash(this)?.let { crashText -> showCrashDialog(crashText) }
         try {
             editBillNo = intent.getStringExtra(EXTRA_BILL_NO)
             buildUi()
         } catch (e: Exception) {
-            // Last-resort guard: if UI construction itself throws, log it and show a Toast
-            // instead of a silent crash, then close the screen gracefully.
             Log.e(TAG, "onCreate: fatal error building Purchase screen", e)
             Toast.makeText(this, "Purchase screen error: ${e.message ?: e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
             finish()
@@ -221,9 +194,7 @@ class PurchaseActivity : AppCompatActivity() {
             setPadding(24, 0, 24, 80)
             setBackgroundColor(Color.parseColor(bg))
         }
-        rootContent = root
 
-        // ---------- Premium gradient header ----------
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -411,13 +382,6 @@ class PurchaseActivity : AppCompatActivity() {
             textSize = 15.5f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_NEXT
-            // ---- FIX: rate is often auto-filled from the product's last saved rate. Previously
-            // the user had to manually clear it before typing a new rate. Now tapping into the
-            // field selects the existing text so the very first digit typed replaces it. ----
-            setSelectAllOnFocus(true)
-        }
-        rate.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) rate.post { rate.selectAll() }
         }
         rateBox.addView(rate)
 
@@ -461,6 +425,9 @@ class PurchaseActivity : AppCompatActivity() {
         itemEntrySection.addView(addItemButton)
         root.addView(itemEntrySection)
 
+        // ---- CHANGE: "Billed Items" is now just a summary bar. Tapping it opens the full
+        // list in a SEPARATE window (dialog) instead of expanding inline in this same scroll —
+        // this is what was requested ("billed item separate window ma show ho jae"). ----
         billedItemsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -469,22 +436,25 @@ class PurchaseActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 4, 0, 0) }
             visibility = View.GONE
             applyElevation(this, 2f)
-            setOnClickListener { toggleBilledItems() }
+            setOnClickListener { showBilledItemsDialog() }
         }
-        billedItemsHeader.addView(TextView(this).apply {
+        billedItemsSummaryText = TextView(this).apply {
             text = "\uD83D\uDCCB  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Billed Items", "بل شدہ آئٹمز")
             textSize = 13.5f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        billedItemsChevron = TextView(this).apply { text = "\u25BE"; textSize = 16f; setTextColor(Color.WHITE) }
+        }
+        billedItemsHeader.addView(billedItemsSummaryText)
+        billedItemsChevron = TextView(this).apply { text = "\u203A"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         billedItemsHeader.addView(billedItemsChevron)
         root.addView(billedItemsHeader)
-
-        itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
-        root.addView(itemsContainer)
         root.addView(spacer(14))
+
+        // itemsContainer is built here but is NOT attached to root — it only gets attached
+        // (inside a ScrollView) when showBilledItemsDialog() is opened, so the list itself
+        // lives in its own separate window rather than inline on this screen.
+        itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
 
         val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, "#FBFCFE", 18) }
         totalCard.addView(TextView(this).apply {
@@ -547,7 +517,9 @@ class PurchaseActivity : AppCompatActivity() {
         dueAmountText = TextView(this).apply { text = "Rs 0"; textSize = 18f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         dueCard.addView(dueAmountText)
         root.addView(dueCard)
-        root.addView(spacer(16))
+        // ---- extra bottom spacer so the payment card + due card can always scroll well clear
+        // of the numeric keypad, giving scrollToShowPaidInput() enough room to work with. ----
+        root.addView(spacer(220))
 
         saveButton = Button(this).apply {
             text = if (editBillNo != null) com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "UPDATE PURCHASE", "خریداری اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SAVE PURCHASE", "خریداری محفوظ کریں")
@@ -603,11 +575,6 @@ class PurchaseActivity : AppCompatActivity() {
             if (actionId == EditorInfo.IME_ACTION_NEXT) { qty.requestFocus(); true } else false
         }
         itemName.addTextChangedListener(simpleWatcher {
-            // Only pop the dropdown while the user is actually typing in this field — NOT when
-            // text is set programmatically (e.g. restoreDraftIfAny()/applyPickedProduct() calling
-            // setText()). Calling showDropDown() from a programmatic setText() during onCreate,
-            // before the window is fully attached, is what caused the
-            // "PopupWindow not attached to window manager" crash.
             if (itemName.hasFocus() && itemName.text.length >= 1) safeShowDropDown(itemName)
             val match = products.find { it.name.equals(itemName.text.toString().trim(), ignoreCase = true) }
             if (match == null) {
@@ -674,35 +641,44 @@ class PurchaseActivity : AppCompatActivity() {
             }
         })
         paidInput.addTextChangedListener(simpleWatcher { updateGrandTotal() })
-        // ---- FIX: scroll the Paid Amount field above the keyboard so the digits being typed
-        // stay visible instead of hiding behind the keyboard.
-        // A single postDelayed() scroll (the earlier attempt) is unreliable: adjustResize
-        // shrinks/animates the window over multiple layout passes, and a fixed 250ms guess can
-        // fire before that settles — so the scroll lands in the wrong place, exactly what was
-        // seen in the screenshot (keyboard still covering the field). Instead we attach a
-        // global layout listener that re-corrects the scroll position on EVERY layout pass
-        // while the field is focused, so it keeps tracking the keyboard as it animates in and
-        // settles on the right spot regardless of device speed/animation duration. ----
-        // ---- FIX: previous version scrolled to paymentSection.top, but paidInput is nested a
-        // few layouts deep inside paymentSection, so that offset undershot and the keyboard
-        // still covered the digits being typed. Now we compute paidInput's real position
-        // relative to the scrollable root (viewTopRelativeTo) and scroll so the field itself —
-        // not just its containing card — sits clearly above the keyboard, on every layout pass
-        // while it stays focused (keeps tracking as the keyboard animates in). ----
-        fun scrollToRevealPaidInput() {
-            val target = (viewTopRelativeTo(paidInput, rootContent) - dp(48)).coerceAtLeast(0)
-            scrollArea.scrollTo(0, target)
-        }
+
+        // ---- FIX: paid-amount field was getting fully covered by the numeric keypad, making
+        // it impossible to see the amount being typed. Instead of a fixed scroll target, this
+        // now measures the keyboard's actual visible-frame boundary on screen and keeps
+        // nudging the ScrollView (on focus AND on every keyboard-animation layout pass) until
+        // the whole Paid Amount card sits above the keyboard with a bit of breathing room. ----
         paidInput.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) scrollArea.post { scrollToRevealPaidInput() }
+            if (hasFocus) scrollArea.post { scrollToShowPaidInput() }
         }
         scrollArea.viewTreeObserver.addOnGlobalLayoutListener {
-            if (paidInput.hasFocus()) {
-                scrollToRevealPaidInput()
-            }
+            if (paidInput.hasFocus()) scrollToShowPaidInput()
         }
 
         if (editBillNo == null) restoreDraftIfAny()
+    }
+
+    // ---- Computes the keyboard's top edge from the window's visible display frame and scrolls
+    // just enough (using the payment card's live on-screen position, recalculated every call) so
+    // the whole "Paid Amount" card — label + entered digits — stays visible above the keyboard.
+    // Called repeatedly while the keyboard is animating in/out, so it self-corrects instead of
+    // relying on a single guessed scroll amount. ----
+    private fun scrollToShowPaidInput() {
+        if (!::paymentSection.isInitialized) return
+        val visibleFrame = Rect()
+        scrollArea.getWindowVisibleDisplayFrame(visibleFrame)
+        val location = IntArray(2)
+        paymentSection.getLocationOnScreen(location)
+        val sectionTop = location[1]
+        val sectionBottom = sectionTop + paymentSection.height
+        val extraPadding = (28 * resources.displayMetrics.density).toInt()
+        when {
+            sectionBottom > visibleFrame.bottom -> {
+                scrollArea.scrollBy(0, (sectionBottom - visibleFrame.bottom) + extraPadding)
+            }
+            sectionTop < visibleFrame.top -> {
+                scrollArea.scrollBy(0, sectionTop - visibleFrame.top - extraPadding)
+            }
+        }
     }
 
     override fun onPause() {
@@ -800,11 +776,24 @@ class PurchaseActivity : AppCompatActivity() {
     private fun circleIcon(label: String, colorHex: String, sizeDp: Int, onClick: (() -> Unit)? = null) = TextView(this).apply {
         this.text = label; textSize = 16f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = ovalBg(colorHex); val px = (sizeDp * resources.displayMetrics.density).toInt(); width = px; height = px; if (onClick != null) setOnClickListener { onClick() }
     }
-    private fun toggleBilledItems() {
-        itemsExpanded = !itemsExpanded
-        itemsContainer.visibility = if (itemsExpanded) View.VISIBLE else View.GONE
-        billedItemsChevron.text = if (itemsExpanded) "\u25BE" else "\u25B8"
+
+    // ---- CHANGE: Billed Items now open as their own dialog window instead of expanding
+    // inline. itemsContainer is detached from any previous parent (a View can only have one
+    // parent) then wrapped in a scrollable dialog. ----
+    private fun showBilledItemsDialog() {
+        if (lines.isEmpty()) return
+        (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
+        val wrapper = ScrollView(this).apply {
+            setPadding(20, 10, 20, 4)
+            addView(itemsContainer)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Billed Items", "بل شدہ آئٹمز"))
+            .setView(wrapper)
+            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Close", "بند کریں"), null)
+            .show()
     }
+
     private fun showOverflowMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
         popup.menu.add(com.grocerypos.v11.util.Loc.t(this, "Print", "پرنٹ"))
@@ -834,33 +823,11 @@ class PurchaseActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) { view.elevation = dp * resources.displayMetrics.density; view.outlineProvider = ViewOutlineProvider.BACKGROUND }
     }
     private fun spacer(heightDp: Int) = View(this).apply { val px = (heightDp * resources.displayMetrics.density).toInt(); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px) }
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-    // ---- Walks up the view tree summing .top offsets to get view's true vertical position
-    // relative to ancestor. A nested view's own .top is only relative to its immediate parent,
-    // which is why the earlier "scroll to paymentSection.top" fix undershot — paidInput sits a
-    // few nested layouts deep inside paymentSection, so its real on-screen offset was larger
-    // than paymentSection.top alone. ----
-    private fun viewTopRelativeTo(view: View, ancestor: View): Int {
-        var v: View = view
-        var top = 0
-        while (v !== ancestor) {
-            top += v.top
-            val parent = v.parent as? View ?: break
-            v = parent
-        }
-        return top
-    }
     private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun afterTextChanged(s: Editable?) = onChange()
     }
-    // ---- Fix for a real crash seen in production: "PopupWindow not attached to window manager".
-    // AutoCompleteTextView's dropdown is itself a PopupWindow; calling showDropDown() while the
-    // anchor view isn't attached/laid out yet (e.g. during onCreate, or a fast focus/detach race)
-    // can throw IllegalArgumentException deep inside the framework. isAttachedToWindow limits most
-    // of those cases, and the try/catch is a safety net for the rest — worst case the dropdown
-    // just doesn't pop open that one time, instead of crashing the whole app. ----
     private fun safeShowDropDown(view: AutoCompleteTextView) {
         if (!view.isAttachedToWindow) return
         try {
@@ -935,9 +902,6 @@ class PurchaseActivity : AppCompatActivity() {
         lastMainQty = 0.0; lastMainRate = 0.0; refillAutoRate(); updateLineTotal()
         qty.setText(""); totalLotPrice.setText(""); qty.requestFocus()
     }
-    // ---- These to/from-"main unit" helpers are ONLY used to auto-fill the Rate field when the
-    // unit chip is switched during entry — they never touch stock, so the earlier rounding bug
-    // does not apply to them. Stock itself is now computed via Product.toSmallestUnits() at save time. ----
     private fun toMainUnitQty(entered: Double): Double {
         val product = selectedProduct ?: return entered
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
@@ -1051,9 +1015,17 @@ class PurchaseActivity : AppCompatActivity() {
             Toast.makeText(this@PurchaseActivity, "$matchedCount items added from scan", Toast.LENGTH_LONG).show()
         }
     }
+
+    // ---- CHANGE: renders into itemsContainer as before, but that container now lives inside
+    // the Billed Items dialog rather than inline on the main screen. billedItemsHeader is
+    // updated to a live "N items · Rs total" summary so the user always sees a snapshot without
+    // opening the dialog. ----
     private fun renderItemsList() {
-        itemsContainer.removeAllViews(); billedItemsHeader.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
-        if (!itemsExpanded) { itemsExpanded = true; itemsContainer.visibility = View.VISIBLE; billedItemsChevron.text = "\u25BE" }
+        itemsContainer.removeAllViews()
+        billedItemsHeader.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
+        val totalSoFar = lines.sumOf { it.amount }
+        billedItemsSummaryText.text = "\uD83D\uDCCB  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Billed Items", "بل شدہ آئٹمز") +
+            "  (${lines.size})  ·  Rs %.0f".format(totalSoFar)
         lines.forEachIndexed { index, line ->
             val row = premiumCard(); val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val badge = TextView(this).apply { text = "#${index + 1}"; textSize = 11.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(gold)); background = strokedBg("#E7DCB8", amberBadge, 8); setPadding(14, 5, 14, 5) }
@@ -1154,9 +1126,6 @@ class PurchaseActivity : AppCompatActivity() {
         android.app.AlertDialog.Builder(this).setTitle("Delete Purchase").setMessage("This will remove the bill and reverse its stock and supplier balance effect. Continue?").setPositiveButton("Delete") { _, _ -> deletePurchase(billNo) }.setNegativeButton("Cancel", null).show()
     }
 
-    // ---- Reverses stock exactly the way it was added: convert the item's ORIGINAL entered
-    // qty+unit into the product's current smallest unit, so editing/deleting a bill can never
-    // leave stock out of sync with what savePurchase() actually added. ----
     private suspend fun reverseStockForItems(db: PosDatabase, items: List<PurchaseItem>) {
         items.forEach { pi ->
             val product = db.productDao().find(pi.barcode) ?: return@forEach
@@ -1176,7 +1145,6 @@ class PurchaseActivity : AppCompatActivity() {
         Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
     }
     private fun savePurchase() {
-        // ---- FIX: block re-entry while a save is already in flight (double-tap protection). ----
         if (isSaving) return
 
         hideKeyboard()
@@ -1192,7 +1160,7 @@ class PurchaseActivity : AppCompatActivity() {
                 .setTitle("Confirm Credit Purchase")
                 .setMessage("You have not entered Paid Amount.\nTotal: Rs %.0f\n\nThis bill will be saved as CREDIT (Udhaar).\nSupplier balance will increase.\n\nAre you sure?".format(grandTotal))
                 .setPositiveButton("Yes, Save as Credit") { _, _ -> proceedSave(party, grandTotal) }
-                .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); scrollArea.post { val target = (viewTopRelativeTo(paidInput, rootContent) - dp(48)).coerceAtLeast(0); scrollArea.smoothScrollTo(0, target); paidInput.requestFocus() } }
+                .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); scrollArea.post { scrollArea.smoothScrollTo(0, paymentSection.top); paidInput.requestFocus() } }
                 .show()
             return
         }
@@ -1200,11 +1168,6 @@ class PurchaseActivity : AppCompatActivity() {
     }
 
     private fun proceedSave(party: String, grandTotal: Double) {
-        // ---- FIX: set the guard + disable the button right away (before the coroutine even
-        // starts), and always release it in a finally block — including on the "add new
-        // supplier / retry" paths — so a slow save or a thrown error can never leave the button
-        // stuck disabled, and a second tap while saving is in-flight can never start a second
-        // save that races to generate/insert the same bill number. ----
         isSaving = true
         saveButton.isEnabled = false
         safeLaunch("proceedSave") {
@@ -1225,15 +1188,10 @@ class PurchaseActivity : AppCompatActivity() {
                     db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
                 }
                 db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
-                // Store the actual entered qty/rate (matches the entered `unit`) rather than a
-                // primary-unit-converted value — this keeps Billed Items / edit-mode display and the
-                // DB row consistent with each other, and is exactly what reverseStockForItems() expects.
                 db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) })
                 lines.forEach { line ->
                     val barcode = line.barcode ?: return@forEach
                     val before = db.productDao().find(barcode) ?: return@forEach
-                    // Convert into the SMALLEST configured unit (multiplication only — never a divide
-                    // that can round a fractional primary-unit amount down to 0).
                     val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit).roundToInt()
                     db.productDao().increase(barcode, purchasedSmallest)
                     if (purchasedSmallest > 0) {
@@ -1243,8 +1201,6 @@ class PurchaseActivity : AppCompatActivity() {
                         val purchaseRatePerSmallest = line.amount / purchasedSmallest
                         val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
                             else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest).toDouble()
-                        // `cost` stays expressed per PRIMARY unit (that's what "Purchase Rate" shows in
-                        // Product screen), so convert the smallest-unit weighted average back up.
                         db.productDao().updateCost(barcode, newCostPerSmallest * factor)
                     }
                 }
