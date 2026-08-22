@@ -427,7 +427,7 @@ class MainActivity : AppCompatActivity() {
                         })
                         setOnClickListener {
                             val intent = Intent(this@MainActivity, ItemSearchActivity::class.java)
-                            intent.putExtra("product_id", product.id)
+                            intent.putExtra("product_barcode", product.barcode)
                             intent.putExtra("product_name", product.name)
                             startActivity(intent)
                         }
