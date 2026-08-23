@@ -518,12 +518,28 @@ val MIGRATION_20_21 = object : Migration(20, 21) {
     }
 }
 
+// ---- FIX: MIGRATION_18_19 rescaled `stock` and `openingStock` from "primary unit" counts to
+// "smallest unit" counts (e.g. dozens -> pcs) but left `reorderLevel` untouched. Now that
+// ProductActivity exposes a reorder-level field (entered in smallest units, to match how
+// `stock<=reorderLevel` is compared), any reorderLevel set on an install that predates this
+// migration and went through MIGRATION_18_19 needs the same rescale applied, or it will be
+// off by the same factor as stock/openingStock were before that migration. Safe to run even
+// on installs where reorderLevel is still 0 for every product (0 * factor = 0).
+val MIGRATION_21_22 = object : Migration(21, 22) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        val factorExpr = "(CASE WHEN secondaryUnit != '' AND secondaryUnitQty > 0 THEN " +
+            "secondaryUnitQty * (CASE WHEN tertiaryUnit != '' AND tertiaryUnitQty > 0 THEN tertiaryUnitQty ELSE 1 END) " +
+            "ELSE 1 END)"
+        database.execSQL("UPDATE products SET reorderLevel = CAST(ROUND(reorderLevel * $factorExpr) AS INTEGER)")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class],
-    version=21, exportSchema=false
+    version=22, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -547,7 +563,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }
