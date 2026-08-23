@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -321,9 +322,11 @@ class CashActivity : AppCompatActivity() {
         }
 
         lifecycleScope.launch {
-            PosDatabase.get(this@CashActivity).cashTransactionDao().insert(
-                CashTransaction(type = type, method = method, amount = amt, reason = fullReason)
-            )
+            val db = PosDatabase.get(this@CashActivity)
+            val tx = CashTransaction(type = type, method = method, amount = amt, reason = fullReason)
+            db.cashTransactionDao().insert(tx)
+            SyncQueueHelper.enqueue(db, "cash_transaction", "cash_tx:${System.currentTimeMillis()}", "create", SyncQueueHelper.cashTransactionJson(tx))
+            SyncQueueHelper.trigger(this@CashActivity)
             Toast.makeText(this@CashActivity, Loc.t(this@CashActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             amount.text.clear()
             reason.text.clear()
