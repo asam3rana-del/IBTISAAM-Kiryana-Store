@@ -250,7 +250,7 @@ class PurchaseActivity : ThemedActivity() {
         })
         header.addView(headerCol)
         header.addView(pillChip("History") {
-            startActivity(Intent(this@PurchaseActivity, PurchaseHistoryActivity::class.java))
+            Toast.makeText(this@PurchaseActivity, "Purchase history coming soon", Toast.LENGTH_SHORT).show()
         })
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
         header.addView(TextView(this).apply {
