@@ -37,7 +37,7 @@ class ReportsActivity : AppCompatActivity() {
         }
 
         root.addView(TextView(this).apply {
-            text = Loc.t(this@ReportsActivity, "Reports", "Ø±Ù¾ÙˆØ±Ù¹Ø³")
+            text = Loc.t(this@ReportsActivity, "Reports", "رپورٹس")
             textSize = 21f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -45,7 +45,7 @@ class ReportsActivity : AppCompatActivity() {
         })
 
         root.addView(Button(this).apply {
-            text = Loc.t(this@ReportsActivity, "VIEW SALE / PURCHASE HISTORY", "Ø³ÛŒÙ„ / Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©ÛŒ ØªØ§Ø±ÛŒØ® Ø¯ÛŒÚ©Ú¾ÛŒÚº")
+            text = Loc.t(this@ReportsActivity, "VIEW SALE / PURCHASE HISTORY", "سیل / خریداری کی تاریخ دیکھیں")
             textSize = 12.5f
             setTextColor(Color.parseColor("#1565C0"))
             background = strokedBg("#1565C0", "#FFFFFF", 16)
@@ -57,7 +57,7 @@ class ReportsActivity : AppCompatActivity() {
         root.addView(spacer(18))
 
         root.addView(Button(this).apply {
-            text = Loc.t(this@ReportsActivity, "PARTY REPORTS", "Ù¾Ø§Ø±Ù¹ÛŒ Ø±Ù¾ÙˆØ±Ù¹Ø³")
+            text = Loc.t(this@ReportsActivity, "PARTY REPORTS", "پارٹی رپورٹس")
             textSize = 12.5f
             setTextColor(Color.parseColor("#6A1B9A"))
             background = strokedBg("#6A1B9A", "#FFFFFF", 16)
@@ -68,11 +68,23 @@ class ReportsActivity : AppCompatActivity() {
         })
         root.addView(spacer(18))
 
+        root.addView(Button(this).apply {
+            text = Loc.t(this@ReportsActivity, "STOCK REPORT", "اسٹاک رپورٹ")
+            textSize = 12.5f
+            setTextColor(Color.parseColor("#EF6C00"))
+            background = strokedBg("#EF6C00", "#FFFFFF", 16)
+            setPadding(0, 20, 0, 20)
+            setOnClickListener {
+                startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java))
+            }
+        })
+        root.addView(spacer(18))
+
         val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val today = smallButton(Loc.t(this, "Today", "Ø¢Ø¬")) { setRangeToday(); loadReport() }
-        val week = smallButton(Loc.t(this, "This Week", "Ø§Ø³ ÛÙØªÛ’")) { setRangeThisWeek(); loadReport() }
-        val month = smallButton(Loc.t(this, "This Month", "Ø§Ø³ Ù…ÛÛŒÙ†Û’")) { setRangeThisMonth(); loadReport() }
-        val all = smallButton(Loc.t(this, "All Time", "ØªÙ…Ø§Ù… ÙˆÙ‚Øª")) { setRangeAllTime(); loadReport() }
+        val today = smallButton(Loc.t(this, "Today", "آج")) { setRangeToday(); loadReport() }
+        val week = smallButton(Loc.t(this, "This Week", "اس ہفتے")) { setRangeThisWeek(); loadReport() }
+        val month = smallButton(Loc.t(this, "This Month", "اس مہینے")) { setRangeThisMonth(); loadReport() }
+        val all = smallButton(Loc.t(this, "All Time", "تمام وقت")) { setRangeAllTime(); loadReport() }
         filterButtons.addAll(listOf(today, week, month, all))
         filterRow.addView(today)
         filterRow.addView(week)
@@ -108,7 +120,7 @@ class ReportsActivity : AppCompatActivity() {
         cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
         rangeStart = cal.timeInMillis
         rangeEnd = rangeStart + 24 * 60 * 60 * 1000L
-        periodLabel?.text = Loc.t(this, "SHOWING: TODAY", "Ø¯Ú©Ú¾Ø§ÛŒØ§ Ø¬Ø§ Ø±ÛØ§ ÛÛ’: Ø¢Ø¬")
+        periodLabel?.text = Loc.t(this, "SHOWING: TODAY", "دکھایا جا رہا ہے: آج")
         highlightFilter(0)
     }
 
@@ -119,7 +131,7 @@ class ReportsActivity : AppCompatActivity() {
         cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
         rangeStart = cal.timeInMillis
         rangeEnd = System.currentTimeMillis()
-        periodLabel?.text = Loc.t(this, "SHOWING: THIS WEEK", "Ø¯Ú©Ú¾Ø§ÛŒØ§ Ø¬Ø§ Ø±ÛØ§ ÛÛ’: Ø§Ø³ ÛÙØªÛ’")
+        periodLabel?.text = Loc.t(this, "SHOWING: THIS WEEK", "دکھایا جا رہا ہے: اس ہفتے")
         highlightFilter(1)
     }
 
@@ -130,14 +142,14 @@ class ReportsActivity : AppCompatActivity() {
         cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
         rangeStart = cal.timeInMillis
         rangeEnd = System.currentTimeMillis()
-        periodLabel?.text = Loc.t(this, "SHOWING: THIS MONTH", "Ø¯Ú©Ú¾Ø§ÛŒØ§ Ø¬Ø§ Ø±ÛØ§ ÛÛ’: Ø§Ø³ Ù…ÛÛŒÙ†Û’")
+        periodLabel?.text = Loc.t(this, "SHOWING: THIS MONTH", "دکھایا جا رہا ہے: اس مہینے")
         highlightFilter(2)
     }
 
     private fun setRangeAllTime() {
         rangeStart = 0L
         rangeEnd = System.currentTimeMillis()
-        periodLabel?.text = Loc.t(this, "SHOWING: ALL TIME", "Ø¯Ú©Ú¾Ø§ÛŒØ§ Ø¬Ø§ Ø±ÛØ§ ÛÛ’: ØªÙ…Ø§Ù… ÙˆÙ‚Øª")
+        periodLabel?.text = Loc.t(this, "SHOWING: ALL TIME", "دکھایا جا رہا ہے: تمام وقت")
         highlightFilter(3)
     }
 
@@ -179,13 +191,13 @@ class ReportsActivity : AppCompatActivity() {
 
             resultsBox.removeAllViews()
 
-            resultsBox.addView(summaryCard("ðŸ’°", Loc.t(this@ReportsActivity, "Total Sales", "Ú©Ù„ Ø³ÛŒÙ„"), "Rs %.2f".format(totalSales), "#1565C0", "#E3F2FD"))
-            resultsBox.addView(summaryCard("ðŸ“ˆ", Loc.t(this@ReportsActivity, "Total Profit", "Ú©Ù„ Ù…Ù†Ø§ÙØ¹"), "Rs %.2f".format(totalProfit), "#2E7D32", "#E8F5E9"))
-            resultsBox.addView(summaryCard("ðŸ§¾", Loc.t(this@ReportsActivity, "Total Purchases", "Ú©Ù„ Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ"), "Rs %.2f".format(totalPurchases), "#EF6C00", "#FFF3E0"))
-            resultsBox.addView(summaryCard("ðŸ’¸", Loc.t(this@ReportsActivity, "Total Expenses", "Ú©Ù„ Ø§Ø®Ø±Ø§Ø¬Ø§Øª"), "Rs %.2f".format(totalExpenses), "#C62828", "#FFEBEE"))
-            resultsBox.addView(summaryCard("â†©", Loc.t(this@ReportsActivity, "Sale Returns", "Ø³ÛŒÙ„ Ú©ÛŒ ÙˆØ§Ù¾Ø³ÛŒ"), "Rs %.2f".format(totalSaleReturns), "#AD1457", "#FCE4EC"))
-            resultsBox.addView(summaryCard("â†©", Loc.t(this@ReportsActivity, "Purchase Returns", "Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©ÛŒ ÙˆØ§Ù¾Ø³ÛŒ"), "Rs %.2f".format(totalPurchaseReturns), "#00695C", "#E0F2F1"))
-            resultsBox.addView(summaryCard("ðŸ§®", Loc.t(this@ReportsActivity, "Number of Sales", "Ø³ÛŒÙ„Ø² Ú©ÛŒ ØªØ¹Ø¯Ø§Ø¯"), "$saleCount", "#6A1B9A", "#F3E5F5"))
+            resultsBox.addView(summaryCard("💰", Loc.t(this@ReportsActivity, "Total Sales", "کل سیل"), "Rs %.2f".format(totalSales), "#1565C0", "#E3F2FD"))
+            resultsBox.addView(summaryCard("📈", Loc.t(this@ReportsActivity, "Total Profit", "کل منافع"), "Rs %.2f".format(totalProfit), "#2E7D32", "#E8F5E9"))
+            resultsBox.addView(summaryCard("🧾", Loc.t(this@ReportsActivity, "Total Purchases", "کل خریداری"), "Rs %.2f".format(totalPurchases), "#EF6C00", "#FFF3E0"))
+            resultsBox.addView(summaryCard("💸", Loc.t(this@ReportsActivity, "Total Expenses", "کل اخراجات"), "Rs %.2f".format(totalExpenses), "#C62828", "#FFEBEE"))
+            resultsBox.addView(summaryCard("↩", Loc.t(this@ReportsActivity, "Sale Returns", "سیل کی واپسی"), "Rs %.2f".format(totalSaleReturns), "#AD1457", "#FCE4EC"))
+            resultsBox.addView(summaryCard("↩", Loc.t(this@ReportsActivity, "Purchase Returns", "خریداری کی واپسی"), "Rs %.2f".format(totalPurchaseReturns), "#00695C", "#E0F2F1"))
+            resultsBox.addView(summaryCard("🧮", Loc.t(this@ReportsActivity, "Number of Sales", "سیلز کی تعداد"), "$saleCount", "#6A1B9A", "#F3E5F5"))
 
             resultsBox.addView(spacer(10))
 
@@ -201,13 +213,13 @@ class ReportsActivity : AppCompatActivity() {
 
             resultsBox.addView(spacer(14))
 
-            resultsBox.addView(listCard(Loc.t(this@ReportsActivity, "Top Products", "Ù¹Ø§Ù¾ Ù¾Ø±ÙˆÚˆÚ©Ù¹Ø³"), topProducts.isEmpty(), Loc.t(this@ReportsActivity, "No sales in this period", "Ø§Ø³ Ù…Ø¯Øª Ù…ÛŒÚº Ú©ÙˆØ¦ÛŒ Ø³ÛŒÙ„ Ù†ÛÛŒÚº ÛÙˆØ¦ÛŒ")) { box ->
-                topProducts.forEach { tp -> box.addView(rowText(tp.product, "${tp.totalQty} " + Loc.t(this@ReportsActivity, "sold", "ÙØ±ÙˆØ®Øª Ø´Ø¯Û"))) }
+            resultsBox.addView(listCard(Loc.t(this@ReportsActivity, "Top Products", "ٹاپ پروڈکٹس"), topProducts.isEmpty(), Loc.t(this@ReportsActivity, "No sales in this period", "اس مدت میں کوئی سیل نہیں ہوئی")) { box ->
+                topProducts.forEach { tp -> box.addView(rowText(tp.product, "${tp.totalQty} " + Loc.t(this@ReportsActivity, "sold", "فروخت شدہ"))) }
             })
 
             resultsBox.addView(spacer(14))
 
-            resultsBox.addView(listCard(Loc.t(this@ReportsActivity, "Daily Sales", "Ø±ÙˆØ²Ø§Ù†Û Ø³ÛŒÙ„"), dailySales.isEmpty(), Loc.t(this@ReportsActivity, "No data", "Ú©ÙˆØ¦ÛŒ ÚˆÛŒÙ¹Ø§ Ù†ÛÛŒÚº")) { box ->
+            resultsBox.addView(listCard(Loc.t(this@ReportsActivity, "Daily Sales", "روزانہ سیل"), dailySales.isEmpty(), Loc.t(this@ReportsActivity, "No data", "کوئی ڈیٹا نہیں")) { box ->
                 dailySales.forEach { d -> box.addView(rowText(d.day, "Rs %.2f".format(d.total))) }
             })
 
@@ -287,25 +299,25 @@ class ReportsActivity : AppCompatActivity() {
                 setPadding(0, 0, 0, 14)
             }
             titleRow.addView(TextView(this@ReportsActivity).apply {
-                text = "ðŸ“Š  "
+                text = "📊  "
                 textSize = 15f
             })
             titleRow.addView(TextView(this@ReportsActivity).apply {
-                text = Loc.t(this@ReportsActivity, "Profit & Loss Statement", "Ù…Ù†Ø§ÙØ¹ Ø§ÙˆØ± Ù†Ù‚ØµØ§Ù† Ú©Ø§ Ø¨ÛŒØ§Ù†")
+                text = Loc.t(this@ReportsActivity, "Profit & Loss Statement", "منافع اور نقصان کا بیان")
                 textSize = 15f
                 setTextColor(Color.parseColor(textDark))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             addView(titleRow)
 
-            addView(plRow(Loc.t(this@ReportsActivity, "Sales Revenue", "Ø³ÛŒÙ„ Ú©ÛŒ Ø¢Ù…Ø¯Ù†ÛŒ"), revenue, textDark, bold = false))
-            addView(plRow(Loc.t(this@ReportsActivity, "(-) Cost of Goods Sold", "(-) ÙØ±ÙˆØ®Øª Ø´Ø¯Û Ø³Ø§Ù…Ø§Ù† Ú©ÛŒ Ù„Ø§Ú¯Øª"), cogs, "#C62828", bold = false, isDeduction = true))
+            addView(plRow(Loc.t(this@ReportsActivity, "Sales Revenue", "سیل کی آمدنی"), revenue, textDark, bold = false))
+            addView(plRow(Loc.t(this@ReportsActivity, "(-) Cost of Goods Sold", "(-) فروخت شدہ سامان کی لاگت"), cogs, "#C62828", bold = false, isDeduction = true))
             addView(plDivider())
-            addView(plRow(Loc.t(this@ReportsActivity, "Gross Profit", "Ù…Ø¬Ù…ÙˆØ¹ÛŒ Ù…Ù†Ø§ÙØ¹"), grossProfit, "#1565C0", bold = true))
+            addView(plRow(Loc.t(this@ReportsActivity, "Gross Profit", "مجموعی منافع"), grossProfit, "#1565C0", bold = true))
             addView(spacer(4))
-            addView(plRow(Loc.t(this@ReportsActivity, "(-) Operating Expenses", "(-) Ø¢Ù¾Ø±ÛŒÙ¹Ù†Ú¯ Ø§Ø®Ø±Ø§Ø¬Ø§Øª"), expenses, "#C62828", bold = false, isDeduction = true))
+            addView(plRow(Loc.t(this@ReportsActivity, "(-) Operating Expenses", "(-) آپریٹنگ اخراجات"), expenses, "#C62828", bold = false, isDeduction = true))
             addView(plDivider())
-            addView(plRow(if (netProfit >= 0) Loc.t(this@ReportsActivity, "Net Profit", "Ø®Ø§Ù„Øµ Ù…Ù†Ø§ÙØ¹") else Loc.t(this@ReportsActivity, "Net Loss", "Ø®Ø§Ù„Øµ Ù†Ù‚ØµØ§Ù†"), netProfit, netColor, bold = true, big = true))
+            addView(plRow(if (netProfit >= 0) Loc.t(this@ReportsActivity, "Net Profit", "خالص منافع") else Loc.t(this@ReportsActivity, "Net Loss", "خالص نقصان"), netProfit, netColor, bold = true, big = true))
         }
     }
 
