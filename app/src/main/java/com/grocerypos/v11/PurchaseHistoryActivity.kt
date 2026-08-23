@@ -18,7 +18,6 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import android.util.Log
 import java.text.SimpleDateFormat
@@ -63,7 +62,12 @@ class PurchaseHistoryActivity : ThemedActivity() {
     private lateinit var searchField: EditText
     private lateinit var emptyStateText: TextView
 
-    private var allPurchasesWithSupplier: List<Pair<Purchase, String>> = emptyList()
+    // billNo/supplierName/total/createdAt/status come straight from the joined query;
+    // paid is fetched separately per bill (allPurchases() doesn't project it) so we can
+    // still show a due/paid-in-full badge.
+    private data class HistoryRow(val billNo: String, val supplierName: String, val total: Double, val createdAt: Long, val status: String, val paid: Double)
+
+    private var rows: List<HistoryRow> = emptyList()
 
     private fun safeLaunch(label: String, block: suspend () -> Unit) {
         lifecycleScope.launch {
@@ -187,22 +191,26 @@ class PurchaseHistoryActivity : ThemedActivity() {
     private fun loadPurchases() = safeLaunch("loadPurchases") {
         val db = PosDatabase.get(this@PurchaseHistoryActivity)
         val purchases = db.purchaseDao().allPurchases()
-        val suppliers = db.supplierDao().all().first()
-        allPurchasesWithSupplier = purchases
+        rows = purchases
             .sortedByDescending { it.createdAt }
-            .map { purchase -> purchase to (suppliers.find { it.id == purchase.supplierId }?.name ?: "—") }
+            .map { pws ->
+                val paid = try { db.purchaseDao().findPurchase(pws.billNo)?.paid ?: 0.0 } catch (e: Exception) {
+                    Log.e(TAG, "loadPurchases: paid lookup failed for ${pws.billNo}", e); 0.0
+                }
+                HistoryRow(pws.billNo, pws.supplierName, pws.total, pws.createdAt, pws.status, paid)
+            }
         renderList(searchField.text?.toString().orEmpty())
     }
 
     private fun renderList(query: String) {
         listContainer.removeAllViews()
         val q = query.trim().lowercase()
-        val filtered = if (q.isEmpty()) allPurchasesWithSupplier else allPurchasesWithSupplier.filter { (purchase, supplierName) ->
-            purchase.billNo.lowercase().contains(q) || supplierName.lowercase().contains(q)
+        val filtered = if (q.isEmpty()) rows else rows.filter { row ->
+            row.billNo.lowercase().contains(q) || row.supplierName.lowercase().contains(q)
         }
         emptyStateText.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
-        filtered.forEach { (purchase, supplierName) ->
-            val due = (purchase.total - purchase.paid).coerceAtLeast(0.0)
+        filtered.forEach { row ->
+            val due = (row.total - row.paid).coerceAtLeast(0.0)
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(22, 18, 22, 18)
@@ -211,25 +219,36 @@ class PurchaseHistoryActivity : ThemedActivity() {
                 applyElevation(this, 3f)
                 setOnClickListener {
                     startActivity(Intent(this@PurchaseHistoryActivity, PurchaseActivity::class.java).apply {
-                        putExtra(PurchaseActivity.EXTRA_BILL_NO, purchase.billNo)
+                        putExtra(PurchaseActivity.EXTRA_BILL_NO, row.billNo)
                     })
                 }
             }
             val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val billCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            billCol.addView(TextView(this).apply { text = purchase.billNo; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
-            billCol.addView(TextView(this).apply { text = supplierName; textSize = 12.5f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 3, 0, 0) })
+            billCol.addView(TextView(this).apply { text = row.billNo; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
+            billCol.addView(TextView(this).apply { text = row.supplierName; textSize = 12.5f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 3, 0, 0) })
             topRow.addView(billCol)
-            topRow.addView(TextView(this).apply { text = "Rs %.0f".format(purchase.total); textSize = 15f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)) })
+            topRow.addView(TextView(this).apply { text = "Rs %.0f".format(row.total); textSize = 15f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)) })
             card.addView(topRow)
             card.addView(spacer(10))
             val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             bottomRow.addView(TextView(this).apply {
-                text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(purchase.createdAt))
+                text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(row.createdAt))
                 textSize = 11.5f
                 setTextColor(Color.parseColor(textMuted))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
+            if (row.status != "active") {
+                bottomRow.addView(TextView(this).apply {
+                    text = row.status.replaceFirstChar { it.uppercase() }
+                    textSize = 11.5f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(textMuted))
+                    background = strokedBg(border, fieldFill, 8)
+                    setPadding(14, 5, 14, 5)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 8, 0) }
+                })
+            }
             bottomRow.addView(TextView(this).apply {
                 text = if (due > 0) com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Due: Rs %.0f", "باقی: Rs %.0f").format(due) else com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Paid in full", "مکمل ادا شدہ")
                 textSize = 11.5f
