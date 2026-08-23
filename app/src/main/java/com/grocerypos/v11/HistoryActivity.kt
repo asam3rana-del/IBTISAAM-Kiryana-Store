@@ -12,10 +12,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.ReturnLine
+import com.grocerypos.v11.smallestUnitFactor
+import com.grocerypos.v11.toSmallestUnits
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class HistoryActivity : AppCompatActivity() {
     private lateinit var tabRow: LinearLayout
@@ -94,12 +97,20 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
+    // ---- FIX: stock reversal now converts si.qty (stored in whatever unit was entered,
+    // e.g. "dozen") to smallest-unit stock via Product.toSmallestUnits() before touching
+    // stock, same as SaleActivity.deleteSale() / SaleHistoryActivity.deleteSale(). Previously
+    // this called db.productDao().increase(it.barcode, it.qty) directly, which added back the
+    // raw entered-unit number as if it were already smallest units — wrong for any product
+    // with a secondary/tertiary unit. ----
     private fun returnSale(invoice: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val sale = db.saleDao().findSale(invoice) ?: return@launch; if (sale.status == "returned") return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
             for (it in items) {
-                db.productDao().increase(it.barcode, it.qty)
+                val p = db.productDao().find(it.barcode)
+                val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit })?.roundToInt() ?: it.qty
+                db.productDao().increase(it.barcode, smallestQty)
                 db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
             }
             if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
@@ -111,7 +122,11 @@ class HistoryActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
-            for (it in items) db.productDao().increase(it.barcode, it.qty)
+            for (it in items) {
+                val p = db.productDao().find(it.barcode)
+                val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit })?.roundToInt() ?: it.qty
+                db.productDao().increase(it.barcode, smallestQty)
+            }
             if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
             db.cashTransactionDao().deleteByReference(invoice); db.saleDao().deleteItems(invoice); db.saleDao().deleteSale(invoice); loadSales()
         }
@@ -149,12 +164,37 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
+    // ---- FIX: mirrors PurchaseActivity.reverseStockAndCostForItems() — converts item.qty via
+    // Product.toSmallestUnits() before touching stock (previously used the raw entered-unit qty,
+    // truncated with .toInt(), directly on decreaseForce — wrong for multi-unit products and lost
+    // fractional qty), and also reverses the weighted-average cost impact so product.cost isn't
+    // left distorted after a delete/return (previously not reversed at all). ----
+    private suspend fun reverseStockAndCostForPurchaseItems(db: PosDatabase, items: List<com.grocerypos.v11.PurchaseItem>) {
+        for (pi in items) {
+            val product = db.productDao().find(pi.barcode) ?: continue
+            val factor = product.smallestUnitFactor()
+            val smallestQty = product.toSmallestUnits(pi.qty, pi.unit.ifBlank { product.unit }).roundToInt()
+            if (smallestQty <= 0) continue
+
+            val currentCostPerSmallest = if (factor > 0) product.cost / factor else product.cost
+            val currentStock = product.stock
+            val newStock = currentStock - smallestQty
+
+            val totalValueBefore = currentStock * currentCostPerSmallest
+            val totalValueAfterRemoval = (totalValueBefore - pi.amount).coerceAtLeast(0.0)
+            val newCostPerSmallest = if (newStock > 0) totalValueAfterRemoval / newStock else 0.0
+
+            db.productDao().decreaseForce(pi.barcode, smallestQty)
+            db.productDao().updateCost(pi.barcode, newCostPerSmallest * factor)
+        }
+    }
+
     private fun returnPurchase(billNo: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch; if (purchase.status == "returned") return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
+            reverseStockAndCostForPurchaseItems(db, items)
             for (item in items) {
-                db.productDao().decreaseForce(item.barcode, item.qty.toInt().coerceAtLeast(1))
                 db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = item.qty, amount = item.amount))
             }
             if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
@@ -166,7 +206,7 @@ class HistoryActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
-            for (item in items) db.productDao().decreaseForce(item.barcode, item.qty.toInt().coerceAtLeast(1))
+            reverseStockAndCostForPurchaseItems(db, items)
             if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
             db.cashTransactionDao().deleteByReference(billNo); db.paymentDao().deleteByReference(billNo); db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); loadPurchases()
         }
