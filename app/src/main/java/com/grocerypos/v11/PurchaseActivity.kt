@@ -1241,6 +1241,8 @@ class PurchaseActivity : ThemedActivity() {
         val outstanding = purchase.total - purchase.paid
         if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
         db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
+        SyncQueueHelper.enqueue(db, "purchase", billNo, "delete", org.json.JSONObject().apply { put("billNo", billNo) })
+        SyncQueueHelper.trigger(this@PurchaseActivity)
         Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
     }
     private fun savePurchase() {
@@ -1286,8 +1288,14 @@ class PurchaseActivity : ThemedActivity() {
                     if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
                     db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
                 }
-                db.purchaseDao().purchase(Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount))
-                db.purchaseDao().items(lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) })
+                val purchaseRecord = Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount)
+                db.purchaseDao().purchase(purchaseRecord)
+                val purchaseItems = lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) }
+                db.purchaseDao().items(purchaseItems)
+                SyncQueueHelper.enqueue(
+                    db, "purchase", billNo, if (original != null) "update" else "create",
+                    SyncQueueHelper.purchaseJson(purchaseRecord, purchaseItems.size)
+                )
                 lines.forEach { line ->
                     val barcode = line.barcode ?: return@forEach
                     val before = db.productDao().find(barcode) ?: return@forEach
@@ -1305,9 +1313,18 @@ class PurchaseActivity : ThemedActivity() {
                 }
                 val outstanding = grandTotal - amountPaid
                 if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
-                if (supplierId != null && amountPaid > 0) { db.paymentDao().insert(Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")) }
-                if (amountPaid > 0) { db.cashTransactionDao().insert(CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)) }
+                if (supplierId != null && amountPaid > 0) {
+                    val payment = Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")
+                    db.paymentDao().insert(payment)
+                    SyncQueueHelper.enqueue(db, "payment", billNo, "create", SyncQueueHelper.paymentJson(payment))
+                }
+                if (amountPaid > 0) {
+                    val cashTx = CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)
+                    db.cashTransactionDao().insert(cashTx)
+                    SyncQueueHelper.enqueue(db, "cash_transaction", billNo, "create", SyncQueueHelper.cashTransactionJson(cashTx))
+                }
                 suppressDraftSave = true; clearDraft(); editBillNo = billNo
+                SyncQueueHelper.trigger(this@PurchaseActivity)
                 Toast.makeText(this@PurchaseActivity, if (original != null) "Purchase updated" else "Purchase saved", Toast.LENGTH_SHORT).show()
                 openBillPreview(billNo, forSaving = true, party = party, grandTotal = grandTotal, discount = discount, amountPaid = amountPaid, paymentMethod = paymentMethod)
             } finally {
