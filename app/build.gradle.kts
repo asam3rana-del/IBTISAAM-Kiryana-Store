@@ -2,6 +2,10 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
+    id("com.google.gms.google-services") // NEW: required for Firebase. Add the matching
+    // classpath in your project-level (root) build.gradle.kts / settings.gradle.kts:
+    //   plugins { id("com.google.gms.google-services") version "4.4.2" apply false }
+    // and place google-services.json inside this module's folder (next to this file).
 }
 
 android {
@@ -71,10 +75,14 @@ dependencies {
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.biometric:biometric:1.1.0")
 
-    // ===== Offline-first sync (SyncApi, SyncWorker, SyncRepository) =====
-    // Retrofit + Gson: powers SyncEndpoints (push/pull to your backend server).
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    // ===== Offline-first sync (SyncApi, SyncWorker, SyncRepository) — Firebase =====
+    // Retrofit + Gson removed: replaced by Firebase Firestore below.
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-firestore-ktx")
+    // Lets Firestore's Task<T> API be used with Kotlin coroutines (.await()).
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+    // Gson stays — SyncApi still uses it to parse SyncQueueEntry.payloadJson.
+    implementation("com.google.code.gson:gson:2.11.0")
     // WorkManager: powers SyncWorker (periodic + immediate background sync).
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 }
