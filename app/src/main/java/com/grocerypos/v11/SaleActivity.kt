@@ -11,9 +11,13 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -109,6 +113,10 @@ class SaleActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         editInvoice = intent.getStringExtra(EXTRA_INVOICE)
+
+        // Let the window resize when the keyboard opens so the bill summary
+        // (Total/Discount/Paid/Due) is never hidden behind it.
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -286,6 +294,19 @@ class SaleActivity : AppCompatActivity() {
             background = null
             textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { _, actionId, event ->
+                if (actionId == EditorInfo.IME_ACTION_DONE ||
+                    (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                ) {
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                    imm?.hideSoftInputFromWindow(windowToken, 0)
+                    addItem()
+                    true
+                } else {
+                    false
+                }
+            }
         }
         rateBox.addView(unitPrice)
         itemEntrySection.addView(rateBox)
@@ -305,10 +326,6 @@ class SaleActivity : AppCompatActivity() {
         root.addView(itemEntrySection)
         root.addView(spacer(16))
 
-        // ---- Billed items are no longer rendered inline in the main scroll (that used
-        // to sit right under a floating summary card and could get hidden behind the
-        // keyboard while typing). Instead this is just a trigger row; tapping it opens
-        // the items list in its own dialog/window (see openBilledItemsDialog()). ----
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val billedItemsBox = outlinedBox()
@@ -349,10 +366,6 @@ class SaleActivity : AppCompatActivity() {
         root.addView(subtotalRow)
         root.addView(spacer(12))
 
-        // ---- Total / Discount / Paid / Due controls (created standalone, attached
-        // into summaryCard() below). No longer a floating overlay — it now sits
-        // inline in the normal scroll flow, so it can never cover the keyboard or
-        // hide other controls. ----
         totalText = TextView(this).apply {
             text = "Rs 0.00"; textSize = 16.5f
             setTextColor(Color.parseColor(textDark))
@@ -471,6 +484,11 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        loadFirmName()
+    }
+
     override fun onPause() {
         super.onPause()
         if (editInvoice == null && !suppressDraftSave) {
@@ -478,8 +496,6 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
-    // Extra safety net: back press (button or gesture) can happen before onPause
-    // finishes on some devices/launchers, so save explicitly here too.
     @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onBackPressed() {
         if (editInvoice == null && !suppressDraftSave) {
@@ -617,13 +633,10 @@ class SaleActivity : AppCompatActivity() {
     private fun loadFirmName() {
         lifecycleScope.launch {
             val savedName = PosDatabase.get(this@SaleActivity).appSettingDao().get("shop_name")?.value
-            if (!savedName.isNullOrBlank()) firmNameText.text = savedName
+            firmNameText.text = if (!savedName.isNullOrBlank()) savedName else "IBTISAAM Kiryana Store"
         }
     }
 
-    // ---- Loads an existing sale into the form. `unit` ab si.unit se aata hai (stored
-    // entered unit), current product ke primary unit se force-nahi hota — SaleItem.unit
-    // ab Purchase ki tarah persist hota hai. ----
     private fun loadForEdit(invoice: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
@@ -721,11 +734,6 @@ class SaleActivity : AppCompatActivity() {
         addItemsTrigger.text = if (itemEntrySection.visibility == View.VISIBLE) "  Hide Item Entry" else "  Add Items"
     }
 
-    // ---- "Bill summary" card: Total / Discount / Paid / Due. Now attached inline in
-    // the normal scroll flow (not a floating overlay), so it can never sit on top of
-    // the keyboard or block a field while typing. Cash-vs-credit is derived from
-    // Paid vs Total (Due = Total − Paid; Due > 0 means part/all of the sale is on
-    // credit). ----
     private fun summaryCard(): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -879,17 +887,22 @@ class SaleActivity : AppCompatActivity() {
             .show()
     }
 
+    // Selects the item's SECONDARY unit by default (most sales are done in the
+    // 2nd unit), falling back to the primary unit if no secondary unit exists.
     private fun onItemPicked(name: String) {
         val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
         selectedProduct = product
         val unitChoices = mutableListOf(product.unit)
+        var defaultIndex = 0
         if (product.secondaryUnit.isNotEmpty()) {
             unitChoices.add(product.secondaryUnit)
+            defaultIndex = 1
             if (product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0) {
                 unitChoices.add(product.tertiaryUnit)
             }
         }
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
+        unitSpinner.setSelection(defaultIndex)
         lastMainPrice = 0.0
         refillAutoPrice()
     }
@@ -964,9 +977,6 @@ class SaleActivity : AppCompatActivity() {
         }
 
         val amount = q * price
-        // ---- `cost` yahan is LINE ka TOTAL COGS hai (amount jaisa), per-unit rate nahi —
-        // Product.toSmallestUnits() (multiply-only) se compute, PurchaseActivity jaisi
-        // approach, kabhi divide-then-round nahi. ----
         val smallestQtyForCost = product.toSmallestUnits(q, chosenUnit)
         val factor = product.smallestUnitFactor()
         val costPerSmallest = if (factor > 0) product.cost / factor else product.cost
@@ -1000,10 +1010,6 @@ class SaleActivity : AppCompatActivity() {
         if (editInvoice == null) saveDraft()
     }
 
-    // ---- Renders the current bill lines into itemsContainer. This container is only
-    // ever attached to the screen while the "Billed Items" dialog is open (see
-    // openBilledItemsDialog()) — it is intentionally kept out of the main scroll so it
-    // never sits behind the keyboard while the user is typing in the item-entry form. ----
     private fun renderItemsList() {
         itemsContainer.removeAllViews()
         lines.forEachIndexed { index, line ->
@@ -1066,9 +1072,6 @@ class SaleActivity : AppCompatActivity() {
         )
     }
 
-    // ---- Opens the billed-items list in its own dialog/window instead of showing it
-    // inline in the main scroll. Keeps typing in the item-entry form free of the
-    // keyboard ever covering the list or the bill summary. ----
     private fun openBilledItemsDialog() {
         if (lines.isEmpty()) {
             Toast.makeText(
@@ -1120,8 +1123,6 @@ class SaleActivity : AppCompatActivity() {
         billedItemsDialog?.show()
     }
 
-    // Recomputes subtotal/total display only (does NOT touch the paid field).
-    // Returns the current total.
     private fun recomputeAmounts(): Double {
         val subtotal = lines.sumOf { it.amount }
         val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
@@ -1131,9 +1132,6 @@ class SaleActivity : AppCompatActivity() {
         return total
     }
 
-    // Full refresh used during interactive editing (adding/removing items,
-    // changing discount): also defaults Paid to the new Total if the user
-    // hasn't typed a paid amount yet.
     private fun updateTotals() {
         val total = recomputeAmounts()
         if (paidInput.text.toString().isBlank()) {
@@ -1145,8 +1143,6 @@ class SaleActivity : AppCompatActivity() {
         updateBilledItemsTrigger()
     }
 
-    // Due = Total − Paid. Due > 0 means part/all credit — this is what now
-    // determines cash-vs-credit instead of the old toggle.
     private fun refreshDue() {
         val total = recomputeAmounts()
         val paid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
@@ -1178,9 +1174,6 @@ class SaleActivity : AppCompatActivity() {
         val method = if (paid <= 0.009) "credit" else (paymentMethodSpinner.selectedItem?.toString() ?: "Cash")
         var customer = customers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
         val saleType = if (saleTypeSpinner.selectedItem?.toString() == "Wholesale") "wholesale" else "retail"
-        // ---- Ref number now starts with a 4-digit month+year (MMyy) so bills are easy
-        // to trace by when they were made, followed by a unique suffix. e.g. a sale
-        // made in Aug 2026 starts with "0826…". ----
         val invoice = editInvoice ?: run {
             val mmYY = SimpleDateFormat("MMyy", Locale.getDefault()).format(Date(saleDateMillis))
             mmYY + System.currentTimeMillis().toString().takeLast(8)
@@ -1189,8 +1182,6 @@ class SaleActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
 
-            // ---- Edit mode: reverse ORIGINAL bill's stock via its own stored unit
-            // (si.unit), same toSmallestUnits() multiply-only approach as Purchase. ----
             val original = originalSale
             if (original != null) {
                 originalItems.forEach { si ->
@@ -1248,9 +1239,6 @@ class SaleActivity : AppCompatActivity() {
                 )
             )
 
-            // ---- Store the actual entered qty/unit/rate (matches PurchaseItem pattern) —
-            // no divide-into-primary-unit conversion, so a fractional-primary-unit qty can
-            // never round down to 0. ----
             val saleItems = lines.map {
                 SaleItem(
                     invoice = invoice,
