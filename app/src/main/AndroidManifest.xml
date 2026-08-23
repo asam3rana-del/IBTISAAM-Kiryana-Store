@@ -22,7 +22,7 @@
         <activity android:name=".ui.ProductActivity" />
         <activity android:name=".ui.ReportsActivity" />
         <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />
-        
+
         <!-- NEW WINDOW FOR BILLED ITEMS - ADDED -->
         <activity
             android:name=".ui.PurchaseAddItemWindowActivity"
@@ -33,7 +33,7 @@
         <activity android:name=".ui.SaleActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.CashActivity" />
         <activity android:name=".ui.HistoryActivity" />
-        <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" />
+        <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.SaleHistoryActivity" />
         <activity android:name=".ui.ItemSearchActivity" />
         <activity android:name=".ui.PartyActivity" />
@@ -45,7 +45,7 @@
         <activity android:name=".ui.ItemsActivity" android:exported="false" />
         <activity android:name=".ui.BillPreviewActivity" android:exported="false" />
         <activity android:name=".ui.BillScanActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        
+
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
