@@ -160,6 +160,9 @@ class PurchaseActivity : ThemedActivity() {
     private var scrollTargetView: View? = null
     private var scrollAlignTop: Boolean = true
 
+    // NOTE: Scan Bill button was removed from the UI (see addItemHeaderRow below), but the
+    // launcher and handler are left in place — unused, but harmless, and keeps BillScanActivity
+    // wired up if the button is ever restored.
     private val billScanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
             val json = result.data?.getStringExtra(BillScanActivity.RESULT_ITEMS_JSON)
@@ -250,7 +253,7 @@ class PurchaseActivity : ThemedActivity() {
         })
         header.addView(headerCol)
         header.addView(pillChip("History") {
-            Toast.makeText(this@PurchaseActivity, "Purchase history coming soon", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this@PurchaseActivity, PurchaseHistoryActivity::class.java))
         })
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
         header.addView(TextView(this).apply {
@@ -341,6 +344,8 @@ class PurchaseActivity : ThemedActivity() {
             applyElevation(this, 3f)
         }
 
+        // Scan Bill button removed from this row per updated design — Add Item trigger now
+        // takes the full row width on its own.
         val addItemHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, 16) }
         addItemsTrigger = TextView(this).apply {
             text = "\u2795  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Add Item", "آئٹم شامل کریں")
@@ -350,16 +355,6 @@ class PurchaseActivity : ThemedActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         addItemHeaderRow.addView(addItemsTrigger)
-        addItemHeaderRow.addView(TextView(this).apply {
-            text = "\uD83D\uDCF7  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Scan Bill", "بل اسکین کریں")
-            textSize = 12.5f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = gradientBg(teal, "#0C8F8A", cornerBottom = 30, cornerTop = 30)
-            setPadding(22, 13, 22, 13)
-            applyElevation(this, 2f)
-            setOnClickListener { billScanLauncher.launch(Intent(this@PurchaseActivity, BillScanActivity::class.java)) }
-        })
         itemEntrySection.addView(addItemHeaderRow)
 
         val itemBox = innerField()
