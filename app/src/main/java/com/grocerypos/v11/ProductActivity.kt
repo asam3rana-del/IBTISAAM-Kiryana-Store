@@ -41,32 +41,25 @@ class ProductActivity : ThemedActivity() {
         private const val TAG = "ProductActivity"
     }
 
-    // ---- Premium palette — kept compatible with Purchase/Sale. These are now `var`s instead
-    // of `val`s because their values depend on the current theme (light/dark) and get assigned
-    // once in onCreate(), before any UI is built, by copying the values out of ThemeManager's
-    // shared AppPalette (see loadThemePrefs()). Keeping them as local vars here means the rest
-    // of this file (every "Color.parseColor(bg)" etc.) didn't need to change at all. ----
+    // ---- Premium palette — kept compatible with Purchase/Sale. ----
     private var bg = "#F4F6F8"
     private var cardWhite = "#FFFFFF"
     private var navy = "#0B2545"
+    private var navyLight = "#173863"
     private var teal = "#0F9B8E"
     private var red = "#E5484D"
+    private var blue = "#3B82F6"
+    private var orange = "#F5A524"
     private var textDark = "#0B2545"
     private var textMuted = "#7C8798"
     private var border = "#E3E8EE"
     private var amber = "#F5A524"
 
-    // ---- Extra theme-aware roles for literals that used to be hardcoded hex strings scattered
-    // through the layout code (field backgrounds, header subtitle, header badge overlay, and
-    // the light-teal "just saved" card highlight). ----
     private var fieldFill = "#FAFBFC"
     private var headerSubtitleColor = "#9FB4CC"
     private var headerBadgeOverlay = "#33FFFFFF"
     private var savedHighlightBg = "#E9FBF9"
 
-    // ---- Pulls this screen's colors from the app-wide ThemeManager (shared across every
-    // activity — see ThemeManager.kt) instead of reading SharedPreferences directly. This is
-    // what keeps ProductActivity in sync with the theme choice made on any other screen. ----
     private fun loadThemePrefs() {
         val p = ThemeManager.palette(this)
         bg = p.bg
@@ -84,10 +77,6 @@ class ProductActivity : ThemedActivity() {
         savedHighlightBg = p.savedHighlightBg
     }
 
-    // ---- Flips the app-wide theme preference (via ThemeManager) and recreates this activity so
-    // every color-dependent view gets rebuilt from scratch with the new palette. Any other open
-    // activity that extends ThemedActivity will pick up the change automatically the next time
-    // the user resumes it — see ThemedActivity.onResume(). ----
     private fun toggleTheme() {
         ThemeManager.toggleDarkMode(this)
         recreate()
@@ -111,29 +100,12 @@ class ProductActivity : ThemedActivity() {
     private lateinit var listContainer: LinearLayout
     private lateinit var noResultsCard: LinearLayout
     private lateinit var productsSectionAnchor: View
-
-    // ---- Wraps the search box + product list + "no results" card. Kept GONE by default so
-    // the saved-products list doesn't sit permanently under the form — it only becomes visible
-    // when the user taps "View List" in the header (see toggleProductsList()). ----
     private lateinit var productsSectionContainer: LinearLayout
 
-    // ---- Tracks whichever EditText currently has focus so the ScrollView's global layout
-    // listener (registered once, below) can keep re-applying the "stay above keyboard" scroll
-    // on every layout pass while the keyboard is animating open/closed — not just once on the
-    // initial focus event. This is what stops fields like Retail Sale Rate from getting hidden
-    // behind the keyboard. ----
     private var focusedFieldForScroll: View? = null
-
-    // ---- No hardcoded English defaults (pcs, ctn, box, gram, ml, ...). Only units the user
-    // has actually added (via "New Unit" in the unit dialog, or by typing a fresh unit name,
-    // see ensureUnitSaved) are loaded from the DB and offered as suggestions. ----
     private var units: List<String> = emptyList()
-
     private var categoryNames: List<String> = listOf("General")
 
-    // Unit chain:
-    // Primary -> Secondary -> Tertiary
-    // Example: 1 carton = 50 outer, 1 outer = 10 dabbi.
     private var selectedPrimaryUnit = "pcs"
     private var selectedSecondaryUnit = "None"
     private var selectedSecondaryQty = 0.0
@@ -144,26 +116,14 @@ class ProductActivity : ThemedActivity() {
     private var editingProduct: Product? = null
     private var allProducts: List<Product> = emptyList()
 
-    // Barcode of the product that was most recently saved — used to visually highlight it in
-    // the list below so the user doesn't have to hunt for what they just added/edited.
     private var justSavedBarcode: String? = null
-
-    // Set true right after a save; consumed by renderProducts() to scroll precisely to the
-    // just-saved card once it exists in the freshly rendered list, instead of only jumping to
-    // the top of the Products section (which could still leave the saved item scrolled out of
-    // view further down the list). Only actually scrolls if the products section is currently
-    // visible — it does NOT force the (now hidden-by-default) list open on its own.
     private var pendingScrollToSaved = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ---- Lets the OS resize/pan the layout as the keyboard opens, which is what makes
-        // the manual "stay above keyboard" scrolling below actually work reliably. ----
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
-        // ---- Must run before any of the build*() calls below, since they all read the color
-        // vars (bg, cardWhite, textDark, etc.) while constructing views. ----
         loadThemePrefs()
 
         val contentRoot = LinearLayout(this).apply {
@@ -188,9 +148,6 @@ class ProductActivity : ThemedActivity() {
             isFillViewport = true
         }
 
-        // ---- Generic "keep the focused field visible above the keyboard" tracking — re-applies
-        // the scroll on every layout pass while the keyboard animates, so it self-corrects
-        // instead of relying on a single guessed scroll amount from the focus event alone. ----
         scrollView.viewTreeObserver.addOnGlobalLayoutListener {
             focusedFieldForScroll?.let { scrollFieldIntoView(it) }
         }
@@ -201,10 +158,10 @@ class ProductActivity : ThemedActivity() {
             textSize = 15.5f
             isAllCaps = false
             setTypeface(typeface, Typeface.BOLD)
-            background = roundedBg(navy, 16)
+            background = gradientBg(navy, navyLight, cornerTop = 16, cornerBottom = 16)
             setPadding(0, 26, 0, 26)
             setOnClickListener { saveProduct() }
-            applyElevation(this, 4f)
+            applyElevation(this, 5f)
         }
 
         val saveBar = LinearLayout(this).apply {
@@ -248,7 +205,7 @@ class ProductActivity : ThemedActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(26, 22, 22, 22)
-            background = roundedBg(navy, 20)
+            background = gradientBg(navy, navyLight, cornerTop = 20, cornerBottom = 20)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -277,8 +234,6 @@ class ProductActivity : ThemedActivity() {
 
         header.addView(col)
 
-        // ---- Light/dark toggle. Shows the icon for the mode you'd switch TO, matching the
-        // usual convention (sun while in dark mode, moon while in light mode). ----
         header.addView(TextView(this).apply {
             text = if (isDarkMode) "☀️" else "🌙"
             textSize = 15f
@@ -294,9 +249,6 @@ class ProductActivity : ThemedActivity() {
             layoutParams = LinearLayout.LayoutParams(10.dp(), 1)
         })
 
-        // ---- Reveals the (hidden-by-default) products list below and scrolls straight to it.
-        // This is now the ONLY way the list becomes visible — it no longer shows permanently
-        // under the form. ----
         header.addView(TextView(this).apply {
             text = "📋 " + Loc.t(this@ProductActivity, "View List", "فہرست دیکھیں")
             textSize = 11.5f
@@ -369,8 +321,9 @@ class ProductActivity : ThemedActivity() {
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
-            background = roundedBg(teal, 30)
+            background = gradientBg(teal, "#0C8F8A", cornerTop = 30, cornerBottom = 30)
             setPadding(26, 15, 26, 15)
+            applyElevation(this, 2f)
             setOnClickListener { openUnitDialog() }
         }
 
@@ -389,9 +342,6 @@ class ProductActivity : ThemedActivity() {
             setPadding(18, 4, 18, 4)
         }
 
-        // ---- Editable + auto-suggest instead of a fixed dropdown-only Spinner: existing
-        // categories show as suggestions while typing, but a brand-new category can just be
-        // typed directly — no separate "+" dialog needed to keep moving. ----
         categoryField = AutoCompleteTextView(this).apply {
             hint = Loc.t(this@ProductActivity, "Type or pick a category", "کیٹیگری لکھیں یا منتخب کریں")
             setHintTextColor(Color.parseColor(textMuted))
@@ -427,7 +377,6 @@ class ProductActivity : ThemedActivity() {
         ratesCard.addView(fieldBox(salePrice, "🏪"))
         ratesCard.addView(spacer(12))
 
-        // Opening stock is entered together with its unit.
         stock = EditText(this).apply {
             hint = Loc.t(this@ProductActivity, "Opening Stock", "ابتدائی اسٹاک")
             setHintTextColor(Color.parseColor(textMuted))
@@ -483,8 +432,6 @@ class ProductActivity : ThemedActivity() {
         ratesCard.addView(stockNote)
         root.addView(ratesCard)
 
-        // ---- Keyboard-first flow: pressing Next/Enter on the keyboard jumps straight to the
-        // next field, all the way through to Save — no need to tap into each box by hand. ----
         name.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) { categoryField.requestFocus(); true } else false
         }
@@ -515,10 +462,6 @@ class ProductActivity : ThemedActivity() {
             if (actionId == EditorInfo.IME_ACTION_DONE) { hideKeyboard(); saveProduct(); true } else false
         }
 
-        // ---- Keeps each of these fields clear of the keyboard while typing — this is what
-        // fixes Retail Sale Rate (and the others) getting hidden behind the keyboard. Every
-        // focus event updates focusedFieldForScroll, and the global layout listener registered
-        // in onCreate() keeps re-applying the scroll as the keyboard animates open. ----
         name.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
                 focusedFieldForScroll = name
@@ -557,9 +500,6 @@ class ProductActivity : ThemedActivity() {
         root.addView(productsSectionAnchor)
         root.addView(spacer(10))
 
-        // ---- Everything below (search box, the list itself, "no results") lives inside this
-        // container so it can be hidden as one unit. GONE by default — only becomes visible via
-        // toggleProductsList(), triggered by the header's "View List" button. ----
         productsSectionContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -568,11 +508,12 @@ class ProductActivity : ThemedActivity() {
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 4, 18, 4)
-            background = strokedBg(border, cardWhite, 14)
+            setPadding(20, 6, 20, 6)
+            background = strokedBg(border, cardWhite, 30)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(0, 0, 0, 12)
+                setMargins(0, 0, 0, 14)
             }
+            applyElevation(this, 1.5f)
         }
 
         searchBox.addView(TextView(this).apply {
@@ -697,6 +638,89 @@ class ProductActivity : ThemedActivity() {
         })
     }
 
+    // ---- Premium section label with a colored round icon badge instead of a plain emoji —
+    // used inside the Add Item Unit dialog to visually separate Primary/Secondary/Tertiary. ----
+    private fun badgedSectionLabel(icon: String, label: String, accentHex: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, 0, 0, 14)
+        addView(TextView(this@ProductActivity).apply {
+            text = icon
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(accentHex))
+            }
+            val px = 30.dp()
+            width = px
+            height = px
+        })
+        addView(View(this@ProductActivity).apply {
+            layoutParams = LinearLayout.LayoutParams(10.dp(), 1)
+        })
+        addView(TextView(this@ProductActivity).apply {
+            text = label.uppercase()
+            textSize = 12f
+            setTextColor(Color.parseColor(navy))
+            setTypeface(typeface, Typeface.BOLD)
+            letterSpacing = 0.02f
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        })
+    }
+
+    // ---- Small capsule showing one price figure with its own icon + label, used three times
+    // per product card (Purchase/Wholesale/Retail) instead of one plain bullet-separated line. ----
+    private fun priceChip(icon: String, label: String, value: Double, accentHex: String) =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = strokedBg(border, fieldFill, 12)
+            setPadding(12, 10, 12, 10)
+
+            addView(TextView(this@ProductActivity).apply {
+                text = "$icon $label"
+                textSize = 9.5f
+                setTextColor(Color.parseColor(textMuted))
+                setTypeface(typeface, Typeface.BOLD)
+                letterSpacing = 0.01f
+            })
+            addView(TextView(this@ProductActivity).apply {
+                text = "%.2f".format(value)
+                textSize = 13.5f
+                setTextColor(Color.parseColor(accentHex))
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, 3, 0, 0)
+            })
+        }
+
+    // ---- Gradient pill button with a round icon badge, used for Edit/Delete on each product
+    // card so they match the premium Save/Cancel button treatment used elsewhere. ----
+    private fun actionButton(icon: String, label: String, startHex: String, endHex: String, onClick: () -> Unit) =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = gradientBg(startHex, endHex, cornerTop = 30, cornerBottom = 30)
+            setPadding(0, 12, 0, 12)
+            applyElevation(this, 2f)
+
+            addView(TextView(this@ProductActivity).apply {
+                text = icon
+                textSize = 13f
+            })
+            addView(View(this@ProductActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(6.dp(), 1)
+            })
+            addView(TextView(this@ProductActivity).apply {
+                text = label
+                textSize = 12.5f
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, Typeface.BOLD)
+            })
+
+            setOnClickListener { onClick() }
+        }
+
     private fun pillLink(label: String, onClick: () -> Unit) = TextView(this).apply {
         text = label
         textSize = 12.5f
@@ -731,6 +755,23 @@ class ProductActivity : ThemedActivity() {
             cornerRadius = radius.toFloat()
         }
 
+    // ---- Diagonal gradient background, matching PurchaseActivity's premium header/button
+    // treatment (navy header, teal buttons, etc.) so this screen and the dialog feel consistent
+    // with the rest of the app instead of using flat single-color fills everywhere. ----
+    private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) =
+        GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor(startHex), Color.parseColor(endHex))
+        ).apply {
+            val density = resources.displayMetrics.density
+            cornerRadii = floatArrayOf(
+                cornerTop * density, cornerTop * density,
+                cornerTop * density, cornerTop * density,
+                cornerBottom * density, cornerBottom * density,
+                cornerBottom * density, cornerBottom * density
+            )
+        }
+
     private fun applyElevation(view: View, dp: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             view.elevation = dp * resources.displayMetrics.density
@@ -759,10 +800,6 @@ class ProductActivity : ThemedActivity() {
         }
     }
 
-    // ---- Same crash guard used in PurchaseActivity: AutoCompleteTextView's dropdown is a
-    // PopupWindow, and calling showDropDown() while the view isn't attached (or during a fast
-    // focus/detach race) can crash the whole app with "PopupWindow not attached to window
-    // manager". isAttachedToWindow + try/catch make that impossible here. ----
     private fun safeShowDropDown(view: AutoCompleteTextView) {
         if (!view.isAttachedToWindow) return
         try {
@@ -777,17 +814,12 @@ class ProductActivity : ThemedActivity() {
         scrollView.post { scrollView.smoothScrollTo(0, productsSectionAnchor.top) }
     }
 
-    // ---- Called by the header's "View List" button. Makes the (otherwise hidden) products
-    // section visible and scrolls straight to it. ----
     private fun toggleProductsList() {
         if (!::productsSectionContainer.isInitialized) return
         productsSectionContainer.visibility = View.VISIBLE
         scrollToProductsList()
     }
 
-    // ---- Scrolls scrollView just enough so `target` stays clear of the on-screen keyboard.
-    // Only nudges the minimum needed (keeps target's bottom clear if the keyboard covers it,
-    // or brings it back down if it's scrolled above the visible area) — never over-scrolls. ----
     private fun scrollFieldIntoView(target: View) {
         if (!::scrollView.isInitialized || !target.isAttachedToWindow) return
         val visibleFrame = Rect()
@@ -820,9 +852,6 @@ class ProductActivity : ThemedActivity() {
         }
     }
 
-    // ---- Only loads units the user has actually saved (via the unit dialog's "New Unit" flow,
-    // or by typing a fresh name — see ensureUnitSaved). No hardcoded English defaults are mixed
-    // in anymore, so the suggestion list only ever shows what this shop actually uses. ----
     private fun loadUnits() {
         lifecycleScope.launch {
             PosDatabase.get(this@ProductActivity).unitDao().all().collectLatest { list ->
@@ -864,9 +893,6 @@ class ProductActivity : ThemedActivity() {
     }
 
     private fun currentUnitOptions(): List<String> {
-        // Opening stock may only be entered in units that belong to this
-        // product's configured conversion chain. We must not invent a
-        // conversion for an unrelated unit such as kg or box.
         val result = mutableListOf<String>()
         result.add(selectedPrimaryUnit)
 
@@ -967,8 +993,6 @@ class ProductActivity : ThemedActivity() {
             .show()
     }
 
-    /** Saves a newly-typed unit name to the DB (so it becomes a suggestion everywhere) if it
-     * isn't already known. Safe to call with "None"/blank — those are ignored. */
     private fun ensureUnitSaved(value: String) {
         if (value.isBlank() || value.equals("None", ignoreCase = true)) return
         if (units.any { it.equals(value, ignoreCase = true) }) return
@@ -983,13 +1007,6 @@ class ProductActivity : ThemedActivity() {
     }
 
     // ---------------- Unit conversion ----------------
-    //
-    // NOTE: All smallest-unit conversion/formatting now goes through the shared
-    // Product extension functions in Database.kt (toSmallestUnits, smallestUnitFactor,
-    // smallestUnitName, formatStockBreakdown) instead of re-implementing the same math
-    // locally. This keeps ProductActivity, PurchaseActivity and SaleActivity guaranteed
-    // to agree on how stock is stored/displayed — if the conversion logic ever changes,
-    // it only needs to change in one place.
 
     private fun normalizeUnitName(value: String): String =
         value.trim().lowercase()
@@ -1025,12 +1042,6 @@ class ProductActivity : ThemedActivity() {
             value.toString()
         }
 
-    /**
-     * A throwaway [Product] representing the unit chain currently selected in the form
-     * (primary/secondary/tertiary + quantities), so we can reuse the exact same
-     * Database.kt conversion/formatting helpers a saved [Product] would use — without
-     * duplicating that math here. [stock] is filled in by callers that need it.
-     */
     private fun draftProduct(stockValue: Int = 0) = Product(
         barcode = "",
         name = "",
@@ -1066,28 +1077,55 @@ class ProductActivity : ThemedActivity() {
         )
     }
 
-    // ---------------- Unit dialog ----------------
+    // ---------------- Unit dialog (ultra premium style) ----------------
 
     private fun openUnitDialog() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor(cardWhite))
+            background = strokedBg(cardWhite, cardWhite, 24)
+            clipToOutline = true
         }
 
+        // ---- Gradient header with rounded top corners + soft ruler icon badge, matching the
+        // premium navy header treatment used across Purchase/Sale/Product. ----
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 26, 28, 26)
-            background = roundedBg(navy, 0)
+            setPadding(28, 28, 28, 26)
+            background = gradientBg(navy, navyLight, cornerTop = 24, cornerBottom = 0)
         }
 
-        header.addView(TextView(this).apply {
-            text = "📏  " + Loc.t(this@ProductActivity, "Add Item Unit", "آئٹم یونٹ شامل کریں")
-            textSize = 18f
+        val headerTop = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        headerTop.addView(TextView(this).apply {
+            text = "📏"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(headerBadgeOverlay))
+            }
+            val px = 46.dp()
+            width = px
+            height = px
+        })
+        headerTop.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
+        })
+
+        val headerTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        headerTextCol.addView(TextView(this).apply {
+            text = Loc.t(this@ProductActivity, "Add Item Unit", "آئٹم یونٹ شامل کریں")
+            textSize = 18.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
         })
-
-        header.addView(TextView(this).apply {
+        headerTextCol.addView(TextView(this).apply {
             text = Loc.t(
                 this@ProductActivity,
                 "Set how this product's units convert into each other",
@@ -1095,8 +1133,10 @@ class ProductActivity : ThemedActivity() {
             )
             textSize = 11.5f
             setTextColor(Color.parseColor(headerSubtitleColor))
-            setPadding(0, 4, 0, 0)
+            setPadding(0, 5, 0, 0)
         })
+        headerTop.addView(headerTextCol)
+        header.addView(headerTop)
         content.addView(header)
 
         val body = LinearLayout(this).apply {
@@ -1108,28 +1148,29 @@ class ProductActivity : ThemedActivity() {
         val scroll = ScrollView(this)
         scroll.addView(body)
 
-        // Primary — editable + auto-suggest (type a known unit or a brand-new one directly).
-        val primaryCard = premiumCard()
-        primaryCard.addView(sectionLabel("📏", Loc.t(this, "Primary Unit", "بنیادی یونٹ")))
+        // Primary — teal accent badge
+        val primaryCard = premiumUnitCard()
+        primaryCard.addView(badgedSectionLabel("📏", Loc.t(this, "Primary Unit", "بنیادی یونٹ"), teal))
         val primaryField = unitAutoCompleteField(
             Loc.t(this, "Type or pick unit, e.g. pcs, kg, box", "یونٹ لکھیں یا منتخب کریں، مثلاً pcs, kg, box")
         )
-        primaryCard.addView(fieldBox(primaryField, "🔤"))
+        primaryCard.addView(premiumFieldBox(primaryField, "🔤", teal))
         body.addView(primaryCard)
-        body.addView(spacer(14))
+        body.addView(spacer(16))
 
-        // Secondary
-        val secondaryCard = premiumCard()
+        // Secondary — blue accent badge
+        val secondaryCard = premiumUnitCard()
         secondaryCard.addView(
-            sectionLabel(
+            badgedSectionLabel(
                 "🔹",
-                Loc.t(this, "Secondary Unit (smaller quantity, optional)", "ثانوی یونٹ (چھوٹی مقدار، اختیاری)")
+                Loc.t(this, "Secondary Unit (smaller quantity, optional)", "ثانوی یونٹ (چھوٹی مقدار، اختیاری)"),
+                blue
             )
         )
         val secondaryField = unitAutoCompleteField(
             Loc.t(this, "Leave blank if not needed", "اگر ضرورت نہیں تو خالی چھوڑ دیں")
         )
-        secondaryCard.addView(fieldBox(secondaryField, "🔤"))
+        secondaryCard.addView(premiumFieldBox(secondaryField, "🔤", blue))
         secondaryCard.addView(spacer(12))
 
         val secondaryQtyField = numberDialogField(
@@ -1141,22 +1182,23 @@ class ProductActivity : ThemedActivity() {
             selectedSecondaryQty,
             EditorInfo.IME_ACTION_NEXT
         )
-        secondaryCard.addView(fieldBox(secondaryQtyField, "🔁"))
+        secondaryCard.addView(premiumFieldBox(secondaryQtyField, "🔁", blue))
         body.addView(secondaryCard)
-        body.addView(spacer(14))
+        body.addView(spacer(16))
 
-        // Tertiary
-        val tertiaryCard = premiumCard()
+        // Tertiary — orange accent badge
+        val tertiaryCard = premiumUnitCard()
         tertiaryCard.addView(
-            sectionLabel(
+            badgedSectionLabel(
                 "🔸",
-                Loc.t(this, "Tertiary Unit (smallest quantity, optional)", "تیسرا یونٹ (سب سے چھوٹی مقدار، اختیاری)")
+                Loc.t(this, "Tertiary Unit (smallest quantity, optional)", "تیسرا یونٹ (سب سے چھوٹی مقدار، اختیاری)"),
+                orange
             )
         )
         val tertiaryField = unitAutoCompleteField(
             Loc.t(this, "Leave blank if not needed", "اگر ضرورت نہیں تو خالی چھوڑ دیں")
         )
-        tertiaryCard.addView(fieldBox(tertiaryField, "🔤"))
+        tertiaryCard.addView(premiumFieldBox(tertiaryField, "🔤", orange))
         tertiaryCard.addView(spacer(12))
 
         val tertiaryQtyField = numberDialogField(
@@ -1168,21 +1210,32 @@ class ProductActivity : ThemedActivity() {
             selectedTertiaryQty,
             EditorInfo.IME_ACTION_DONE
         )
-        tertiaryCard.addView(fieldBox(tertiaryQtyField, "🔁"))
+        tertiaryCard.addView(premiumFieldBox(tertiaryQtyField, "🔁", orange))
         body.addView(tertiaryCard)
+        body.addView(spacer(6))
 
         content.addView(
             scroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
 
+        // ---- Footer sits on its own elevated white strip with a soft top divider, gradient
+        // Save button, and a bit more breathing room than the old flat footer. ----
         val footer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(28, 18, 28, 26)
+            setPadding(24, 18, 24, 24)
+            setBackgroundColor(Color.parseColor(cardWhite))
+            applyElevation(this, 6f)
         }
         content.addView(footer)
 
         val dialog = AlertDialog.Builder(this).setView(content).create()
+        dialog.window?.setBackgroundDrawable(
+            GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadius = 24 * resources.displayMetrics.density
+            }
+        )
 
         val unitSuggestions = units.distinct()
         primaryField.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, unitSuggestions))
@@ -1213,9 +1266,6 @@ class ProductActivity : ThemedActivity() {
             }
         }
 
-        // Validates the three fields, commits them to selectedPrimaryUnit/etc., saves any
-        // brand-new unit names to the DB, and closes the dialog. Shared by both the on-screen
-        // "Save" tap and pressing the keyboard's Done button on the last field.
         fun trySaveUnitSelection() {
             val p = primaryField.text.toString().trim()
             var s = secondaryField.text.toString().trim().ifBlank { "None" }
@@ -1338,8 +1388,6 @@ class ProductActivity : ThemedActivity() {
         secondaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(secondaryField) }
         tertiaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(tertiaryField) }
 
-        // ---- Keyboard-first flow inside the dialog too: Next chains straight through every
-        // field, and Done on the very last field saves the whole unit selection. ----
         primaryField.setOnItemClickListener { _, _, _, _ -> secondaryField.requestFocus() }
         primaryField.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) { secondaryField.requestFocus(); true } else false
@@ -1369,7 +1417,7 @@ class ProductActivity : ThemedActivity() {
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, Typeface.BOLD)
             background = strokedBg(border, fieldFill, 14)
-            setPadding(0, 22, 0, 22)
+            setPadding(0, 24, 0, 24)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
                 setMargins(0, 0, 8, 0)
             }
@@ -1382,8 +1430,9 @@ class ProductActivity : ThemedActivity() {
             textSize = 14f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
-            background = roundedBg(teal, 14)
-            setPadding(0, 22, 0, 22)
+            background = gradientBg(teal, "#0C8F8A", cornerTop = 14, cornerBottom = 14)
+            setPadding(0, 24, 0, 24)
+            applyElevation(this, 3f)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
                 setMargins(8, 0, 0, 0)
             }
@@ -1391,6 +1440,48 @@ class ProductActivity : ThemedActivity() {
         })
 
         dialog.show()
+    }
+
+    // ---- Card variant used only inside the Add Item Unit dialog — a touch more rounded and
+    // slightly lighter elevation than the main-screen premiumCard(), so the stacked
+    // Primary/Secondary/Tertiary cards feel like a light, airy list rather than heavy boxes. ----
+    private fun premiumUnitCard() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(20, 18, 20, 18)
+        background = strokedBg(border, cardWhite, 18)
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, 0)
+        }
+        applyElevation(this, 1.5f)
+    }
+
+    // ---- Field box variant with a colored icon chip (instead of a plain emoji) matching the
+    // accent color of its parent card (teal/blue/orange) for Primary/Secondary/Tertiary. ----
+    private fun premiumFieldBox(field: EditText, icon: String, accentHex: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = strokedBg(border, fieldFill, 12)
+        setPadding(10, 8, 16, 8)
+        addView(TextView(this@ProductActivity).apply {
+            text = icon
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(accentHex))
+                alpha = 210
+            }
+            val px = 30.dp()
+            width = px
+            height = px
+        })
+        addView(View(this@ProductActivity).apply {
+            layoutParams = LinearLayout.LayoutParams(10.dp(), 1)
+        })
+        (field.parent as? ViewGroup)?.removeView(field)
+        field.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        addView(field)
     }
 
     private fun unitAutoCompleteField(hintText: String) = AutoCompleteTextView(this).apply {
@@ -1449,7 +1540,6 @@ class ProductActivity : ThemedActivity() {
         )
         salePrice.setText(if (product.salePrice > 0) product.salePrice.toString() else "")
 
-        // Database stock is the smallest-unit count after the architecture change.
         stock.setText(product.stock.toString())
         stock.isEnabled = false
         stockUnitSpinner.isEnabled = false
@@ -1538,12 +1628,6 @@ class ProductActivity : ThemedActivity() {
         val barcode = existing?.barcode ?: "P" + System.currentTimeMillis()
         val categoryValue = categoryField.text.toString().trim().ifBlank { "General" }
 
-        /*
-         * IMPORTANT:
-         * Product.stock is treated as the smallest-unit count.
-         * New product opening stock is converted from the selected entry unit.
-         * Existing product stock is never overwritten here.
-         */
         val resolvedStock: Int
         val resolvedOpeningStock: Int
 
@@ -1583,8 +1667,6 @@ class ProductActivity : ThemedActivity() {
             try {
                 val db = PosDatabase.get(this@ProductActivity)
 
-                // A category typed fresh (not picked from suggestions) gets saved so it shows
-                // up as a suggestion from now on — same idea as units.
                 if (categoryValue != "General" && categoryNames.none { it.equals(categoryValue, ignoreCase = true) }) {
                     db.categoryDao().insert(Category(categoryValue))
                 }
@@ -1601,9 +1683,6 @@ class ProductActivity : ThemedActivity() {
                     Toast.LENGTH_SHORT
                 ).show()
 
-                // Marks which card to highlight if/when the user opens the list — does NOT
-                // force the (hidden-by-default) products section open on its own; see the
-                // visibility check inside renderProducts().
                 justSavedBarcode = barcode
                 pendingScrollToSaved = true
                 clearForm()
@@ -1738,65 +1817,118 @@ class ProductActivity : ThemedActivity() {
             val isJustSaved = product.barcode == justSavedBarcode
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(20, 16, 20, 16)
+                setPadding(22, 20, 22, 20)
                 background = if (isJustSaved) {
-                    strokedBg(teal, savedHighlightBg, 14)
+                    strokedBg(teal, savedHighlightBg, 18)
                 } else {
-                    strokedBg(border, cardWhite, 14)
+                    strokedBg(border, cardWhite, 18)
                 }
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                    setMargins(0, 0, 0, 10)
+                    setMargins(0, 0, 0, 12)
                 }
-                applyElevation(this, 2f)
+                applyElevation(this, if (isJustSaved) 4f else 2.5f)
             }
 
+            // ---- Avatar-style icon badge (first letter of product name) + name + category
+            // pill, replacing the old flat text-only header row. ----
             val top = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
 
             top.addView(TextView(this).apply {
-                text = if (isJustSaved) "✓ ${product.name}" else product.name
-                textSize = 14.5f
-                setTextColor(Color.parseColor(if (isJustSaved) teal else textDark))
+                text = product.name.trim().firstOrNull()?.uppercase() ?: "?"
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
                 setTypeface(typeface, Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                background = if (isJustSaved) {
+                    gradientBg(teal, "#0C8F8A", cornerTop = 30, cornerBottom = 30)
+                } else {
+                    gradientBg(navy, navyLight, cornerTop = 30, cornerBottom = 30)
+                }
+                val px = 40.dp()
+                width = px
+                height = px
             })
 
-            top.addView(TextView(this).apply {
+            top.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
+            })
+
+            val nameCol = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            }
+            nameCol.addView(TextView(this).apply {
+                text = if (isJustSaved) "✓ ${product.name}" else product.name
+                textSize = 15f
+                setTextColor(Color.parseColor(if (isJustSaved) teal else textDark))
+                setTypeface(typeface, Typeface.BOLD)
+            })
+            nameCol.addView(TextView(this).apply {
                 text = product.category
+                textSize = 11f
+                setTextColor(Color.parseColor(textMuted))
+                setPadding(0, 2, 0, 0)
+            })
+            top.addView(nameCol)
+
+            top.addView(TextView(this).apply {
+                text = "📊 ${product.formatStockBreakdown()}"
                 setTextColor(Color.WHITE)
                 textSize = 10.5f
                 setTypeface(typeface, Typeface.BOLD)
-                background = roundedBg(teal, 16)
-                setPadding(16, 5, 16, 5)
+                background = gradientBg(teal, "#0C8F8A", cornerTop = 30, cornerBottom = 30)
+                setPadding(18, 8, 18, 8)
             })
 
             card.addView(top)
+            card.addView(spacer(14))
 
-            card.addView(TextView(this).apply {
-                val breakdown = product.formatStockBreakdown()
-                text = "📊  ${Loc.t(this@ProductActivity, "Stock", "اسٹاک")}: $breakdown"
-                textSize = 12f
-                setTextColor(Color.parseColor(textMuted))
-                setPadding(0, 8, 0, 4)
+            // ---- Divider ----
+            card.addView(View(this).apply {
+                setBackgroundColor(Color.parseColor(border))
+                layoutParams = LinearLayout.LayoutParams(-1, 1.dp().coerceAtLeast(1))
             })
+            card.addView(spacer(14))
 
-            card.addView(TextView(this).apply {
-                text = "🛒 %s: %.2f   •   📦 %s: %.2f   •   🏪 %s: %.2f".format(
+            // ---- Pricing row as three individual capsule chips instead of one plain line of
+            // text separated by bullet dots. ----
+            val priceRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+            priceRow.addView(
+                priceChip(
+                    "🛒",
                     Loc.t(this@ProductActivity, "Purchase", "خریداری"),
                     product.cost,
+                    textMuted
+                ),
+                LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, 6, 0) }
+            )
+            priceRow.addView(
+                priceChip(
+                    "📦",
                     Loc.t(this@ProductActivity, "Wholesale", "تھوک"),
                     product.wholesalePrice,
+                    blue
+                ),
+                LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(6, 0, 6, 0) }
+            )
+            priceRow.addView(
+                priceChip(
+                    "🏪",
                     Loc.t(this@ProductActivity, "Retail", "پرچون"),
-                    product.salePrice
-                )
-                textSize = 12f
-                setTextColor(Color.parseColor(teal))
-                setTypeface(typeface, Typeface.BOLD)
-            })
+                    product.salePrice,
+                    teal
+                ),
+                LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(6, 0, 0, 0) }
+            )
+            card.addView(priceRow)
 
             if (product.secondaryUnit.isNotBlank()) {
+                card.addView(spacer(12))
                 card.addView(TextView(this).apply {
                     text = buildString {
                         append(
@@ -1816,38 +1948,32 @@ class ProductActivity : ThemedActivity() {
                     }
                     textSize = 11.5f
                     setTextColor(Color.parseColor(textMuted))
-                    setPadding(0, 4, 0, 0)
+                    background = strokedBg(border, fieldFill, 10)
+                    setPadding(14, 10, 14, 10)
                 })
             }
 
+            card.addView(spacer(14))
+
+            // ---- Gradient action buttons with round icon badges, matching the premium
+            // Save/Cancel treatment used in the Add Item Unit dialog. ----
             val actions = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 10, 0, 0)
             }
 
-            actions.addView(TextView(this).apply {
-                text = "✏️  " + Loc.t(this@ProductActivity, "Edit", "ترمیم کریں")
-                textSize = 12f
-                setTextColor(Color.WHITE)
-                setTypeface(typeface, Typeface.BOLD)
-                background = roundedBg(navy, 30)
-                setPadding(24, 10, 24, 10)
-                setOnClickListener { loadProductForEdit(product) }
-            })
+            actions.addView(
+                actionButton("✏️", Loc.t(this@ProductActivity, "Edit", "ترمیم کریں"), navy, navyLight) {
+                    loadProductForEdit(product)
+                },
+                LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, 6, 0) }
+            )
 
-            actions.addView(View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(10, 1)
-            })
-
-            actions.addView(TextView(this).apply {
-                text = "🗑️  " + Loc.t(this@ProductActivity, "Delete", "حذف کریں")
-                textSize = 12f
-                setTextColor(Color.WHITE)
-                setTypeface(typeface, Typeface.BOLD)
-                background = roundedBg(red, 30)
-                setPadding(24, 10, 24, 10)
-                setOnClickListener { confirmDeleteProduct(product) }
-            })
+            actions.addView(
+                actionButton("🗑️", Loc.t(this@ProductActivity, "Delete", "حذف کریں"), red, "#C93B40") {
+                    confirmDeleteProduct(product)
+                },
+                LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(6, 0, 0, 0) }
+            )
 
             card.addView(actions)
             listContainer.addView(card)
@@ -1855,11 +1981,6 @@ class ProductActivity : ThemedActivity() {
             if (isJustSaved) savedCardView = card
         }
 
-        // The card views were just added, so layout hasn't happened yet on this pass — wait
-        // two frames (one for listContainer's children, one for the ScrollView content) before
-        // reading .top, otherwise we'd scroll to a stale position of 0. Only actually scrolls
-        // if the products section is currently visible — it does NOT auto-open the (now
-        // hidden-by-default) list on its own; the user must tap "View List" for that.
         val cardToReveal = savedCardView
         if (pendingScrollToSaved) {
             pendingScrollToSaved = false
