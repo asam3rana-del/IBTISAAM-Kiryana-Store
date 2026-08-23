@@ -94,6 +94,7 @@ class ProductActivity : ThemedActivity() {
     private lateinit var stockUnitSpinner: Spinner
     private lateinit var stockPreview: TextView
     private lateinit var stockNote: TextView
+    private lateinit var reorderLevel: EditText
     private lateinit var saveButton: Button
     private lateinit var cancelEditChip: TextView
     private lateinit var searchField: EditText
@@ -430,6 +431,42 @@ class ProductActivity : ThemedActivity() {
             visibility = View.GONE
         }
         ratesCard.addView(stockNote)
+
+        // ---- FIX: reorderLevel had no UI field anywhere, so it always stayed the DB default
+        // (0), which meant "Low Stock" alerts (StockReportActivity / ProductDao.lowStock())
+        // never fired until stock hit exactly zero. Entered here in the product's SMALLEST
+        // unit (same unit stock is stored/compared in), so it lines up with `stock<=reorderLevel`. ----
+        val reorderBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = strokedBg(border, fieldFill, 12)
+            setPadding(18, 4, 18, 4)
+        }
+        reorderBox.addView(TextView(this).apply { text = "⚠️  "; textSize = 14f })
+        reorderLevel = EditText(this).apply {
+            hint = Loc.t(this@ProductActivity, "Reorder Level (smallest unit)", "ری آرڈر لیول (سب سے چھوٹی یونٹ)")
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_NUMBER
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        reorderBox.addView(reorderLevel)
+        ratesCard.addView(spacer(12))
+        ratesCard.addView(reorderBox)
+        ratesCard.addView(TextView(this).apply {
+            text = Loc.t(
+                this@ProductActivity,
+                "Alert when stock falls to/below this many smallest units (e.g. pcs). Leave 0 for no alert.",
+                "جب اسٹاک اس تعداد (سب سے چھوٹی یونٹ) تک یا کم ہو جائے تو الرٹ کریں۔ الرٹ نہ چاہیے تو 0 رہنے دیں۔"
+            )
+            textSize = 11f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(6, 6, 0, 0)
+        })
+
         root.addView(ratesCard)
 
         name.setOnEditorActionListener { _, actionId, _ ->
@@ -1539,6 +1576,7 @@ class ProductActivity : ThemedActivity() {
             if (product.wholesalePrice > 0) product.wholesalePrice.toString() else ""
         )
         salePrice.setText(if (product.salePrice > 0) product.salePrice.toString() else "")
+        reorderLevel.setText(if (product.reorderLevel > 0) product.reorderLevel.toString() else "")
 
         stock.setText(product.stock.toString())
         stock.isEnabled = false
@@ -1660,7 +1698,8 @@ class ProductActivity : ThemedActivity() {
             tertiaryUnit =
                 if (selectedTertiaryUnit == "None") "" else selectedTertiaryUnit,
             tertiaryUnitQty =
-                if (selectedTertiaryUnit == "None") 0.0 else selectedTertiaryQty
+                if (selectedTertiaryUnit == "None") 0.0 else selectedTertiaryQty,
+            reorderLevel = reorderLevel.text.toString().toIntOrNull()?.coerceAtLeast(0) ?: 0
         )
 
         lifecycleScope.launch {
@@ -1747,6 +1786,7 @@ class ProductActivity : ThemedActivity() {
         wholesalePrice.text.clear()
         salePrice.text.clear()
         stock.text.clear()
+        reorderLevel.text.clear()
 
         stock.isEnabled = true
         stockUnitSpinner.isEnabled = true
