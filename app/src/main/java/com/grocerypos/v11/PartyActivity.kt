@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Supplier
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -344,16 +345,18 @@ class PartyActivity : AppCompatActivity() {
         val opening = openingBalanceField.text.toString().toDoubleOrNull() ?: 0.0
 
         lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyActivity)
             if (showingCustomers) {
                 val limit = creditLimitField.text.toString().toDoubleOrNull() ?: 0.0
-                PosDatabase.get(this@PartyActivity).customerDao().insert(
-                    Customer(name = n, phone = phone, creditLimit = limit, openingBalance = opening, balance = 0.0)
-                )
+                val customer = Customer(name = n, phone = phone, creditLimit = limit, openingBalance = opening, balance = 0.0)
+                val newId = db.customerDao().insert(customer)
+                SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(customer.copy(id = newId)))
             } else {
-                PosDatabase.get(this@PartyActivity).supplierDao().insert(
-                    Supplier(name = n, phone = phone, openingBalance = opening, balance = 0.0)
-                )
+                val supplier = Supplier(name = n, phone = phone, openingBalance = opening, balance = 0.0)
+                val newId = db.supplierDao().insert(supplier)
+                SyncQueueHelper.enqueue(db, "supplier", "supplier:$newId", "create", SyncQueueHelper.supplierJson(supplier.copy(id = newId)))
             }
+            SyncQueueHelper.trigger(this@PartyActivity)
             Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             nameField.text.clear()
             phoneField.text.clear()
@@ -558,7 +561,10 @@ class PartyActivity : AppCompatActivity() {
                         creditLimit = limitEdit.text.toString().toDoubleOrNull() ?: c.creditLimit,
                         openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: c.openingBalance
                     )
-                    PosDatabase.get(this@PartyActivity).customerDao().update(updated)
+                    val db = PosDatabase.get(this@PartyActivity)
+                    db.customerDao().update(updated)
+                    SyncQueueHelper.enqueue(db, "customer", "customer:${updated.id}", "update", SyncQueueHelper.customerJson(updated))
+                    SyncQueueHelper.trigger(this@PartyActivity)
                     Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Updated", "اپ ڈیٹ ہو گیا"), Toast.LENGTH_SHORT).show()
                 }
                 d.dismiss()
@@ -595,7 +601,10 @@ class PartyActivity : AppCompatActivity() {
                         phone = phoneEdit.text.toString().trim(),
                         openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: s.openingBalance
                     )
-                    PosDatabase.get(this@PartyActivity).supplierDao().update(updated)
+                    val db = PosDatabase.get(this@PartyActivity)
+                    db.supplierDao().update(updated)
+                    SyncQueueHelper.enqueue(db, "supplier", "supplier:${updated.id}", "update", SyncQueueHelper.supplierJson(updated))
+                    SyncQueueHelper.trigger(this@PartyActivity)
                     Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Updated", "اپ ڈیٹ ہو گیا"), Toast.LENGTH_SHORT).show()
                 }
                 d.dismiss()
