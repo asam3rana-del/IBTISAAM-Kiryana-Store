@@ -1253,6 +1253,11 @@ class SaleActivity : AppCompatActivity() {
             }
             db.saleDao().items(saleItems)
 
+            SyncQueueHelper.enqueue(
+                db, "sale", invoice, if (original != null) "update" else "create",
+                SyncQueueHelper.saleJson(db.saleDao().findSale(invoice)!!, saleItems.size)
+            )
+
             for (line in lines) {
                 val product = productsByBarcode[line.barcode] ?: db.productDao().find(line.barcode)
                 if (product == null) continue
@@ -1272,20 +1277,21 @@ class SaleActivity : AppCompatActivity() {
             }
 
             if (paid > 0) {
-                db.cashTransactionDao().insert(
-                    CashTransaction(
-                        type = "IN",
-                        method = method.lowercase(),
-                        amount = paid,
-                        reason = "Sale",
-                        reference = invoice
-                    )
+                val cashTx = CashTransaction(
+                    type = "IN",
+                    method = method.lowercase(),
+                    amount = paid,
+                    reason = "Sale",
+                    reference = invoice
                 )
+                db.cashTransactionDao().insert(cashTx)
+                SyncQueueHelper.enqueue(db, "cash_transaction", invoice, "create", SyncQueueHelper.cashTransactionJson(cashTx))
             }
 
             suppressDraftSave = true
             clearDraft()
             editInvoice = invoice
+            SyncQueueHelper.trigger(this@SaleActivity)
 
             Toast.makeText(
                 this@SaleActivity,
@@ -1344,6 +1350,8 @@ class SaleActivity : AppCompatActivity() {
             db.saleDao().deleteItems(invoice)
             db.saleDao().deleteSale(invoice)
             db.cashTransactionDao().deleteByReference(invoice)
+            SyncQueueHelper.enqueue(db, "sale", invoice, "delete", org.json.JSONObject().apply { put("invoice", invoice) })
+            SyncQueueHelper.trigger(this@SaleActivity)
 
             Toast.makeText(this@SaleActivity, "Sale deleted", Toast.LENGTH_SHORT).show()
             finish()
