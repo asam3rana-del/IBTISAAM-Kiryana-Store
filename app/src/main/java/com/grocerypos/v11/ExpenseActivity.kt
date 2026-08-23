@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -300,9 +301,11 @@ class ExpenseActivity : AppCompatActivity() {
         }
 
         lifecycleScope.launch {
-            PosDatabase.get(this@ExpenseActivity).expenseDao().insert(
-                Expense(category = category, description = fullDescription, amount = amt)
-            )
+            val db = PosDatabase.get(this@ExpenseActivity)
+            val expense = Expense(category = category, description = fullDescription, amount = amt)
+            db.expenseDao().insert(expense)
+            SyncQueueHelper.enqueue(db, "expense", "expense:${expense.id}", "create", SyncQueueHelper.expenseJson(expense))
+            SyncQueueHelper.trigger(this@ExpenseActivity)
             Toast.makeText(this@ExpenseActivity, Loc.t(this@ExpenseActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             amount.text.clear()
             reason.text.clear()
