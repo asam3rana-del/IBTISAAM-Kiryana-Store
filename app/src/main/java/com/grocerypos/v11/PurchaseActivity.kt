@@ -1206,11 +1206,30 @@ class PurchaseActivity : ThemedActivity() {
         android.app.AlertDialog.Builder(this).setTitle("Delete Purchase").setMessage("This will remove the bill and reverse its stock and supplier balance effect. Continue?").setPositiveButton("Delete") { _, _ -> deletePurchase(billNo) }.setNegativeButton("Cancel", null).show()
     }
 
-    private suspend fun reverseStockForItems(db: PosDatabase, items: List<PurchaseItem>) {
+    // Reverses both the stock quantity AND the weighted-average cost impact that this
+    // purchase's items had on each product. Without the cost adjustment, deleting/editing a
+    // purchase would leave product.cost inflated/deflated by a purchase that no longer exists,
+    // which would then distort profit on all future sales of that product.
+    private suspend fun reverseStockAndCostForItems(db: PosDatabase, items: List<PurchaseItem>) {
         items.forEach { pi ->
             val product = db.productDao().find(pi.barcode) ?: return@forEach
+            val factor = product.smallestUnitFactor()
             val smallestQty = product.toSmallestUnits(pi.qty, pi.unit.ifBlank { product.unit }).roundToInt()
+            if (smallestQty <= 0) return@forEach
+
+            val currentCostPerSmallest = if (factor > 0) product.cost / factor else product.cost
+            val currentStock = product.stock
+            val newStock = currentStock - smallestQty
+
+            // Value currently sitting in stock, minus the value this specific purchase
+            // contributed at the time it was made (pi.amount = qty * rate for that purchase).
+            val totalValueBefore = currentStock * currentCostPerSmallest
+            val totalValueAfterRemoval = (totalValueBefore - pi.amount).coerceAtLeast(0.0)
+
+            val newCostPerSmallest = if (newStock > 0) totalValueAfterRemoval / newStock else 0.0
+
             db.productDao().decreaseForce(pi.barcode, smallestQty)
+            db.productDao().updateCost(pi.barcode, newCostPerSmallest * factor)
         }
     }
 
@@ -1218,7 +1237,7 @@ class PurchaseActivity : ThemedActivity() {
         val db = PosDatabase.get(this@PurchaseActivity)
         val purchase = originalPurchase ?: db.purchaseDao().findPurchase(billNo) ?: return@safeLaunch
         val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
-        reverseStockForItems(db, items)
+        reverseStockAndCostForItems(db, items)
         val outstanding = purchase.total - purchase.paid
         if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
         db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
@@ -1262,7 +1281,7 @@ class PurchaseActivity : ThemedActivity() {
                 if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
                 val original = originalPurchase
                 if (original != null) {
-                    reverseStockForItems(db, originalItems)
+                    reverseStockAndCostForItems(db, originalItems)
                     val originalOutstanding = original.total - original.paid
                     if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
                     db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
