@@ -356,8 +356,10 @@ interface ProductDao {
 
 @Dao interface ExpenseDao {
     @Insert suspend fun insert(e:Expense)
+    @Delete suspend fun delete(e:Expense)
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses") suspend fun total():Double
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE createdAt BETWEEN :start AND :end") suspend fun totalBetween(start:Long,end:Long):Double
+    @Query("SELECT * FROM expenses ORDER BY createdAt DESC") fun all():Flow<List<Expense>>
 }
 
 @Dao interface HeldDao {
