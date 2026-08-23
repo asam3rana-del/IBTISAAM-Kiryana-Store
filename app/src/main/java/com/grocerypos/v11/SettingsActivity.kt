@@ -60,6 +60,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var currencyField: EditText
     private lateinit var taxField: EditText
 
+    // Header shop name label (kept in sync with the Shop Information "Shop Name" field)
+    private lateinit var shopNameHeaderText: TextView
+
     private val BT_PERMISSION_REQUEST_CODE = 501
 
     override fun onCreate(b: Bundle?) {
@@ -78,22 +81,17 @@ class SettingsActivity : AppCompatActivity() {
 
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18, 4, 18, 8)
+            setPadding(16, 8, 16, 10)
         }
 
         // ---- Parties (real) ----
-        list.addView(menuRow("👥", "Parties", showNew = true, showChevron = true) {
+        list.addView(menuRow("👥", "Parties", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, PartyDashboardActivity::class.java))
         })
 
         // ---- Items (real) ----
-        list.addView(menuRow("📋", "Items", showNew = true) {
+        list.addView(menuRow("📋", "Items") {
             startActivity(Intent(this@SettingsActivity, ItemsActivity::class.java))
-        })
-
-        // ---- Business Dashboard (no screen yet) ----
-        list.addView(menuRow("⊞", "Business Dashboard") {
-            comingSoon("Business Dashboard")
         })
 
         // ---- Reports (real) ----
@@ -121,22 +119,12 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@SettingsActivity, CashActivity::class.java))
         })
 
-        // ---- My Online Store (no screen yet) ----
-        list.addView(menuRow("🏬", "My Online Store", showNew = true) {
-            comingSoon("My Online Store")
-        })
-
-        list.addView(spacer(8))
-
-        // ---- Sync & Share (no screen yet) ----
-        list.addView(menuRow("🔄", "Sync & Share") {
-            comingSoon("Sync & Share")
-        })
+        list.addView(spacer(10))
 
         // ---- Settings (expandable — holds all the real settings sections) ----
         val settingsContent = buildSettingsContent()
         settingsContent.visibility = View.GONE
-        val settingsRow = expandableMenuRow("⚙️", "Settings", showNew = true, target = settingsContent)
+        val settingsRow = expandableMenuRow("⚙️", "Settings", target = settingsContent)
         list.addView(settingsRow)
         list.addView(settingsContent)
 
@@ -151,14 +139,7 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(backupRow)
         list.addView(backupContent)
 
-        list.addView(spacer(8))
-
-        // ---- Plans & Pricing (no screen yet) ----
-        list.addView(menuRow("🏷️", "Plans & Pricing") {
-            comingSoon("Plans & Pricing")
-        })
-
-        list.addView(spacer(8))
+        list.addView(spacer(10))
 
         // ---- Logout ----
         list.addView(menuRow("🚪", "Logout", textColorHex = red, iconBgHex = red) {
@@ -174,6 +155,8 @@ class SettingsActivity : AppCompatActivity() {
         })
 
         setContentView(root)
+
+        loadHeaderShopName()
 
         applyFloatingSheetLayout()
         window.decorView.post { applyFloatingSheetLayout() }
@@ -215,22 +198,24 @@ class SettingsActivity : AppCompatActivity() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 46, 22, 26)
-            background = gradientBg(navy, navyLight, cornerBottom = 26)
-            applyElevation(this, 8f)
+            setPadding(26, 48, 22, 28)
+            background = gradientBg(navy, navyLight, cornerBottom = 30)
+            applyElevation(this, 10f)
         }
 
         val iconCircle = FrameLayout(this).apply {
-            val px = (52 * resources.displayMetrics.density).toInt()
+            val px = (56 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(px, px)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.WHITE)
+                setStroke((1.5 * resources.displayMetrics.density).toInt(), Color.parseColor("#DCE3F0"))
             }
+            applyElevation(this, 3f)
         }
         iconCircle.addView(TextView(this).apply {
             text = "🏪"
-            textSize = 24f
+            textSize = 25f
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         })
@@ -241,32 +226,45 @@ class SettingsActivity : AppCompatActivity() {
             setPadding(18, 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        textCol.addView(TextView(this).apply {
-            text = "IBTISAAM Kiryana Store"
-            textSize = 17.5f
+        shopNameHeaderText = TextView(this).apply {
+            text = "My Shop"
+            textSize = 18f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
-        })
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        textCol.addView(shopNameHeaderText)
         textCol.addView(TextView(this).apply {
             text = "POINT OF SALE"
             textSize = 10.5f
             setTextColor(Color.parseColor("#A7B4CC"))
             setTypeface(typeface, Typeface.BOLD)
-            letterSpacing = 0.08f
-            setPadding(0, 5, 0, 0)
+            letterSpacing = 0.12f
+            setPadding(0, 6, 0, 0)
         })
         header.addView(textCol)
 
         return header
     }
 
+    /** Loads the saved shop name and reflects it at the top of the header (falls back to the default label). */
+    private fun loadHeaderShopName() {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SettingsActivity)
+            val name = db.appSettingDao().get("shop_name")?.value
+            if (!name.isNullOrBlank()) {
+                shopNameHeaderText.text = name
+            }
+        }
+    }
+
     // ================= MENU ROW HELPERS (premium card rows) =================
 
-    /** A simple, non-expanding premium card row: icon-in-circle + label (+ optional NEW badge / chevron / trailing text). */
+    /** A simple, non-expanding premium card row: icon-in-circle + label (+ optional chevron / trailing text). */
     private fun menuRow(
         icon: String,
         label: String,
-        showNew: Boolean = false,
         showChevron: Boolean = false,
         trailingText: String? = null,
         textColorHex: String = textDark,
@@ -276,7 +274,7 @@ class SettingsActivity : AppCompatActivity() {
         val row = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 16, 18, 16)
+            setPadding(18, 17, 18, 17)
             isClickable = true
             isFocusable = true
         }
@@ -289,10 +287,6 @@ class SettingsActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        if (showNew) {
-            row.addView(newBadge())
-            row.addView(spacerH(10))
-        }
         if (trailingText != null) {
             row.addView(TextView(this).apply {
                 text = trailingText
@@ -311,14 +305,13 @@ class SettingsActivity : AppCompatActivity() {
     private fun expandableMenuRow(
         icon: String,
         label: String,
-        showNew: Boolean = false,
         subtitle: String? = null,
         target: View
     ): LinearLayout {
         val row = premiumCard().apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 16, 18, 16)
+            setPadding(18, 17, 18, 17)
             isClickable = true
             isFocusable = true
         }
@@ -345,11 +338,6 @@ class SettingsActivity : AppCompatActivity() {
         }
         row.addView(textCol)
 
-        if (showNew) {
-            row.addView(newBadge())
-            row.addView(spacerH(10))
-        }
-
         val chevron = chevronText()
         row.addView(chevron)
 
@@ -363,13 +351,13 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun iconBadge(icon: String, colorHex: String) = TextView(this).apply {
         text = icon
-        textSize = 17f
+        textSize = 18f
         gravity = Gravity.CENTER
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.parseColor(lightenTint(colorHex)))
         }
-        val px = (40 * resources.displayMetrics.density).toInt()
+        val px = (44 * resources.displayMetrics.density).toInt()
         width = px; height = px
     }
 
@@ -378,15 +366,6 @@ class SettingsActivity : AppCompatActivity() {
         textSize = 16f
         setTextColor(Color.parseColor(teal))
         setTypeface(typeface, Typeface.BOLD)
-    }
-
-    private fun newBadge() = TextView(this).apply {
-        text = "NEW"
-        textSize = 9.5f
-        setTextColor(Color.WHITE)
-        setTypeface(typeface, Typeface.BOLD)
-        setPadding(12, 4, 12, 4)
-        background = roundedBg(badgeRed, 20)
     }
 
     private fun spacerH(widthDp: Int) = View(this).apply {
@@ -589,11 +568,11 @@ class SettingsActivity : AppCompatActivity() {
     /** Premium card container — matches Product/Purchase/Sale's premiumCard() pattern. */
     private fun premiumCard() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = strokedBg(border, cardWhite, 16)
+        background = strokedBg(border, cardWhite, 18)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(0, 0, 0, 12) }
-        applyElevation(this, 2f)
+        ).apply { setMargins(0, 0, 0, 14) }
+        applyElevation(this, 3f)
     }
 
     /** Premium card with a small icon-badge section title inside — used for the Settings sub-sections. */
@@ -606,7 +585,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, 0, 0, 12)
+        setPadding(0, 0, 0, 14)
         addView(TextView(this@SettingsActivity).apply {
             text = "$icon  "
             textSize = 14f
@@ -616,6 +595,7 @@ class SettingsActivity : AppCompatActivity() {
             textSize = 13.5f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, Typeface.BOLD)
+            letterSpacing = 0.01f
         })
     }
 
@@ -786,12 +766,16 @@ class SettingsActivity : AppCompatActivity() {
     private fun saveShopSettings() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
-            db.appSettingDao().set(AppSetting("shop_name", shopNameField.text.toString().trim()))
+            val newShopName = shopNameField.text.toString().trim()
+            db.appSettingDao().set(AppSetting("shop_name", newShopName))
             db.appSettingDao().set(AppSetting("shop_phone", phoneField.text.toString().trim()))
             db.appSettingDao().set(AppSetting("shop_address", addressField.text.toString().trim()))
             db.appSettingDao().set(AppSetting("receipt_footer", footerField.text.toString().trim()))
             db.appSettingDao().set(AppSetting("currency", currencyField.text.toString().trim()))
             db.appSettingDao().set(AppSetting("tax_percent", taxField.text.toString().trim()))
+            if (newShopName.isNotEmpty()) {
+                shopNameHeaderText.text = newShopName
+            }
             Toast.makeText(this@SettingsActivity, "Settings saved", Toast.LENGTH_SHORT).show()
         }
     }
@@ -872,7 +856,7 @@ class SettingsActivity : AppCompatActivity() {
                 Toast.makeText(this@SettingsActivity, "Pehle printer select karein", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            val shopName = db.appSettingDao().get("shop_name")?.value ?: "IBTISAAM Kiryana Store"
+            val shopName = db.appSettingDao().get("shop_name")?.value ?: "My Shop"
             val ok = PrinterHelper.testPrint(
                 this@SettingsActivity,
                 PrinterHelper.PrinterType.BLUETOOTH,
