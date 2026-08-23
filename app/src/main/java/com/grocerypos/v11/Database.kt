@@ -311,6 +311,9 @@ interface ProductDao {
     @Update suspend fun update(c:Customer)
     @Delete suspend fun delete(c:Customer)
     @Query("SELECT * FROM customers WHERE id=:id LIMIT 1") suspend fun find(id:Long):Customer?
+    // NEW: needed so Firestore pulls can upsert by serverId instead of always
+    // inserting a fresh row (which would duplicate the customer on every pull).
+    @Query("SELECT * FROM customers WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Customer?
     @Query("SELECT * FROM customers ORDER BY name") fun all():Flow<List<Customer>>
     @Query("UPDATE customers SET balance=balance+:amt WHERE id=:id")
     suspend fun addBalance(id:Long,amt:Double)
@@ -323,6 +326,8 @@ interface ProductDao {
     @Update suspend fun update(s:Supplier)
     @Delete suspend fun delete(s:Supplier)
     @Query("SELECT * FROM suppliers WHERE id=:id LIMIT 1") suspend fun find(id:Long):Supplier?
+    // NEW: same reasoning as CustomerDao.findByServerId above.
+    @Query("SELECT * FROM suppliers WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Supplier?
     @Query("UPDATE suppliers SET balance=balance+:amt WHERE id=:id") suspend fun addBalance(id:Long,amt:Double)
     @Query("SELECT * FROM suppliers ORDER BY name") fun all():Flow<List<Supplier>>
     @Query("SELECT COALESCE(name,'Cash Purchase') as supplierName, SUM(total) as total FROM purchases LEFT JOIN suppliers ON purchases.supplierId=suppliers.id GROUP BY supplierId ORDER BY total DESC")
