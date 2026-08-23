@@ -36,49 +36,47 @@ class ReportsActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(TextView(this).apply {
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 20)
+        }
+        headerRow.addView(TextView(this).apply {
+            text = "\u2039"
+            textSize = 20f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 16, 0)
+            setOnClickListener { finish() }
+        })
+        headerRow.addView(TextView(this).apply {
             text = Loc.t(this@ReportsActivity, "Reports", "رپورٹس")
             textSize = 21f
             setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(4, 0, 0, 20)
         })
+        root.addView(headerRow)
 
-        root.addView(Button(this).apply {
-            text = Loc.t(this@ReportsActivity, "VIEW SALE / PURCHASE HISTORY", "سیل / خریداری کی تاریخ دیکھیں")
-            textSize = 12.5f
-            setTextColor(Color.parseColor("#1565C0"))
-            background = strokedBg("#1565C0", "#FFFFFF", 16)
-            setPadding(0, 20, 0, 20)
-            setOnClickListener {
-                startActivity(android.content.Intent(this@ReportsActivity, HistoryActivity::class.java))
-            }
+        root.addView(sectionHeader(Loc.t(this, "Sale reports", "سیل رپورٹس")))
+        val navCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(cardWhite, 18)
+            elevation = 3f
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { setMargins(0, 0, 0, 18) }
+        }
+        navCard.addView(navRow(Loc.t(this, "Sale / Purchase History", "سیل / خریداری کی تاریخ")) {
+            startActivity(android.content.Intent(this@ReportsActivity, HistoryActivity::class.java))
         })
-        root.addView(spacer(18))
-
-        root.addView(Button(this).apply {
-            text = Loc.t(this@ReportsActivity, "PARTY REPORTS", "پارٹی رپورٹس")
-            textSize = 12.5f
-            setTextColor(Color.parseColor("#6A1B9A"))
-            background = strokedBg("#6A1B9A", "#FFFFFF", 16)
-            setPadding(0, 20, 0, 20)
-            setOnClickListener {
-                startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java))
-            }
+        navCard.addView(navDivider())
+        navCard.addView(navRow(Loc.t(this, "Party Reports", "پارٹی رپورٹس")) {
+            startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java))
         })
-        root.addView(spacer(18))
-
-        root.addView(Button(this).apply {
-            text = Loc.t(this@ReportsActivity, "STOCK REPORT", "اسٹاک رپورٹ")
-            textSize = 12.5f
-            setTextColor(Color.parseColor("#EF6C00"))
-            background = strokedBg("#EF6C00", "#FFFFFF", 16)
-            setPadding(0, 20, 0, 20)
-            setOnClickListener {
-                startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java))
-            }
+        navCard.addView(navDivider())
+        navCard.addView(navRow(Loc.t(this, "Stock Report", "اسٹاک رپورٹ")) {
+            startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java))
         })
-        root.addView(spacer(18))
+        root.addView(navCard)
 
         val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val today = smallButton(Loc.t(this, "Today", "آج")) { setRangeToday(); loadReport() }
@@ -396,6 +394,48 @@ class ReportsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textMuted))
             textSize = 13f
             setPadding(0, 6, 0, 6)
+        }
+    }
+
+    private fun sectionHeader(title: String): TextView {
+        return TextView(this).apply {
+            text = title
+            textSize = 13f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(4, 0, 0, 8)
+        }
+    }
+
+    private fun navRow(title: String, onClick: () -> Unit): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 20, 20, 20)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            addView(TextView(this@ReportsActivity).apply {
+                text = title
+                textSize = 14f
+                setTextColor(Color.parseColor(textDark))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@ReportsActivity).apply {
+                text = "\u203A"
+                textSize = 16f
+                setTextColor(Color.parseColor(textMuted))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+        }
+    }
+
+    private fun navDivider(): View {
+        return View(this).apply {
+            setBackgroundColor(Color.parseColor("#EDEEF5"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
+                setMargins(20, 0, 20, 0)
+            }
         }
     }
 
