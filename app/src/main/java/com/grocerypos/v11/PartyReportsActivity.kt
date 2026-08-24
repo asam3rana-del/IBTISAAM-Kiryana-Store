@@ -225,7 +225,7 @@ class PartyReportsActivity : AppCompatActivity() {
             }
 
             val content = reportContainer(Loc.t(this@PartyReportsActivity, "Item Report", "آئٹم رپورٹ") + " — $name")
-            val body = content.getChildAt(1) as LinearLayout
+            val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
             if (items.isEmpty()) {
                 body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No items found", "کوئی آئٹم نہیں ملا")))
             } else {
@@ -250,7 +250,7 @@ class PartyReportsActivity : AppCompatActivity() {
             var running = opening
 
             val content = reportContainer(Loc.t(this@PartyReportsActivity, "Ledger", "لیجر") + " — $name")
-            val body = content.getChildAt(1) as LinearLayout
+            val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             body.addView(ledgerHeaderRow())
             body.addView(plDivider())
@@ -377,7 +377,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
             val content = reportContainer(Loc.t(this@PartyReportsActivity, "Payment History", "ادائیگی کی تاریخ") + " — $name")
-            val body = content.getChildAt(1) as LinearLayout
+            val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             val payments = mutableListOf<PaymentEntry>()
             if (isCustomer) {
@@ -467,7 +467,7 @@ class PartyReportsActivity : AppCompatActivity() {
             var running = opening
 
             val content = reportContainer(Loc.t(this@PartyReportsActivity, "Statement", "اسٹیٹمنٹ") + " — $name")
-            val body = content.getChildAt(1) as LinearLayout
+            val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             body.addView(rowText(Loc.t(this@PartyReportsActivity, "Opening Balance", "ابتدائی بیلنس"), "Rs %.2f".format(opening)).apply {
                 (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
@@ -541,7 +541,7 @@ class PartyReportsActivity : AppCompatActivity() {
 
             val title = if (isCustomer) Loc.t(this@PartyReportsActivity, "Sales", "سیلز") else Loc.t(this@PartyReportsActivity, "Purchases", "خریداریاں")
             val content = reportContainer("$title — $name")
-            val body = content.getChildAt(1) as LinearLayout
+            val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             if (isCustomer) {
                 val sales = db.saleDao().salesByCustomer(id).sortedByDescending { it.createdAt }
@@ -582,7 +582,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@PartyReportsActivity)
             val title = if (isCustomer) Loc.t(this@PartyReportsActivity, "Profit & Loss", "منافع اور نقصان") else Loc.t(this@PartyReportsActivity, "Purchase Summary", "خریداری کا خلاصہ")
             val content = reportContainer("$title — $name")
-            val body = content.getChildAt(1) as LinearLayout
+            val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             if (isCustomer) {
                 val sales = db.saleDao().salesByCustomer(id)
@@ -594,10 +594,6 @@ class PartyReportsActivity : AppCompatActivity() {
                     sales.forEach { s ->
                         db.saleDao().itemsForInvoice(s.invoice).forEach { it ->
                             revenue += it.amount
-                            // ---- FIX: `SaleItem.cost` ab is LINE ka TOTAL COGS hai (amount
-                            // jaisa), per-unit rate nahi — SaleActivity.addItem() dekhein.
-                            // Isliye yahan qty se dobara multiply NAHI karna, warna cost
-                            // hamesha real value se qty guna badi calculate hoti thi. ----
                             cost += it.cost
                         }
                     }
