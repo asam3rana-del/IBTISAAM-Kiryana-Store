@@ -15,6 +15,10 @@ object SyncRepository {
     private const val PREFS_NAME = "sync_prefs"
     private const val KEY_LAST_SYNC = "last_sync_time"
 
+    // Held so background workers / other classes (e.g. App.onCreate) can trigger
+    // sync-related work without needing to pass a Context around everywhere.
+    var appContextRef: Context? = null
+
     suspend fun syncNow(context: Context): SyncResult {
         val db = PosDatabase.get(context)
         val queueDao = db.syncQueueDao()
