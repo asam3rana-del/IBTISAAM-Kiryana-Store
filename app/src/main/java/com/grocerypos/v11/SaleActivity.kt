@@ -151,6 +151,8 @@ class SaleActivity : AppCompatActivity() {
         headerCard.addView(headerTextCol)
 
         val headerActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        headerActions.addView(pillChip("Quick Sale") { quickSaleDialog() })
+        headerActions.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
         headerActions.addView(pillChip("History") {
             startActivity(Intent(this@SaleActivity, SaleHistoryActivity::class.java))
         })
@@ -1146,6 +1148,251 @@ class SaleActivity : AppCompatActivity() {
         dueAmountText.text = "Rs %.2f".format(due)
         dueAmountText.setTextColor(Color.parseColor(if (due > 0.009) red else green))
         isCashSale = due <= 0.009
+    }
+
+    // ================= QUICK SALE =================
+    private fun quickSaleDialog() {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SaleActivity)
+            val since = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+            val topNames = try {
+                db.saleDao().topProducts(since, System.currentTimeMillis()).map { it.product }
+            } catch (e: Exception) {
+                emptyList()
+            }
+            showQuickSaleDialog(topNames)
+        }
+    }
+
+    private fun showQuickSaleDialog(topNames: List<String>) {
+        var qsSelectedProduct: Product? = null
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(4))
+        }
+
+        container.addView(TextView(this).apply {
+            text = "📦  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Item Name", "آئٹم کا نام")
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 0, 0, 6)
+        })
+        val qsItemName = AutoCompleteTextView(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Type to search…", "تلاش کے لیے لکھیں…")
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, cardBg, 12)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            threshold = 0
+            textSize = 15f
+        }
+        val topAvailable = topNames.filter { name -> products.any { it.name == name } }
+        val remaining = products.map { it.name }.filter { it !in topAvailable }
+        val orderedNames = (topAvailable + remaining).distinct()
+        qsItemName.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, orderedNames))
+        container.addView(qsItemName)
+        container.addView(spacer(12))
+
+        container.addView(TextView(this).apply {
+            text = "🔢  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Quantity", "مقدار")
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 0, 0, 6)
+        })
+        val qsQty = EditText(this).apply {
+            hint = "1"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, cardBg, 12)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        container.addView(qsQty)
+        container.addView(spacer(12))
+
+        container.addView(TextView(this).apply {
+            text = "💰  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Rate", "ریٹ")
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 0, 0, 6)
+        })
+        val qsPrice = EditText(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Auto-filled, editable", "خودکار، قابل ترمیم")
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, cardBg, 12)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        container.addView(qsPrice)
+        container.addView(spacer(12))
+
+        container.addView(TextView(this).apply {
+            text = "👤  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Customer (blank = Cash Sale)", "کسٹمر (خالی = کیش سیل)")
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 0, 0, 6)
+        })
+        val qsCustomer = AutoCompleteTextView(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Blank = Cash, Name = Credit", "خالی = کیش، نام = ادھار")
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, cardBg, 12)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            threshold = 1
+            textSize = 15f
+        }
+        qsCustomer.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, customers.map { it.name }))
+        container.addView(qsCustomer)
+        container.addView(spacer(4))
+
+        qsItemName.setOnItemClickListener { _, _, position, _ ->
+            val name = qsItemName.adapter.getItem(position).toString()
+            val p = products.find { it.name.equals(name, ignoreCase = true) }
+            qsSelectedProduct = p
+            if (p != null) {
+                qsQty.setText(if (qsQty.text.toString().isBlank()) "1" else qsQty.text.toString())
+                qsPrice.setText(if (p.salePrice > 0) "%.2f".format(p.salePrice) else "")
+            }
+        }
+
+        val scroll = ScrollView(this).apply { addView(container) }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Quick Sale", "فوری سیل"))
+            .setView(scroll)
+            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "SAVE", "محفوظ کریں"), null)
+            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ"), null)
+            .create()
+
+        dialog.setOnShowListener {
+            qsItemName.post { qsItemName.showDropDown() }
+            val positiveBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            positiveBtn.setOnClickListener {
+                val typedName = qsItemName.text.toString().trim()
+                val product = qsSelectedProduct?.takeIf { it.name.equals(typedName, ignoreCase = true) }
+                    ?: products.find { it.name.equals(typedName, ignoreCase = true) }
+                if (product == null) {
+                    Toast.makeText(this, "Ye item product list mein nahi hai", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val q = qsQty.text.toString().toDoubleOrNull() ?: 0.0
+                if (q <= 0) {
+                    Toast.makeText(this, "Quantity theek se likhen", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val price = qsPrice.text.toString().toDoubleOrNull() ?: product.salePrice
+                val neededSmallest = product.toSmallestUnits(q, product.unit)
+                if (product.stock < neededSmallest) {
+                    Toast.makeText(
+                        this,
+                        "Stock kam hai (available: ${formatQty(product.stock.toDouble())} ${product.smallestUnitName()})",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setOnClickListener
+                }
+                val custName = qsCustomer.text.toString().trim()
+                saveQuickSale(product, q, price, custName)
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun saveQuickSale(product: Product, q: Double, price: Double, custName: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SaleActivity)
+
+            val current = db.productDao().find(product.barcode)
+            if (current == null || current.stock < current.toSmallestUnits(q, current.unit)) {
+                Toast.makeText(this@SaleActivity, "Stock badal gaya hai, dobara try karen", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            var customer: Customer? = null
+            val isCredit = custName.isNotEmpty()
+            if (isCredit) {
+                customer = db.customerDao().all().first().find { it.name.equals(custName, ignoreCase = true) }
+                if (customer == null) {
+                    val newId = db.customerDao().insert(Customer(name = custName))
+                    customer = Customer(id = newId, name = custName)
+                }
+            }
+
+            val amount = q * price
+            val factor = current.smallestUnitFactor()
+            val costPerSmallest = if (factor > 0) current.cost / factor else current.cost
+            val lineCost = current.toSmallestUnits(q, current.unit) * costPerSmallest
+
+            val now = System.currentTimeMillis()
+            val mmYY = SimpleDateFormat("MMyy", Locale.getDefault()).format(Date(now))
+            val invoice = mmYY + now.toString().takeLast(8)
+
+            val paid = if (isCredit) 0.0 else amount
+            val method = if (isCredit) "credit" else "cash"
+
+            db.saleDao().sale(
+                Sale(
+                    invoice = invoice,
+                    customerId = customer?.id,
+                    subtotal = amount,
+                    discount = 0.0,
+                    tax = 0.0,
+                    total = amount,
+                    paid = paid,
+                    paymentMethod = method,
+                    saleType = "retail",
+                    createdAt = now
+                )
+            )
+
+            val saleItem = SaleItem(
+                invoice = invoice,
+                barcode = current.barcode,
+                product = current.name,
+                qty = q.roundToInt(),
+                unit = current.unit,
+                unitPrice = price,
+                cost = lineCost,
+                amount = amount
+            )
+            db.saleDao().items(listOf(saleItem))
+
+            val smallestQty = current.toSmallestUnits(q, current.unit).roundToInt()
+            db.productDao().decrease(current.barcode, smallestQty)
+
+            if (isCredit && customer != null) {
+                db.customerDao().addBalance(customer.id, amount)
+            }
+
+            val savedSale = db.saleDao().findSale(invoice)!!
+            SyncQueueHelper.enqueue(
+                db, "sale", SyncQueueHelper.saleEntityId(savedSale), "create",
+                SyncQueueHelper.saleJson(savedSale, 1)
+            )
+
+            if (paid > 0) {
+                val cashTx = CashTransaction(
+                    type = "IN",
+                    method = method,
+                    amount = paid,
+                    reason = "Quick Sale",
+                    reference = invoice
+                )
+                val cashTxId = db.cashTransactionDao().insert(cashTx)
+                val savedCashTx = cashTx.copy(id = cashTxId)
+                SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
+            }
+
+            SyncQueueHelper.trigger(this@SaleActivity)
+
+            Toast.makeText(
+                this@SaleActivity,
+                if (isCredit) "Credit sale saved: $invoice" else "Cash sale saved: $invoice",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     // ================= Save =================
