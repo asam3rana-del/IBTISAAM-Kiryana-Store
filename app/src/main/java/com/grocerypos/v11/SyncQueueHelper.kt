@@ -8,12 +8,6 @@ object SyncQueueHelper {
 
     private val gson = Gson()
 
-    // ---- Canonical entity-id builders -------------------------------------------------
-    // These are the SINGLE source of truth for how an entity's Firestore key is built.
-    // Both the enqueue() call sites AND the *Json() functions below must use these,
-    // so entityId (used as the Firestore document id on push) always matches the
-    // "serverId" field written inside the JSON payload (used to look the row back up
-    // on pull). Previously these were built ad-hoc in two places and could drift.
     fun customerEntityId(c: Customer) = "customer:${c.id}"
     fun supplierEntityId(s: Supplier) = "supplier:${s.id}"
     fun productEntityId(p: Product) = p.barcode
@@ -22,6 +16,7 @@ object SyncQueueHelper {
     fun paymentEntityId(payment: Payment) = "payment:${payment.reference}"
     fun expenseEntityId(expense: Expense) = "expense:${expense.id}"
     fun cashTransactionEntityId(t: CashTransaction) = "cash_transaction:${t.id}"
+    fun userEntityId(u: User) = "user:${u.username}"
 
     suspend fun enqueue(db: PosDatabase, entityType: String, entityId: String, operation: String, payloadJson: String) {
         db.syncQueueDao().enqueue(
@@ -143,6 +138,20 @@ object SyncQueueHelper {
             "reason" to t.reason,
             "reference" to t.reference,
             "createdAt" to t.createdAt,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return gson.toJson(map)
+    }
+
+    // NOTE: passwordHash is deliberately excluded so it never sits in Firestore.
+    fun userJson(u: User): String {
+        val map = mapOf(
+            "serverId" to userEntityId(u),
+            "username" to u.username,
+            "displayName" to u.displayName,
+            "role" to u.role,
+            "phone" to u.phone,
+            "active" to u.active,
             "updatedAt" to System.currentTimeMillis()
         )
         return gson.toJson(map)
