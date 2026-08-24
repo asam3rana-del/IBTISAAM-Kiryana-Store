@@ -48,6 +48,9 @@
         <activity android:name=".ui.BillScanActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.ExpenseActivity" android:exported="false" />
 
+        <!-- NEW: Day Book (Roznamcha) - merged daily ledger -->
+        <activity android:name=".ui.DayBookActivity" android:exported="false" />
+
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
