@@ -10,24 +10,18 @@ import com.grocerypos.v11.Supplier
 /**
  * Firebase Firestore based sync layer.
  *
- * Firestore collections used (Firestore creates them automatically on first
- * write — no manual setup needed):
+ * Firestore collections used:
  *   customers/{serverId}
  *   suppliers/{serverId}
  *   products/{barcode}
- *
- * Prerequisites (one-time project setup, not in this file — see build.gradle.kts):
- *   1. Add google-services.json to the app module folder
- *   2. app-level build.gradle.kts: com.google.gms.google-services plugin +
- *      firebase-bom + firebase-firestore-ktx + kotlinx-coroutines-play-services
- *   3. Enable Firestore in the Firebase console (Build > Firestore Database > Create database)
+ *   users/{serverId}
  */
 object SyncApi {
 
     private val db by lazy { FirebaseFirestore.getInstance() }
     private val gson by lazy { com.google.gson.Gson() }
 
-    // ---------- PUSH: send one local change up to Firestore ----------
+    // ---------- PUSH ----------
 
     suspend fun push(entry: com.grocerypos.v11.SyncQueueEntry): Boolean {
         return try {
@@ -35,6 +29,7 @@ object SyncApi {
                 "customer" -> "customers"
                 "supplier" -> "suppliers"
                 "product" -> "products"
+                "user" -> "users"
                 else -> return false
             }
 
@@ -56,12 +51,13 @@ object SyncApi {
         }
     }
 
-    // ---------- PULL: fetch everything changed since last sync ----------
+    // ---------- PULL ----------
 
     data class PullResult(
         val customers: List<Map<String, Any?>> = emptyList(),
         val suppliers: List<Map<String, Any?>> = emptyList(),
         val products: List<Map<String, Any?>> = emptyList(),
+        val users: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
 
@@ -81,23 +77,27 @@ object SyncApi {
             .get(Source.SERVER)
             .await()
 
+        val usersSnap = db.collection("users")
+            .whereGreaterThan("updatedAt", since)
+            .get(Source.SERVER)
+            .await()
+
         return PullResult(
             customers = customersSnap.documents.map { it.data ?: emptyMap() },
             suppliers = suppliersSnap.documents.map { it.data ?: emptyMap() },
             products = productsSnap.documents.map { it.data ?: emptyMap() },
+            users = usersSnap.documents.map { it.data ?: emptyMap() },
             serverTime = System.currentTimeMillis()
         )
     }
 
-    // ---------- Apply pulled changes into the local Room database ----------
-    // Upserts by serverId (customers/suppliers) or barcode (products) instead
-    // of blind insert, so repeated pulls update the existing row rather than
-    // creating duplicates.
+    // ---------- APPLY ----------
 
     suspend fun applyServerChanges(db: PosDatabase, changes: PullResult) {
         val custDao = db.customerDao()
         val suppDao = db.supplierDao()
         val prodDao = db.productDao()
+        val userDao = db.userDao()
 
         for (row in changes.customers) {
             val serverId = row["serverId"] as? String ?: continue
@@ -111,26 +111,17 @@ object SyncApi {
             if (existing != null) {
                 custDao.update(
                     existing.copy(
-                        name = name,
-                        phone = phone,
-                        balance = balance,
-                        creditLimit = creditLimit,
-                        openingBalance = openingBalance,
-                        updatedAt = System.currentTimeMillis(),
-                        dirty = false
+                        name = name, phone = phone, balance = balance,
+                        creditLimit = creditLimit, openingBalance = openingBalance,
+                        updatedAt = System.currentTimeMillis(), dirty = false
                     )
                 )
             } else {
                 custDao.insert(
                     Customer(
-                        name = name,
-                        phone = phone,
-                        balance = balance,
-                        creditLimit = creditLimit,
-                        openingBalance = openingBalance,
-                        serverId = serverId,
-                        updatedAt = System.currentTimeMillis(),
-                        dirty = false
+                        name = name, phone = phone, balance = balance,
+                        creditLimit = creditLimit, openingBalance = openingBalance,
+                        serverId = serverId, updatedAt = System.currentTimeMillis(), dirty = false
                     )
                 )
             }
@@ -147,24 +138,17 @@ object SyncApi {
             if (existing != null) {
                 suppDao.update(
                     existing.copy(
-                        name = name,
-                        phone = phone,
-                        balance = balance,
+                        name = name, phone = phone, balance = balance,
                         openingBalance = openingBalance,
-                        updatedAt = System.currentTimeMillis(),
-                        dirty = false
+                        updatedAt = System.currentTimeMillis(), dirty = false
                     )
                 )
             } else {
                 suppDao.insert(
                     Supplier(
-                        name = name,
-                        phone = phone,
-                        balance = balance,
-                        openingBalance = openingBalance,
-                        serverId = serverId,
-                        updatedAt = System.currentTimeMillis(),
-                        dirty = false
+                        name = name, phone = phone, balance = balance,
+                        openingBalance = openingBalance, serverId = serverId,
+                        updatedAt = System.currentTimeMillis(), dirty = false
                     )
                 )
             }
@@ -177,11 +161,27 @@ object SyncApi {
                 val stock = (row["stock"] as? Number)?.toInt() ?: existing.stock
                 prodDao.upsert(existing.copy(stock = stock, dirty = false, updatedAt = System.currentTimeMillis()))
             }
-            // If it doesn't exist locally yet, it's skipped here — products are
-            // expected to originate on-device (barcode is the primary key), so a
-            // brand-new product from the server with no local row is unusual.
-            // If you do want new products created from a pull, add a
-            // prodDao.upsert(Product(...)) branch here with all required fields.
+        }
+
+        // passwordHash is never synced — preserve local password on pull.
+        for (row in changes.users) {
+            val username = row["username"] as? String ?: continue
+            val displayName = row["displayName"] as? String ?: continue
+            val role = row["role"] as? String ?: "cashier"
+            val phone = row["phone"] as? String ?: ""
+            val active = row["active"] as? Boolean ?: true
+
+            val existing = userDao.findByUsername(username)
+            if (existing != null) {
+                userDao.upsert(
+                    existing.copy(
+                        displayName = displayName,
+                        role = role,
+                        phone = phone,
+                        active = active
+                    )
+                )
+            }
         }
     }
 }
