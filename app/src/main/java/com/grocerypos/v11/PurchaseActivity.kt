@@ -73,7 +73,6 @@ class PurchaseActivity : ThemedActivity() {
     }
 
     // ---------- Premium palette ----------
-    // ---- Theme-dependent — sourced from ThemeManager, kept in sync with every other screen. ----
     private var bg = "#F5F7FA"
     private var cardWhite = "#FFFFFF"
     private var textDark = "#111827"
@@ -82,8 +81,6 @@ class PurchaseActivity : ThemedActivity() {
     private var red = "#E5484D"
     private var fieldFill = "#FAFBFD"
 
-    // ---- Brand colors — this screen's own identity accents, fixed across themes (navy header
-    // is already dark, teal/gold/amber/green accents read fine on both backgrounds). ----
     private val navy = "#101B33"
     private val navyLight = "#1C2C4F"
     private val teal = "#0EA5A0"
@@ -160,9 +157,6 @@ class PurchaseActivity : ThemedActivity() {
     private var scrollTargetView: View? = null
     private var scrollAlignTop: Boolean = true
 
-    // NOTE: Scan Bill button was removed from the UI (see addItemHeaderRow below), but the
-    // launcher and handler are left in place — unused, but harmless, and keeps BillScanActivity
-    // wired up if the button is ever restored.
     private val billScanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
             val json = result.data?.getStringExtra(BillScanActivity.RESULT_ITEMS_JSON)
@@ -344,8 +338,6 @@ class PurchaseActivity : ThemedActivity() {
             applyElevation(this, 3f)
         }
 
-        // Scan Bill button removed from this row per updated design — Add Item trigger now
-        // takes the full row width on its own.
         val addItemHeaderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, 16) }
         addItemsTrigger = TextView(this).apply {
             text = "\u2795  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Add Item", "آئٹم شامل کریں")
@@ -1206,10 +1198,6 @@ class PurchaseActivity : ThemedActivity() {
         android.app.AlertDialog.Builder(this).setTitle("Delete Purchase").setMessage("This will remove the bill and reverse its stock and supplier balance effect. Continue?").setPositiveButton("Delete") { _, _ -> deletePurchase(billNo) }.setNegativeButton("Cancel", null).show()
     }
 
-    // Reverses both the stock quantity AND the weighted-average cost impact that this
-    // purchase's items had on each product. Without the cost adjustment, deleting/editing a
-    // purchase would leave product.cost inflated/deflated by a purchase that no longer exists,
-    // which would then distort profit on all future sales of that product.
     private suspend fun reverseStockAndCostForItems(db: PosDatabase, items: List<PurchaseItem>) {
         items.forEach { pi ->
             val product = db.productDao().find(pi.barcode) ?: return@forEach
@@ -1221,8 +1209,6 @@ class PurchaseActivity : ThemedActivity() {
             val currentStock = product.stock
             val newStock = currentStock - smallestQty
 
-            // Value currently sitting in stock, minus the value this specific purchase
-            // contributed at the time it was made (pi.amount = qty * rate for that purchase).
             val totalValueBefore = currentStock * currentCostPerSmallest
             val totalValueAfterRemoval = (totalValueBefore - pi.amount).coerceAtLeast(0.0)
 
@@ -1322,7 +1308,6 @@ class PurchaseActivity : ThemedActivity() {
                     val cashTx = CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)
                     val cashTxId = db.cashTransactionDao().insert(cashTx)
                     val savedCashTx = cashTx.copy(id = cashTxId)
-                    db.cashTransactionDao().insert(cashTx)
                     SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
                 }
                 suppressDraftSave = true; clearDraft(); editBillNo = billNo
