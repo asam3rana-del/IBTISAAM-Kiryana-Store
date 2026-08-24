@@ -17,11 +17,17 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.firebase.FirebaseException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.PhoneAuthCredential
+import com.google.firebase.auth.PhoneAuthOptions
+import com.google.firebase.auth.PhoneAuthProvider
 import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.MainActivity
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.User
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 
 class LoginActivity : AppCompatActivity() {
 
@@ -43,6 +49,16 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var btn: Button
     private lateinit var fingerprintBtn: Button
     private lateinit var hint: TextView
+
+    // ---- Phone OTP login (Firebase Auth) ----
+    private val auth by lazy { FirebaseAuth.getInstance() }
+    private var storedVerificationId: String = ""
+    private lateinit var otpSection: LinearLayout
+    private lateinit var otpPhoneField: EditText
+    private lateinit var otpCodeField: EditText
+    private lateinit var otpCodeBox: LinearLayout
+    private lateinit var sendOtpBtn: Button
+    private lateinit var verifyOtpBtn: Button
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -180,6 +196,64 @@ class LoginActivity : AppCompatActivity() {
         }
         card.addView(fingerprintBtn)
 
+        // ---- Phone OTP section (only visible when login_method == "otp") ----
+        otpSection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+
+        otpPhoneField = EditText(this).apply {
+            hint = "+92XXXXXXXXXX"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+        otpSection.addView(fieldBox("📱", otpPhoneField))
+        otpSection.addView(spacer(14))
+
+        sendOtpBtn = Button(this).apply {
+            text = "📩  SEND OTP"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            isAllCaps = false
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            ).apply { cornerRadius = 16f }
+            setPadding(0, 24, 0, 24)
+        }
+        otpSection.addView(sendOtpBtn)
+        otpSection.addView(spacer(14))
+
+        otpCodeField = EditText(this).apply {
+            hint = "6-digit code"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+        otpCodeBox = fieldBox("🔢", otpCodeField).apply { visibility = View.GONE }
+        otpSection.addView(otpCodeBox)
+        otpSection.addView(spacer(14))
+
+        verifyOtpBtn = Button(this).apply {
+            text = "✅  VERIFY & LOGIN"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            isAllCaps = false
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(green)); cornerRadius = 16f
+            }
+            setPadding(0, 24, 0, 24)
+            visibility = View.GONE
+        }
+        otpSection.addView(verifyOtpBtn)
+
+        card.addView(otpSection)
+
         hint = TextView(this).apply {
             textSize = 11.5f
             setTextColor(Color.parseColor(textGray))
@@ -218,12 +292,85 @@ class LoginActivity : AppCompatActivity() {
         fingerprintBtn.setOnClickListener {
             lifecycleScope.launch { triggerFingerprintUnlock() }
         }
+
+        sendOtpBtn.setOnClickListener {
+            val phone = otpPhoneField.text.toString().trim()
+            if (phone.isEmpty()) {
+                Toast.makeText(this, "Phone number dalein", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val options = PhoneAuthOptions.newBuilder(auth)
+                .setPhoneNumber(phone)
+                .setTimeout(60L, TimeUnit.SECONDS)
+                .setActivity(this)
+                .setCallbacks(object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                    override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                        verifyAndLogin(credential, phone)
+                    }
+
+                    override fun onVerificationFailed(e: FirebaseException) {
+                        Toast.makeText(this@LoginActivity, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+
+                    override fun onCodeSent(verificationId: String, token: PhoneAuthProvider.ForceResendingToken) {
+                        storedVerificationId = verificationId
+                        otpCodeBox.visibility = View.VISIBLE
+                        verifyOtpBtn.visibility = View.VISIBLE
+                        Toast.makeText(this@LoginActivity, "OTP bheja gaya", Toast.LENGTH_SHORT).show()
+                    }
+                })
+                .build()
+            PhoneAuthProvider.verifyPhoneNumber(options)
+        }
+
+        verifyOtpBtn.setOnClickListener {
+            val code = otpCodeField.text.toString().trim()
+            val phone = otpPhoneField.text.toString().trim()
+            if (code.length == 6) {
+                val credential = PhoneAuthProvider.getCredential(storedVerificationId, code)
+                verifyAndLogin(credential, phone)
+            } else {
+                Toast.makeText(this, "6-digit code dalein", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** Firebase se OTP verify hone ke baad, us phone number se local User record dhoondh kar login complete karta hai. */
+    private fun verifyAndLogin(credential: PhoneAuthCredential, phone: String) {
+        auth.signInWithCredential(credential).addOnCompleteListener(this) { task ->
+            if (task.isSuccessful) {
+                lifecycleScope.launch {
+                    val db = PosDatabase.get(this@LoginActivity)
+                    val user = db.userDao().findByPhone(phone)
+                    if (user != null) {
+                        loggedInUser = user
+                        db.appSettingDao().set(AppSetting("last_username", user.username))
+                        completeLogin()
+                    } else {
+                        Toast.makeText(
+                            this@LoginActivity,
+                            "Ye number kisi staff se link nahi hai. Settings > Manage Users mein add karwayein.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } else {
+                Toast.makeText(this, "OTP galat hai", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     /** Settings mein select kiye gaye login_method ke hisab se screen ke elements dikhata/chupata hai. */
     private suspend fun applyLoginMethod(db: com.grocerypos.v11.PosDatabase) {
         val method = db.appSettingDao().get("login_method")?.value ?: "password"
         val lastUsername = db.appSettingDao().get("last_username")?.value
+
+        // Default: sab hide, jo method active hai wahi visible karega
+        u.visibility = View.GONE
+        p.visibility = View.GONE
+        btn.visibility = View.GONE
+        fingerprintBtn.visibility = View.GONE
+        otpSection.visibility = View.GONE
 
         when (method) {
             "fingerprint" -> {
@@ -232,11 +379,7 @@ class LoginActivity : AppCompatActivity() {
                     u.visibility = View.VISIBLE
                     p.visibility = View.VISIBLE
                     btn.visibility = View.VISIBLE
-                    fingerprintBtn.visibility = View.GONE
                 } else {
-                    u.visibility = View.GONE
-                    p.visibility = View.GONE
-                    btn.visibility = View.GONE
                     fingerprintBtn.visibility = View.VISIBLE
                     // FIX: auto-detect — the biometric prompt now opens by itself as soon as
                     // this screen appears, instead of waiting for a manual button tap.
@@ -247,13 +390,14 @@ class LoginActivity : AppCompatActivity() {
                 u.visibility = View.VISIBLE
                 p.visibility = View.VISIBLE
                 btn.visibility = View.VISIBLE
-                fingerprintBtn.visibility = View.GONE
+            }
+            "otp" -> {
+                otpSection.visibility = View.VISIBLE
             }
             else -> { // "password"
                 u.visibility = View.VISIBLE
                 p.visibility = View.VISIBLE
                 btn.visibility = View.VISIBLE
-                fingerprintBtn.visibility = View.GONE
             }
         }
     }
