@@ -19,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import com.grocerypos.v11.util.BackupHelper
 import com.grocerypos.v11.util.PrinterHelper
@@ -119,6 +120,11 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@SettingsActivity, CashActivity::class.java))
         })
 
+        // ---- Sync Now ----
+        list.addView(menuRow("🔄", "Sync Now", iconBgHex = teal) {
+            onSyncNowClicked()
+        })
+
         list.addView(spacer(10))
 
         // ---- Settings (expandable — holds all the real settings sections) ----
@@ -191,6 +197,12 @@ class SettingsActivity : AppCompatActivity() {
         getSharedPreferences("session", MODE_PRIVATE).edit().clear().apply()
         startActivity(Intent(this@SettingsActivity, LoginActivity::class.java))
         finish()
+    }
+
+    // ================= SYNC =================
+    private fun onSyncNowClicked() {
+        SyncQueueHelper.trigger(this)
+        Toast.makeText(this, "Syncing…", Toast.LENGTH_SHORT).show()
     }
 
     // ================= PREMIUM GRADIENT HEADER (matches Product/Purchase/Sale headers) =================
@@ -966,16 +978,15 @@ class SettingsActivity : AppCompatActivity() {
             val finalUsername = if (newUsername.isNotEmpty()) newUsername else user.username
             val finalPassword = if (newPassword.isNotEmpty()) newPassword else user.passwordHash
 
-            db.userDao().upsert(
-                User(
-                    username = finalUsername,
-                    displayName = user.displayName,
-                    role = user.role,
-                    passwordHash = finalPassword,
-                    active = true,
-                    phone = user.phone
-                )
+            val updatedUser = User(
+                username = finalUsername,
+                displayName = user.displayName,
+                role = user.role,
+                passwordHash = finalPassword,
+                active = true,
+                phone = user.phone
             )
+            db.userDao().upsert(updatedUser)
 
             if (finalUsername != currentUsername) {
                 db.userDao().delete(currentUsername)
@@ -983,6 +994,16 @@ class SettingsActivity : AppCompatActivity() {
                     .putString("username", finalUsername).apply()
                 currentUsernameField.setText(finalUsername)
             }
+
+            // ---- Queue this change so it pushes up to Firebase ----
+            SyncQueueHelper.enqueue(
+                db = db,
+                entityType = "user",
+                entityId = SyncQueueHelper.userEntityId(updatedUser),
+                operation = "upsert",
+                payloadJson = SyncQueueHelper.userJson(updatedUser)
+            )
+            SyncQueueHelper.trigger(this@SettingsActivity)
 
             Toast.makeText(this@SettingsActivity, "Login updated", Toast.LENGTH_SHORT).show()
             newUsernameField.text.clear()
