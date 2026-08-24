@@ -59,6 +59,16 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 request
             )
         }
+
+        // ---- ADDED: NetworkMonitor.kt calls SyncWorker.triggerNow(context) from its
+        // onAvailable() callback the moment connectivity comes back, so any sale/purchase/
+        // expense that queued up while offline gets pushed right away instead of waiting
+        // for the next 15-minute periodic run. Same one-off enqueue as syncNowOnce — kept
+        // as a distinct name so call sites read as "connectivity just returned" vs.
+        // "user tapped Sync Now", but they do the same thing under the hood. ----
+        fun triggerNow(context: Context) {
+            syncNowOnce(context)
+        }
     }
 }
 
