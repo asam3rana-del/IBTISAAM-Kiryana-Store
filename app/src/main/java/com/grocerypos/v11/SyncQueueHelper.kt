@@ -8,6 +8,21 @@ object SyncQueueHelper {
 
     private val gson = Gson()
 
+    // ---- Canonical entity-id builders -------------------------------------------------
+    // These are the SINGLE source of truth for how an entity's Firestore key is built.
+    // Both the enqueue() call sites AND the *Json() functions below must use these,
+    // so entityId (used as the Firestore document id on push) always matches the
+    // "serverId" field written inside the JSON payload (used to look the row back up
+    // on pull). Previously these were built ad-hoc in two places and could drift.
+    fun customerEntityId(c: Customer) = "customer:${c.id}"
+    fun supplierEntityId(s: Supplier) = "supplier:${s.id}"
+    fun productEntityId(p: Product) = p.barcode
+    fun saleEntityId(sale: Sale) = "sale:${sale.invoice}"
+    fun purchaseEntityId(purchase: Purchase) = "purchase:${purchase.billNo}"
+    fun paymentEntityId(payment: Payment) = "payment:${payment.reference}"
+    fun expenseEntityId(expense: Expense) = "expense:${expense.id}"
+    fun cashTransactionEntityId(t: CashTransaction) = "cash_transaction:${t.id}"
+
     suspend fun enqueue(db: PosDatabase, entityType: String, entityId: String, operation: String, payloadJson: String) {
         db.syncQueueDao().enqueue(
             SyncQueueEntry(
@@ -25,7 +40,7 @@ object SyncQueueHelper {
 
     fun customerJson(c: Customer): String {
         val map = mapOf(
-            "serverId" to "customer:${c.id}",
+            "serverId" to customerEntityId(c),
             "name" to c.name,
             "phone" to c.phone,
             "balance" to c.balance,
@@ -38,7 +53,7 @@ object SyncQueueHelper {
 
     fun supplierJson(s: Supplier): String {
         val map = mapOf(
-            "serverId" to "supplier:${s.id}",
+            "serverId" to supplierEntityId(s),
             "name" to s.name,
             "phone" to s.phone,
             "balance" to s.balance,
@@ -50,7 +65,7 @@ object SyncQueueHelper {
 
     fun productJson(p: Product): String {
         val map = mapOf(
-            "barcode" to p.barcode,
+            "barcode" to productEntityId(p),
             "name" to p.name,
             "stock" to p.stock,
             "updatedAt" to System.currentTimeMillis()
@@ -60,7 +75,7 @@ object SyncQueueHelper {
 
     fun saleJson(sale: Sale, itemCount: Int): String {
         val map = mapOf(
-            "serverId" to "sale:${sale.invoice}",
+            "serverId" to saleEntityId(sale),
             "invoice" to sale.invoice,
             "customerId" to sale.customerId,
             "subtotal" to sale.subtotal,
@@ -77,11 +92,9 @@ object SyncQueueHelper {
         return gson.toJson(map)
     }
 
-    // ---- ADDED: PurchaseActivity.kt calls SyncQueueHelper.purchaseJson(purchaseRecord, itemCount)
-    // in proceedSave() — mirrors saleJson's shape for the purchase side of the ledger. ----
     fun purchaseJson(purchase: Purchase, itemCount: Int): String {
         val map = mapOf(
-            "serverId" to "purchase:${purchase.billNo}",
+            "serverId" to purchaseEntityId(purchase),
             "billNo" to purchase.billNo,
             "supplierId" to purchase.supplierId,
             "subtotal" to purchase.subtotal,
@@ -95,10 +108,9 @@ object SyncQueueHelper {
         return gson.toJson(map)
     }
 
-    // ---- ADDED: PurchaseActivity.kt calls SyncQueueHelper.paymentJson(payment) after
-    // inserting a Payment record for the supplier-side payment on a purchase. ----
     fun paymentJson(payment: Payment): String {
         val map = mapOf(
+            "serverId" to paymentEntityId(payment),
             "reference" to payment.reference,
             "partyType" to payment.partyType,
             "partyId" to payment.partyId,
@@ -110,11 +122,9 @@ object SyncQueueHelper {
         return gson.toJson(map)
     }
 
-    // ---- ADDED: ExpenseActivity.kt calls SyncQueueHelper.expenseJson(expense) right after
-    // inserting the expense, using entityId "expense:${expense.id}". ----
     fun expenseJson(expense: Expense): String {
         val map = mapOf(
-            "serverId" to "expense:${expense.id}",
+            "serverId" to expenseEntityId(expense),
             "category" to expense.category,
             "description" to expense.description,
             "amount" to expense.amount,
@@ -126,7 +136,7 @@ object SyncQueueHelper {
 
     fun cashTransactionJson(t: CashTransaction): String {
         val map = mapOf(
-            "serverId" to "cash_transaction:${t.id}",
+            "serverId" to cashTransactionEntityId(t),
             "type" to t.type,
             "method" to t.method,
             "amount" to t.amount,
