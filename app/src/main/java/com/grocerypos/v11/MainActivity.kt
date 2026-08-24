@@ -20,6 +20,7 @@ import com.grocerypos.v11.ui.PurchaseActivity
 import com.grocerypos.v11.ui.SaleActivity
 import com.grocerypos.v11.ui.ReportsActivity
 import com.grocerypos.v11.ui.CashActivity
+import com.grocerypos.v11.ui.DayBookActivity
 import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
 import com.grocerypos.v11.ui.ThemedActivity
@@ -254,21 +255,25 @@ class MainActivity : ThemedActivity() {
         body.addView(sectionLabel("MORE"))
 
         val partiesTile = Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
+        val dayBookTile = Tile("📖", "Day Book", "#0F9B8E", "#DFF6F8") { startActivity(Intent(this@MainActivity, DayBookActivity::class.java)) }
 
         val tiles: List<Tile> = when (role) {
             "admin" -> listOf(
                 Tile("📦", "Products", "#1257C4", "#E4EDFC") { startActivity(Intent(this@MainActivity, ProductActivity::class.java)) },
                 Tile("📊", "Reports", "#7B1FA2", "#F3E5F9") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
                 Tile("💵", "Cash In/Out", "#00838F", "#DFF6F8") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
+                dayBookTile,
                 partiesTile
             )
             "manager" -> listOf(
                 Tile("📊", "Reports", "#7B1FA2", "#F3E5F9") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
+                dayBookTile,
                 partiesTile,
                 Tile("🚪", "Logout", "#D32F4A", "#FCE6EA") { doLogout() }
             )
             else -> listOf(
                 Tile("💵", "Cash In/Out", "#00838F", "#DFF6F8") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
+                dayBookTile,
                 partiesTile,
                 Tile("🚪", "Logout", "#D32F4A", "#FCE6EA") { doLogout() }
             )
