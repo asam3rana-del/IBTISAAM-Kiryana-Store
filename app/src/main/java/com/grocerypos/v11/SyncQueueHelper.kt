@@ -1,84 +1,84 @@
 package com.grocerypos.v11
 
-import com.grocerypos.v11.sync.SyncRepository
+import android.content.Context
+import com.google.gson.Gson
 import com.grocerypos.v11.sync.SyncWorker
-import org.json.JSONObject
 
 /**
- * ---- FIX: sync_queue was never actually populated. SyncRepository (create/update helpers that
- * enqueue into sync_queue) existed but nothing called it — every real save path (SaleActivity,
- * PurchaseActivity, PartyActivity, PartyTransactionActivity, ExpenseActivity, CashActivity) wrote
- * straight to the DAOs. SyncWorker therefore ran every 15 minutes, found `pending()` empty every
- * time, and reported success while pushing nothing.
+ * Bridges normal Room writes (customer/supplier/product inserts & updates) to the
+ * offline-first sync pipeline (sync_queue table -> SyncApi.push -> Firestore).
  *
- * Rather than route every activity's save through SyncRepository's transaction wrapper (a much
- * larger change touching every save flow), this is a small helper called right after each
- * existing DAO write already commits, so every real create/update actually lands a row in
- * sync_queue and wakes SyncWorker. Call `SyncQueueHelper.trigger(context)` once per user action
- * even if several enqueue() calls happened for it (e.g. a sale + its items), so we don't spam
- * WorkManager — enqueueUniqueWork with KEEP already coalesces this, but trigger() is still cheap
- * to call once at the end of a save. ----
+ * Usage pattern already used in PartyActivity.kt:
+ *   val newId = db.customerDao().insert(customer)
+ *   SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(customer.copy(id = newId)))
+ *   SyncQueueHelper.trigger(this)
  */
 object SyncQueueHelper {
 
-    suspend fun enqueue(
-        db: PosDatabase,
-        entityType: String,
-        entityId: String,
-        operation: String,
-        payload: JSONObject
-    ) {
+    private val gson = Gson()
+
+    /** Adds one row to the local sync_queue table. Does NOT talk to the network itself — call trigger() for that. */
+    suspend fun enqueue(db: PosDatabase, entityType: String, entityId: String, operation: String, payloadJson: String) {
         db.syncQueueDao().enqueue(
             SyncQueueEntry(
                 entityType = entityType,
                 entityId = entityId,
                 operation = operation,
-                payloadJson = payload.toString()
+                payloadJson = payloadJson
             )
         )
     }
 
-    fun trigger(context: android.content.Context) {
-        SyncRepository.appContextRef = context.applicationContext
-        SyncWorker.triggerNow(context)
+    /** Kicks off an immediate background sync attempt (push queued rows + pull server changes). */
+    fun trigger(context: Context) {
+        SyncWorker.syncNowOnce(context)
     }
 
-    fun saleJson(sale: Sale, itemCount: Int) = JSONObject().apply {
-        put("invoice", sale.invoice); put("customerId", sale.customerId)
-        put("subtotal", sale.subtotal); put("discount", sale.discount); put("tax", sale.tax)
-        put("total", sale.total); put("paid", sale.paid); put("paymentMethod", sale.paymentMethod)
-        put("saleType", sale.saleType); put("createdAt", sale.createdAt); put("status", sale.status)
-        put("itemCount", itemCount)
+    /**
+     * serverId is set to "customer:<localId>" so it's stable and matches what
+     * CustomerDao.findByServerId() looks up when pulling this same row back down
+     * (see SyncApi.applyServerChanges in SyncApi.kt).
+     */
+    fun customerJson(c: Customer): String {
+        val map = mapOf(
+            "serverId" to "customer:${c.id}",
+            "name" to c.name,
+            "phone" to c.phone,
+            "balance" to c.balance,
+            "creditLimit" to c.creditLimit,
+            "openingBalance" to c.openingBalance,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return gson.toJson(map)
     }
 
-    fun purchaseJson(purchase: Purchase, itemCount: Int) = JSONObject().apply {
-        put("billNo", purchase.billNo); put("supplierId", purchase.supplierId)
-        put("total", purchase.total); put("paid", purchase.paid); put("subtotal", purchase.subtotal)
-        put("discount", purchase.discount); put("createdAt", purchase.createdAt)
-        put("status", purchase.status); put("itemCount", itemCount)
+    fun supplierJson(s: Supplier): String {
+        val map = mapOf(
+            "serverId" to "supplier:${s.id}",
+            "name" to s.name,
+            "phone" to s.phone,
+            "balance" to s.balance,
+            "openingBalance" to s.openingBalance,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return gson.toJson(map)
     }
 
-    fun customerJson(c: Customer) = JSONObject().apply {
-        put("id", c.id); put("name", c.name); put("phone", c.phone)
-        put("creditLimit", c.creditLimit); put("openingBalance", c.openingBalance); put("balance", c.balance)
-    }
-
-    fun supplierJson(s: Supplier) = JSONObject().apply {
-        put("id", s.id); put("name", s.name); put("phone", s.phone)
-        put("openingBalance", s.openingBalance); put("balance", s.balance)
-    }
-
-    fun paymentJson(p: Payment) = JSONObject().apply {
-        put("reference", p.reference); put("partyType", p.partyType); put("partyId", p.partyId)
-        put("amount", p.amount); put("method", p.method); put("note", p.note)
-    }
-
-    fun expenseJson(e: Expense) = JSONObject().apply {
-        put("category", e.category); put("description", e.description); put("amount", e.amount)
-    }
-
-    fun cashTransactionJson(t: CashTransaction) = JSONObject().apply {
-        put("type", t.type); put("method", t.method); put("amount", t.amount)
-        put("reason", t.reason); put("reference", t.reference)
+    /**
+     * Not called anywhere yet — confirmDeleteCustomer()/confirmDeleteSupplier() in
+     * PartyActivity.kt currently only delete locally and don't propagate the delete
+     * to Firestore. If you want deletes to sync too, call this right before the
+     * local db.customerDao().delete(c) / db.supplierDao().delete(s) call:
+     *   SyncQueueHelper.enqueue(db, "customer", "customer:${c.id}", "delete", "")
+     *   SyncQueueHelper.trigger(this)
+     */
+    fun productJson(p: Product): String {
+        val map = mapOf(
+            "barcode" to p.barcode,
+            "name" to p.name,
+            "stock" to p.stock,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return gson.toJson(map)
     }
 }
