@@ -1166,6 +1166,35 @@ class SaleActivity : AppCompatActivity() {
 
     private fun showQuickSaleDialog(topNames: List<String>) {
         var qsSelectedProduct: Product? = null
+        var qsLastMainPrice: Double = 0.0
+
+        // ---- helpers scoped to this dialog ----
+        fun qsUnitsFor(p: Product): List<String> {
+            val list = mutableListOf(p.unit)
+            if (p.secondaryUnit.isNotEmpty()) {
+                list.add(p.secondaryUnit)
+                if (p.tertiaryUnit.isNotEmpty() && p.tertiaryUnitQty > 0) list.add(p.tertiaryUnit)
+            }
+            return list
+        }
+        fun qsToMainPrice(p: Product, entered: Double, unit: String): Double = when {
+            unit == p.tertiaryUnit && p.tertiaryUnit.isNotEmpty() &&
+                p.tertiaryUnitQty > 0 && p.secondaryUnitQty > 0 ->
+                entered * p.secondaryUnitQty * p.tertiaryUnitQty
+            unit == p.secondaryUnit && p.secondaryUnitQty > 0 -> entered * p.secondaryUnitQty
+            else -> entered
+        }
+        fun qsFromMainPrice(p: Product, mainPrice: Double, unit: String): Double = when {
+            unit == p.tertiaryUnit && p.tertiaryUnit.isNotEmpty() &&
+                p.tertiaryUnitQty > 0 && p.secondaryUnitQty > 0 ->
+                mainPrice / (p.secondaryUnitQty * p.tertiaryUnitQty)
+            unit == p.secondaryUnit && p.secondaryUnitQty > 0 -> mainPrice / p.secondaryUnitQty
+            else -> mainPrice
+        }
+        fun qsAvailableInUnit(p: Product, unit: String): Double {
+            val perUnitFactor = p.toSmallestUnits(1.0, unit)
+            return if (perUnitFactor > 0) p.stock / perUnitFactor else p.stock.toDouble()
+        }
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1186,12 +1215,36 @@ class SaleActivity : AppCompatActivity() {
             setPadding(dp(16), dp(14), dp(16), dp(14))
             threshold = 0
             textSize = 15f
+            imeOptions = EditorInfo.IME_ACTION_NEXT
         }
         val topAvailable = topNames.filter { name -> products.any { it.name == name } }
         val remaining = products.map { it.name }.filter { it !in topAvailable }
         val orderedNames = (topAvailable + remaining).distinct()
         qsItemName.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, orderedNames))
         container.addView(qsItemName)
+        container.addView(spacer(4))
+
+        val qsStockText = TextView(this).apply {
+            text = ""
+            textSize = 12f
+            setTextColor(Color.parseColor(teal))
+            setPadding(2, 0, 0, 0)
+        }
+        container.addView(qsStockText)
+        container.addView(spacer(8))
+
+        container.addView(TextView(this).apply {
+            text = "📏  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Unit", "یونٹ")
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 0, 0, 6)
+        })
+        val qsUnitSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
+            background = strokedBg(border, cardBg, 12)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        container.addView(qsUnitSpinner)
         container.addView(spacer(12))
 
         container.addView(TextView(this).apply {
@@ -1207,8 +1260,19 @@ class SaleActivity : AppCompatActivity() {
             background = strokedBg(border, cardBg, 12)
             setPadding(dp(16), dp(14), dp(16), dp(14))
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        container.addView(qsQty)
+        val qsQtyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        qsQtyRow.addView(qsQty)
+        qsQtyRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(8), 1) })
+        qsQtyRow.addView(circleIcon("+", teal, 36) {
+            val current = qsQty.text.toString().toDoubleOrNull() ?: 0.0
+            val next = current + 1
+            qsQty.setText(if (next == next.toLong().toDouble()) next.toLong().toString() else next.toString())
+            qsQty.setSelection(qsQty.text.length)
+        })
+        container.addView(qsQtyRow)
         container.addView(spacer(12))
 
         container.addView(TextView(this).apply {
@@ -1224,6 +1288,7 @@ class SaleActivity : AppCompatActivity() {
             background = strokedBg(border, cardBg, 12)
             setPadding(dp(16), dp(14), dp(16), dp(14))
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_NEXT
         }
         container.addView(qsPrice)
         container.addView(spacer(12))
@@ -1242,20 +1307,102 @@ class SaleActivity : AppCompatActivity() {
             setPadding(dp(16), dp(14), dp(16), dp(14))
             threshold = 1
             textSize = 15f
+            imeOptions = EditorInfo.IME_ACTION_DONE
         }
         qsCustomer.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, customers.map { it.name }))
         container.addView(qsCustomer)
+        container.addView(spacer(10))
+
+        val qsTotalText = TextView(this).apply {
+            text = "Total: Rs 0.00"
+            textSize = 15f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(2, 0, 0, 4)
+        }
+        container.addView(qsTotalText)
         container.addView(spacer(4))
+
+        fun qsRefreshTotal() {
+            val q = qsQty.text.toString().toDoubleOrNull() ?: 0.0
+            val price = qsPrice.text.toString().toDoubleOrNull() ?: 0.0
+            qsTotalText.text = "Total: Rs %.2f".format(q * price)
+        }
+        fun qsRefreshStock() {
+            val p = qsSelectedProduct
+            if (p == null) { qsStockText.text = ""; return }
+            val unit = qsUnitSpinner.selectedItem?.toString() ?: p.unit
+            val avail = qsAvailableInUnit(p, unit)
+            qsStockText.text = com.grocerypos.v11.util.Loc.t(
+                this,
+                "Available: %s %s".format(formatQty(avail), unit),
+                "دستیاب: %s %s".format(formatQty(avail), unit)
+            )
+        }
+
+        qsQty.addTextChangedListener(simpleWatcher { qsRefreshTotal() })
+        qsPrice.addTextChangedListener(simpleWatcher { qsRefreshTotal() })
+
+        qsItemName.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) {
+                val typed = qsItemName.text.toString().trim()
+                val match = products.find { it.name.equals(typed, ignoreCase = true) }
+                if (match != null) {
+                    qsSelectedProduct = match
+                    qsLastMainPrice = 0.0
+                    qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnitsFor(match))
+                    qsUnitSpinner.setSelection(0)
+                    if (qsQty.text.toString().isBlank()) qsQty.setText("1")
+                    val price = qsFromMainPrice(match, match.salePrice, match.unit)
+                    qsPrice.setText(if (price > 0) "%.2f".format(price) else "")
+                    qsRefreshStock(); qsRefreshTotal()
+                }
+                qsQty.requestFocus()
+                qsQty.setSelection(qsQty.text.length)
+                true
+            } else false
+        }
+        qsQty.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { qsPrice.requestFocus(); true } else false
+        }
+        qsPrice.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) { qsCustomer.requestFocus(); true } else false
+        }
 
         qsItemName.setOnItemClickListener { _, _, position, _ ->
             val name = qsItemName.adapter.getItem(position).toString()
             val p = products.find { it.name.equals(name, ignoreCase = true) }
             qsSelectedProduct = p
+            qsLastMainPrice = 0.0
             if (p != null) {
+                qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnitsFor(p))
+                qsUnitSpinner.setSelection(0)
                 qsQty.setText(if (qsQty.text.toString().isBlank()) "1" else qsQty.text.toString())
-                qsPrice.setText(if (p.salePrice > 0) "%.2f".format(p.salePrice) else "")
+                val price = qsFromMainPrice(p, p.salePrice, p.unit)
+                qsPrice.setText(if (price > 0) "%.2f".format(price) else "")
+                qsQty.requestFocus()
+                qsQty.setSelection(qsQty.text.length)
+                qsRefreshStock(); qsRefreshTotal()
             }
         }
+
+        qsUnitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val p = qsSelectedProduct ?: return
+                val unit = qsUnitSpinner.selectedItem?.toString() ?: p.unit
+                val base = if (qsLastMainPrice > 0) qsLastMainPrice else p.salePrice
+                val price = qsFromMainPrice(p, base, unit)
+                qsPrice.setText(if (price > 0) "%.2f".format(price) else "")
+                qsRefreshStock(); qsRefreshTotal()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        qsPrice.addTextChangedListener(simpleWatcher {
+            val p = qsSelectedProduct ?: return@simpleWatcher
+            val unit = qsUnitSpinner.selectedItem?.toString() ?: p.unit
+            val entered = qsPrice.text.toString().toDoubleOrNull() ?: 0.0
+            qsLastMainPrice = qsToMainPrice(p, entered, unit)
+        })
 
         val scroll = ScrollView(this).apply { addView(container) }
 
@@ -1282,8 +1429,9 @@ class SaleActivity : AppCompatActivity() {
                     Toast.makeText(this, "Quantity theek se likhen", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
+                val chosenUnit = qsUnitSpinner.selectedItem?.toString() ?: product.unit
                 val price = qsPrice.text.toString().toDoubleOrNull() ?: product.salePrice
-                val neededSmallest = product.toSmallestUnits(q, product.unit)
+                val neededSmallest = product.toSmallestUnits(q, chosenUnit)
                 if (product.stock < neededSmallest) {
                     Toast.makeText(
                         this,
@@ -1293,19 +1441,19 @@ class SaleActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
                 val custName = qsCustomer.text.toString().trim()
-                saveQuickSale(product, q, price, custName)
+                saveQuickSale(product, q, price, chosenUnit, custName)
                 dialog.dismiss()
             }
         }
         dialog.show()
     }
 
-    private fun saveQuickSale(product: Product, q: Double, price: Double, custName: String) {
+    private fun saveQuickSale(product: Product, q: Double, price: Double, unit: String, custName: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
 
             val current = db.productDao().find(product.barcode)
-            if (current == null || current.stock < current.toSmallestUnits(q, current.unit)) {
+            if (current == null || current.stock < current.toSmallestUnits(q, unit)) {
                 Toast.makeText(this@SaleActivity, "Stock badal gaya hai, dobara try karen", Toast.LENGTH_LONG).show()
                 return@launch
             }
@@ -1321,9 +1469,10 @@ class SaleActivity : AppCompatActivity() {
             }
 
             val amount = q * price
+            val smallestQtyForCost = current.toSmallestUnits(q, unit)
             val factor = current.smallestUnitFactor()
             val costPerSmallest = if (factor > 0) current.cost / factor else current.cost
-            val lineCost = current.toSmallestUnits(q, current.unit) * costPerSmallest
+            val lineCost = smallestQtyForCost * costPerSmallest
 
             val now = System.currentTimeMillis()
             val mmYY = SimpleDateFormat("MMyy", Locale.getDefault()).format(Date(now))
@@ -1352,14 +1501,14 @@ class SaleActivity : AppCompatActivity() {
                 barcode = current.barcode,
                 product = current.name,
                 qty = q.roundToInt(),
-                unit = current.unit,
+                unit = unit,
                 unitPrice = price,
                 cost = lineCost,
                 amount = amount
             )
             db.saleDao().items(listOf(saleItem))
 
-            val smallestQty = current.toSmallestUnits(q, current.unit).roundToInt()
+            val smallestQty = smallestQtyForCost.roundToInt()
             db.productDao().decrease(current.barcode, smallestQty)
 
             if (isCredit && customer != null) {
@@ -1387,11 +1536,34 @@ class SaleActivity : AppCompatActivity() {
 
             SyncQueueHelper.trigger(this@SaleActivity)
 
+            vibrateShort()
             Toast.makeText(
                 this@SaleActivity,
                 if (isCredit) "Credit sale saved: $invoice" else "Cash sale saved: $invoice",
                 Toast.LENGTH_SHORT
             ).show()
+        }
+    }
+
+    private fun vibrateShort() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = getSystemService(android.os.VibratorManager::class.java)
+                vm?.defaultVibrator?.vibrate(
+                    android.os.VibrationEffect.createOneShot(35, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                val v = getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v?.vibrate(android.os.VibrationEffect.createOneShot(35, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    v?.vibrate(35)
+                }
+            }
+        } catch (e: Exception) {
+            // no vibrator permission/hardware — ignore silently
         }
     }
 
