@@ -114,8 +114,6 @@ class SaleActivity : AppCompatActivity() {
         super.onCreate(b)
         editInvoice = intent.getStringExtra(EXTRA_INVOICE)
 
-        // Let the window resize when the keyboard opens so the bill summary
-        // (Total/Discount/Paid/Due) is never hidden behind it.
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         val root = LinearLayout(this).apply {
@@ -887,8 +885,6 @@ class SaleActivity : AppCompatActivity() {
             .show()
     }
 
-    // Selects the item's SECONDARY unit by default (most sales are done in the
-    // 2nd unit), falling back to the primary unit if no secondary unit exists.
     private fun onItemPicked(name: String) {
         val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
         selectedProduct = product
@@ -1350,7 +1346,10 @@ class SaleActivity : AppCompatActivity() {
             db.saleDao().deleteItems(invoice)
             db.saleDao().deleteSale(invoice)
             db.cashTransactionDao().deleteByReference(invoice)
-            SyncQueueHelper.enqueue(db, "sale", invoice, "delete", org.json.JSONObject().apply { put("invoice", invoice) })
+            SyncQueueHelper.enqueue(
+                db, "sale", invoice, "delete",
+                org.json.JSONObject().apply { put("invoice", invoice) }.toString()
+            )
             SyncQueueHelper.trigger(this@SaleActivity)
 
             Toast.makeText(this@SaleActivity, "Sale deleted", Toast.LENGTH_SHORT).show()
