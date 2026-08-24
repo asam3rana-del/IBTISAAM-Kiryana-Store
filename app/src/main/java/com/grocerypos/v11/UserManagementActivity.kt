@@ -5,6 +5,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
@@ -36,6 +37,7 @@ class UserManagementActivity : AppCompatActivity() {
     private lateinit var listContainer: LinearLayout
     private lateinit var usernameField: EditText
     private lateinit var displayNameField: EditText
+    private lateinit var phoneField: EditText
     private lateinit var passwordField: EditText
     private lateinit var roleSpinner: Spinner
     private val roles = listOf("admin", "manager", "cashier")
@@ -109,6 +111,13 @@ class UserManagementActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
+        phoneField = EditText(this).apply {
+            hint = "Phone (+92XXXXXXXXXX) — for OTP login"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
         passwordField = EditText(this).apply {
             hint = "Password"
             setHintTextColor(Color.parseColor(textGray))
@@ -120,6 +129,8 @@ class UserManagementActivity : AppCompatActivity() {
         formCard.addView(fieldBox("👤", usernameField))
         formCard.addView(spacer(10))
         formCard.addView(fieldBox("🪪", displayNameField))
+        formCard.addView(spacer(10))
+        formCard.addView(fieldBox("📱", phoneField))
         formCard.addView(spacer(10))
         formCard.addView(fieldBox("🔒", passwordField))
         formCard.addView(spacer(10))
@@ -159,6 +170,7 @@ class UserManagementActivity : AppCompatActivity() {
     private fun saveUser() {
         val username = usernameField.text.toString().trim()
         val displayName = displayNameField.text.toString().trim()
+        val phone = phoneField.text.toString().trim()
         val password = passwordField.text.toString()
         val role = roles[roleSpinner.selectedItemPosition]
 
@@ -169,11 +181,12 @@ class UserManagementActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             PosDatabase.get(this@UserManagementActivity).userDao().upsert(
-                User(username = username, displayName = displayName, role = role, passwordHash = password, active = true)
+                User(username = username, displayName = displayName, role = role, passwordHash = password, active = true, phone = phone)
             )
             Toast.makeText(this@UserManagementActivity, "User saved", Toast.LENGTH_SHORT).show()
             usernameField.text.clear()
             displayNameField.text.clear()
+            phoneField.text.clear()
             passwordField.text.clear()
         }
     }
@@ -232,6 +245,14 @@ class UserManagementActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(textDark))
                 setTypeface(typeface, Typeface.BOLD)
             })
+            if (user.phone.isNotBlank()) {
+                info.addView(TextView(this@UserManagementActivity).apply {
+                    text = "📱 ${user.phone}"
+                    textSize = 11.5f
+                    setTextColor(Color.parseColor(textGray))
+                    setPadding(0, 2, 0, 0)
+                })
+            }
             info.addView(roleBadge(user.role, roleColor))
             addView(info)
 
