@@ -1249,9 +1249,10 @@ class SaleActivity : AppCompatActivity() {
             }
             db.saleDao().items(saleItems)
 
+            val savedSale = db.saleDao().findSale(invoice)!!
             SyncQueueHelper.enqueue(
-                db, "sale", invoice, if (original != null) "update" else "create",
-                SyncQueueHelper.saleJson(db.saleDao().findSale(invoice)!!, saleItems.size)
+                db, "sale", SyncQueueHelper.saleEntityId(savedSale), if (original != null) "update" else "create",
+                SyncQueueHelper.saleJson(savedSale, saleItems.size)
             )
 
             for (line in lines) {
@@ -1280,8 +1281,9 @@ class SaleActivity : AppCompatActivity() {
                     reason = "Sale",
                     reference = invoice
                 )
-                db.cashTransactionDao().insert(cashTx)
-                SyncQueueHelper.enqueue(db, "cash_transaction", invoice, "create", SyncQueueHelper.cashTransactionJson(cashTx))
+                val cashTxId = db.cashTransactionDao().insert(cashTx)
+                val savedCashTx = cashTx.copy(id = cashTxId)
+                SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
             }
 
             suppressDraftSave = true
@@ -1347,7 +1349,7 @@ class SaleActivity : AppCompatActivity() {
             db.saleDao().deleteSale(invoice)
             db.cashTransactionDao().deleteByReference(invoice)
             SyncQueueHelper.enqueue(
-                db, "sale", invoice, "delete",
+                db, "sale", "sale:$invoice", "delete",
                 org.json.JSONObject().apply { put("invoice", invoice) }.toString()
             )
             SyncQueueHelper.trigger(this@SaleActivity)
