@@ -1,867 +1,720 @@
 package com.grocerypos.v11.ui
 
-import android.Manifest
-import android.app.AlertDialog
-import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Bundle
-import android.provider.ContactsContract
-import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Supplier
-import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.util.Loc
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class PartyActivity : AppCompatActivity() {
+class PartyReportsActivity : AppCompatActivity() {
 
-    // ---- Light premium palette ----
-    private val bg = "#FAFAFC"
-    private val gradientStart = "#7C86F5"
-    private val gradientEnd = "#A6ADFF"
-    private val blue = "#5B6EE8"
-    private val orange = "#F5A15C"
-    private val green = "#4CAF50"
-    private val red = "#E57373"
+    private val bg = "#F3F4F9"
     private val cardWhite = "#FFFFFF"
-    private val cardBorder = "#EEF0F7"
-    private val labelGray = "#9AA0B4"
+    private val textDark = "#1A1D2E"
+    private val textMuted = "#8A8FA3"
+    private val blue = "#1565C0"
+    private val orange = "#EF6C00"
+    private val green = "#2E7D32"
+    private val red = "#C62828"
+    private val teal = "#00695C"
 
-    private lateinit var tabRow: LinearLayout
-    private lateinit var formCard: LinearLayout
-    private lateinit var nameField: EditText
-    private lateinit var phoneField: EditText
-    private lateinit var creditLimitField: EditText
-    private lateinit var creditLimitBox: LinearLayout
-    private lateinit var openingBalanceField: EditText
     private lateinit var listContainer: LinearLayout
-    private lateinit var saveButton: Button
-    private lateinit var sectionAccentText: TextView
-
+    private lateinit var customersTab: Button
+    private lateinit var suppliersTab: Button
     private var showingCustomers = true
 
-    // ---- Contact picker launchers ----
-    private lateinit var contactPickerLauncher: ActivityResultLauncher<Void?>
-    private lateinit var contactPermissionLauncher: ActivityResultLauncher<String>
+    data class ItemAgg(val product: String, val qty: Double, val amount: Double)
+
+    // ---- Used by Payment History. There's no dedicated Payment/installment table in
+    // the current schema, so each sale/purchase's `paid` field is treated as a single
+    // payment entry dated at the transaction's createdAt. If a separate payments/
+    // installments table gets added later, swap the two loops in showPaymentHistory()
+    // to read from it instead. ----
+    data class PaymentEntry(val date: Long, val amount: Double, val against: String)
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
-        contactPickerLauncher = registerForActivityResult(ActivityResultContracts.PickContact()) { uri ->
-            uri?.let { fetchPhoneFromContact(it) }
-        }
-        contactPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                contactPickerLauncher.launch(null)
-            } else {
-                Toast.makeText(this, Loc.t(this, "Contacts permission denied", "رابطوں کی اجازت مسترد"), Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        val outer = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            setPadding(28, 40, 28, 32)
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= GRADIENT HEADER =================
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(28, 40, 24, 32)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(gradientStart), Color.parseColor(gradientEnd))
-            )
-        }
-        header.addView(TextView(this).apply {
-            text = "\uD83D\uDC65"
-            textSize = 22f
-            gravity = Gravity.CENTER
-            background = ovalBg(cardWhite)
-            width = (48 * resources.displayMetrics.density).toInt()
-            height = (48 * resources.displayMetrics.density).toInt()
-        })
-        val headerText = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(20, 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerText.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Customers & Suppliers", "کسٹمرز اور سپلائرز")
-            textSize = 19f
-            setTextColor(Color.WHITE)
+        root.addView(TextView(this).apply {
+            text = Loc.t(this@PartyReportsActivity, "Party Reports", "پارٹی رپورٹس")
+            textSize = 21f
+            setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(4, 0, 0, 20)
         })
-        headerText.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Manage parties & view ledgers", "پارٹیز کا انتظام اور کھاتے دیکھیں")
+
+        val tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        customersTab = Button(this).apply {
+            text = Loc.t(this@PartyReportsActivity, "CUSTOMERS", "کسٹمرز")
             textSize = 12f
-            setTextColor(Color.parseColor("#EDEFFC"))
-        })
-        header.addView(headerText)
-        outer.addView(header)
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 20, 24, 28)
-        }
-
-        // ================= TABS (pill style) =================
-        tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        root.addView(tabRow)
-        root.addView(spacer(16))
-
-        // ================= ADD PARTY FORM CARD =================
-        formCard = premiumCard().apply { setPadding(22, 20, 22, 20) }
-
-        sectionAccentText = TextView(this).apply {
-            text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "Add Customer", "کسٹمر شامل کریں")
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor(blue))
-            setPadding(0, 0, 0, 12)
-        }
-        formCard.addView(sectionAccentText)
-
-        val nameBox = innerField()
-        nameField = EditText(this).apply { hint = Loc.t(this@PartyActivity, "Name *", "نام *"); background = null; textSize = 15f }
-        nameBox.addView(nameField)
-        formCard.addView(nameBox)
-        formCard.addView(spacer(10))
-
-        // ---- Phone field row: EditText + contact-picker icon button ----
-        val phoneBox = innerField().apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        phoneField = EditText(this).apply {
-            hint = Loc.t(this@PartyActivity, "Phone (optional)", "فون (اختیاری)")
-            background = null
-            textSize = 15f
-            inputType = InputType.TYPE_CLASS_PHONE
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        phoneBox.addView(phoneField)
-        phoneBox.addView(TextView(this).apply {
-            text = "\uD83D\uDC64\u200D\uD83D\uDCDE"
-            textSize = 18f
-            setPadding(12, 0, 4, 0)
-            setOnClickListener { openContactPicker() }
-        })
-        formCard.addView(phoneBox)
-        formCard.addView(spacer(10))
-
-        creditLimitBox = innerField()
-        creditLimitField = EditText(this).apply {
-            hint = Loc.t(this@PartyActivity, "Credit Limit (optional)", "کریڈٹ لیمٹ (اختیاری)")
-            background = null
-            textSize = 15f
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        }
-        creditLimitBox.addView(creditLimitField)
-        formCard.addView(creditLimitBox)
-        formCard.addView(spacer(10))
-
-        val openingBox = innerField()
-        openingBalanceField = EditText(this).apply {
-            hint = Loc.t(this@PartyActivity, "Opening Balance (Rs, if any previous due)", "ابتدائی بیلنس (روپے، اگر کوئی پرانا واجب الادا ہو)")
-            background = null
-            textSize = 15f
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        }
-        openingBox.addView(openingBalanceField)
-        formCard.addView(openingBox)
-        formCard.addView(spacer(14))
-
-        saveButton = Button(this).apply {
-            text = Loc.t(this@PartyActivity, "SAVE", "محفوظ کریں")
             setTextColor(Color.WHITE)
-            textSize = 14f
-            background = roundedBackground(blue, 14)
-            setPadding(0, 20, 0, 20)
-            setOnClickListener { saveParty() }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0,0,8,0) }
+            setOnClickListener { showingCustomers = true; refreshTabs(); loadParties() }
         }
-        formCard.addView(saveButton)
-        root.addView(formCard)
-        root.addView(spacer(18))
+        suppliersTab = Button(this).apply {
+            text = Loc.t(this@PartyReportsActivity, "SUPPLIERS", "سپلائرز")
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8,0,0,0) }
+            setOnClickListener { showingCustomers = false; refreshTabs(); loadParties() }
+        }
+        tabRow.addView(customersTab)
+        tabRow.addView(suppliersTab)
+        root.addView(tabRow)
 
-        // ================= LIST HEADER =================
-        val listHeaderRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(4, 0, 4, 10)
-        }
-        listHeaderRow.addView(TextView(this).apply {
-            text = "\uD83D\uDCCB  "
-            textSize = 15f
+        root.addView(spacer(18))
+        root.addView(TextView(this).apply {
+            text = Loc.t(this@PartyReportsActivity, "Tap a party to select a report", "رپورٹ منتخب کرنے کے لیے پارٹی پر ٹیپ کریں")
+            textSize = 12f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(4, 0, 0, 10)
         })
-        listHeaderRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Party List", "پارٹی لسٹ")
-            textSize = 14f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        listHeaderRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Tap for history · icons to edit/delete", "تاریخ کے لیے ٹیپ کریں · ترمیم/حذف کے آئیکنز")
-            textSize = 11f
-            setTextColor(Color.parseColor(labelGray))
-        })
-        root.addView(listHeaderRow)
 
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
 
-        val scrollArea = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor(bg))
             addView(root)
         }
-        outer.addView(scrollArea)
+        setContentView(scroll)
 
-        setContentView(outer)
-
-        buildTabs()
-        showCustomers()
+        refreshTabs()
+        loadParties()
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (showingCustomers) loadCustomers() else loadSuppliers()
+    private fun refreshTabs() {
+        customersTab.background = roundedBg(if (showingCustomers) blue else "#90A4AE", 14)
+        suppliersTab.background = roundedBg(if (!showingCustomers) orange else "#90A4AE", 14)
     }
 
-    // ================= Contact picker =================
-    private fun openContactPicker() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            contactPickerLauncher.launch(null)
-        } else {
-            contactPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
-        }
-    }
-
-    private fun fetchPhoneFromContact(contactUri: Uri) {
-        val cursor = contentResolver.query(contactUri, null, null, null, null)
-        cursor?.use {
-            if (it.moveToFirst()) {
-                val idIdx = it.getColumnIndex(ContactsContract.Contacts._ID)
-                val hasPhoneIdx = it.getColumnIndex(ContactsContract.Contacts.HAS_PHONE_NUMBER)
-                val nameIdx = it.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
-                val contactId = if (idIdx >= 0) it.getString(idIdx) else null
-                val contactName = if (nameIdx >= 0) it.getString(nameIdx) else null
-
-                if (contactId != null && hasPhoneIdx >= 0 && it.getInt(hasPhoneIdx) > 0) {
-                    val phoneCursor = contentResolver.query(
-                        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                        null,
-                        "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
-                        arrayOf(contactId),
-                        null
-                    )
-                    phoneCursor?.use { pc ->
-                        if (pc.moveToFirst()) {
-                            val numIdx = pc.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                            val number = if (numIdx >= 0) pc.getString(numIdx) else null
-                            if (number != null) {
-                                phoneField.setText(number.replace(Regex("[^0-9+]"), ""))
-                            }
-                            if (nameField.text.isNullOrBlank() && !contactName.isNullOrBlank()) {
-                                nameField.setText(contactName)
-                            }
-                        }
-                    }
-                } else {
-                    Toast.makeText(
-                        this,
-                        Loc.t(this, "No phone number for this contact", "اس رابطے کا کوئی نمبر نہیں"),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        }
-    }
-
-    // ================= Tabs =================
-    private fun buildTabs() {
-        tabRow.removeAllViews()
-        tabRow.addView(Button(this).apply {
-            text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "CUSTOMERS", "کسٹمرز")
-            setTextColor(if (showingCustomers) Color.WHITE else Color.parseColor("#6B7280"))
-            textSize = 12f
-            background = roundedBackground(if (showingCustomers) blue else "#EEF0F7", 24)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
-            setOnClickListener { showCustomers() }
-        })
-        tabRow.addView(Button(this).apply {
-            text = "\uD83D\uDCE6  " + Loc.t(this@PartyActivity, "SUPPLIERS", "سپلائرز")
-            setTextColor(if (!showingCustomers) Color.WHITE else Color.parseColor("#6B7280"))
-            textSize = 12f
-            background = roundedBackground(if (!showingCustomers) orange else "#EEF0F7", 24)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
-            setOnClickListener { showSuppliers() }
-        })
-    }
-
-    private fun showCustomers() {
-        showingCustomers = true
-        buildTabs()
-        creditLimitBox.visibility = View.VISIBLE
-        sectionAccentText.text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "Add Customer", "کسٹمر شامل کریں")
-        sectionAccentText.setTextColor(Color.parseColor(blue))
-        saveButton.background = roundedBackground(blue, 14)
-        loadCustomers()
-    }
-
-    private fun showSuppliers() {
-        showingCustomers = false
-        buildTabs()
-        creditLimitBox.visibility = View.GONE
-        sectionAccentText.text = "\uD83D\uDCE6  " + Loc.t(this@PartyActivity, "Add Supplier", "سپلائر شامل کریں")
-        sectionAccentText.setTextColor(Color.parseColor(orange))
-        saveButton.background = roundedBackground(orange, 14)
-        loadSuppliers()
-    }
-
-    private fun saveParty() {
-        val n = nameField.text.toString().trim()
-        if (n.isEmpty()) {
-            Toast.makeText(this, Loc.t(this, "Name is required", "نام ضروری ہے"), Toast.LENGTH_SHORT).show()
-            return
-        }
-        val phone = phoneField.text.toString().trim()
-        val opening = openingBalanceField.text.toString().toDoubleOrNull() ?: 0.0
-
+    private fun loadParties() {
+        listContainer.removeAllViews()
         lifecycleScope.launch {
-            val db = PosDatabase.get(this@PartyActivity)
+            val db = PosDatabase.get(this@PartyReportsActivity)
             if (showingCustomers) {
-                val limit = creditLimitField.text.toString().toDoubleOrNull() ?: 0.0
-                val customer = Customer(name = n, phone = phone, creditLimit = limit, openingBalance = opening, balance = 0.0)
-                val newId = db.customerDao().insert(customer)
-                SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(customer.copy(id = newId)))
+                val customers = db.customerDao().all().first()
+                if (customers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
+                customers.forEach { c ->
+                    listContainer.addView(partyRow(c.name, c.balance) {
+                        showReportMenu(true, c.id, c.name, c.openingBalance)
+                    })
+                }
             } else {
-                val supplier = Supplier(name = n, phone = phone, openingBalance = opening, balance = 0.0)
-                val newId = db.supplierDao().insert(supplier)
-                SyncQueueHelper.enqueue(db, "supplier", "supplier:$newId", "create", SyncQueueHelper.supplierJson(supplier.copy(id = newId)))
-            }
-            SyncQueueHelper.trigger(this@PartyActivity)
-            Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
-            nameField.text.clear()
-            phoneField.text.clear()
-            creditLimitField.text.clear()
-            openingBalanceField.text.clear()
-        }
-    }
-
-    private fun loadCustomers() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@PartyActivity).customerDao().all().collectLatest { list ->
-                listContainer.removeAllViews()
-                if (list.isEmpty()) {
-                    listContainer.addView(emptyCard(Loc.t(this@PartyActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
-                }
-                for (c in list) {
-                    listContainer.addView(
-                        partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64", isCustomer = true,
-                            onClick = { openCustomerHistory(c) },
-                            onEdit = { editCustomerDialog(c) },
-                            onDelete = { confirmDeleteCustomer(c) }
-                        )
-                    )
+                val suppliers = db.supplierDao().all().first()
+                if (suppliers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
+                suppliers.forEach { s ->
+                    listContainer.addView(partyRow(s.name, s.balance) {
+                        showReportMenu(false, s.id, s.name, s.openingBalance)
+                    })
                 }
             }
         }
     }
 
-    private fun loadSuppliers() {
-        lifecycleScope.launch {
-            PosDatabase.get(this@PartyActivity).supplierDao().all().collectLatest { list ->
-                listContainer.removeAllViews()
-                if (list.isEmpty()) {
-                    listContainer.addView(emptyCard(Loc.t(this@PartyActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
-                }
-                for (s in list) {
-                    listContainer.addView(
-                        partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6", isCustomer = false,
-                            onClick = { openSupplierHistory(s) },
-                            onEdit = { editSupplierDialog(s) },
-                            onDelete = { confirmDeleteSupplier(s) }
-                        )
-                    )
-                }
-            }
-        }
-    }
-
-    // ================= Premium party row card =================
-    // ---- FIX ----
-    // Closing-balance color must be type-aware, not a blanket "positive = red" rule:
-    //   - Customer closing > 0  => customer owes the shop (receivable)  -> green (good, You'll Get)
-    //   - Customer closing < 0  => shop owes the customer                -> red (You'll Give)
-    //   - Supplier closing > 0  => shop owes the supplier (payable)      -> red (You'll Give)
-    //   - Supplier closing < 0  => supplier owes the shop (e.g. credit)  -> green (You'll Get)
-    // This mirrors the same fix applied to PartyDashboardActivity's You'll Get/You'll Give totals.
-    private fun partyRow(
-        name: String,
-        phone: String,
-        opening: Double,
-        running: Double,
-        accentHex: String,
-        icon: String,
-        isCustomer: Boolean,
-        onClick: () -> Unit,
-        onEdit: () -> Unit,
-        onDelete: () -> Unit
-    ): LinearLayout {
-        val closing = opening + running
-        val isGive = if (isCustomer) closing < 0 else closing > 0
-        val outerRow = premiumCard().apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 16, 18, 12)
-        }
-
-        val topRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setOnClickListener { onClick() }
-        }
-
-        topRow.addView(TextView(this).apply {
-            text = icon
-            textSize = 18f
-            gravity = Gravity.CENTER
-            background = ovalBg(accentHex)
-            width = (42 * resources.displayMetrics.density).toInt()
-            height = (42 * resources.displayMetrics.density).toInt()
-        })
-
-        val infoCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 0, 12, 0)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        infoCol.addView(TextView(this).apply {
-            text = name
-            textSize = 15f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#2E3242"))
-        })
-        if (phone.isNotEmpty()) {
-            infoCol.addView(TextView(this).apply {
-                text = phone
-                textSize = 12f
-                setTextColor(Color.parseColor(labelGray))
-            })
-        }
-        val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
-        balRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
-            textSize = 11f
-            setTextColor(Color.parseColor(labelGray))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        infoCol.addView(balRow)
-        infoCol.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Tap for full history  ›", "مکمل تاریخ کے لیے ٹیپ کریں  ›")
-            textSize = 11f
-            setTextColor(Color.parseColor(accentHex))
-            setPadding(0, 4, 0, 0)
-        })
-        topRow.addView(infoCol)
-
-        topRow.addView(TextView(this).apply {
-            text = "Rs %.2f".format(closing)
-            textSize = 14f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor(if (isGive) red else green))
-        })
-        outerRow.addView(topRow)
-
-        // ---- action row: edit / delete ----
-        val actionDivider = View(this).apply {
-            setBackgroundColor(Color.parseColor(cardBorder))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
-                setMargins(0, 12, 0, 8)
-            }
-        }
-        outerRow.addView(actionDivider)
-
-        val actionRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-        }
-        actionRow.addView(actionChip("\u270F\uFE0F", Loc.t(this@PartyActivity, "Edit", "ترمیم"), accentHex, isDelete = false) { onEdit() })
-        actionRow.addView(spacer(10).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT) })
-        actionRow.addView(actionChip("\uD83D\uDDD1\uFE0F", Loc.t(this@PartyActivity, "Delete", "حذف کریں"), red, isDelete = true) { onDelete() })
-        outerRow.addView(actionRow)
-
-        return outerRow
-    }
-
-    private fun actionChip(icon: String, label: String, colorHex: String, isDelete: Boolean, onClick: () -> Unit): LinearLayout {
+    private fun partyRow(name: String, balance: Double, onClick: () -> Unit): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(16, 8, 16, 8)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(if (isDelete) "#FDEDED" else "#EEF0FF"))
-                cornerRadius = 20f
-            }
-            addView(TextView(this@PartyActivity).apply { text = icon; textSize = 12f })
-            addView(TextView(this@PartyActivity).apply {
-                text = "  $label"
-                textSize = 12f
-                setTextColor(Color.parseColor(colorHex))
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-            })
-            setOnClickListener { onClick() }
-        }
-    }
-
-    // ================= Edit dialogs =================
-    private fun editCustomerDialog(c: Customer) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 8)
-        }
-        val nameEdit = EditText(this).apply { setText(c.name); hint = Loc.t(this@PartyActivity, "Name", "نام") }
-        val phoneEdit = EditText(this).apply { setText(c.phone); hint = Loc.t(this@PartyActivity, "Phone", "فون"); inputType = InputType.TYPE_CLASS_PHONE }
-        val limitEdit = EditText(this).apply { setText(c.creditLimit.toString()); hint = Loc.t(this@PartyActivity, "Credit Limit", "کریڈٹ لیمٹ"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        val openingEdit = EditText(this).apply { setText(c.openingBalance.toString()); hint = Loc.t(this@PartyActivity, "Opening Balance", "ابتدائی بیلنس"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        for (f in listOf(nameEdit, phoneEdit, limitEdit, openingEdit)) {
-            container.addView(f)
-            container.addView(spacer(10))
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle(Loc.t(this, "Edit Customer", "کسٹمر میں ترمیم کریں"))
-            .setView(container)
-            .setPositiveButton(Loc.t(this, "Save", "محفوظ کریں")) { d, _ ->
-                val newName = nameEdit.text.toString().trim()
-                if (newName.isEmpty()) {
-                    Toast.makeText(this, Loc.t(this, "Name is required", "نام ضروری ہے"), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                lifecycleScope.launch {
-                    val updated = c.copy(
-                        name = newName,
-                        phone = phoneEdit.text.toString().trim(),
-                        creditLimit = limitEdit.text.toString().toDoubleOrNull() ?: c.creditLimit,
-                        openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: c.openingBalance
-                    )
-                    val db = PosDatabase.get(this@PartyActivity)
-                    db.customerDao().update(updated)
-                    SyncQueueHelper.enqueue(db, "customer", "customer:${updated.id}", "update", SyncQueueHelper.customerJson(updated))
-                    SyncQueueHelper.trigger(this@PartyActivity)
-                    Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Updated", "اپ ڈیٹ ہو گیا"), Toast.LENGTH_SHORT).show()
-                }
-                d.dismiss()
-            }
-            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .show()
-    }
-
-    private fun editSupplierDialog(s: Supplier) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 8)
-        }
-        val nameEdit = EditText(this).apply { setText(s.name); hint = Loc.t(this@PartyActivity, "Name", "نام") }
-        val phoneEdit = EditText(this).apply { setText(s.phone); hint = Loc.t(this@PartyActivity, "Phone", "فون"); inputType = InputType.TYPE_CLASS_PHONE }
-        val openingEdit = EditText(this).apply { setText(s.openingBalance.toString()); hint = Loc.t(this@PartyActivity, "Opening Balance", "ابتدائی بیلنس"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        for (f in listOf(nameEdit, phoneEdit, openingEdit)) {
-            container.addView(f)
-            container.addView(spacer(10))
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle(Loc.t(this, "Edit Supplier", "سپلائر میں ترمیم کریں"))
-            .setView(container)
-            .setPositiveButton(Loc.t(this, "Save", "محفوظ کریں")) { d, _ ->
-                val newName = nameEdit.text.toString().trim()
-                if (newName.isEmpty()) {
-                    Toast.makeText(this, Loc.t(this, "Name is required", "نام ضروری ہے"), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                lifecycleScope.launch {
-                    val updated = s.copy(
-                        name = newName,
-                        phone = phoneEdit.text.toString().trim(),
-                        openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: s.openingBalance
-                    )
-                    val db = PosDatabase.get(this@PartyActivity)
-                    db.supplierDao().update(updated)
-                    SyncQueueHelper.enqueue(db, "supplier", "supplier:${updated.id}", "update", SyncQueueHelper.supplierJson(updated))
-                    SyncQueueHelper.trigger(this@PartyActivity)
-                    Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Updated", "اپ ڈیٹ ہو گیا"), Toast.LENGTH_SHORT).show()
-                }
-                d.dismiss()
-            }
-            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .show()
-    }
-
-    // ================= Delete confirmations =================
-    private fun confirmDeleteCustomer(c: Customer) {
-        AlertDialog.Builder(this)
-            .setTitle(Loc.t(this, "Delete Customer", "کسٹمر حذف کریں"))
-            .setMessage(Loc.t(this, "Delete ${c.name}? This cannot be undone.", "${c.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔"))
-            .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { d, _ ->
-                lifecycleScope.launch {
-                    PosDatabase.get(this@PartyActivity).customerDao().delete(c)
-                    Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Deleted", "حذف ہو گیا"), Toast.LENGTH_SHORT).show()
-                }
-                d.dismiss()
-            }
-            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .show()
-    }
-
-    private fun confirmDeleteSupplier(s: Supplier) {
-        AlertDialog.Builder(this)
-            .setTitle(Loc.t(this, "Delete Supplier", "سپلائر حذف کریں"))
-            .setMessage(Loc.t(this, "Delete ${s.name}? This cannot be undone.", "${s.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔"))
-            .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { d, _ ->
-                lifecycleScope.launch {
-                    PosDatabase.get(this@PartyActivity).supplierDao().delete(s)
-                    Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Deleted", "حذف ہو گیا"), Toast.LENGTH_SHORT).show()
-                }
-                d.dismiss()
-            }
-            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .show()
-    }
-
-    // ================= Customer full history =================
-    private fun openCustomerHistory(c: Customer) {
-        lifecycleScope.launch {
-            val sales = PosDatabase.get(this@PartyActivity).saleDao().salesByCustomer(c.id)
-            val content = historyDialogContainer(c.name, blue, "\uD83D\uDC64", c.openingBalance, c.balance)
-            val body = content.getChildAt(1) as LinearLayout
-
-            if (sales.isEmpty()) {
-                body.addView(emptyCard(Loc.t(this@PartyActivity, "No sales yet", "ابھی تک کوئی سیل نہیں ہوئی")))
-            } else {
-                val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-                // ---- Newest first, and no invoice/reference number shown — date is the identifier ----
-                for (s in sales.sortedByDescending { it.createdAt }) {
-                    body.addView(historyRow(fmt.format(Date(s.createdAt)), s.total, s.paid, blue))
-                }
-            }
-
-            val dialog = AlertDialog.Builder(this@PartyActivity).setView(content).create()
-            (content.getChildAt(2) as LinearLayout).addView(Button(this@PartyActivity).apply {
-                text = Loc.t(this@PartyActivity, "Close", "بند کریں")
-                setTextColor(Color.WHITE)
-                background = roundedBackground(blue, 14)
-                setOnClickListener { dialog.dismiss() }
-            })
-            dialog.show()
-        }
-    }
-
-    // ================= Supplier full history =================
-    private fun openSupplierHistory(s: Supplier) {
-        lifecycleScope.launch {
-            val purchases = PosDatabase.get(this@PartyActivity).purchaseDao().purchasesBySupplier(s.id)
-            val content = historyDialogContainer(s.name, orange, "\uD83D\uDCE6", s.openingBalance, s.balance)
-            val body = content.getChildAt(1) as LinearLayout
-
-            if (purchases.isEmpty()) {
-                body.addView(emptyCard(Loc.t(this@PartyActivity, "No purchases yet", "ابھی تک کوئی خریداری نہیں ہوئی")))
-            } else {
-                val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-                // ---- Newest first, and no bill number shown — date is the identifier ----
-                for (p in purchases.sortedByDescending { it.createdAt }) {
-                    body.addView(historyRow(fmt.format(Date(p.createdAt)), p.total, p.paid, orange))
-                }
-            }
-
-            val dialog = AlertDialog.Builder(this@PartyActivity).setView(content).create()
-            (content.getChildAt(2) as LinearLayout).addView(Button(this@PartyActivity).apply {
-                text = Loc.t(this@PartyActivity, "Close", "بند کریں")
-                setTextColor(Color.WHITE)
-                background = roundedBackground(orange, 14)
-                setOnClickListener { dialog.dismiss() }
-            })
-            dialog.show()
-        }
-    }
-
-    // ================= shared dialog helpers (premium gradient header dialog) =================
-    private fun historyDialogContainer(name: String, colorHex: String, icon: String, opening: Double, running: Double): LinearLayout {
-        val outer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(bg))
-                cornerRadius = 20f
-            }
-        }
-
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(28, 24, 28, 24)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(colorHex), lighten(colorHex))
-            ).apply {
-                cornerRadii = floatArrayOf(20f, 20f, 20f, 20f, 0f, 0f, 0f, 0f)
-            }
-        }
-        header.addView(TextView(this).apply {
-            text = icon
-            textSize = 18f
-            gravity = Gravity.CENTER
-            background = ovalBg(cardWhite)
-            width = (40 * resources.displayMetrics.density).toInt()
-            height = (40 * resources.displayMetrics.density).toInt()
-        })
-        val headerTextCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 0, 0, 0)
-        }
-        headerTextCol.addView(TextView(this).apply {
-            text = name; textSize = 17f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
-        balRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
-            setTextColor(Color.parseColor("#F2F3FF")); textSize = 11f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        balRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Closing", "اختتامی") + ": Rs %.2f".format(opening + running)
-            setTextColor(Color.WHITE); textSize = 12f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        headerTextCol.addView(balRow)
-        header.addView(headerTextCol)
-        outer.addView(header)
-
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(20, 16, 20, 8)
-        }
-        outer.addView(body)
-
-        val footer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(20, 8, 20, 20)
-        }
-        outer.addView(footer)
-        return outer
-    }
-
-    // ---- No invoice/bill reference is passed in or shown anymore — just the date,
-    // total, and amount paid. Date is bold since it's now the row's identifier. ----
-    private fun historyRow(date: String, total: Double, paid: Double, colorHex: String): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 14, 18, 14)
-            background = elevatedCardBg()
-            elevation = 2f
+            setPadding(20, 18, 20, 18)
+            background = roundedBg(cardWhite, 18)
+            elevation = 3f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 10) }
 
-            val top = LinearLayout(this@PartyActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            top.addView(TextView(this@PartyActivity).apply {
-                text = date; textSize = 14f
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = name
+                textSize = 15f
+                setTextColor(Color.parseColor(textDark))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(Color.parseColor("#2E3242"))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
-            top.addView(TextView(this@PartyActivity).apply {
-                text = "Rs %.2f".format(total)
-                setTextColor(Color.parseColor(colorHex))
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = "Rs %.2f".format(balance)
+                textSize = 13f
+                setTextColor(Color.parseColor(if (balance > 0) red else green))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                textSize = 14f
+            })
+            setOnClickListener { onClick() }
+        }
+    }
+
+    // ---- Tap a party -> choose which report ----
+    private fun showReportMenu(isCustomer: Boolean, id: Long, name: String, opening: Double) {
+        val plLabel = if (isCustomer)
+            Loc.t(this, "Customer-wise Profit", "کسٹمر کے لحاظ سے منافع")
+        else
+            Loc.t(this, "Purchase Summary", "خریداری کا خلاصہ")
+
+        val statementLabel = if (isCustomer)
+            Loc.t(this, "Customer Statement", "کسٹمر اسٹیٹمنٹ")
+        else
+            Loc.t(this, "Supplier Statement", "سپلائر اسٹیٹمنٹ")
+
+        val options = arrayOf(
+            "📦 " + Loc.t(this, "Party Report by Item", "آئٹم کے لحاظ سے پارٹی رپورٹ"),
+            "📒 " + Loc.t(this, "Customer Ledger", "کسٹمر لیجر"),
+            "💵 " + Loc.t(this, "Payment History", "ادائیگی کی تاریخ"),
+            "📜 " + statementLabel,
+            "🧾 " + Loc.t(this, "Sale/Purchase by Party", "پارٹی کے لحاظ سے سیل/خریداری"),
+            "📊 " + plLabel
+        )
+        AlertDialog.Builder(this)
+            .setTitle(name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showItemReport(isCustomer, id, name)
+                    1 -> showLedger(isCustomer, id, name, opening)
+                    2 -> showPaymentHistory(isCustomer, id, name)
+                    3 -> showStatement(isCustomer, id, name, opening)
+                    4 -> showTransactions(isCustomer, id, name)
+                    5 -> showPartyPL(isCustomer, id, name)
+                }
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    // ================= 1) Party Report by Item =================
+    private fun showItemReport(isCustomer: Boolean, id: Long, name: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyReportsActivity)
+            val items: List<ItemAgg> = if (isCustomer) {
+                val sales = db.saleDao().salesByCustomer(id)
+                val map = LinkedHashMap<String, ItemAgg>()
+                sales.forEach { s ->
+                    db.saleDao().itemsForInvoice(s.invoice).forEach { it ->
+                        val ex = map[it.product]
+                        map[it.product] = if (ex == null) ItemAgg(it.product, it.qty.toDouble(), it.amount)
+                        else ItemAgg(it.product, ex.qty + it.qty.toDouble(), ex.amount + it.amount)
+                    }
+                }
+                map.values.sortedByDescending { it.amount }
+            } else {
+                val purchases = db.purchaseDao().purchasesBySupplier(id)
+                val map = LinkedHashMap<String, ItemAgg>()
+                purchases.forEach { p ->
+                    db.purchaseDao().itemsForBill(p.billNo).forEach { it ->
+                        val productName = db.productDao().find(it.barcode)?.name ?: it.barcode
+                        val ex = map[productName]
+                        map[productName] = if (ex == null) ItemAgg(productName, it.qty.toDouble(), it.amount)
+                        else ItemAgg(productName, ex.qty + it.qty.toDouble(), ex.amount + it.amount)
+                    }
+                }
+                map.values.sortedByDescending { it.amount }
+            }
+
+            val content = reportContainer(Loc.t(this@PartyReportsActivity, "Item Report", "آئٹم رپورٹ") + " — $name")
+            val body = content.getChildAt(1) as LinearLayout
+            if (items.isEmpty()) {
+                body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No items found", "کوئی آئٹم نہیں ملا")))
+            } else {
+                items.forEach { i -> body.addView(rowText(i.product, "${formatQty(i.qty)} × — Rs %.2f".format(i.amount))) }
+            }
+            AlertDialog.Builder(this@PartyReportsActivity)
+                .setView(content)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
+                .show()
+        }
+    }
+
+    // ================= 2) Customer / Supplier Ledger (Dr / Cr table) =================
+    // Classic accounting ledger: every transaction posts a Debit (sale/purchase total)
+    // and a Credit (amount paid at that time) with a running balance carried forward.
+    // This is more detailed than the Statement below — it shows Dr and Cr side by side
+    // per entry instead of just the net outstanding change.
+    private fun showLedger(isCustomer: Boolean, id: Long, name: String, opening: Double) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyReportsActivity)
+            val fmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+            var running = opening
+
+            val content = reportContainer(Loc.t(this@PartyReportsActivity, "Ledger", "لیجر") + " — $name")
+            val body = content.getChildAt(1) as LinearLayout
+
+            body.addView(ledgerHeaderRow())
+            body.addView(plDivider())
+
+            body.addView(
+                ledgerRow(
+                    Loc.t(this@PartyReportsActivity, "Opening Balance", "ابتدائی بیلنس"),
+                    dr = if (opening > 0) opening else 0.0,
+                    cr = if (opening < 0) -opening else 0.0,
+                    balance = running,
+                    bold = true
+                )
+            )
+
+            if (isCustomer) {
+                val sales = db.saleDao().salesByCustomer(id).sortedBy { it.createdAt }
+                if (sales.isEmpty()) {
+                    body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
+                }
+                sales.forEach { s ->
+                    running += (s.total - s.paid)
+                    body.addView(ledgerRow(fmt.format(Date(s.createdAt)), dr = s.total, cr = s.paid, balance = running))
+                }
+            } else {
+                val purchases = db.purchaseDao().purchasesBySupplier(id).sortedBy { it.createdAt }
+                if (purchases.isEmpty()) {
+                    body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
+                }
+                purchases.forEach { p ->
+                    running += (p.total - p.paid)
+                    body.addView(ledgerRow(fmt.format(Date(p.createdAt)), dr = p.total, cr = p.paid, balance = running))
+                }
+            }
+
+            body.addView(plDivider())
+            body.addView(rowText(Loc.t(this@PartyReportsActivity, "Closing Balance", "اختتامی بیلنس"), "Rs %.2f".format(running)).apply {
+                (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
+                (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (running > 0) red else green))
+            })
+
+            AlertDialog.Builder(this@PartyReportsActivity)
+                .setView(content)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
+                .show()
+        }
+    }
+
+    private fun ledgerHeaderRow(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(4, 2, 4, 8)
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = Loc.t(this@PartyReportsActivity, "Date", "تاریخ")
+                textSize = 11f
+                setTextColor(Color.parseColor(textMuted))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f)
+            })
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = Loc.t(this@PartyReportsActivity, "Debit", "ڈیبٹ")
+                textSize = 11f
+                gravity = Gravity.END
+                setTextColor(Color.parseColor(red))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = Loc.t(this@PartyReportsActivity, "Credit", "کریڈٹ")
+                textSize = 11f
+                gravity = Gravity.END
+                setTextColor(Color.parseColor(green))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setPadding(12, 0, 0, 0)
+            })
+        }
+    }
+
+    private fun ledgerRow(date: String, dr: Double, cr: Double, balance: Double, bold: Boolean = false): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(4, 8, 4, 8)
+            val top = LinearLayout(this@PartyReportsActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            top.addView(TextView(this@PartyReportsActivity).apply {
+                text = date
+                textSize = if (bold) 13.5f else 13f
+                setTextColor(Color.parseColor(textDark))
+                if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f)
+            })
+            top.addView(TextView(this@PartyReportsActivity).apply {
+                text = if (dr > 0) "Rs %.2f".format(dr) else "—"
+                textSize = 13f
+                gravity = Gravity.END
+                setTextColor(Color.parseColor(if (dr > 0) red else textMuted))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            top.addView(TextView(this@PartyReportsActivity).apply {
+                text = if (cr > 0) "Rs %.2f".format(cr) else "—"
+                textSize = 13f
+                gravity = Gravity.END
+                setTextColor(Color.parseColor(if (cr > 0) green else textMuted))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setPadding(12, 0, 0, 0)
             })
             addView(top)
-            addView(TextView(this@PartyActivity).apply {
-                text = Loc.t(this@PartyActivity, "Paid", "ادا شدہ") + ": Rs %.2f".format(paid)
-                textSize = 11f
-                setTextColor(Color.parseColor(labelGray))
-                setPadding(0, 4, 0, 0)
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = Loc.t(this@PartyReportsActivity, "Balance", "بیلنس") + ": Rs %.2f".format(balance)
+                textSize = 11.5f
+                setTextColor(Color.parseColor(if (balance > 0) red else green))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 3, 0, 0)
             })
         }
     }
 
-    private fun emptyCard(text: String) = premiumCard().apply {
-        gravity = Gravity.CENTER
-        setPadding(20, 24, 20, 24)
-        addView(TextView(this@PartyActivity).apply {
-            this.text = text
-            setTextColor(Color.parseColor(labelGray))
-            textSize = 13f
-        })
-    }
+    // ================= 3) Payment History =================
+    // Reads each sale/purchase's `paid` amount as one payment entry dated at the
+    // transaction's createdAt (see PaymentEntry doc comment above — there's no
+    // separate installment/payment table in the current schema).
+    private fun showPaymentHistory(isCustomer: Boolean, id: Long, name: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyReportsActivity)
+            val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
-    // ---- UI helpers ----
+            val content = reportContainer(Loc.t(this@PartyReportsActivity, "Payment History", "ادائیگی کی تاریخ") + " — $name")
+            val body = content.getChildAt(1) as LinearLayout
 
-    /** Elevated white card, light premium look with soft border + shadow. */
-    private fun premiumCard() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(20, 16, 20, 16)
-        background = elevatedCardBg()
-        elevation = 3f
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(0, 0, 0, 12) }
-    }
+            val payments = mutableListOf<PaymentEntry>()
+            if (isCustomer) {
+                db.saleDao().salesByCustomer(id).forEach { s ->
+                    if (s.paid > 0) payments.add(PaymentEntry(s.createdAt, s.paid, Loc.t(this@PartyReportsActivity, "Against Sale", "سیل کے مقابلے میں")))
+                }
+            } else {
+                db.purchaseDao().purchasesBySupplier(id).forEach { p ->
+                    if (p.paid > 0) payments.add(PaymentEntry(p.createdAt, p.paid, Loc.t(this@PartyReportsActivity, "Against Purchase", "خریداری کے مقابلے میں")))
+                }
+            }
+            payments.sortByDescending { it.date }
 
-    /** Lighter inner wrapper used for text fields inside a card. */
-    private fun innerField() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(18, 10, 18, 10)
-        background = GradientDrawable().apply {
-            setColor(Color.parseColor("#F7F8FC"))
-            cornerRadius = 10f
-            setStroke(1, Color.parseColor(cardBorder))
+            if (payments.isEmpty()) {
+                body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No payments recorded yet", "ابھی تک کوئی ادائیگی درج نہیں ہوئی")))
+            } else {
+                var total = 0.0
+                payments.forEach { pe ->
+                    total += pe.amount
+                    body.addView(paymentRow(fmt.format(Date(pe.date)), pe.against, pe.amount))
+                }
+                body.addView(plDivider())
+                val totalLabel = if (isCustomer)
+                    Loc.t(this@PartyReportsActivity, "Total Received", "کل موصول شدہ")
+                else
+                    Loc.t(this@PartyReportsActivity, "Total Paid", "کل ادا شدہ")
+                body.addView(rowText(totalLabel, "Rs %.2f".format(total)).apply {
+                    (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
+                    (getChildAt(1) as TextView).setTextColor(Color.parseColor(green))
+                })
+            }
+
+            AlertDialog.Builder(this@PartyReportsActivity)
+                .setView(content)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
+                .show()
         }
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        )
     }
 
-    private fun elevatedCardBg() = GradientDrawable().apply {
-        setColor(Color.parseColor(cardWhite))
-        cornerRadius = 16f
-        setStroke(1, Color.parseColor(cardBorder))
+    private fun paymentRow(date: String, against: String, amount: Double): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(4, 10, 4, 10)
+
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = "💵"
+                textSize = 15f
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#E8F5E9")) }
+                width = (32 * resources.displayMetrics.density).toInt()
+                height = (32 * resources.displayMetrics.density).toInt()
+            })
+
+            val col = LinearLayout(this@PartyReportsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(14, 0, 8, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            col.addView(TextView(this@PartyReportsActivity).apply {
+                text = date
+                textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(textDark))
+            })
+            col.addView(TextView(this@PartyReportsActivity).apply {
+                text = against
+                textSize = 11f
+                setTextColor(Color.parseColor(textMuted))
+            })
+            addView(col)
+
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = "Rs %.2f".format(amount)
+                textSize = 13.5f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(green))
+            })
+        }
     }
 
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
+    // ================= 4) Party Statement (running balance) =================
+    private fun showStatement(isCustomer: Boolean, id: Long, name: String, opening: Double) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyReportsActivity)
+            val fmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+            var running = opening
+
+            val content = reportContainer(Loc.t(this@PartyReportsActivity, "Statement", "اسٹیٹمنٹ") + " — $name")
+            val body = content.getChildAt(1) as LinearLayout
+
+            body.addView(rowText(Loc.t(this@PartyReportsActivity, "Opening Balance", "ابتدائی بیلنس"), "Rs %.2f".format(opening)).apply {
+                (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
+            })
+            body.addView(plDivider())
+
+            if (isCustomer) {
+                val sales = db.saleDao().salesByCustomer(id).sortedBy { it.createdAt }
+                if (sales.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
+                sales.forEach { s ->
+                    val outstanding = s.total - s.paid
+                    running += outstanding
+                    // ---- No invoice number shown — date is the row's identifier ----
+                    body.addView(statementRow(fmt.format(Date(s.createdAt)), s.total, running))
+                }
+            } else {
+                val purchases = db.purchaseDao().purchasesBySupplier(id).sortedBy { it.createdAt }
+                if (purchases.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
+                purchases.forEach { p ->
+                    val outstanding = p.total - p.paid
+                    running += outstanding
+                    // ---- No bill number shown — date is the row's identifier ----
+                    body.addView(statementRow(fmt.format(Date(p.createdAt)), p.total, running))
+                }
+            }
+
+            body.addView(plDivider())
+            body.addView(rowText(Loc.t(this@PartyReportsActivity, "Closing Balance", "اختتامی بیلنس"), "Rs %.2f".format(running)).apply {
+                (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
+                (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (running > 0) red else green))
+            })
+
+            AlertDialog.Builder(this@PartyReportsActivity)
+                .setView(content)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
+                .show()
+        }
+    }
+
+    // ---- Reference/invoice number removed — date is now the only identifier shown ----
+    private fun statementRow(date: String, total: Double, balanceAfter: Double): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(4, 10, 4, 10)
+            val top = LinearLayout(this@PartyReportsActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            top.addView(TextView(this@PartyReportsActivity).apply {
+                text = date; textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(textDark))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            top.addView(TextView(this@PartyReportsActivity).apply {
+                text = "Rs %.2f".format(total); textSize = 13f
+                setTextColor(Color.parseColor(textMuted))
+            })
+            addView(top)
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = Loc.t(this@PartyReportsActivity, "Balance", "بیلنس") + ": Rs %.2f".format(balanceAfter)
+                textSize = 12f
+                setTextColor(Color.parseColor(if (balanceAfter > 0) red else green))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+        }
+    }
+
+    // ================= 5) Sale/Purchase by Party (plain transaction list) =================
+    private fun showTransactions(isCustomer: Boolean, id: Long, name: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyReportsActivity)
+            val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+
+            val title = if (isCustomer) Loc.t(this@PartyReportsActivity, "Sales", "سیلز") else Loc.t(this@PartyReportsActivity, "Purchases", "خریداریاں")
+            val content = reportContainer("$title — $name")
+            val body = content.getChildAt(1) as LinearLayout
+
+            if (isCustomer) {
+                val sales = db.saleDao().salesByCustomer(id).sortedByDescending { it.createdAt }
+                if (sales.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No sales yet", "کوئی سیل نہیں ہوئی")))
+                var totalAmt = 0.0
+                sales.forEach { s ->
+                    totalAmt += s.total
+                    // ---- Invoice number removed — date is the row's identifier ----
+                    body.addView(rowText(fmt.format(Date(s.createdAt)), "Rs %.2f".format(s.total)))
+                }
+                body.addView(plDivider())
+                body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total", "کل"), "Rs %.2f".format(totalAmt)))
+            } else {
+                val purchases = db.purchaseDao().purchasesBySupplier(id).sortedByDescending { it.createdAt }
+                if (purchases.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی")))
+                var totalAmt = 0.0
+                purchases.forEach { p ->
+                    totalAmt += p.total
+                    // ---- Bill number removed — date is the row's identifier ----
+                    body.addView(rowText(fmt.format(Date(p.createdAt)), "Rs %.2f".format(p.total)))
+                }
+                body.addView(plDivider())
+                body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total", "کل"), "Rs %.2f".format(totalAmt)))
+            }
+
+            AlertDialog.Builder(this@PartyReportsActivity)
+                .setView(content)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
+                .show()
+        }
+    }
+
+    // ================= 6) Profit & Loss =================
+    // Customer: real profit (revenue - cost) from every item they've bought.
+    // Supplier: no "profit" concept — show a purchase spend summary instead.
+    private fun showPartyPL(isCustomer: Boolean, id: Long, name: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyReportsActivity)
+            val title = if (isCustomer) Loc.t(this@PartyReportsActivity, "Profit & Loss", "منافع اور نقصان") else Loc.t(this@PartyReportsActivity, "Purchase Summary", "خریداری کا خلاصہ")
+            val content = reportContainer("$title — $name")
+            val body = content.getChildAt(1) as LinearLayout
+
+            if (isCustomer) {
+                val sales = db.saleDao().salesByCustomer(id)
+                if (sales.isEmpty()) {
+                    body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No sales yet", "کوئی سیل نہیں ہوئی")))
+                } else {
+                    var revenue = 0.0
+                    var cost = 0.0
+                    sales.forEach { s ->
+                        db.saleDao().itemsForInvoice(s.invoice).forEach { it ->
+                            revenue += it.amount
+                            // ---- FIX: `SaleItem.cost` ab is LINE ka TOTAL COGS hai (amount
+                            // jaisa), per-unit rate nahi — SaleActivity.addItem() dekhein.
+                            // Isliye yahan qty se dobara multiply NAHI karna, warna cost
+                            // hamesha real value se qty guna badi calculate hoti thi. ----
+                            cost += it.cost
+                        }
+                    }
+                    val profit = revenue - cost
+                    val profitColor = if (profit >= 0) green else red
+
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total Sales (bills)", "کل سیلز (بلز)"), "${sales.size}"))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Revenue", "آمدنی"), "Rs %.2f".format(revenue)))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Cost of Goods", "سامان کی لاگت"), "Rs %.2f".format(cost)))
+                    body.addView(plDivider())
+                    body.addView(rowText(if (profit >= 0) Loc.t(this@PartyReportsActivity, "Net Profit", "خالص منافع") else Loc.t(this@PartyReportsActivity, "Net Loss", "خالص نقصان"), "Rs %.2f".format(profit)).apply {
+                        (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
+                        (getChildAt(1) as TextView).setTextColor(Color.parseColor(profitColor))
+                    })
+                }
+            } else {
+                val purchases = db.purchaseDao().purchasesBySupplier(id)
+                if (purchases.isEmpty()) {
+                    body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی")))
+                } else {
+                    val totalBills = purchases.size
+                    val totalAmount = purchases.sumOf { it.total }
+                    val totalPaid = purchases.sumOf { it.paid }
+                    val totalDue = totalAmount - totalPaid
+
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total Bills", "کل بلز"), "$totalBills"))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total Purchased", "کل خریداری"), "Rs %.2f".format(totalAmount)))
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total Paid", "کل ادائیگی"), "Rs %.2f".format(totalPaid)))
+                    body.addView(plDivider())
+                    body.addView(rowText(Loc.t(this@PartyReportsActivity, "Outstanding Due", "باقی واجب الادا"), "Rs %.2f".format(totalDue)).apply {
+                        (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
+                        (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (totalDue > 0) red else green))
+                    })
+                    body.addView(spacer(8))
+                    body.addView(TextView(this@PartyReportsActivity).apply {
+                        text = Loc.t(
+                            this@PartyReportsActivity,
+                            "Note: Suppliers don't have their own 'profit' — this is a purchase summary.",
+                            "نوٹ: سپلائرز کا اپنا منافع نہیں ہوتا — یہ خریداری کا خلاصہ ہے۔"
+                        )
+                        textSize = 11.5f
+                        setTextColor(Color.parseColor(textMuted))
+                        setPadding(0, 6, 0, 0)
+                    })
+                }
+            }
+
+            AlertDialog.Builder(this@PartyReportsActivity)
+                .setView(content)
+                .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
+                .show()
+        }
+    }
+
+    // ---- shared dialog container: title header (white) + scrollable body ----
+    private fun reportContainer(title: String): LinearLayout {
+        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        outer.addView(TextView(this).apply {
+            text = title
+            textSize = 16f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(24, 24, 24, 12)
+        })
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 0, 24, 12)
+        }
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (350 * resources.displayMetrics.density).toInt()
+            )
+            addView(body)
+        }
+        outer.addView(scroll)
+        return outer
+    }
+
+    private fun rowText(left: String, right: String): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(4, 8, 4, 8)
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = left; textSize = 13.5f
+                setTextColor(Color.parseColor(textDark))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@PartyReportsActivity).apply {
+                text = right; textSize = 13.5f; gravity = Gravity.END
+                setTextColor(Color.parseColor(blue))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+        }
+    }
+
+    private fun plDivider(): View {
+        return View(this).apply {
+            setBackgroundColor(Color.parseColor("#EDEEF5"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
+                setMargins(0, 8, 0, 8)
+            }
+        }
+    }
+
+    private fun emptyText(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(Color.parseColor(textMuted))
+            textSize = 13f
+            setPadding(0, 6, 0, 6)
+        }
+    }
+
+    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        this.cornerRadius = cornerRadius.toFloat()
-    }
-
-    private fun lighten(colorHex: String): Int {
-        val c = Color.parseColor(colorHex)
-        val hsv = FloatArray(3)
-        Color.colorToHSV(c, hsv)
-        hsv[1] *= 0.7f
-        hsv[2] = (hsv[2] * 1.15f).coerceAtMost(1f)
-        return Color.HSVToColor(hsv)
+        cornerRadius = radius.toFloat()
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {
@@ -869,10 +722,5 @@ class PartyActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
 
-    private fun divider(): View {
-        return View(this).apply {
-            setBackgroundColor(0xFFEEEEEE.toInt())
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2)
-        }
-    }
+    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 }
