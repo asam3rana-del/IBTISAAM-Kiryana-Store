@@ -60,22 +60,33 @@ class ReportsActivity : AppCompatActivity() {
         root.addView(sectionHeader(Loc.t(this, "Sale reports", "سیل رپورٹس")))
         val navCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(cardWhite, 18)
-            elevation = 3f
+            background = roundedBg(cardWhite, 20)
+            elevation = 4f
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { setMargins(0, 0, 0, 18) }
         }
-        navCard.addView(navRow(Loc.t(this, "Sale / Purchase History", "سیل / خریداری کی تاریخ")) {
-            startActivity(android.content.Intent(this@ReportsActivity, HistoryActivity::class.java))
-        })
+        navCard.addView(navRow(
+            icon = "🧾", accentHex = "#1565C0", tintHex = "#E3F2FD",
+            title = Loc.t(this, "Sale / Purchase History", "سیل / خریداری کی تاریخ"),
+            subtitle = Loc.t(this, "View all transactions", "تمام لین دین دیکھیں")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)) })
+
         navCard.addView(navDivider())
-        navCard.addView(navRow(Loc.t(this, "Party Reports", "پارٹی رپورٹس")) {
-            startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java))
-        })
+
+        navCard.addView(navRow(
+            icon = "👥", accentHex = "#6A1B9A", tintHex = "#F3E5F5",
+            title = Loc.t(this, "Party Reports", "پارٹی رپورٹس"),
+            subtitle = Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java)) })
+
         navCard.addView(navDivider())
-        navCard.addView(navRow(Loc.t(this, "Stock Report", "اسٹاک رپورٹ")) {
-            startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java))
-        })
+
+        navCard.addView(navRow(
+            icon = "📦", accentHex = "#EF6C00", tintHex = "#FFF3E0",
+            title = Loc.t(this, "Stock Report", "اسٹاک رپورٹ"),
+            subtitle = Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java)) })
+
         root.addView(navCard)
 
         val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -407,25 +418,64 @@ class ReportsActivity : AppCompatActivity() {
         }
     }
 
-    private fun navRow(title: String, onClick: () -> Unit): LinearLayout {
+    // ---- Nav row (Sale/Purchase History, Party Reports, Stock Report) ----
+    private fun navRow(
+        icon: String,
+        accentHex: String,
+        tintHex: String,
+        title: String,
+        subtitle: String,
+        onClick: () -> Unit
+    ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 20, 20, 20)
+            setPadding(20, 18, 20, 18)
             isClickable = true
             isFocusable = true
             setOnClickListener { onClick() }
-            addView(TextView(this@ReportsActivity).apply {
-                text = title
-                textSize = 14f
-                setTextColor(Color.parseColor(textDark))
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+
+            // Icon badge
+            addView(FrameLayout(this@ReportsActivity).apply {
+                val size = (42 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor(tintHex))
+                }
+                addView(TextView(this@ReportsActivity).apply {
+                    text = icon; textSize = 17f; gravity = Gravity.CENTER
+                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                })
             })
+
+            // Title + subtitle column
+            val textCol = LinearLayout(this@ReportsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(16, 0, 8, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            textCol.addView(TextView(this@ReportsActivity).apply {
+                text = title
+                textSize = 14.5f
+                setTextColor(Color.parseColor(textDark))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            textCol.addView(TextView(this@ReportsActivity).apply {
+                text = subtitle
+                textSize = 11.5f
+                setTextColor(Color.parseColor(textMuted))
+                setPadding(0, 3, 0, 0)
+            })
+            addView(textCol)
+
+            // Chevron
             addView(TextView(this@ReportsActivity).apply {
                 text = "\u203A"
-                textSize = 16f
-                setTextColor(Color.parseColor(textMuted))
+                textSize = 18f
+                setTextColor(Color.parseColor(accentHex))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(8, 0, 4, 0)
             })
         }
     }
@@ -433,7 +483,7 @@ class ReportsActivity : AppCompatActivity() {
     private fun navDivider(): View {
         return View(this).apply {
             setBackgroundColor(Color.parseColor("#EDEEF5"))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
                 setMargins(20, 0, 20, 0)
             }
         }
