@@ -1241,7 +1241,7 @@ class PurchaseActivity : ThemedActivity() {
         val outstanding = purchase.total - purchase.paid
         if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
         db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
-        SyncQueueHelper.enqueue(db, "purchase", billNo, "delete", org.json.JSONObject().apply { put("billNo", billNo) })
+        SyncQueueHelper.enqueue(db, "purchase", billNo, "delete", org.json.JSONObject().apply { put("billNo", billNo) }.toString())
         SyncQueueHelper.trigger(this@PurchaseActivity)
         Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
     }
