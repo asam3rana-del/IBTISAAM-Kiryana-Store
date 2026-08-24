@@ -315,8 +315,6 @@ interface ProductDao {
     @Update suspend fun update(c:Customer)
     @Delete suspend fun delete(c:Customer)
     @Query("SELECT * FROM customers WHERE id=:id LIMIT 1") suspend fun find(id:Long):Customer?
-    // NEW: needed so Firestore pulls can upsert by serverId instead of always
-    // inserting a fresh row (which would duplicate the customer on every pull).
     @Query("SELECT * FROM customers WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Customer?
     @Query("SELECT * FROM customers ORDER BY name") fun all():Flow<List<Customer>>
     @Query("UPDATE customers SET balance=balance+:amt WHERE id=:id")
@@ -330,7 +328,6 @@ interface ProductDao {
     @Update suspend fun update(s:Supplier)
     @Delete suspend fun delete(s:Supplier)
     @Query("SELECT * FROM suppliers WHERE id=:id LIMIT 1") suspend fun find(id:Long):Supplier?
-    // NEW: same reasoning as CustomerDao.findByServerId above.
     @Query("SELECT * FROM suppliers WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Supplier?
     @Query("UPDATE suppliers SET balance=balance+:amt WHERE id=:id") suspend fun addBalance(id:Long,amt:Double)
     @Query("SELECT * FROM suppliers ORDER BY name") fun all():Flow<List<Supplier>>
@@ -361,17 +358,15 @@ interface ProductDao {
     @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC") suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
     @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')") suspend fun totalActiveQtySold(barcode:String):Int
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si GROUP BY si.product ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
-    // ---- Day Book: chronological sales for a single day, with paid amount for Due display ----
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paid, createdAt, status FROM sales WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun salesBetween(start:Long,end:Long):List<DayBookSale>
 }
 
 @Dao interface ExpenseDao {
-    @Insert suspend fun insert(e:Expense)
+    @Insert suspend fun insert(e:Expense): Long
     @Delete suspend fun delete(e:Expense)
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses") suspend fun total():Double
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE createdAt BETWEEN :start AND :end") suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT * FROM expenses ORDER BY createdAt DESC") fun all():Flow<List<Expense>>
-    // ---- Day Book: chronological expenses for a single day ----
     @Query("SELECT * FROM expenses WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun between(start:Long,end:Long):List<Expense>
 }
 
@@ -403,7 +398,6 @@ interface ProductDao {
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId GROUP BY p.name ORDER BY totalAmount DESC") suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
     @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC") suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN products p ON pi.barcode=p.barcode GROUP BY p.name ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
-    // ---- Day Book: chronological purchases for a single day, with paid amount for Due display ----
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, paid, createdAt, status FROM purchases WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun purchasesBetween(start:Long,end:Long):List<DayBookPurchase>
 }
 
@@ -424,13 +418,10 @@ interface ProductDao {
 @Dao interface AuditDao { @Insert suspend fun insert(a:Audit) }
 
 @Dao interface CashTransactionDao {
-    @Insert suspend fun insert(t:CashTransaction)
+    @Insert suspend fun insert(t:CashTransaction): Long
     @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end") suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
     @Query("DELETE FROM cash_transactions WHERE reference=:ref") suspend fun deleteByReference(ref:String)
-    // ---- Day Book: chronological cash transactions for a single day (Day Book filters this
-    // list down to entries with a blank `reference` — i.e. manual Cash In/Out — since
-    // sale/purchase-linked entries are already represented by their Sale/Purchase row) ----
     @Query("SELECT * FROM cash_transactions WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun between(start:Long,end:Long):List<CashTransaction>
 }
 
@@ -537,13 +528,6 @@ val MIGRATION_20_21 = object : Migration(20, 21) {
     }
 }
 
-// ---- FIX: MIGRATION_18_19 rescaled `stock` and `openingStock` from "primary unit" counts to
-// "smallest unit" counts (e.g. dozens -> pcs) but left `reorderLevel` untouched. Now that
-// ProductActivity exposes a reorder-level field (entered in smallest units, to match how
-// `stock<=reorderLevel` is compared), any reorderLevel set on an install that predates this
-// migration and went through MIGRATION_18_19 needs the same rescale applied, or it will be
-// off by the same factor as stock/openingStock were before that migration. Safe to run even
-// on installs where reorderLevel is still 0 for every product (0 * factor = 0).
 val MIGRATION_21_22 = object : Migration(21, 22) {
     override fun migrate(database: SupportSQLiteDatabase) {
         val factorExpr = "(CASE WHEN secondaryUnit != '' AND secondaryUnitQty > 0 THEN " +
