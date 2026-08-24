@@ -324,8 +324,9 @@ class CashActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@CashActivity)
             val tx = CashTransaction(type = type, method = method, amount = amt, reason = fullReason)
-            db.cashTransactionDao().insert(tx)
-            SyncQueueHelper.enqueue(db, "cash_transaction", "cash_tx:${System.currentTimeMillis()}", "create", SyncQueueHelper.cashTransactionJson(tx))
+            val newId = db.cashTransactionDao().insert(tx)
+            val savedTx = tx.copy(id = newId)
+            SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedTx), "create", SyncQueueHelper.cashTransactionJson(savedTx))
             SyncQueueHelper.trigger(this@CashActivity)
             Toast.makeText(this@CashActivity, Loc.t(this@CashActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             amount.text.clear()
