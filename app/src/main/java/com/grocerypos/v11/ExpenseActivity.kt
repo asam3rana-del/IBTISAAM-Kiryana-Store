@@ -303,8 +303,9 @@ class ExpenseActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ExpenseActivity)
             val expense = Expense(category = category, description = fullDescription, amount = amt)
-            db.expenseDao().insert(expense)
-            SyncQueueHelper.enqueue(db, "expense", "expense:${expense.id}", "create", SyncQueueHelper.expenseJson(expense))
+            val newId = db.expenseDao().insert(expense)
+            val savedExpense = expense.copy(id = newId)
+            SyncQueueHelper.enqueue(db, "expense", SyncQueueHelper.expenseEntityId(savedExpense), "create", SyncQueueHelper.expenseJson(savedExpense))
             SyncQueueHelper.trigger(this@ExpenseActivity)
             Toast.makeText(this@ExpenseActivity, Loc.t(this@ExpenseActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             amount.text.clear()
