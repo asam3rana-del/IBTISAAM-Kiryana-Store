@@ -12,6 +12,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.lifecycle.lifecycleScope
+import com.grocerypos.v11.sync.SyncWorker
 import com.grocerypos.v11.ui.LoginActivity
 import com.grocerypos.v11.ui.SettingsActivity
 import com.grocerypos.v11.ui.ProductActivity
@@ -88,6 +89,12 @@ class MainActivity : ThemedActivity() {
             return
         }
         role = session.getString("role", "cashier") ?: "cashier"
+
+        // NEW: starts background sync (push queued changes + pull server changes every
+        // 15 minutes). Safe to call on every app start — ExistingPeriodicWorkPolicy.KEEP
+        // inside SyncWorker.schedulePeriodic() means it won't duplicate or restart an
+        // already-scheduled sync.
+        SyncWorker.schedulePeriodic(this)
 
         com.grocerypos.v11.util.CrashHandler.install(this)
         com.grocerypos.v11.util.CrashHandler.getLastCrash(this)?.let { crashText -> showCrashDialog(crashText) }
