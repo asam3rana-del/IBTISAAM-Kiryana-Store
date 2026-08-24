@@ -972,7 +972,8 @@ class SettingsActivity : AppCompatActivity() {
                     displayName = user.displayName,
                     role = user.role,
                     passwordHash = finalPassword,
-                    active = true
+                    active = true,
+                    phone = user.phone
                 )
             )
 
