@@ -1241,7 +1241,7 @@ class PurchaseActivity : ThemedActivity() {
         val outstanding = purchase.total - purchase.paid
         if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
         db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
-        SyncQueueHelper.enqueue(db, "purchase", billNo, "delete", org.json.JSONObject().apply { put("billNo", billNo) }.toString())
+        SyncQueueHelper.enqueue(db, "purchase", "purchase:$billNo", "delete", org.json.JSONObject().apply { put("billNo", billNo) }.toString())
         SyncQueueHelper.trigger(this@PurchaseActivity)
         Toast.makeText(this@PurchaseActivity, "Purchase deleted", Toast.LENGTH_SHORT).show(); finish()
     }
@@ -1293,7 +1293,7 @@ class PurchaseActivity : ThemedActivity() {
                 val purchaseItems = lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) }
                 db.purchaseDao().items(purchaseItems)
                 SyncQueueHelper.enqueue(
-                    db, "purchase", billNo, if (original != null) "update" else "create",
+                    db, "purchase", SyncQueueHelper.purchaseEntityId(purchaseRecord), if (original != null) "update" else "create",
                     SyncQueueHelper.purchaseJson(purchaseRecord, purchaseItems.size)
                 )
                 lines.forEach { line ->
@@ -1316,12 +1316,14 @@ class PurchaseActivity : ThemedActivity() {
                 if (supplierId != null && amountPaid > 0) {
                     val payment = Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")
                     db.paymentDao().insert(payment)
-                    SyncQueueHelper.enqueue(db, "payment", billNo, "create", SyncQueueHelper.paymentJson(payment))
+                    SyncQueueHelper.enqueue(db, "payment", SyncQueueHelper.paymentEntityId(payment), "create", SyncQueueHelper.paymentJson(payment))
                 }
                 if (amountPaid > 0) {
                     val cashTx = CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)
+                    val cashTxId = db.cashTransactionDao().insert(cashTx)
+                    val savedCashTx = cashTx.copy(id = cashTxId)
                     db.cashTransactionDao().insert(cashTx)
-                    SyncQueueHelper.enqueue(db, "cash_transaction", billNo, "create", SyncQueueHelper.cashTransactionJson(cashTx))
+                    SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
                 }
                 suppressDraftSave = true; clearDraft(); editBillNo = billNo
                 SyncQueueHelper.trigger(this@PurchaseActivity)
