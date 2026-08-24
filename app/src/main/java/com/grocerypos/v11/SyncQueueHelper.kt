@@ -77,6 +77,53 @@ object SyncQueueHelper {
         return gson.toJson(map)
     }
 
+    // ---- ADDED: PurchaseActivity.kt calls SyncQueueHelper.purchaseJson(purchaseRecord, itemCount)
+    // in proceedSave() — mirrors saleJson's shape for the purchase side of the ledger. ----
+    fun purchaseJson(purchase: Purchase, itemCount: Int): String {
+        val map = mapOf(
+            "serverId" to "purchase:${purchase.billNo}",
+            "billNo" to purchase.billNo,
+            "supplierId" to purchase.supplierId,
+            "subtotal" to purchase.subtotal,
+            "discount" to purchase.discount,
+            "total" to purchase.total,
+            "paid" to purchase.paid,
+            "createdAt" to purchase.createdAt,
+            "itemCount" to itemCount,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return gson.toJson(map)
+    }
+
+    // ---- ADDED: PurchaseActivity.kt calls SyncQueueHelper.paymentJson(payment) after
+    // inserting a Payment record for the supplier-side payment on a purchase. ----
+    fun paymentJson(payment: Payment): String {
+        val map = mapOf(
+            "reference" to payment.reference,
+            "partyType" to payment.partyType,
+            "partyId" to payment.partyId,
+            "amount" to payment.amount,
+            "method" to payment.method,
+            "note" to payment.note,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return gson.toJson(map)
+    }
+
+    // ---- ADDED: ExpenseActivity.kt calls SyncQueueHelper.expenseJson(expense) right after
+    // inserting the expense, using entityId "expense:${expense.id}". ----
+    fun expenseJson(expense: Expense): String {
+        val map = mapOf(
+            "serverId" to "expense:${expense.id}",
+            "category" to expense.category,
+            "description" to expense.description,
+            "amount" to expense.amount,
+            "createdAt" to expense.createdAt,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return gson.toJson(map)
+    }
+
     fun cashTransactionJson(t: CashTransaction): String {
         val map = mapOf(
             "serverId" to "cash_transaction:${t.id}",
