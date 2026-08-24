@@ -79,6 +79,9 @@ dependencies {
     // Retrofit + Gson removed: replaced by Firebase Firestore below.
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
     implementation("com.google.firebase:firebase-firestore-ktx")
+    // Phone OTP login (LoginActivity) — FirebaseAuth, PhoneAuthCredential,
+    // PhoneAuthOptions, PhoneAuthProvider all come from this artifact.
+    implementation("com.google.firebase:firebase-auth-ktx")
     // Lets Firestore's Task<T> API be used with Kotlin coroutines (.await()).
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     // Gson stays — SyncApi still uses it to parse SyncQueueEntry.payloadJson.
