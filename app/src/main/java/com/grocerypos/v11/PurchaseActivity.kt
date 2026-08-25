@@ -21,6 +21,7 @@ import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
 import com.grocerypos.v11.*
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.CancellationException
@@ -1266,8 +1267,15 @@ class PurchaseActivity : ThemedActivity() {
                 var supplierId = matchedSupplier?.id
                 val db = PosDatabase.get(this@PurchaseActivity)
                 val billNo = editBillNo ?: genBillNo(db)
-                if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
+                // FIX (Phase 1 - Data Safety): everything below (supplier insert, reversal
+                // of the original purchase on edit, purchase+items insert, stock/cost
+                // update per line, supplier balance update, payment + cash transaction
+                // insert) now runs inside one Room transaction instead of as separate
+                // sequential writes — a crash/kill partway through previously could leave
+                // stock, cost, and supplier balance out of sync with the purchase record.
                 val original = originalPurchase
+                db.withTransaction {
+                if (supplierId == null && party.isNotEmpty()) { supplierId = db.supplierDao().insert(Supplier(name = party)) }
                 if (original != null) {
                     reverseStockAndCostForItems(db, originalItems)
                     val originalOutstanding = original.total - original.paid
@@ -1310,6 +1318,7 @@ class PurchaseActivity : ThemedActivity() {
                     val savedCashTx = cashTx.copy(id = cashTxId)
                     SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
                 }
+                } // end db.withTransaction
                 suppressDraftSave = true; clearDraft(); editBillNo = billNo
                 SyncQueueHelper.trigger(this@PurchaseActivity)
                 Toast.makeText(this@PurchaseActivity, if (original != null) "Purchase updated" else "Purchase saved", Toast.LENGTH_SHORT).show()
