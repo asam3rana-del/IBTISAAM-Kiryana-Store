@@ -1775,14 +1775,22 @@ class ProductActivity : ThemedActivity() {
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { _, _ ->
                 lifecycleScope.launch {
                     try {
-                        PosDatabase.get(this@ProductActivity)
-                            .productDao()
-                            .delete(product)
+                        val db = PosDatabase.get(this@ProductActivity)
+                        db.productDao().delete(product)
 
-                        // NOTE: no sync_queue "delete" entry is enqueued here yet — see
-                        // note below saveProduct(); pending confirmation that SyncApi.push()
-                        // supports a "delete" operation for products before wiring this up,
-                        // to avoid entries that fail/retry forever with no backend handling.
+                        // FIX (sync): SyncApi.push() now maps the "product" entity type
+                        // to the "products" Firestore collection for the "delete"
+                        // operation (see SyncApi.kt), so this is safe to enqueue —
+                        // previously a deleted product stayed in Firestore forever since
+                        // nothing told the server to remove it.
+                        SyncQueueHelper.enqueue(
+                            db,
+                            "product",
+                            SyncQueueHelper.productEntityId(product),
+                            "delete",
+                            "{}"
+                        )
+                        SyncQueueHelper.trigger(this@ProductActivity)
 
                         if (editingProduct?.barcode == product.barcode) {
                             clearForm()
