@@ -24,6 +24,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.smallestUnitName
@@ -1723,6 +1724,19 @@ class ProductActivity : ThemedActivity() {
 
                 db.productDao().upsert(product)
 
+                // FIX (sync): product create/update was never enqueued into sync_queue,
+                // so no product ever reached Firestore even with the worker running.
+                // Mirrors the same enqueue+trigger pattern already used for
+                // Customer/Supplier saves in PartyActivity.
+                SyncQueueHelper.enqueue(
+                    db,
+                    "product",
+                    SyncQueueHelper.productEntityId(product),
+                    if (existing != null) "update" else "create",
+                    SyncQueueHelper.productJson(product)
+                )
+                SyncQueueHelper.trigger(this@ProductActivity)
+
                 Toast.makeText(
                     this@ProductActivity,
                     if (existing != null) {
@@ -1764,6 +1778,11 @@ class ProductActivity : ThemedActivity() {
                         PosDatabase.get(this@ProductActivity)
                             .productDao()
                             .delete(product)
+
+                        // NOTE: no sync_queue "delete" entry is enqueued here yet — see
+                        // note below saveProduct(); pending confirmation that SyncApi.push()
+                        // supports a "delete" operation for products before wiring this up,
+                        // to avoid entries that fail/retry forever with no backend handling.
 
                         if (editingProduct?.barcode == product.barcode) {
                             clearForm()
