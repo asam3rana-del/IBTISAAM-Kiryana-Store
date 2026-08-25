@@ -22,6 +22,7 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
 import com.grocerypos.v11.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -48,6 +49,11 @@ data class SaleLine(
     val tertiaryUnit: String = "",
     val tertiaryUnitQty: Double = 0.0
 )
+
+/** Thrown to abort saveSale()'s db.withTransaction block early (e.g. stock changed
+ *  under us) and roll back everything done so far in that transaction. Caught right
+ *  after the transaction call — see saveSale(). */
+private class SaveAbortedException : Exception()
 
 class SaleActivity : AppCompatActivity() {
 
@@ -1596,8 +1602,19 @@ class SaleActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
-
+            // FIX (Phase 1 - Data Safety): the whole save (stock reversal on edit, stock
+            // check, stock deduction, sale+items insert, customer balance update, cash
+            // transaction insert) now runs inside a single Room transaction. Previously
+            // these were separate sequential writes — a crash/kill partway through could
+            // leave stock, the sale record, and customer balance out of sync with each
+            // other. withTransaction rolls everything back together if any step fails.
+            // NOTE: withTransaction's lambda is `crossinline`, so a bare `return@launch`
+            // from inside it won't compile — SaveAbortedException is thrown instead and
+            // caught right after the transaction block to exit saveSale() the same way.
             val original = originalSale
+            try {
+            db.withTransaction {
+
             if (original != null) {
                 originalItems.forEach { si ->
                     val p = db.productDao().find(si.barcode)
@@ -1620,7 +1637,7 @@ class SaleActivity : AppCompatActivity() {
                 val current = db.productDao().find(barcode)
                 if (current == null) {
                     Toast.makeText(this@SaleActivity, "Stock badal gaya hai — item nahi mila. Bill dobara check karen.", Toast.LENGTH_LONG).show()
-                    return@launch
+                    throw SaveAbortedException()
                 }
                 val neededSmallest = group.sumOf { current.toSmallestUnits(it.qty, it.unit) }
                 if (current.stock < neededSmallest) {
@@ -1629,7 +1646,7 @@ class SaleActivity : AppCompatActivity() {
                         "Stock badal gaya hai — \"${current.name}\" mein sirf ${formatQty(current.stock.toDouble())} ${current.smallestUnitName()} available hai. Bill dobara check karen.",
                         Toast.LENGTH_LONG
                     ).show()
-                    return@launch
+                    throw SaveAbortedException()
                 }
                 productsByBarcode[barcode] = current
             }
@@ -1705,6 +1722,11 @@ class SaleActivity : AppCompatActivity() {
                 SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
             }
 
+            } // end db.withTransaction
+            } catch (e: SaveAbortedException) {
+                return@launch
+            }
+
             suppressDraftSave = true
             clearDraft()
             editInvoice = invoice
@@ -1753,20 +1775,24 @@ class SaleActivity : AppCompatActivity() {
             val sale = originalSale ?: db.saleDao().findSale(invoice) ?: return@launch
             val items = originalItems.ifEmpty { db.saleDao().itemsForInvoice(invoice) }
 
-            items.forEach { si ->
-                val p = db.productDao().find(si.barcode)
-                if (p != null) {
-                    val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit }).roundToInt()
-                    db.productDao().increase(si.barcode, smallestQty)
+            // FIX (Phase 1 - Data Safety): stock reversal + balance reversal + row
+            // deletes are now one atomic transaction (previously separate writes).
+            db.withTransaction {
+                items.forEach { si ->
+                    val p = db.productDao().find(si.barcode)
+                    if (p != null) {
+                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit }).roundToInt()
+                        db.productDao().increase(si.barcode, smallestQty)
+                    }
                 }
+                val outstanding = sale.total - sale.paid
+                if (sale.customerId != null && outstanding > 0) {
+                    db.customerDao().addBalance(sale.customerId, -outstanding)
+                }
+                db.saleDao().deleteItems(invoice)
+                db.saleDao().deleteSale(invoice)
+                db.cashTransactionDao().deleteByReference(invoice)
             }
-            val outstanding = sale.total - sale.paid
-            if (sale.customerId != null && outstanding > 0) {
-                db.customerDao().addBalance(sale.customerId, -outstanding)
-            }
-            db.saleDao().deleteItems(invoice)
-            db.saleDao().deleteSale(invoice)
-            db.cashTransactionDao().deleteByReference(invoice)
             SyncQueueHelper.enqueue(
                 db, "sale", "sale:$invoice", "delete",
                 org.json.JSONObject().apply { put("invoice", invoice) }.toString()
