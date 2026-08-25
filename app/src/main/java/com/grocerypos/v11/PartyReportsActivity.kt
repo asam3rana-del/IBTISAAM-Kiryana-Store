@@ -115,7 +115,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 val customers = db.customerDao().all().first()
                 if (customers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
                 customers.forEach { c ->
-                    listContainer.addView(partyRow(c.name, c.balance) {
+                    listContainer.addView(partyRow(c.name, c.openingBalance + c.balance, isCustomer = true) {
                         showReportMenu(true, c.id, c.name, c.openingBalance)
                     })
                 }
@@ -123,7 +123,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 val suppliers = db.supplierDao().all().first()
                 if (suppliers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
                 suppliers.forEach { s ->
-                    listContainer.addView(partyRow(s.name, s.balance) {
+                    listContainer.addView(partyRow(s.name, s.openingBalance + s.balance, isCustomer = false) {
                         showReportMenu(false, s.id, s.name, s.openingBalance)
                     })
                 }
@@ -131,7 +131,14 @@ class PartyReportsActivity : AppCompatActivity() {
         }
     }
 
-    private fun partyRow(name: String, balance: Double, onClick: () -> Unit): LinearLayout {
+    // FIX (Phase 2 - Accounting): balance color now customer/supplier-aware (isCustomer
+    // param added) instead of coloring any positive balance red — a positive customer
+    // balance means they owe us (red/"You'll Get" convention elsewhere), but a positive
+    // supplier balance means WE owe them, which previously showed the wrong color. Also
+    // now receives the closing balance (opening + running) instead of just the running
+    // balance, matching PartyActivity/PartyDashboardActivity/MainActivity.
+    private fun partyRow(name: String, closing: Double, isCustomer: Boolean, onClick: () -> Unit): LinearLayout {
+        val isGive = if (isCustomer) closing < 0 else closing > 0
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -150,9 +157,9 @@ class PartyReportsActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(TextView(this@PartyReportsActivity).apply {
-                text = "Rs %.2f".format(balance)
+                text = "Rs %.2f".format(closing)
                 textSize = 13f
-                setTextColor(Color.parseColor(if (balance > 0) red else green))
+                setTextColor(Color.parseColor(if (isGive) red else green))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             setOnClickListener { onClick() }
@@ -481,7 +488,7 @@ class PartyReportsActivity : AppCompatActivity() {
                     val outstanding = s.total - s.paid
                     running += outstanding
                     // ---- No invoice number shown — date is the row's identifier ----
-                    body.addView(statementRow(fmt.format(Date(s.createdAt)), s.total, running))
+                    body.addView(statementRow(fmt.format(Date(s.createdAt)), s.total, running, isCustomer = true))
                 }
             } else {
                 val purchases = db.purchaseDao().purchasesBySupplier(id).sortedBy { it.createdAt }
@@ -490,14 +497,18 @@ class PartyReportsActivity : AppCompatActivity() {
                     val outstanding = p.total - p.paid
                     running += outstanding
                     // ---- No bill number shown — date is the row's identifier ----
-                    body.addView(statementRow(fmt.format(Date(p.createdAt)), p.total, running))
+                    body.addView(statementRow(fmt.format(Date(p.createdAt)), p.total, running, isCustomer = false))
                 }
             }
 
             body.addView(plDivider())
+            // FIX (Phase 2 - Accounting): closing-balance color now customer/supplier-aware
+            // (a positive supplier balance means WE owe them, which is not the same "red"
+            // meaning as a positive customer balance) — same isGive pattern used elsewhere.
+            val closingIsGive = if (isCustomer) running < 0 else running > 0
             body.addView(rowText(Loc.t(this@PartyReportsActivity, "Closing Balance", "اختتامی بیلنس"), "Rs %.2f".format(running)).apply {
                 (getChildAt(0) as TextView).setTypeface(null, android.graphics.Typeface.BOLD)
-                (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (running > 0) red else green))
+                (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (closingIsGive) red else green))
             })
 
             AlertDialog.Builder(this@PartyReportsActivity)
@@ -508,7 +519,10 @@ class PartyReportsActivity : AppCompatActivity() {
     }
 
     // ---- Reference/invoice number removed — date is now the only identifier shown ----
-    private fun statementRow(date: String, total: Double, balanceAfter: Double): LinearLayout {
+    // FIX (Phase 2 - Accounting): added isCustomer so the per-row balance color follows
+    // the same customer/supplier-aware convention as the Closing Balance above it.
+    private fun statementRow(date: String, total: Double, balanceAfter: Double, isCustomer: Boolean): LinearLayout {
+        val isGive = if (isCustomer) balanceAfter < 0 else balanceAfter > 0
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(4, 10, 4, 10)
@@ -527,7 +541,7 @@ class PartyReportsActivity : AppCompatActivity() {
             addView(TextView(this@PartyReportsActivity).apply {
                 text = Loc.t(this@PartyReportsActivity, "Balance", "بیلنس") + ": Rs %.2f".format(balanceAfter)
                 textSize = 12f
-                setTextColor(Color.parseColor(if (balanceAfter > 0) red else green))
+                setTextColor(Color.parseColor(if (isGive) red else green))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
         }
