@@ -976,7 +976,10 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             val finalUsername = if (newUsername.isNotEmpty()) newUsername else user.username
-            val finalPassword = if (newPassword.isNotEmpty()) newPassword else user.passwordHash
+            // FIX (Phase 4 - Security): a newly typed password is now hashed before
+            // saving (previously stored as-typed, plain text). If left blank, the
+            // existing passwordHash is kept unchanged either way.
+            val finalPassword = if (newPassword.isNotEmpty()) PasswordHasher.hash(newPassword) else user.passwordHash
 
             val updatedUser = User(
                 username = finalUsername,
