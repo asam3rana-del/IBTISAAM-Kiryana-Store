@@ -24,6 +24,7 @@ import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
 import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.MainActivity
+import com.grocerypos.v11.PasswordHasher
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.User
 import kotlinx.coroutines.launch
