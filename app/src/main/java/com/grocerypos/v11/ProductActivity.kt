@@ -123,6 +123,17 @@ class ProductActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // FIX (Phase 4 - Security): role check enforced here too, not just by hiding the
+        // "Products" tile for non-admins in MainActivity — that only stopped normal
+        // navigation, not a cashier reaching this Activity another way (recents, restored
+        // task, deep link).
+        val myRole = getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier"
+        if (myRole != "admin") {
+            Toast.makeText(this, "Sirf Admin is screen ko access kar sakta hai", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         loadThemePrefs()
