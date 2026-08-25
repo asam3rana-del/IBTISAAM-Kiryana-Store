@@ -150,11 +150,9 @@ class MainActivity : ThemedActivity() {
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
-            // Products & Reports now live in Settings — this gear icon is the way to reach
-            // them, since they were removed from the main dashboard grid below (see the
-            // "MORE" tiles list further down: only Day Book + Customers/Suppliers remain
-            // there for daily-use items; Products/Reports are setup/review actions, not
-            // rozana transactional ones).
+            // Products & Reports live in Settings — reached via this gear icon, since they're
+            // setup/review actions rather than daily transactional ones and don't appear as
+            // dashboard cards below.
             setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
         })
 
@@ -250,61 +248,53 @@ class MainActivity : ThemedActivity() {
         body.addView(spacer(30))
 
         // ================= QUICK ACTIONS =================
-        // Sale + Cash are the two highest-frequency, everyday actions for every role, so they
-        // sit together as the primary quick-action row (previously Cash In/Out was buried in
-        // the "MORE" tile grid below and needed 2 taps — now it's 1 tap from the dashboard,
-        // same as Sale). Purchase is admin/manager-only and less frequent, so it gets its own
-        // secondary row underneath rather than competing for space in the primary row.
-        body.addView(sectionLabel("QUICK ACTIONS"))
-        body.addView(buildQuickActionsRow())
-        if (role == "admin" || role == "manager") {
-            body.addView(spacer(12))
-            body.addView(buildPurchaseQuickAction())
-        }
-        body.addView(spacer(30))
-
-        // ================= CUSTOMERS & SUPPLIERS =================
-        body.addView(buildCustomerSupplierSection())
-        body.addView(spacer(30))
-
-        body.addView(sectionLabel("MORE"))
-
-        val partiesTile = Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
-        val dayBookTile = Tile("📖", "Day Book", "#0F9B8E", "#DFF6F8") { startActivity(Intent(this@MainActivity, DayBookActivity::class.java)) }
-
-        // ---- Products and Reports removed from the dashboard grid on purpose: both are
-        // setup/review actions (add-once inventory maintenance, periodic sales analysis) rather
-        // than daily transactional work, so they now live under Settings (⚙️ icon, top-left of
-        // header) instead of taking up space here. Cash In/Out was also removed from this list
-        // since it's now a primary Quick Action above — no need to show it twice. ----
-        val tiles: List<Tile> = when (role) {
-            "admin" -> listOf(
-                dayBookTile,
-                partiesTile
-            )
-            "manager" -> listOf(
-                dayBookTile,
-                partiesTile,
-                Tile("🚪", "Logout", "#D32F4A", "#FCE6EA") { doLogout() }
-            )
-            else -> listOf(
-                dayBookTile,
-                partiesTile,
-                Tile("🚪", "Logout", "#D32F4A", "#FCE6EA") { doLogout() }
-            )
-        }
-
-        tiles.chunked(2).forEach { pair ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            pair.forEachIndexed { idx, tile ->
-                val tileView = premiumMenuTile(tile)
-                tileView.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    if (idx == 0) setMargins(0, 0, 8, 14) else setMargins(8, 0, 0, 14)
-                }
-                row.addView(tileView)
+        // Every dashboard action (Sale, Cash, Purchase, Day Book, Customers & Suppliers,
+        // Logout) now renders as the same gradient quick-action card — one consistent style,
+        // one tap each, instead of Sale/Cash/Purchase being "big cards" while Day Book etc.
+        // were small icon tiles buried under a separate "MORE" section. Products and Reports
+        // are intentionally not in this list — they're setup/review actions, reachable from
+        // the ⚙️ Settings icon in the header instead.
+        val quickActions = mutableListOf(
+            QuickAction("Sale", "Start a new sale", "#00B4D8", "#0077B6") {
+                startActivity(Intent(this@MainActivity, SaleActivity::class.java))
+            },
+            QuickAction("Cash", "Cash In / Cash Out", "#F5A524", "#C97A0A") {
+                startActivity(Intent(this@MainActivity, CashActivity::class.java))
             }
-            body.addView(row)
+        )
+        if (role == "admin" || role == "manager") {
+            quickActions.add(
+                QuickAction("Purchase", "Record a purchase", "#D6408F", "#8E2A6C") {
+                    startActivity(Intent(this@MainActivity, PurchaseActivity::class.java))
+                }
+            )
         }
+        quickActions.add(
+            QuickAction("Day Book", "View daily ledger", "#0F9B8E", "#0B6E64") {
+                startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
+            }
+        )
+        quickActions.add(
+            QuickAction("Customers &\nSuppliers", "Manage ledgers & dues", "#4E342E", "#2E1F1B") {
+                startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java))
+            }
+        )
+        if (role == "manager" || role == "cashier") {
+            quickActions.add(
+                QuickAction("Logout", "Sign out of this session", "#D32F4A", "#8E1F30") { doLogout() }
+            )
+        }
+
+        body.addView(sectionLabel("QUICK ACTIONS"))
+        buildQuickActionRows(quickActions).forEach { row ->
+            body.addView(row)
+            body.addView(spacer(12))
+        }
+        body.addView(spacer(18))
+
+        // ================= CUSTOMERS & SUPPLIERS — dues summary =================
+        body.addView(buildCustomerSupplierSection())
+        body.addView(spacer(20))
 
         root.addView(body)
 
@@ -527,30 +517,25 @@ class MainActivity : ThemedActivity() {
         setPadding(4, 0, 0, 14)
     }
 
-    // ---- primary quick actions: Sale + Cash, side by side, for every role ----
-    private fun buildQuickActionsRow(): LinearLayout {
-        val saleQuick = QuickAction("", "Sale", "Start a new sale", "#00B4D8", "#0077B6")
-        { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) }
-        val cashQuick = QuickAction("", "Cash", "Cash In / Cash Out", "#F5A524", "#C97A0A")
-        { startActivity(Intent(this@MainActivity, CashActivity::class.java)) }
-
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(quickActionCard(saleQuick).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 9, 0) }
-        })
-        row.addView(quickActionCard(cashQuick).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9, 0, 0, 0) }
-        })
-        return row
-    }
-
-    // ---- secondary quick action: Purchase, full-width, admin/manager only (less frequent than
-    // Sale/Cash so it doesn't compete for space in the primary row) ----
-    private fun buildPurchaseQuickAction(): LinearLayout {
-        val purchaseQuick = QuickAction("", "Purchase", "Record a purchase", "#D6408F", "#8E2A6C")
-        { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) }
-        return quickActionCard(purchaseQuick).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+    // ---- lays out quick-action cards two per row (last row is a single full-width card if the
+    // count is odd) — this is now the ONE layout pattern for every dashboard action. ----
+    private fun buildQuickActionRows(actions: List<QuickAction>): List<LinearLayout> {
+        return actions.chunked(2).map { pair ->
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                if (pair.size == 2) {
+                    addView(quickActionCard(pair[0]).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 9, 0) }
+                    })
+                    addView(quickActionCard(pair[1]).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9, 0, 0, 0) }
+                    })
+                } else {
+                    addView(quickActionCard(pair[0]).apply {
+                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    })
+                }
+            }
         }
     }
 
@@ -591,30 +576,20 @@ class MainActivity : ThemedActivity() {
         }
     }
 
+    // ---- dues summary only now (the "View All ›" navigation link + Customers & Suppliers
+    // itself moved into the Quick Actions cards above, so this section is purely the two
+    // You'll Get / You'll Give stat numbers). ----
     private fun buildCustomerSupplierSection(): LinearLayout {
         val section = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-        val titleRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(4, 0, 0, 14)
-        }
-        titleRow.addView(TextView(this).apply {
-            text = "CUSTOMERS & SUPPLIERS"
+        section.addView(TextView(this).apply {
+            text = "DUES SUMMARY"
             textSize = 12.5f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             letterSpacing = 0.06f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setPadding(4, 0, 0, 14)
         })
-        titleRow.addView(TextView(this).apply {
-            text = "View All ›"
-            textSize = 12.5f
-            setTextColor(Color.parseColor(headerEnd))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setOnClickListener { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
-        })
-        section.addView(titleRow)
 
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
@@ -681,49 +656,7 @@ class MainActivity : ThemedActivity() {
         finish()
     }
 
-    private data class Tile(val emoji: String, val label: String, val accentHex: String, val tintHex: String, val onClick: () -> Unit)
-    private data class QuickAction(val emoji: String, val title: String, val subtitle: String, val accentHex: String, val accentHex2: String, val onClick: () -> Unit)
-
-    private fun premiumMenuTile(tile: Tile): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(18, 26, 18, 22)
-            elevation = 7f
-
-            val ripple = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.parseColor(tile.accentHex)).withAlpha(40),
-                roundedBackgroundBordered(cardWhite, 26),
-                roundedBackgroundBordered(cardWhite, 26)
-            )
-            background = ripple
-            isClickable = true
-
-            addView(premiumIconBadge(tile.emoji, tile.accentHex, 58, 24f))
-
-            addView(TextView(this@MainActivity).apply {
-                text = tile.label
-                textSize = 13f
-                setTextColor(Color.parseColor(textDark))
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                gravity = Gravity.CENTER
-                setPadding(0, 16, 0, 0)
-            })
-
-            addView(View(this@MainActivity).apply {
-                layoutParams = LinearLayout.LayoutParams((28 * resources.displayMetrics.density).toInt(), 5).apply {
-                    topMargin = 10
-                    gravity = Gravity.CENTER_HORIZONTAL
-                }
-                background = GradientDrawable().apply {
-                    cornerRadius = 6f
-                    setColor(Color.parseColor(tile.accentHex))
-                }
-            })
-
-            setOnClickListener { tile.onClick() }
-        }
-    }
+    private data class QuickAction(val title: String, val subtitle: String, val accentHex: String, val accentHex2: String, val onClick: () -> Unit)
 
     private fun premiumStatCard(emoji: String, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
