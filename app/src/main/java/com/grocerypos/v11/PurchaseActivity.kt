@@ -180,6 +180,15 @@ class PurchaseActivity : ThemedActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        // FIX (Phase 4 - Security): role check enforced here — MainActivity only shows
+        // the Purchase quick-action to admin/manager, it doesn't stop a cashier opening
+        // this Activity another way.
+        val myRole = getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier"
+        if (myRole != "admin" && myRole != "manager") {
+            Toast.makeText(this, "Sirf Admin/Manager is screen ko access kar sakte hain", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         com.grocerypos.v11.util.CrashHandler.install(this)
         com.grocerypos.v11.util.CrashHandler.getLastCrash(this)?.let { crashText -> showCrashDialog(crashText) }
