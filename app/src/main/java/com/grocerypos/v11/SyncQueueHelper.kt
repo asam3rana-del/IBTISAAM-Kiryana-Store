@@ -4,9 +4,27 @@ import android.content.Context
 import com.google.gson.Gson
 import com.grocerypos.v11.sync.SyncWorker
 
-// FIX (Phase 3 - Online): every ...Json() builder below now stamps its payload with
+// FIX (Phase 3 - Online): every ...Json() builder below stamps its payload with
 // "branchId" (BuildConfig.BRANCH_ID) before it's pushed to Firestore, so records from
 // different branches can be told apart / filtered on pull (see SyncApi.kt).
+//
+// FIX (sync bug #2): previously NOTHING called db.syncQueueDao().enqueue(...) anywhere
+// in the app, so sync_queue stayed empty forever no matter how many sales/customers/etc.
+// were created. Below, every ...Json() builder now has a matching enqueueX() function
+// that builds the JSON AND inserts the sync_queue row AND triggers a sync — in one call.
+//
+// Call the relevant enqueueX() right after each successful DAO insert/update, e.g.:
+//
+//     val newId = db.customerDao().insert(customer)
+//     SyncQueueHelper.enqueueCustomer(db, customer.copy(id = newId))
+//
+//     db.saleDao().sale(sale)
+//     db.saleDao().items(saleItems)
+//     SyncQueueHelper.enqueueSale(db, sale, saleItems.size)
+//
+// Do this at every insert/update call site for: customers, suppliers, products, sales,
+// purchases, payments, expenses, cash_transactions, users. Deletes should call
+// SyncQueueHelper.enqueueDelete(db, entityType, entityId) instead.
 object SyncQueueHelper {
 
     private val gson = Gson()
@@ -35,6 +53,63 @@ object SyncQueueHelper {
     fun trigger(context: Context) {
         SyncWorker.syncNowOnce(context)
     }
+
+    // ---------- One-call helpers: build payload + enqueue ----------
+    // (context is optional — pass it if you want the sync to fire immediately instead
+    // of waiting for the next periodic run; omit it to just queue the row.)
+
+    suspend fun enqueueCustomer(db: PosDatabase, c: Customer, context: Context? = null) {
+        enqueue(db, "customer", customerEntityId(c), "upsert", customerJson(c))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueSupplier(db: PosDatabase, s: Supplier, context: Context? = null) {
+        enqueue(db, "supplier", supplierEntityId(s), "upsert", supplierJson(s))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueProduct(db: PosDatabase, p: Product, context: Context? = null) {
+        enqueue(db, "product", productEntityId(p), "upsert", productJson(p))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueSale(db: PosDatabase, sale: Sale, itemCount: Int, context: Context? = null) {
+        enqueue(db, "sale", saleEntityId(sale), "upsert", saleJson(sale, itemCount))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueuePurchase(db: PosDatabase, purchase: Purchase, itemCount: Int, context: Context? = null) {
+        enqueue(db, "purchase", purchaseEntityId(purchase), "upsert", purchaseJson(purchase, itemCount))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueuePayment(db: PosDatabase, payment: Payment, context: Context? = null) {
+        enqueue(db, "payment", paymentEntityId(payment), "upsert", paymentJson(payment))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueExpense(db: PosDatabase, expense: Expense, context: Context? = null) {
+        enqueue(db, "expense", expenseEntityId(expense), "upsert", expenseJson(expense))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueCashTransaction(db: PosDatabase, t: CashTransaction, context: Context? = null) {
+        enqueue(db, "cash_transaction", cashTransactionEntityId(t), "upsert", cashTransactionJson(t))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueUser(db: PosDatabase, u: User, context: Context? = null) {
+        enqueue(db, "user", userEntityId(u), "upsert", userJson(u))
+        context?.let { trigger(it) }
+    }
+
+    /** Use for any entity delete (e.g. deleting a customer or product). */
+    suspend fun enqueueDelete(db: PosDatabase, entityType: String, entityId: String, context: Context? = null) {
+        enqueue(db, entityType, entityId, "delete", "{}")
+        context?.let { trigger(it) }
+    }
+
+    // ---------- Payload builders ----------
 
     fun customerJson(c: Customer): String {
         val map = mapOf(
