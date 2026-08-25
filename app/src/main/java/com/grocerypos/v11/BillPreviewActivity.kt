@@ -287,14 +287,12 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Print text is now built to MIRROR the on-screen receipt above, line for
-    // line: shop name/address/phone, Ref/Date/Party/Payment, then each item as its
-    // own stacked block — Name, then Qty+Unit, then Rate @, then Amount (own line,
-    // right-aligned) — exactly the fields the on-screen card shows for that item,
-    // just laid out top-to-bottom instead of in columns (thermal paper is narrow so
-    // columns don't fit reliably; this stacked layout is what actually prints
-    // cleanly on 32-column 58mm paper). Totals block mirrors the on-screen kv() rows
-    // the same way. ----
+    // ---- FIX: per-item block is now a clean 4-field stack — Item Name, then
+    // Quantity, then Rate, then Amount directly underneath Rate (same left
+    // alignment, no far-right jump). The old "@ 123.45" prefix on the rate line
+    // and the old far-right-aligned "Rs xxx" amount line are both gone — no more
+    // '@' or '*' symbols anywhere in the printed item block, just plain numbers,
+    // per the requested layout. ----
     private fun printReceipt(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
@@ -325,10 +323,14 @@ class BillPreviewActivity : AppCompatActivity() {
             sb.append("-".repeat(width)).append("\n")
 
             for (line in lines) {
+                // 1) Item Name
                 sb.append(line.name).append("\n")
+                // 2) Quantity
                 sb.append("${line.qty} ${line.unit}").append("\n")
-                sb.append("@ %.2f".format(line.rate)).append("\n")
-                sb.append(alignRight("Rs %.2f".format(line.amount), width)).append("\n")
+                // 3) Rate
+                sb.append("%.2f".format(line.rate)).append("\n")
+                // 4) Amount — directly under Rate, no @ / * prefix, no far-right jump
+                sb.append("Rs %.2f".format(line.amount)).append("\n")
                 sb.append("\n")
             }
 
