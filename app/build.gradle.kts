@@ -18,6 +18,20 @@ android {
         targetSdk = 35
         versionCode = 10
         versionName = "10.0"
+        // FIX (Phase 3 - Online): every synced record is now tagged with this branch ID
+        // (see SyncQueueHelper.kt / SyncApi.kt) so Firestore data from different store
+        // branches no longer mixes together — this was previously one flat, unpartitioned
+        // space shared by every install of the app, regardless of branch. Give each
+        // branch's build its own unique value here before building its APK — e.g. the
+        // main branch keeps "main-branch", and this "Dusri branch" copy uses
+        // "dusri-branch" as set below. Existing pre-fix Firestore data has no branchId
+        // field on it, so it won't match any branch's filtered pull() query — see the
+        // migration note in SyncApi.kt's pull().
+        buildConfigField("String", "BRANCH_ID", "\"dusri-branch\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     signingConfigs {
@@ -27,11 +41,36 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // FIX (Phase 5 - Stability): added a release signing config — previously there
+        // was none, so a `release` build would come out unsigned (can't be installed
+        // as an update, or at all on some devices). Credentials are read from Gradle
+        // properties instead of being hardcoded, so this file stays safe to commit:
+        //   1) Create a real release keystore once:
+        //        keytool -genkey -v -keystore release.keystore -alias ibtisaam \
+        //          -keyalg RSA -keysize 2048 -validity 10000
+        //   2) Put these 4 lines in ~/.gradle/gradle.properties (NOT in this repo):
+        //        RELEASE_STORE_FILE=/full/path/to/release.keystore
+        //        RELEASE_STORE_PASSWORD=yourStorePassword
+        //        RELEASE_KEY_ALIAS=ibtisaam
+        //        RELEASE_KEY_PASSWORD=yourKeyPassword
+        //   3) Build a release APK/AAB as usual (./gradlew bundleRelease) — Gradle
+        //      fills these in automatically. If they're missing, the release build
+        //      simply fails with a clear "property not found" error instead of
+        //      silently shipping unsigned.
+        create("release") {
+            storeFile = file(project.findProperty("RELEASE_STORE_FILE") as? String ?: "release.keystore")
+            storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as? String ?: ""
+            keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as? String ?: ""
+            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as? String ?: ""
+        }
     }
 
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
+        }
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
