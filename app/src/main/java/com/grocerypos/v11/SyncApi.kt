@@ -15,6 +15,11 @@ import com.grocerypos.v11.Supplier
  *   suppliers/{serverId}
  *   products/{barcode}
  *   users/{serverId}
+ *   sales/{serverId}              (push-only, see FIX note below)
+ *   purchases/{serverId}          (push-only)
+ *   payments/{serverId}           (push-only)
+ *   expenses/{serverId}           (push-only)
+ *   cash_transactions/{serverId}  (push-only)
  */
 object SyncApi {
 
@@ -23,6 +28,11 @@ object SyncApi {
 
     // ---------- PUSH ----------
 
+    // FIX (sync bug #1): "sale", "purchase", "payment", "expense", "cash_transaction"
+    // were missing from this map entirely. SyncQueueHelper already builds JSON for all
+    // of them (saleJson, purchaseJson, paymentJson, expenseJson, cashTransactionJson),
+    // but push() fell through to `else -> return false` for every one of them, so any
+    // queued row of these types could never succeed and just kept retrying forever.
     suspend fun push(entry: com.grocerypos.v11.SyncQueueEntry): Boolean {
         return try {
             val collection = when (entry.entityType) {
@@ -30,6 +40,11 @@ object SyncApi {
                 "supplier" -> "suppliers"
                 "product" -> "products"
                 "user" -> "users"
+                "sale" -> "sales"
+                "purchase" -> "purchases"
+                "payment" -> "payments"
+                "expense" -> "expenses"
+                "cash_transaction" -> "cash_transactions"
                 else -> return false
             }
 
@@ -53,6 +68,14 @@ object SyncApi {
 
     // ---------- PULL ----------
 
+    // NOTE: sales/purchases/payments/expenses/cash_transactions are intentionally NOT
+    // pulled back down here. Each branch creates these records locally first (that's
+    // why they end up dirty/queued to push) — pulling them back would just be re-reading
+    // your own data. It would also be lossy for sales/purchases, since saleJson()/
+    // purchaseJson() only send an itemCount, not the actual sale_items/purchase_items
+    // rows, so a pulled-back sale could never be reconstructed correctly in Room.
+    // If you later need cross-branch reporting (branch A seeing branch B's sales),
+    // that's a separate read-only reporting feature, not a two-way sync of this table.
     data class PullResult(
         val customers: List<Map<String, Any?>> = emptyList(),
         val suppliers: List<Map<String, Any?>> = emptyList(),
@@ -61,7 +84,7 @@ object SyncApi {
         val serverTime: Long = System.currentTimeMillis()
     )
 
-    // FIX (Phase 3 - Online / multi-branch): each collection query now also filters by
+    // FIX (Phase 3 - Online / multi-branch): each collection query also filters by
     // "branchId" == this build's BuildConfig.BRANCH_ID, so a branch only ever pulls down
     // its own customers/suppliers/products/users instead of every branch's data mixed
     // together. NOTE (migration): documents pushed before this fix have no "branchId"
