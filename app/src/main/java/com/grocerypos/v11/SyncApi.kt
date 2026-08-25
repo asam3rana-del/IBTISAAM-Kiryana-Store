@@ -61,23 +61,42 @@ object SyncApi {
         val serverTime: Long = System.currentTimeMillis()
     )
 
+    // FIX (Phase 3 - Online / multi-branch): each collection query now also filters by
+    // "branchId" == this build's BuildConfig.BRANCH_ID, so a branch only ever pulls down
+    // its own customers/suppliers/products/users instead of every branch's data mixed
+    // together. NOTE (migration): documents pushed before this fix have no "branchId"
+    // field at all, so they won't match this filter and won't be pulled by ANY branch
+    // going forward — if you have pre-fix data in Firestore you want to keep, either
+    // backfill a branchId onto those documents once, or just let each branch's local
+    // Room data (which was already there before this change) keep serving as the source
+    // of truth and let fresh pushes repopulate Firestore correctly from here on.
     suspend fun pull(since: Long): PullResult {
+        val branchId = com.grocerypos.v11.BuildConfig.BRANCH_ID
+        // NOTE: combining whereEqualTo("branchId",...) with whereGreaterThan("updatedAt",...)
+        // needs a Firestore composite index per collection. The first time this runs,
+        // Firestore's error message includes a direct link to auto-create the missing
+        // index — just tap it once per collection (customers/suppliers/products/users).
+
         val customersSnap = db.collection("customers")
+            .whereEqualTo("branchId", branchId)
             .whereGreaterThan("updatedAt", since)
             .get(Source.SERVER)
             .await()
 
         val suppliersSnap = db.collection("suppliers")
+            .whereEqualTo("branchId", branchId)
             .whereGreaterThan("updatedAt", since)
             .get(Source.SERVER)
             .await()
 
         val productsSnap = db.collection("products")
+            .whereEqualTo("branchId", branchId)
             .whereGreaterThan("updatedAt", since)
             .get(Source.SERVER)
             .await()
 
         val usersSnap = db.collection("users")
+            .whereEqualTo("branchId", branchId)
             .whereGreaterThan("updatedAt", since)
             .get(Source.SERVER)
             .await()
