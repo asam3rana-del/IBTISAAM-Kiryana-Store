@@ -145,6 +145,7 @@ class PurchaseActivity : ThemedActivity() {
     private var lastMainQty: Double = 0.0
     private var suppressQtyWatcher = false
     private var lastMainRate: Double = 0.0
+    private var lastPurchaseMainRate: Double = 0.0
     private var suppressRateWatcher = false
     private var suppressTotalLotWatcher = false
     private var editBillNo: String? = null
@@ -960,8 +961,52 @@ class PurchaseActivity : ThemedActivity() {
             if (unitOptions.contains(product.tertiaryUnit) && product.tertiaryUnitQty > 0) { if (isNotEmpty()) append("   •   "); append("1 ${product.secondaryUnit} = ${product.tertiaryUnitQty} ${product.tertiaryUnit}") }
         }
         conversionInfo.visibility = if (conversionInfo.text.isNotEmpty()) View.VISIBLE else View.GONE
-        lastMainQty = 0.0; lastMainRate = 0.0; refillAutoRate(); updateLineTotal()
+        lastMainQty = 0.0; lastMainRate = 0.0; lastPurchaseMainRate = 0.0
+        refillAutoRate(); updateLineTotal()
         qty.setText(""); totalLotPrice.setText(""); qty.requestFocus()
+
+        // NEW: look up the actual last purchase rate for this product (not the running
+        // weighted-average cost) and refill the Rate field with it once found — unless
+        // the user has already started typing their own rate by the time it arrives.
+        val barcode = product.barcode
+        safeLaunch("findLastPurchaseRate") {
+            val db = PosDatabase.get(this@PurchaseActivity)
+            val result = findLastPurchaseRate(db, barcode, editBillNo)
+            if (selectedProduct?.barcode != barcode) return@safeLaunch // user picked something else meanwhile
+            if (result != null) {
+                val (histRate, histUnit) = result
+                lastPurchaseMainRate = rateToMainUnit(product, histRate, histUnit)
+                if (rate.text.toString().isBlank()) {
+                    refillAutoRate()
+                }
+            }
+        }
+    }
+
+    // NEW: finds the most recent PAST purchase of this barcode (excluding the bill
+    // currently being edited, if any) and returns its rate + the unit it was recorded in.
+    private suspend fun findLastPurchaseRate(db: PosDatabase, barcode: String, excludeBillNo: String?): Pair<Double, String>? {
+        if (barcode.isBlank()) return null
+        val candidatePurchases = db.purchaseDao().allPurchases()
+            .filter { it.billNo != excludeBillNo }
+            .sortedByDescending { it.createdAt }
+        for (purchase in candidatePurchases) {
+            val items = db.purchaseDao().itemsForBill(purchase.billNo)
+            val match = items.find { it.barcode == barcode }
+            if (match != null) return match.unitCost to match.unit
+        }
+        return null
+    }
+
+    // NEW: converts a rate recorded in some historical unit to the product's main-unit
+    // basis, using the product's CURRENT conversion factors.
+    private fun rateToMainUnit(product: Product, rate: Double, fromUnit: String): Double = when {
+        fromUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
+            product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
+            rate * product.secondaryUnitQty * product.tertiaryUnitQty
+        fromUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
+            rate * product.secondaryUnitQty
+        else -> rate // already main unit (or unrecognized — treat as main unit)
     }
     private fun toMainUnitQty(entered: Double): Double {
         val product = selectedProduct ?: return entered
@@ -992,7 +1037,11 @@ class PurchaseActivity : ThemedActivity() {
     private fun refillAutoRate() {
         val product = selectedProduct ?: return
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val base = if (lastMainRate > 0) lastMainRate else product.cost
+        val base = when {
+            lastMainRate > 0 -> lastMainRate                 // user already typed a rate for this pick — keep it
+            lastPurchaseMainRate > 0 -> lastPurchaseMainRate  // NEW: prefer the real last purchase rate
+            else -> product.cost                              // fallback: weighted-average cost
+        }
         val r = fromMainUnitRate(base, chosenUnit)
         suppressRateWatcher = true
         rate.setText(if (r > 0) "%.2f".format(r) else "")
