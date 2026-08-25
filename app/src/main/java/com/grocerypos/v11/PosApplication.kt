@@ -1,18 +1,31 @@
 package com.grocerypos.v11
 
 import android.app.Application
+import com.grocerypos.v11.sync.NetworkMonitor
+import com.grocerypos.v11.sync.SyncRepository
+import com.grocerypos.v11.sync.SyncWorker
 
 /**
- * Registers AppLock so it can watch every Activity in the app and force re-authentication
- * when the app is fully backgrounded and Settings > Security requires it.
+ * Single Application class for the app.
  *
- * IMPORTANT: for this to take effect, AndroidManifest.xml's <application> tag needs
- * android:name=".PosApplication" — without that line the OS never instantiates this class
- * and AppLock.register() never runs.
+ * Registers:
+ * - SyncRepository.appContextRef (needed by sync push/pull)
+ * - SyncWorker periodic background sync (every 15 minutes)
+ * - NetworkMonitor (triggers an immediate sync when connectivity returns)
+ * - AppLock (watches every Activity, forces re-auth per Settings > Security)
+ *
+ * IMPORTANT: AndroidManifest.xml's <application> tag must have
+ * android:name=".PosApplication" — without that line the OS never instantiates
+ * this class and NONE of the above run (this was previously the case; a
+ * duplicate App.kt with its own onCreate() was silently dead code and has
+ * been removed).
  */
 class PosApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        SyncRepository.appContextRef = applicationContext
+        SyncWorker.schedulePeriodic(this)
+        NetworkMonitor.register(this)
         AppLock.register(this)
     }
 }
