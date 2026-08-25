@@ -13,6 +13,7 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.grocerypos.v11.PasswordHasher
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
