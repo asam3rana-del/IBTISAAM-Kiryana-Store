@@ -65,6 +65,10 @@ class SettingsActivity : AppCompatActivity() {
     // Header shop name label (kept in sync with the Shop Information "Shop Name" field)
     private lateinit var shopNameHeaderText: TextView
 
+    // NEW: Sync Now row — connected/offline status indicator
+    private lateinit var syncRowDot: TextView
+    private lateinit var syncRowStatusText: TextView
+
     private val BT_PERMISSION_REQUEST_CODE = 501
 
     override fun onCreate(b: Bundle?) {
@@ -121,10 +125,8 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@SettingsActivity, CashActivity::class.java))
         })
 
-        // ---- Sync Now ----
-        list.addView(menuRow("🔄", "Sync Now", iconBgHex = teal) {
-            onSyncNowClicked()
-        })
+        // ---- Sync Now (now shows live Connected/Offline status) ----
+        list.addView(buildSyncRow())
 
         list.addView(spacer(10))
 
@@ -169,6 +171,13 @@ class SettingsActivity : AppCompatActivity() {
         window.decorView.post { applyFloatingSheetLayout() }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Refresh the Connected/Offline indicator every time this sheet becomes visible
+        // (e.g. user toggled Wi-Fi/mobile data while Settings was open in the background).
+        if (::syncRowDot.isInitialized) refreshSyncStatus()
+    }
+
     private fun comingSoon(label: String) {
         Toast.makeText(this, "$label — Coming Soon", Toast.LENGTH_SHORT).show()
     }
@@ -201,9 +210,83 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ================= SYNC =================
+
+    /** True if the device currently has an active network with internet capability.
+     *  This is a connectivity check only (not a Firestore reachability check) — it tells
+     *  the user whether the app *can* sync right now, matching how PurchaseActivity's
+     *  header sync chip works. */
+    private fun isNetworkConnected(): Boolean {
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    /** Updates the small dot + label under "Sync Now" to reflect current connectivity. */
+    private fun refreshSyncStatus() {
+        val online = isNetworkConnected()
+        syncRowDot.setTextColor(Color.parseColor(if (online) teal else red))
+        syncRowStatusText.text = if (online) "Connected" else "Offline"
+    }
+
+    /** Builds the "Sync Now" row with a live Connected/Offline status line under the label,
+     *  instead of the plain menuRow() used before. Tapping it still triggers SyncQueueHelper. */
+    private fun buildSyncRow(): LinearLayout {
+        val row = premiumCard().apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 17, 18, 17)
+            isClickable = true
+            isFocusable = true
+        }
+        row.addView(iconBadge("🔄", teal))
+        row.addView(spacerH(16))
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        textCol.addView(TextView(this).apply {
+            text = "Sync Now"
+            textSize = 14.5f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, Typeface.BOLD)
+        })
+
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 3, 0, 0)
+        }
+        syncRowDot = TextView(this).apply {
+            text = "●"
+            textSize = 9f
+        }
+        statusRow.addView(syncRowDot)
+        statusRow.addView(spacerH(4))
+        syncRowStatusText = TextView(this).apply {
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+        }
+        statusRow.addView(syncRowStatusText)
+        textCol.addView(statusRow)
+        row.addView(textCol)
+
+        row.setOnClickListener { onSyncNowClicked() }
+
+        refreshSyncStatus()
+        return row
+    }
+
     private fun onSyncNowClicked() {
+        if (!isNetworkConnected()) {
+            Toast.makeText(this, "No internet connection", Toast.LENGTH_SHORT).show()
+            refreshSyncStatus()
+            return
+        }
         SyncQueueHelper.trigger(this)
         Toast.makeText(this, "Syncing…", Toast.LENGTH_SHORT).show()
+        refreshSyncStatus()
     }
 
     // ================= PREMIUM GRADIENT HEADER (matches Product/Purchase/Sale headers) =================
