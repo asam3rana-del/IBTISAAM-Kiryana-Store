@@ -620,7 +620,13 @@ class PartyActivity : AppCompatActivity() {
             .setMessage(Loc.t(this, "Delete ${c.name}? This cannot be undone.", "${c.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔"))
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { d, _ ->
                 lifecycleScope.launch {
-                    PosDatabase.get(this@PartyActivity).customerDao().delete(c)
+                    val db = PosDatabase.get(this@PartyActivity)
+                    db.customerDao().delete(c)
+                    // FIX (sync): SyncApi.push() handles "delete" generically for any
+                    // collection, so this is now enqueued — previously a deleted customer
+                    // stayed in Firestore forever since nothing told the server to remove it.
+                    SyncQueueHelper.enqueue(db, "customer", "customer:${c.id}", "delete", "{}")
+                    SyncQueueHelper.trigger(this@PartyActivity)
                     Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Deleted", "حذف ہو گیا"), Toast.LENGTH_SHORT).show()
                 }
                 d.dismiss()
@@ -635,7 +641,10 @@ class PartyActivity : AppCompatActivity() {
             .setMessage(Loc.t(this, "Delete ${s.name}? This cannot be undone.", "${s.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔"))
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { d, _ ->
                 lifecycleScope.launch {
-                    PosDatabase.get(this@PartyActivity).supplierDao().delete(s)
+                    val db = PosDatabase.get(this@PartyActivity)
+                    db.supplierDao().delete(s)
+                    SyncQueueHelper.enqueue(db, "supplier", "supplier:${s.id}", "delete", "{}")
+                    SyncQueueHelper.trigger(this@PartyActivity)
                     Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Deleted", "حذف ہو گیا"), Toast.LENGTH_SHORT).show()
                 }
                 d.dismiss()
