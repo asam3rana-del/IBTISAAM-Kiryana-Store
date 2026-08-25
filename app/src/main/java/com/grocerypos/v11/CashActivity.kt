@@ -44,7 +44,9 @@ class CashActivity : AppCompatActivity() {
     private lateinit var amount: EditText
     private lateinit var reason: EditText
     private lateinit var methodSpinner: Spinner
+    private lateinit var categoryLabel: TextView
     private lateinit var categorySpinner: Spinner
+    private lateinit var categoryBox: LinearLayout
     private lateinit var miscToggle: TextView
     private lateinit var miscDescBox: LinearLayout
     private lateinit var miscDesc: EditText
@@ -105,9 +107,11 @@ class CashActivity : AppCompatActivity() {
         methodBox.addView(methodSpinner)
         formCard.addView(methodBox)
 
-        // ---- Expense category (used mainly for CASH OUT entries) ----
-        formCard.addView(sectionLabel(Loc.t(this, "Expense Category", "خرچہ کیٹیگری")))
-        val categoryBox = outlinedBox()
+        // ---- Expense category (CASH OUT only — hidden entirely for CASH IN entries, since
+        // expense categories like "Rent" / "Utility Bills" make no sense on money coming in). ----
+        categoryLabel = sectionLabel(Loc.t(this, "Expense Category", "خرچہ کیٹیگری"))
+        formCard.addView(categoryLabel)
+        categoryBox = outlinedBox()
         categorySpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@CashActivity, android.R.layout.simple_spinner_dropdown_item, expenseCategories)
         }
@@ -297,7 +301,9 @@ class CashActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
 
-    // ---- logic unchanged, just Urdu-aware toasts/labels ----
+    // ---- logic: category now only applies to CASH OUT entries. CASH IN entries never carry an
+    // expense category in the reason text, and the category/misc fields are hidden for CASH IN
+    // so users aren't shown irrelevant fields (Rent, Utility Bills, etc.) on money coming in. ----
     private fun saveEntry(type: String) {
         val amt = amount.text.toString().toDoubleOrNull()
         if (amt == null || amt <= 0.0) {
@@ -310,10 +316,13 @@ class CashActivity : AppCompatActivity() {
         val note = reason.text.toString().trim()
 
         val fullReason = buildString {
-            if (category.isNotEmpty()) append(category)
-            if (category == "Miscellaneous" && misc.isNotEmpty()) {
-                if (isNotEmpty()) append(" - ")
-                append(misc)
+            // Category only makes sense for expenses (CASH OUT). Skip it entirely for CASH IN.
+            if (type == "OUT" && category.isNotEmpty()) {
+                append(category)
+                if (category == "Miscellaneous" && misc.isNotEmpty()) {
+                    if (isNotEmpty()) append(" - ")
+                    append(misc)
+                }
             }
             if (note.isNotEmpty()) {
                 if (isNotEmpty()) append(" | ")
