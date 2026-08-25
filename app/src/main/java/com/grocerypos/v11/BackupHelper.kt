@@ -124,17 +124,27 @@ object BackupHelper {
      * from the Restore list, passing the file the user wants to send.
      */
     fun shareBackup(context: Context, file: File) {
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/octet-stream"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // FIX (Phase 5 - Stability): this was the one function in BackupHelper with no
+        // try/catch — FileProvider.getUriForFile() can throw IllegalArgumentException
+        // (e.g. file_paths.xml doesn't cover the file's folder) and startActivity() can
+        // throw ActivityNotFoundException on a device with no share-capable app. Either
+        // one previously crashed the app instead of just failing the share.
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/octet-stream"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Backup kis app se bhejein?"))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            android.widget.Toast.makeText(context, "Backup share nahi ho saka.", android.widget.Toast.LENGTH_SHORT).show()
         }
-        context.startActivity(Intent.createChooser(intent, "Backup kis app se bhejein?"))
     }
 
     /** Lists available backup files (from the app folder), most recent first. */
