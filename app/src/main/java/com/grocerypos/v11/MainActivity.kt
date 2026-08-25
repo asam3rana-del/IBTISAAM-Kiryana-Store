@@ -150,6 +150,11 @@ class MainActivity : ThemedActivity() {
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
+            // Products & Reports now live in Settings — this gear icon is the way to reach
+            // them, since they were removed from the main dashboard grid below (see the
+            // "MORE" tiles list further down: only Day Book + Customers/Suppliers remain
+            // there for daily-use items; Products/Reports are setup/review actions, not
+            // rozana transactional ones).
             setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
         })
 
@@ -244,9 +249,18 @@ class MainActivity : ThemedActivity() {
         body.addView(statsRow)
         body.addView(spacer(30))
 
-        // ================= QUICK ACTIONS: SALE + PURCHASE — plain side-by-side, no icons =================
+        // ================= QUICK ACTIONS =================
+        // Sale + Cash are the two highest-frequency, everyday actions for every role, so they
+        // sit together as the primary quick-action row (previously Cash In/Out was buried in
+        // the "MORE" tile grid below and needed 2 taps — now it's 1 tap from the dashboard,
+        // same as Sale). Purchase is admin/manager-only and less frequent, so it gets its own
+        // secondary row underneath rather than competing for space in the primary row.
         body.addView(sectionLabel("QUICK ACTIONS"))
         body.addView(buildQuickActionsRow())
+        if (role == "admin" || role == "manager") {
+            body.addView(spacer(12))
+            body.addView(buildPurchaseQuickAction())
+        }
         body.addView(spacer(30))
 
         // ================= CUSTOMERS & SUPPLIERS =================
@@ -258,22 +272,22 @@ class MainActivity : ThemedActivity() {
         val partiesTile = Tile("👥", "Customers &\nSuppliers", "#4E342E", "#EFEBE9") { startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java)) }
         val dayBookTile = Tile("📖", "Day Book", "#0F9B8E", "#DFF6F8") { startActivity(Intent(this@MainActivity, DayBookActivity::class.java)) }
 
+        // ---- Products and Reports removed from the dashboard grid on purpose: both are
+        // setup/review actions (add-once inventory maintenance, periodic sales analysis) rather
+        // than daily transactional work, so they now live under Settings (⚙️ icon, top-left of
+        // header) instead of taking up space here. Cash In/Out was also removed from this list
+        // since it's now a primary Quick Action above — no need to show it twice. ----
         val tiles: List<Tile> = when (role) {
             "admin" -> listOf(
-                Tile("📦", "Products", "#1257C4", "#E4EDFC") { startActivity(Intent(this@MainActivity, ProductActivity::class.java)) },
-                Tile("📊", "Reports", "#7B1FA2", "#F3E5F9") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
-                Tile("💵", "Cash In/Out", "#00838F", "#DFF6F8") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
                 dayBookTile,
                 partiesTile
             )
             "manager" -> listOf(
-                Tile("📊", "Reports", "#7B1FA2", "#F3E5F9") { startActivity(Intent(this@MainActivity, ReportsActivity::class.java)) },
                 dayBookTile,
                 partiesTile,
                 Tile("🚪", "Logout", "#D32F4A", "#FCE6EA") { doLogout() }
             )
             else -> listOf(
-                Tile("💵", "Cash In/Out", "#00838F", "#DFF6F8") { startActivity(Intent(this@MainActivity, CashActivity::class.java)) },
                 dayBookTile,
                 partiesTile,
                 Tile("🚪", "Logout", "#D32F4A", "#FCE6EA") { doLogout() }
@@ -513,29 +527,31 @@ class MainActivity : ThemedActivity() {
         setPadding(4, 0, 0, 14)
     }
 
-    // ---- plain side-by-side Sale/Purchase cards: no swipe, no icon badges ----
+    // ---- primary quick actions: Sale + Cash, side by side, for every role ----
     private fun buildQuickActionsRow(): LinearLayout {
         val saleQuick = QuickAction("", "Sale", "Start a new sale", "#00B4D8", "#0077B6")
         { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) }
-        val purchaseQuick: QuickAction? = if (role == "admin" || role == "manager") {
-            QuickAction("", "Purchase", "Record a purchase", "#D6408F", "#8E2A6C")
-            { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) }
-        } else null
+        val cashQuick = QuickAction("", "Cash", "Cash In / Cash Out", "#F5A524", "#C97A0A")
+        { startActivity(Intent(this@MainActivity, CashActivity::class.java)) }
 
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        if (purchaseQuick != null) {
-            row.addView(quickActionCard(saleQuick).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 9, 0) }
-            })
-            row.addView(quickActionCard(purchaseQuick).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9, 0, 0, 0) }
-            })
-        } else {
-            row.addView(quickActionCard(saleQuick).apply {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            })
-        }
+        row.addView(quickActionCard(saleQuick).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 9, 0) }
+        })
+        row.addView(quickActionCard(cashQuick).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9, 0, 0, 0) }
+        })
         return row
+    }
+
+    // ---- secondary quick action: Purchase, full-width, admin/manager only (less frequent than
+    // Sale/Cash so it doesn't compete for space in the primary row) ----
+    private fun buildPurchaseQuickAction(): LinearLayout {
+        val purchaseQuick = QuickAction("", "Purchase", "Record a purchase", "#D6408F", "#8E2A6C")
+        { startActivity(Intent(this@MainActivity, PurchaseActivity::class.java)) }
+        return quickActionCard(purchaseQuick).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
     }
 
     private fun quickActionCard(action: QuickAction): LinearLayout {
