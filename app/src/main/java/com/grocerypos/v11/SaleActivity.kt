@@ -884,7 +884,14 @@ class SaleActivity : AppCompatActivity() {
             .setPositiveButton("Add") { _, _ ->
                 val v = input.text.toString().trim()
                 if (v.isNotEmpty()) lifecycleScope.launch {
-                    PosDatabase.get(this@SaleActivity).customerDao().insert(Customer(name = v))
+                    val db = PosDatabase.get(this@SaleActivity)
+                    val newCustomer = Customer(name = v)
+                    val newId = db.customerDao().insert(newCustomer)
+                    // FIX (sync): new customer created here was never enqueued, so it
+                    // stayed local-only and never reached Firestore. Now enqueued like
+                    // the equivalent flow in PartyActivity.
+                    SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(newCustomer.copy(id = newId)))
+                    SyncQueueHelper.trigger(this@SaleActivity)
                     Toast.makeText(this@SaleActivity, "Customer added", Toast.LENGTH_SHORT).show()
                     customerName.setText(v)
                 }
@@ -1469,8 +1476,13 @@ class SaleActivity : AppCompatActivity() {
             if (isCredit) {
                 customer = db.customerDao().all().first().find { it.name.equals(custName, ignoreCase = true) }
                 if (customer == null) {
-                    val newId = db.customerDao().insert(Customer(name = custName))
-                    customer = Customer(id = newId, name = custName)
+                    val newCustomer = Customer(name = custName)
+                    val newId = db.customerDao().insert(newCustomer)
+                    customer = newCustomer.copy(id = newId)
+                    // FIX (sync): new customer created inline during Quick Sale was
+                    // never enqueued — the SyncQueueHelper.trigger() call later in this
+                    // function will now also push this along with the sale.
+                    SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(customer))
                 }
             }
 
@@ -1652,8 +1664,13 @@ class SaleActivity : AppCompatActivity() {
             }
 
             if (customer == null && enteredCustomer.isNotEmpty()) {
-                val newId = db.customerDao().insert(Customer(name = enteredCustomer))
-                customer = Customer(id = newId, name = enteredCustomer)
+                val newCustomer = Customer(name = enteredCustomer)
+                val newId = db.customerDao().insert(newCustomer)
+                customer = newCustomer.copy(id = newId)
+                // FIX (sync): new customer created inline during Save Sale was never
+                // enqueued — the SyncQueueHelper.trigger() call after this transaction
+                // now also pushes this along with the sale.
+                SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(customer!!))
             }
 
             db.saleDao().sale(
