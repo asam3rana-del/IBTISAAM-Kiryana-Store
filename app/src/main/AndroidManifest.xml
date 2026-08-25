@@ -25,12 +25,12 @@
         <activity android:name=".ui.StockReportActivity" android:exported="false" />
         <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />
 
-        <!-- NEW WINDOW FOR BILLED ITEMS - ADDED -->
-        <activity
-            android:name=".ui.PurchaseAddItemWindowActivity"
-            android:exported="false"
-            android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.GroceryPOS" />
+        <!-- FIX (Phase 5 - Stability): removed .ui.PurchaseAddItemWindowActivity — this
+             class does not exist anywhere in the source, so this entry crashed the app
+             (ActivityNotFoundException) the moment anything tried to launch it. Nothing
+             in the codebase actually starts it (item-adding already happens inline
+             inside PurchaseActivity's own screen), so it's dead config, not a missing
+             feature — safe to drop. -->
 
         <activity android:name=".ui.SaleActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.CashActivity" />
