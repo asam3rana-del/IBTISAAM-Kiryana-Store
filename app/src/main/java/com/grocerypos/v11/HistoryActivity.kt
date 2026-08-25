@@ -10,6 +10,7 @@ import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.ReturnLine
 import com.grocerypos.v11.smallestUnitFactor
@@ -103,32 +104,43 @@ class HistoryActivity : AppCompatActivity() {
     // this called db.productDao().increase(it.barcode, it.qty) directly, which added back the
     // raw entered-unit number as if it were already smallest units — wrong for any product
     // with a secondary/tertiary unit. ----
+    // FIX (Phase 1 - Data Safety): stock increase + return-row insert + balance reversal +
+    // markReturned are now one atomic transaction (previously separate sequential writes —
+    // a crash partway through could leave stock/balance updated but the sale still "active",
+    // or vice versa).
     private fun returnSale(invoice: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val sale = db.saleDao().findSale(invoice) ?: return@launch; if (sale.status == "returned") return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
-            for (it in items) {
-                val p = db.productDao().find(it.barcode)
-                val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit })?.roundToInt() ?: it.qty
-                db.productDao().increase(it.barcode, smallestQty)
-                db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
+            db.withTransaction {
+                for (it in items) {
+                    val p = db.productDao().find(it.barcode)
+                    val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit })?.roundToInt() ?: it.qty
+                    db.productDao().increase(it.barcode, smallestQty)
+                    db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
+                }
+                if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
+                db.cashTransactionDao().deleteByReference(invoice); db.saleDao().markReturned(invoice)
             }
-            if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
-            db.cashTransactionDao().deleteByReference(invoice); db.saleDao().markReturned(invoice); loadSales()
+            loadSales()
         }
     }
 
+    // FIX (Phase 1 - Data Safety): same atomic-transaction treatment as returnSale() above.
     private fun deleteSale(invoice: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
-            for (it in items) {
-                val p = db.productDao().find(it.barcode)
-                val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit })?.roundToInt() ?: it.qty
-                db.productDao().increase(it.barcode, smallestQty)
+            db.withTransaction {
+                for (it in items) {
+                    val p = db.productDao().find(it.barcode)
+                    val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit })?.roundToInt() ?: it.qty
+                    db.productDao().increase(it.barcode, smallestQty)
+                }
+                if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
+                db.cashTransactionDao().deleteByReference(invoice); db.saleDao().deleteItems(invoice); db.saleDao().deleteSale(invoice)
             }
-            if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
-            db.cashTransactionDao().deleteByReference(invoice); db.saleDao().deleteItems(invoice); db.saleDao().deleteSale(invoice); loadSales()
+            loadSales()
         }
     }
 
@@ -189,26 +201,35 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
+    // FIX (Phase 1 - Data Safety): stock/cost reversal + return-row inserts + balance
+    // reversal + markReturned now run as one atomic transaction.
     private fun returnPurchase(billNo: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch; if (purchase.status == "returned") return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
-            reverseStockAndCostForPurchaseItems(db, items)
-            for (item in items) {
-                db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = item.qty, amount = item.amount))
+            db.withTransaction {
+                reverseStockAndCostForPurchaseItems(db, items)
+                for (item in items) {
+                    db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = item.qty, amount = item.amount))
+                }
+                if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
+                db.cashTransactionDao().deleteByReference(billNo); db.purchaseDao().markReturned(billNo)
             }
-            if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
-            db.cashTransactionDao().deleteByReference(billNo); db.purchaseDao().markReturned(billNo); loadPurchases()
+            loadPurchases()
         }
     }
 
+    // FIX (Phase 1 - Data Safety): same atomic-transaction treatment as returnPurchase() above.
     private fun deletePurchase(billNo: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity); val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
-            reverseStockAndCostForPurchaseItems(db, items)
-            if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
-            db.cashTransactionDao().deleteByReference(billNo); db.paymentDao().deleteByReference(billNo); db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); loadPurchases()
+            db.withTransaction {
+                reverseStockAndCostForPurchaseItems(db, items)
+                if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
+                db.cashTransactionDao().deleteByReference(billNo); db.paymentDao().deleteByReference(billNo); db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo)
+            }
+            loadPurchases()
         }
     }
 
