@@ -341,10 +341,14 @@ interface ProductDao {
     @Insert suspend fun items(items:List<SaleItem>)
     @Query("SELECT COUNT(*) FROM sales") suspend fun count():Int
     @Query("SELECT COALESCE(SUM(total),0) FROM sales") suspend fun totalSales():Double
-    @Query("SELECT COALESCE(SUM(total),0) FROM sales WHERE createdAt BETWEEN :start AND :end") suspend fun totalSalesBetween(start:Long,end:Long):Double
-    @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end") suspend fun countBetween(start:Long,end:Long):Int
-    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day") suspend fun dailySales(start:Long,end:Long):List<DailySales>
-    @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end) GROUP BY product ORDER BY totalQty DESC LIMIT 5") suspend fun topProducts(start:Long,end:Long):List<TopProduct>
+    // FIX (Phase 2 - Accounting): all P&L-relevant sales/profit/COGS queries below now
+    // exclude status='returned' invoices (AND status!='returned'). Previously a fully
+    // returned sale stayed in these SUM()s, overstating Sales, Profit, and COGS by the
+    // amount of every return — returns were effectively not netted out anywhere.
+    @Query("SELECT COALESCE(SUM(total),0) FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun totalSalesBetween(start:Long,end:Long):Double
+    @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun countBetween(start:Long,end:Long):Int
+    @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned' GROUP BY day ORDER BY day") suspend fun dailySales(start:Long,end:Long):List<DailySales>
+    @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned') GROUP BY product ORDER BY totalQty DESC LIMIT 5") suspend fun topProducts(start:Long,end:Long):List<TopProduct>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC LIMIT 100") suspend fun allSales():List<SaleWithCustomer>
     @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun salesByCustomer(customerId:Long):List<Sale>
     @Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1") suspend fun findSale(invoice:String):Sale?
@@ -352,13 +356,13 @@ interface ProductDao {
     @Query("DELETE FROM sale_items WHERE invoice=:invoice") suspend fun deleteItems(invoice:String)
     @Query("DELETE FROM sales WHERE invoice=:invoice") suspend fun deleteSale(invoice:String)
     @Query("UPDATE sales SET status='returned' WHERE invoice=:invoice") suspend fun markReturned(invoice:String)
-    @Query("SELECT COALESCE(SUM(si.amount-si.cost),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end") suspend fun profitBetween(start:Long,end:Long):Double
-    @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch','localtime') as day, COALESCE(SUM(si.amount-si.cost),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end GROUP BY day ORDER BY day") suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
-    @Query("SELECT COALESCE(SUM(si.cost),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end") suspend fun cogsBetween(start:Long,end:Long):Double
-    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId GROUP BY si.product ORDER BY totalAmount DESC") suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
+    @Query("SELECT COALESCE(SUM(si.amount-si.cost),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'") suspend fun profitBetween(start:Long,end:Long):Double
+    @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch','localtime') as day, COALESCE(SUM(si.amount-si.cost),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned' GROUP BY day ORDER BY day") suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
+    @Query("SELECT COALESCE(SUM(si.cost),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'") suspend fun cogsBetween(start:Long,end:Long):Double
+    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId AND s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
     @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC") suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
     @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')") suspend fun totalActiveQtySold(barcode:String):Int
-    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si GROUP BY si.product ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
+    @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paid, createdAt, status FROM sales WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun salesBetween(start:Long,end:Long):List<DayBookSale>
 }
 
@@ -388,7 +392,10 @@ interface ProductDao {
     @Insert suspend fun purchase(p:Purchase)
     @Insert suspend fun items(items:List<PurchaseItem>)
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
-    @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end") suspend fun totalBetween(start:Long,end:Long):Double
+    // FIX (Phase 2 - Accounting): excludes returned purchase bills, same reasoning as
+    // SaleDao above — a fully returned purchase was still being counted in Purchases
+    // totals used for P&L / expense reporting.
+    @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC LIMIT 100") suspend fun allPurchases():List<PurchaseWithSupplier>
     @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC") suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
     @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1") suspend fun findPurchase(bill:String):Purchase?
@@ -396,9 +403,9 @@ interface ProductDao {
     @Query("DELETE FROM purchase_items WHERE billNo=:bill") suspend fun deleteItems(bill:String)
     @Query("DELETE FROM purchases WHERE billNo=:bill") suspend fun deletePurchase(bill:String)
     @Query("UPDATE purchases SET status='returned' WHERE billNo=:bill") suspend fun markReturned(bill:String)
-    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId GROUP BY p.name ORDER BY totalAmount DESC") suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
+    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId AND pu.status!='returned' GROUP BY p.name ORDER BY totalAmount DESC") suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
     @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC") suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
-    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN products p ON pi.barcode=p.barcode GROUP BY p.name ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
+    @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.status!='returned' GROUP BY p.name ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, paid, createdAt, status FROM purchases WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun purchasesBetween(start:Long,end:Long):List<DayBookPurchase>
 }
 
