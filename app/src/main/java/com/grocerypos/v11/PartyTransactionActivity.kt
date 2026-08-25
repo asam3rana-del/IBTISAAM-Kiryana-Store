@@ -15,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -160,12 +161,34 @@ class PartyTransactionActivity : AppCompatActivity() {
                 if (isCustomer) {
                     db.customerDao().find(partyId)?.let { customer ->
                         found = true
-                        db.customerDao().update(customer.copy(name = newName))
+                        val updated = customer.copy(name = newName)
+                        db.customerDao().update(updated)
+                        // FIX (sync): this rename path (via PartyTransactionActivity's Edit
+                        // button) never enqueued a sync_queue entry, so a name changed here
+                        // never reached Firestore even though the equivalent edit dialog in
+                        // PartyActivity does enqueue correctly. Mirrors that same pattern.
+                        SyncQueueHelper.enqueue(
+                            db,
+                            "customer",
+                            SyncQueueHelper.customerEntityId(updated),
+                            "update",
+                            SyncQueueHelper.customerJson(updated)
+                        )
+                        SyncQueueHelper.trigger(this@PartyTransactionActivity)
                     }
                 } else {
                     db.supplierDao().find(partyId)?.let { supplier ->
                         found = true
-                        db.supplierDao().update(supplier.copy(name = newName))
+                        val updated = supplier.copy(name = newName)
+                        db.supplierDao().update(updated)
+                        SyncQueueHelper.enqueue(
+                            db,
+                            "supplier",
+                            SyncQueueHelper.supplierEntityId(updated),
+                            "update",
+                            SyncQueueHelper.supplierJson(updated)
+                        )
+                        SyncQueueHelper.trigger(this@PartyTransactionActivity)
                     }
                 }
 
