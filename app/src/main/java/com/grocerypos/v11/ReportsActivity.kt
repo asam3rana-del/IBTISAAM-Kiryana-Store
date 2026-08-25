@@ -30,6 +30,16 @@ class ReportsActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
+        // FIX (Phase 4 - Security): role check enforced here — MainActivity only hides
+        // the "Reports" tile from cashiers, it doesn't stop them opening this Activity
+        // another way.
+        val myRole = getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier"
+        if (myRole != "admin" && myRole != "manager") {
+            Toast.makeText(this, "Sirf Admin/Manager is screen ko access kar sakte hain", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(28, 40, 28, 32)
