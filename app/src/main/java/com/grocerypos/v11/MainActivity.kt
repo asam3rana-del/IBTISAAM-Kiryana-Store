@@ -24,6 +24,7 @@ import com.grocerypos.v11.ui.DayBookActivity
 import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
 import com.grocerypos.v11.ui.ThemedActivity
+import com.grocerypos.v11.util.Loc
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -314,18 +315,18 @@ class MainActivity : ThemedActivity() {
 
     private fun showCrashDialog(crashText: String) {
         AlertDialog.Builder(this)
-            .setTitle("Pichli baar app crash hui thi")
+            .setTitle(Loc.t(this, "App crashed last time", "پچھلی بار ایپ کریش ہوئی تھی"))
             .setMessage(if (crashText.length > 3000) crashText.take(3000) + "\n\n…(truncated, use Share for full text)" else crashText)
-            .setPositiveButton("Share") { _, _ ->
+            .setPositiveButton(Loc.t(this, "Share", "شیئر کریں")) { _, _ ->
                 startActivity(Intent.createChooser(com.grocerypos.v11.util.CrashHandler.shareIntent(crashText), "Share crash log"))
                 com.grocerypos.v11.util.CrashHandler.clearLastCrash(this)
             }
-            .setNeutralButton("Copy") { _, _ ->
+            .setNeutralButton(Loc.t(this, "Copy", "کاپی کریں")) { _, _ ->
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("crash", crashText))
-                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, Loc.t(this, "Copied", "کاپی ہو گیا"), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Dismiss") { _, _ -> com.grocerypos.v11.util.CrashHandler.clearLastCrash(this) }
+            .setNegativeButton(Loc.t(this, "Dismiss", "برخاست کریں")) { _, _ -> com.grocerypos.v11.util.CrashHandler.clearLastCrash(this) }
             .setCancelable(false)
             .show()
     }
@@ -761,11 +762,13 @@ class MainActivity : ThemedActivity() {
         }
     }
 
+    // ---- Fixed: stroke width is now density-scaled (matches the rest of the app's dp-based
+    // sizing) instead of a hardcoded 2px, so card borders look consistent across screen densities. ----
     private fun roundedBackgroundBordered(colorHex: String, cornerRadius: Int, strokeColorHex: String = border): GradientDrawable {
         return GradientDrawable().apply {
             setColor(Color.parseColor(colorHex))
             this.cornerRadius = cornerRadius.toFloat()
-            setStroke(2, Color.parseColor(strokeColorHex))
+            setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeColorHex))
         }
     }
 
@@ -783,9 +786,5 @@ class MainActivity : ThemedActivity() {
         val g = (Color.green(base) * (1 - factor)).toInt()
         val b = (Color.blue(base) * (1 - factor)).toInt()
         return Color.rgb(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
-    }
-
-    private fun toast(msg: String) {
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 }
