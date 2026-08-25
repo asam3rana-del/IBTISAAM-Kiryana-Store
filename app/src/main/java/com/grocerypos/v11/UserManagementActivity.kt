@@ -180,7 +180,10 @@ class UserManagementActivity : AppCompatActivity() {
                 username = username,
                 displayName = displayName,
                 role = role,
-                passwordHash = password,
+                // FIX (Phase 4 - Security): password typed here is now hashed via
+                // PasswordHasher before being saved (and before being pushed to the
+                // sync queue) — previously stored and synced as plain text.
+                passwordHash = PasswordHasher.hash(password),
                 active = true,
                 phone = phone
             )
