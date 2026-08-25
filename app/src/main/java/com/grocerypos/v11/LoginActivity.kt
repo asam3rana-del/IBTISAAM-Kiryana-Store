@@ -78,7 +78,9 @@ class LoginActivity : AppCompatActivity() {
             val seeded = db.appSettingDao().get("admin_seeded")
             if (seeded == null) {
                 db.userDao().upsert(
-                    User(username = "admin", displayName = "Admin", role = "admin", passwordHash = "admin123", active = true)
+                    // FIX (Phase 4 - Security): default admin password is now hashed
+                    // with PasswordHasher instead of stored as plain "admin123".
+                    User(username = "admin", displayName = "Admin", role = "admin", passwordHash = PasswordHasher.hash("admin123"), active = true)
                 )
                 db.appSettingDao().set(AppSetting("admin_seeded", "1"))
                 hint.text = "Pehli baar? Username: admin   Password: admin123\n(Settings mein jaake baad mein badal sakte hain)"
@@ -273,7 +275,22 @@ class LoginActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 val db = PosDatabase.get(this@LoginActivity)
                 val user = db.userDao().find(u.text.toString().trim())
-                if (user != null && user.passwordHash == p.text.toString()) {
+                val typedPassword = p.text.toString()
+                // FIX (Phase 4 - Security): passwords are now verified with
+                // PasswordHasher.verify() (salted PBKDF2) instead of a plain `==`
+                // comparison. Backward-compat: if an existing user record still has an
+                // old plain-text passwordHash (pre-fix installs), it's accepted once on
+                // a matching password and silently re-saved as a proper hash so every
+                // account migrates automatically the first time it's used after update.
+                val passwordOk = if (user != null && PasswordHasher.isHashed(user.passwordHash)) {
+                    PasswordHasher.verify(typedPassword, user.passwordHash)
+                } else {
+                    user != null && user.passwordHash == typedPassword
+                }
+                if (user != null && passwordOk) {
+                    if (!PasswordHasher.isHashed(user.passwordHash)) {
+                        db.userDao().upsert(user.copy(passwordHash = PasswordHasher.hash(typedPassword)))
+                    }
                     loggedInUser = user
                     db.appSettingDao().set(AppSetting("last_username", user.username))
 
