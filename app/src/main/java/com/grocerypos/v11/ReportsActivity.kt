@@ -97,6 +97,16 @@ class ReportsActivity : AppCompatActivity() {
             subtitle = Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")
         ) { startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java)) })
 
+        navCard.addView(navDivider())
+
+        // ADDED: Balance Sheet — Assets/Liabilities/Capital statement built from
+        // stock value, cash/bank totals, and customer/supplier balances.
+        navCard.addView(navRow(
+            icon = "\u2696\uFE0F", accentHex = "#00695C", tintHex = "#E0F2F1",
+            title = Loc.t(this, "Balance Sheet", "بیلنس شیٹ"),
+            subtitle = Loc.t(this, "Assets, liabilities & capital", "اثاثے، واجبات اور سرمایہ")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, BalanceSheetActivity::class.java)) })
+
         root.addView(navCard)
 
         val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
