@@ -287,12 +287,27 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    // ---- FIX: per-item block is now a clean 4-field stack — Item Name, then
-    // Quantity, then Rate, then Amount directly underneath Rate (same left
-    // alignment, no far-right jump). The old "@ 123.45" prefix on the rate line
-    // and the old far-right-aligned "Rs xxx" amount line are both gone — no more
-    // '@' or '*' symbols anywhere in the printed item block, just plain numbers,
-    // per the requested layout. ----
+    // ---- Item block stays exactly as previously fixed: Item Name, then
+    // Quantity, then Rate, then Amount directly underneath — same left
+    // alignment, no far-right jump, no '@'/'*' symbols. ----
+    //
+    // ---- BUG FIXES applied here vs the previous version: -----------------
+    // 1) Previously the whole receipt string was rendered as ONE block and
+    //    its RTL/LTR direction was decided once for the entire receipt based
+    //    on whether *any* Urdu text appeared anywhere in it. Since the shop
+    //    name / item names are Urdu, that silently flipped the English lines
+    //    (Ref/Date/headers) into RTL too. Now each line is a structured
+    //    ReceiptLine and direction is decided per line.
+    // 2) The Subtotal/Total/Paid/Ref/Date rows were aligned with row(), which
+    //    pads with spaces based on *character count* — that only lines up in
+    //    a monospace font, and the receipt is rendered with a real
+    //    (proportional) font, so those columns never actually lined up on
+    //    the printed image. They're now PrinterHelper.ReceiptLine.TwoCol,
+    //    aligned by measured pixel width.
+    // 3) Printing was hardcoded to PrinterType.BLUETOOTH even though
+    //    PrinterHelper supports USB. It now reads a "printer_type" setting
+    //    (falls back to Bluetooth if unset, so existing setups keep working).
+    // ------------------------------------------------------------------------
     private fun printReceipt(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
@@ -305,50 +320,53 @@ class BillPreviewActivity : AppCompatActivity() {
                 Toast.makeText(this@BillPreviewActivity, "Pehle Settings mein printer select karein", Toast.LENGTH_LONG).show()
                 return@launch
             }
+            val printerType = when (db.appSettingDao().get("printer_type")?.value?.lowercase()) {
+                "usb" -> PrinterHelper.PrinterType.USB
+                else -> PrinterHelper.PrinterType.BLUETOOTH
+            }
 
-            val width = 32
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-            val sb = StringBuilder()
+            val receiptLines = mutableListOf<PrinterHelper.ReceiptLine>()
 
-            sb.append(center(shopName, width)).append("\n")
-            if (shopAddress.isNotBlank()) sb.append(center(shopAddress, width)).append("\n")
-            if (shopPhone.isNotBlank()) sb.append(center(shopPhone, width)).append("\n")
-            sb.append("-".repeat(width)).append("\n")
-            sb.append(center(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT", width)).append("\n")
-            sb.append("-".repeat(width)).append("\n")
-            sb.append("Ref: $reference\n")
-            sb.append("Date: ${fmt.format(Date(dateMillis))}\n")
-            if (partyName.isNotBlank()) sb.append("$partyLabel: $partyName\n")
-            if (paymentMethod.isNotBlank()) sb.append("Payment: ${paymentMethod.replaceFirstChar { it.uppercase() }}\n")
-            sb.append("-".repeat(width)).append("\n")
+            receiptLines.add(PrinterHelper.ReceiptLine.Center(shopName))
+            if (shopAddress.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.Center(shopAddress))
+            if (shopPhone.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.Center(shopPhone))
+            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
+            receiptLines.add(PrinterHelper.ReceiptLine.Center(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT"))
+            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Ref", reference))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Date", fmt.format(Date(dateMillis))))
+            if (partyName.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(partyLabel, partyName))
+            if (paymentMethod.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Payment", paymentMethod.replaceFirstChar { it.uppercase() }))
+            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
             for (line in lines) {
                 // 1) Item Name
-                sb.append(line.name).append("\n")
+                receiptLines.add(PrinterHelper.ReceiptLine.Left(line.name))
                 // 2) Quantity
-                sb.append("${line.qty} ${line.unit}").append("\n")
+                receiptLines.add(PrinterHelper.ReceiptLine.Left("${line.qty} ${line.unit}"))
                 // 3) Rate
-                sb.append("%.2f".format(line.rate)).append("\n")
+                receiptLines.add(PrinterHelper.ReceiptLine.Left("%.2f".format(line.rate)))
                 // 4) Amount — directly under Rate, no @ / * prefix, no far-right jump
-                sb.append("Rs %.2f".format(line.amount)).append("\n")
-                sb.append("\n")
+                receiptLines.add(PrinterHelper.ReceiptLine.Left("Rs %.2f".format(line.amount)))
+                receiptLines.add(PrinterHelper.ReceiptLine.Blank())
             }
 
-            sb.append("-".repeat(width)).append("\n")
-            sb.append(row("Subtotal", "Rs %.2f".format(subtotal), width)).append("\n")
-            if (discount > 0) sb.append(row("Discount", "-Rs %.2f".format(discount), width)).append("\n")
-            sb.append(row("TOTAL", "Rs %.2f".format(total), width)).append("\n")
-            sb.append(row("Paid", "Rs %.2f".format(paid), width)).append("\n")
+            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Subtotal", "Rs %.2f".format(subtotal)))
+            if (discount > 0) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Discount", "-Rs %.2f".format(discount)))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("TOTAL", "Rs %.2f".format(total)))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Paid", "Rs %.2f".format(paid)))
             val balance = total - paid
-            if (balance > 0.009) sb.append(row("Balance Due", "Rs %.2f".format(balance), width)).append("\n")
-            sb.append("-".repeat(width)).append("\n")
-            sb.append(center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }, width)).append("\n")
+            if (balance > 0.009) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Balance Due", "Rs %.2f".format(balance)))
+            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
+            receiptLines.add(PrinterHelper.ReceiptLine.Center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }))
 
-            val ok = PrinterHelper.printUrduText(
+            val ok = PrinterHelper.printReceiptLines(
                 this@BillPreviewActivity,
-                PrinterHelper.PrinterType.BLUETOOTH,
+                printerType,
                 mac,
-                sb.toString()
+                receiptLines
             )
             Toast.makeText(
                 this@BillPreviewActivity,
@@ -356,22 +374,6 @@ class BillPreviewActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
-    }
-
-    private fun center(text: String, width: Int): String {
-        if (text.length >= width) return text
-        val left = (width - text.length) / 2
-        return " ".repeat(left) + text
-    }
-
-    private fun alignRight(text: String, width: Int): String {
-        if (text.length >= width) return text
-        return " ".repeat(width - text.length) + text
-    }
-
-    private fun row(left: String, right: String, width: Int): String {
-        val space = (width - left.length - right.length).coerceAtLeast(1)
-        return left + " ".repeat(space) + right
     }
 
     private fun decodeItems(encoded: String): List<PreviewLine> {
