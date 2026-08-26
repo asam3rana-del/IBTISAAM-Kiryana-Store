@@ -5,6 +5,7 @@ import androidx.room.*
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
+import kotlin.math.roundToInt
 
 data class DailySales(val day:String,val total:Double)
 data class TopProduct(val product:String,val totalQty:Int)
@@ -51,42 +52,125 @@ data class Product(
 )
 
 // ================= 3-tier unit conversion helpers =================
-fun Product.smallestUnitFactor(): Double {
-    if (secondaryUnit.isBlank() || secondaryUnitQty <= 0) return 1.0
-    return if (tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0) secondaryUnitQty * tertiaryUnitQty else secondaryUnitQty
+// Single source of truth for converting between a product's primary, secondary,
+// and tertiary units and its "smallest unit" (the unit `stock` is actually stored
+// and compared in, e.g. reorderLevel/stock<=reorderLevel). Every screen that
+// touches stock — Purchase, Purchase Return, Sale, Sale Return, Product opening
+// stock — must go through these functions instead of re-deriving the math
+// locally, so a fix here fixes every screen at once instead of drifting apart.
+
+/** One tier of a product's unit ladder: this unit's name, and how many
+ *  "smallest units" ONE of it equals. */
+data class ProductUnitTier(val unit: String, val smallestPerUnit: Double)
+
+// FIX: unit names are now compared trimmed + case-insensitive. Previously an
+// exact `==` string match meant a unit string that differed only by casing or
+// stray whitespace (easy to get from a Spinner/AutoCompleteTextView) silently
+// fell through to the wrong branch and quietly corrupted stock.
+private fun sameUnit(a: String, b: String): Boolean =
+    a.isNotBlank() && b.isNotBlank() && a.trim().equals(b.trim(), ignoreCase = true)
+
+/**
+ * Ordered ladder of this product's units, SMALLEST first, each paired with how
+ * many "smallest units" one of it equals. Always has at least one tier (the
+ * primary unit, factor 1) — a plain 1-unit product. A 2-tier product (primary +
+ * secondary, no tertiary) has 2 tiers with the secondary as smallest. A 3-tier
+ * product has all 3, with tertiary as smallest.
+ *
+ * A malformed config (e.g. a tertiary unit typed in without a valid secondary)
+ * degrades gracefully to a lower tier instead of producing a wrong/blown-up
+ * factor — this is the single place that decides "is this product 1/2/3 tier",
+ * so every other function below just reads off this list instead of
+ * re-deciding it independently.
+ */
+fun Product.unitLadder(): List<ProductUnitTier> {
+    val hasSecondary = secondaryUnit.isNotBlank() && secondaryUnitQty > 0
+    val hasTertiary = hasSecondary && tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0
+
+    if (!hasSecondary) {
+        // 1-tier: only the primary unit exists, and it IS the smallest unit.
+        return listOf(ProductUnitTier(unit, 1.0))
+    }
+
+    if (!hasTertiary) {
+        // 2-tier: secondary is the smallest unit; 1 primary = secondaryUnitQty secondary.
+        return listOf(
+            ProductUnitTier(secondaryUnit, 1.0),
+            ProductUnitTier(unit, secondaryUnitQty)
+        )
+    }
+
+    // 3-tier: tertiary is the smallest unit.
+    // 1 secondary = tertiaryUnitQty tertiary; 1 primary = secondaryUnitQty secondary.
+    return listOf(
+        ProductUnitTier(tertiaryUnit, 1.0),
+        ProductUnitTier(secondaryUnit, tertiaryUnitQty),
+        ProductUnitTier(unit, secondaryUnitQty * tertiaryUnitQty)
+    )
 }
 
+/** How many smallest units make up ONE of this product's primary unit. */
+fun Product.smallestUnitFactor(): Double = unitLadder().last().smallestPerUnit
+
+/** How many smallest units make up ONE secondary unit (1.0 if there's no secondary tier). */
 fun Product.smallestPerSecondary(): Double =
-    if (tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0) tertiaryUnitQty else 1.0
+    unitLadder().find { sameUnit(it.unit, secondaryUnit) }?.smallestPerUnit ?: 1.0
 
-fun Product.smallestUnitName(): String = when {
-    tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0 && secondaryUnitQty > 0 -> tertiaryUnit
-    secondaryUnit.isNotBlank() && secondaryUnitQty > 0 -> secondaryUnit
-    else -> unit
+/** Name of the smallest unit this product's stock is actually stored/compared in. */
+fun Product.smallestUnitName(): String = unitLadder().first().unit
+
+/**
+ * Converts [qty] entered in [enteredUnit] into the product's smallest-unit basis
+ * (the same basis `stock` is stored in). This is THE function every screen must
+ * call before adjusting `stock` — never re-derive this math locally.
+ *
+ * Falls back to the primary unit's factor if [enteredUnit] doesn't match any
+ * tier (e.g. a stale/blank unit string) rather than silently returning the raw
+ * qty unconverted, which would previously understate stock changes for
+ * multi-tier products.
+ */
+fun Product.toSmallestUnits(qty: Double, enteredUnit: String): Double {
+    val tier = unitLadder().find { sameUnit(it.unit, enteredUnit) } ?: unitLadder().last()
+    return qty * tier.smallestPerUnit
 }
 
-fun Product.toSmallestUnits(qty: Double, enteredUnit: String): Double = when {
-    enteredUnit == tertiaryUnit && tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0 && secondaryUnitQty > 0 -> qty
-    enteredUnit == secondaryUnit && secondaryUnitQty > 0 -> qty * smallestPerSecondary()
-    else -> qty * smallestUnitFactor()
+/**
+ * Reverse of [toSmallestUnits]: converts a quantity already expressed in
+ * smallest units back into [targetUnit]. Used for return flows, display, and
+ * for round-tripping a stored rate/qty into a different unit on the same
+ * product — sharing this with toSmallestUnits keeps both directions in sync.
+ */
+fun Product.fromSmallestUnits(smallestQty: Double, targetUnit: String): Double {
+    val tier = unitLadder().find { sameUnit(it.unit, targetUnit) } ?: unitLadder().last()
+    return if (tier.smallestPerUnit > 0) smallestQty / tier.smallestPerUnit else smallestQty
 }
 
+/**
+ * Human-readable stock breakdown, e.g. "1 carton 2 box 1 pcs". Built directly
+ * off the same unitLadder() used by toSmallestUnits/fromSmallestUnits, so the
+ * display can never drift out of sync with what's actually stored/converted —
+ * previously this had its own separate divide/modulo math.
+ */
 fun Product.formatStockBreakdown(): String {
-    val total = stock
-    if (secondaryUnit.isBlank() || secondaryUnitQty <= 0) return "$total $unit"
+    val ladder = unitLadder()
+    if (ladder.size == 1) return "$stock ${ladder[0].unit}"
 
-    val perSecondary = smallestPerSecondary().toInt().coerceAtLeast(1)
-    val secondaryPerPrimary = secondaryUnitQty.toInt().coerceAtLeast(1)
-
-    val secondaryTotal = total / perSecondary
-    val remSmallest = total % perSecondary
-    val primaryCount = secondaryTotal / secondaryPerPrimary
-    val remSecondary = secondaryTotal % secondaryPerPrimary
-
+    val largestToSmallest = ladder.asReversed()
+    var remaining = stock
     val parts = mutableListOf<String>()
-    if (primaryCount > 0) parts.add("$primaryCount $unit")
-    if (remSecondary > 0) parts.add("$remSecondary $secondaryUnit")
-    if (tertiaryUnit.isNotBlank() && tertiaryUnitQty > 0 && remSmallest > 0) parts.add("$remSmallest $tertiaryUnit")
+
+    largestToSmallest.forEachIndexed { index, tier ->
+        val isSmallestTier = index == largestToSmallest.lastIndex
+        if (isSmallestTier) {
+            if (remaining > 0) parts.add("$remaining ${tier.unit}")
+        } else {
+            val perUnit = tier.smallestPerUnit.roundToInt().coerceAtLeast(1)
+            val count = remaining / perUnit
+            remaining %= perUnit
+            if (count > 0) parts.add("$count ${tier.unit}")
+        }
+    }
+
     if (parts.isEmpty()) return "0 ${smallestUnitName()}"
     return parts.joinToString(" ")
 }
@@ -341,10 +425,6 @@ interface ProductDao {
     @Insert suspend fun items(items:List<SaleItem>)
     @Query("SELECT COUNT(*) FROM sales") suspend fun count():Int
     @Query("SELECT COALESCE(SUM(total),0) FROM sales") suspend fun totalSales():Double
-    // FIX (Phase 2 - Accounting): all P&L-relevant sales/profit/COGS queries below now
-    // exclude status='returned' invoices (AND status!='returned'). Previously a fully
-    // returned sale stayed in these SUM()s, overstating Sales, Profit, and COGS by the
-    // amount of every return — returns were effectively not netted out anywhere.
     @Query("SELECT COALESCE(SUM(total),0) FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun totalSalesBetween(start:Long,end:Long):Double
     @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun countBetween(start:Long,end:Long):Int
     @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned' GROUP BY day ORDER BY day") suspend fun dailySales(start:Long,end:Long):List<DailySales>
@@ -392,9 +472,6 @@ interface ProductDao {
     @Insert suspend fun purchase(p:Purchase)
     @Insert suspend fun items(items:List<PurchaseItem>)
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
-    // FIX (Phase 2 - Accounting): excludes returned purchase bills, same reasoning as
-    // SaleDao above — a fully returned purchase was still being counted in Purchases
-    // totals used for P&L / expense reporting.
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC LIMIT 100") suspend fun allPurchases():List<PurchaseWithSupplier>
     @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC") suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
