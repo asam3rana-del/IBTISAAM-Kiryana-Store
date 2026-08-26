@@ -26,7 +26,7 @@ jobs:
           gradle-version: '8.7'
 
       - name: Decode fixed debug keystore
-        run: echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
+        run: echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > app/debug.keystore
 
       - name: Build debug APK
         run: gradle assembleDebug
@@ -60,7 +60,7 @@ jobs:
           gradle-version: '8.7'
 
       - name: Decode release keystore
-        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
       - name: Build signed release APK
         run: >
