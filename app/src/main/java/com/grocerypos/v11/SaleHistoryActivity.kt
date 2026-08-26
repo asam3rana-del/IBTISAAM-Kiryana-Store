@@ -12,7 +12,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
 import com.grocerypos.v11.*
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 class SaleHistoryActivity : AppCompatActivity() {
 
@@ -235,7 +234,7 @@ class SaleHistoryActivity : AppCompatActivity() {
                 items.forEach { si ->
                     val p = db.productDao().find(si.barcode)
                     if (p != null) {
-                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit }).roundToInt()
+                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit })
                         db.productDao().increase(si.barcode, smallestQty)
                     }
                 }
