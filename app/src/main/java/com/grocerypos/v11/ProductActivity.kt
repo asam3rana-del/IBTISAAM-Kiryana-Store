@@ -461,7 +461,7 @@ class ProductActivity : ThemedActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
             textSize = 15f
-            inputType = InputType.TYPE_CLASS_NUMBER
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_DONE
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
@@ -1091,7 +1091,7 @@ class ProductActivity : ThemedActivity() {
             value.toString()
         }
 
-    private fun draftProduct(stockValue: Int = 0) = Product(
+    private fun draftProduct(stockValue: Double = 0.0) = Product(
         barcode = "",
         name = "",
         stock = stockValue,
@@ -1102,9 +1102,9 @@ class ProductActivity : ThemedActivity() {
         tertiaryUnitQty = selectedTertiaryQty
     )
 
-    private fun openingStockToSmallest(quantity: Double, unit: String): Int {
-        if (quantity <= 0) return 0
-        return draftProduct().toSmallestUnits(quantity, unit).roundToInt()
+    private fun openingStockToSmallest(quantity: Double, unit: String): Double {
+        if (quantity <= 0) return 0.0
+        return draftProduct().toSmallestUnits(quantity, unit)
     }
 
     private fun updateOpeningStockPreview() {
@@ -1121,8 +1121,8 @@ class ProductActivity : ThemedActivity() {
 
         stockPreview.text = Loc.t(
             this,
-            "Stored stock: $smallest ${draft.smallestUnitName()}  •  Display: ${draft.formatStockBreakdown()}",
-            "محفوظ اسٹاک: $smallest ${draft.smallestUnitName()}  •  ڈسپلے: ${draft.formatStockBreakdown()}"
+            "Stored stock: ${trimNum(smallest)} ${draft.smallestUnitName()}  •  Display: ${draft.formatStockBreakdown()}",
+            "محفوظ اسٹاک: ${trimNum(smallest)} ${draft.smallestUnitName()}  •  ڈسپلے: ${draft.formatStockBreakdown()}"
         )
     }
 
@@ -1588,9 +1588,9 @@ class ProductActivity : ThemedActivity() {
             if (product.wholesalePrice > 0) product.wholesalePrice.toString() else ""
         )
         salePrice.setText(if (product.salePrice > 0) product.salePrice.toString() else "")
-        reorderLevel.setText(if (product.reorderLevel > 0) product.reorderLevel.toString() else "")
+        reorderLevel.setText(if (product.reorderLevel > 0) trimNum(product.reorderLevel) else "")
 
-        stock.setText(product.stock.toString())
+        stock.setText(trimNum(product.stock))
         stock.isEnabled = false
         stockUnitSpinner.isEnabled = false
         stockNote.visibility = View.VISIBLE
@@ -1678,8 +1678,8 @@ class ProductActivity : ThemedActivity() {
         val barcode = existing?.barcode ?: "P" + System.currentTimeMillis()
         val categoryValue = categoryField.text.toString().trim().ifBlank { "General" }
 
-        val resolvedStock: Int
-        val resolvedOpeningStock: Int
+        val resolvedStock: Double
+        val resolvedOpeningStock: Double
 
         if (existing != null) {
             resolvedStock = existing.stock
@@ -1691,6 +1691,20 @@ class ProductActivity : ThemedActivity() {
                 selectedOpeningStockUnit
             )
             resolvedOpeningStock = resolvedStock
+        }
+
+        // FIX (fraction control): new product's opening stock must resolve to a whole
+        // smallest-unit qty unless the smallest unit is fractional (Gram/ml).
+        if (existing == null) {
+            val probe = draftProduct(resolvedStock)
+            if (!probe.isValidSmallestQty(resolvedStock)) {
+                Toast.makeText(
+                    this,
+                    Loc.t(this, "Opening stock whole ${probe.smallestUnitName()} mein convert nahi hoti", "ابتدائی اسٹاک ${probe.smallestUnitName()} کی مکمل تعداد میں تبدیل نہیں ہوتا"),
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
         }
 
         val product = Product(
@@ -1711,7 +1725,7 @@ class ProductActivity : ThemedActivity() {
                 if (selectedTertiaryUnit == "None") "" else selectedTertiaryUnit,
             tertiaryUnitQty =
                 if (selectedTertiaryUnit == "None") 0.0 else selectedTertiaryQty,
-            reorderLevel = reorderLevel.text.toString().toIntOrNull()?.coerceAtLeast(0) ?: 0
+            reorderLevel = reorderLevel.text.toString().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
         )
 
         lifecycleScope.launch {
