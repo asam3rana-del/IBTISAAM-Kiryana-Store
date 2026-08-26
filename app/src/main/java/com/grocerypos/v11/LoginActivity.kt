@@ -39,6 +39,7 @@ class LoginActivity : AppCompatActivity() {
     private val primary = "#4A3AFF"
     private val primaryDark = "#3527D6"
     private val green = "#1FA971"
+    private val red = "#E5484D"
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
     private val border = "#E7E5F3"
@@ -69,23 +70,25 @@ class LoginActivity : AppCompatActivity() {
         // flash on screen for a moment even when no login is required.
         lifecycleScope.launch {
             val db = PosDatabase.get(this@LoginActivity)
+
+            // FIX (Security): first-time setup no longer seeds a hardcoded
+            // "admin" / "admin123" account. Instead, if no admin has ever been
+            // created, the person is shown a one-time "Create Admin Account"
+            // screen where they choose their own username/display name/password.
+            // Only once that account is created do we move on to checking the
+            // configured login method and showing the normal login screen.
+            val seeded = db.appSettingDao().get("admin_seeded")
+            if (seeded == null) {
+                buildSetupUi()
+                return@launch
+            }
+
             val method = db.appSettingDao().get("login_method")?.value ?: "password"
             if (method == "none") {
                 goToMain()
                 return@launch
             }
             buildUi()
-            // First-time setup: create a default admin login if none exists yet
-            val seeded = db.appSettingDao().get("admin_seeded")
-            if (seeded == null) {
-                db.userDao().upsert(
-                    // FIX (Phase 4 - Security): default admin password is now hashed
-                    // with PasswordHasher instead of stored as plain "admin123".
-                    User(username = "admin", displayName = "Admin", role = "admin", passwordHash = PasswordHasher.hash("admin123"), active = true)
-                )
-                db.appSettingDao().set(AppSetting("admin_seeded", "1"))
-                hint.text = "Pehli baar? Username: admin   Password: admin123\n(Settings mein jaake baad mein badal sakte hain)"
-            }
             applyLoginMethod(db)
         }
     }
@@ -93,6 +96,185 @@ class LoginActivity : AppCompatActivity() {
     private fun goToMain() {
         startActivity(Intent(this@LoginActivity, MainActivity::class.java))
         finish()
+    }
+
+    // ================= FIRST-TIME ADMIN SETUP =================
+    // Shown exactly once, before any login screen ever exists — replaces the old
+    // silently-seeded "admin" / "admin123" default account. The person must choose
+    // their own username, display name, and password before the app can be used.
+    private fun buildSetupUi() {
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(36, 60, 36, 60)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(gradientTop), Color.parseColor(gradientBottom))
+            )
+        }
+
+        outer.addView(circleIcon("🔐", "#FFFFFF", "#3949AB", 84))
+        outer.addView(spacer(20))
+        outer.addView(TextView(this).apply {
+            text = "IBTISAAM Kiryana Store"
+            textSize = 21f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        outer.addView(TextView(this).apply {
+            text = "Pehli Dafa Setup"
+            textSize = 12.5f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#C5CAE9"))
+            setPadding(0, 6, 0, 0)
+        })
+        outer.addView(spacer(34))
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(30, 34, 30, 30)
+            background = roundedBg(cardBg, 24)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            applyElevation(this, 14f)
+        }
+
+        card.addView(TextView(this).apply {
+            text = "Admin Account Banayein"
+            textSize = 17f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        card.addView(TextView(this).apply {
+            text = "Ye aapka pehla aur sabse powerful account hoga"
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 4, 0, 22)
+        })
+
+        val displayNameField = EditText(this).apply {
+            hint = "Apka Naam (e.g. Owner)"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+        }
+        card.addView(fieldBox("🙍", displayNameField))
+        card.addView(spacer(14))
+
+        val usernameField = EditText(this).apply {
+            hint = "Username"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+        }
+        card.addView(fieldBox("👤", usernameField))
+        card.addView(spacer(14))
+
+        val passwordField = EditText(this).apply {
+            hint = "Password (kam az kam 6 characters)"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        card.addView(passwordFieldBox(passwordField))
+        card.addView(spacer(14))
+
+        val confirmPasswordField = EditText(this).apply {
+            hint = "Password Dobara Likhein"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        card.addView(passwordFieldBox(confirmPasswordField))
+        card.addView(spacer(10))
+
+        val errorText = TextView(this).apply {
+            textSize = 11.5f
+            setTextColor(Color.parseColor(red))
+            setPadding(4, 0, 4, 0)
+            visibility = View.GONE
+        }
+        card.addView(errorText)
+        card.addView(spacer(10))
+
+        val createBtn = Button(this).apply {
+            text = "✅  ADMIN ACCOUNT BANAYEIN"
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            isAllCaps = false
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            ).apply { cornerRadius = 16f }
+            setPadding(0, 28, 0, 28)
+            applyElevation(this, 6f)
+        }
+        card.addView(createBtn)
+
+        outer.addView(card)
+
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor(gradientTop))
+            addView(outer, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        })
+
+        createBtn.setOnClickListener {
+            errorText.visibility = View.GONE
+            val displayName = displayNameField.text.toString().trim()
+            val username = usernameField.text.toString().trim()
+            val password = passwordField.text.toString()
+            val confirmPassword = confirmPasswordField.text.toString()
+
+            val validationError = when {
+                displayName.isEmpty() -> "Apna naam likhein"
+                username.isEmpty() -> "Username likhein"
+                username.contains(" ") -> "Username mein space nahi hona chahiye"
+                password.length < 6 -> "Password kam az kam 6 characters ka ho"
+                password != confirmPassword -> "Dono password match nahi karte"
+                else -> null
+            }
+
+            if (validationError != null) {
+                errorText.text = validationError
+                errorText.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+
+            lifecycleScope.launch {
+                val db = PosDatabase.get(this@LoginActivity)
+
+                val existing = db.userDao().find(username)
+                if (existing != null) {
+                    errorText.text = "Ye username pehle se mojood hai"
+                    errorText.visibility = View.VISIBLE
+                    return@launch
+                }
+
+                val newAdmin = User(
+                    username = username,
+                    displayName = displayName,
+                    role = "admin",
+                    passwordHash = PasswordHasher.hash(password),
+                    active = true
+                )
+                db.userDao().upsert(newAdmin)
+                db.appSettingDao().set(AppSetting("admin_seeded", "1"))
+                db.appSettingDao().set(AppSetting("last_username", newAdmin.username))
+
+                loggedInUser = newAdmin
+                Toast.makeText(
+                    this@LoginActivity,
+                    "Admin account ban gaya. Khush amdeed, $displayName!",
+                    Toast.LENGTH_LONG
+                ).show()
+                completeLogin()
+            }
+        }
     }
 
     private fun buildUi() {
