@@ -135,7 +135,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         val cost: Double,
         val salePrice: Double,
         val wholesalePrice: Double,
-        val stock: Int,
+        val stock: Double,
         val stockDisplay: String,
         val soldQty: Int,
         val soldAmt: Double,
