@@ -1,130 +1,81 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.kapt")
-    id("com.google.gms.google-services") // NEW: required for Firebase. Add the matching
-    // classpath in your project-level (root) build.gradle.kts / settings.gradle.kts:
-    //   plugins { id("com.google.gms.google-services") version "4.4.2" apply false }
-    // and place google-services.json inside this module's folder (next to this file).
-}
+name: Build APK
 
-android {
-    namespace = "com.grocerypos.v11"
-    compileSdk = 35
+on:
+  push:
+    branches: [ Dusri-branch ]
+  workflow_dispatch:
 
-    defaultConfig {
-        applicationId = "com.grocerypos.v11"
-        minSdk = 24
-        targetSdk = 35
-        versionCode = 10
-        versionName = "10.0"
-        // FIX (Phase 3 - Online): every synced record is now tagged with this branch ID
-        // (see SyncQueueHelper.kt / SyncApi.kt) so Firestore data from different store
-        // branches no longer mixes together — this was previously one flat, unpartitioned
-        // space shared by every install of the app, regardless of branch. Give each
-        // branch's build its own unique value here before building its APK — e.g. the
-        // main branch keeps "main-branch", and this "Dusri branch" copy uses
-        // "dusri-branch" as set below. Existing pre-fix Firestore data has no branchId
-        // field on it, so it won't match any branch's filtered pull() query — see the
-        // migration note in SyncApi.kt's pull().
-        buildConfigField("String", "BRANCH_ID", "\"dusri-branch\"")
-    }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    buildFeatures {
-        buildConfig = true
-    }
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-    signingConfigs {
-        getByName("debug") {
-            storeFile = file("${rootProject.projectDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-        // FIX (Phase 5 - Stability): added a release signing config — previously there
-        // was none, so a `release` build would come out unsigned (can't be installed
-        // as an update, or at all on some devices). Credentials are read from Gradle
-        // properties instead of being hardcoded, so this file stays safe to commit:
-        //   1) Create a real release keystore once:
-        //        keytool -genkey -v -keystore release.keystore -alias ibtisaam \
-        //          -keyalg RSA -keysize 2048 -validity 10000
-        //   2) Put these 4 lines in ~/.gradle/gradle.properties (NOT in this repo):
-        //        RELEASE_STORE_FILE=/full/path/to/release.keystore
-        //        RELEASE_STORE_PASSWORD=yourStorePassword
-        //        RELEASE_KEY_ALIAS=ibtisaam
-        //        RELEASE_KEY_PASSWORD=yourKeyPassword
-        //   3) Build a release APK/AAB as usual (./gradlew bundleRelease) — Gradle
-        //      fills these in automatically. If they're missing, the release build
-        //      simply fails with a clear "property not found" error instead of
-        //      silently shipping unsigned.
-        create("release") {
-            storeFile = file(project.findProperty("RELEASE_STORE_FILE") as? String ?: "release.keystore")
-            storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as? String ?: ""
-            keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as? String ?: ""
-            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as? String ?: ""
-        }
-    }
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-    buildTypes {
-        getByName("debug") {
-            signingConfig = signingConfigs.getByName("debug")
-        }
-        getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
-        }
-    }
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+      - name: Decode fixed debug keystore
+        # FIX: build.gradle.kts's debug signingConfig looks for the keystore at
+        # ${rootProject.projectDir}/debug.keystore — i.e. the REPO ROOT, not app/.
+        # This used to decode into app/debug.keystore, so Gradle's validateSigningDebug
+        # never found a keystore at the path it actually checks, failing the build.
+        run: echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-}
+      - name: Build debug APK
+        run: gradle assembleDebug
 
-dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.activity:activity-ktx:1.10.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    // Free, on-device OCR for the "Scan Bill" purchase feature — no API key, no
-    // internet required, no per-request cost.
-    implementation("com.google.mlkit:text-recognition:16.0.1")
-    // ML Kit Document Scanner — powers the "Scan Document" button in BillScanActivity.
-    // Auto-detects the bill's edges, corrects perspective/skew, and cleans up
-    // shadows/glare before OCR runs, which meaningfully improves item/qty/rate read
-    // accuracy over a plain camera photo. Also on-device, free, and brings its own
-    // built-in camera flow (no CAMERA permission needed).
-    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
-    // Needed for GoogleApiAvailability / ConnectionResult (the Play Services check
-    // before launching the Document Scanner).
-    implementation("com.google.android.gms:play-services-base:18.5.0")
-    implementation("androidx.camera:camera-core:1.4.1")
-    implementation("androidx.camera:camera-camera2:1.4.1")
-    implementation("androidx.camera:camera-lifecycle:1.4.1")
-    implementation("androidx.camera:camera-view:1.4.1")
-    implementation("androidx.biometric:biometric:1.1.0")
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
 
-    // ===== Offline-first sync (SyncApi, SyncWorker, SyncRepository) — Firebase =====
-    // Retrofit + Gson removed: replaced by Firebase Firestore below.
-    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    // Phone OTP login (LoginActivity) — FirebaseAuth, PhoneAuthCredential,
-    // PhoneAuthOptions, PhoneAuthProvider all come from this artifact.
-    implementation("com.google.firebase:firebase-auth-ktx")
-    // Lets Firestore's Task<T> API be used with Kotlin coroutines (.await()).
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
-    // Gson stays — SyncApi still uses it to parse SyncQueueEntry.payloadJson.
-    implementation("com.google.code.gson:gson:2.11.0")
-    // WorkManager: powers SyncWorker (periodic + immediate background sync).
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
-}
+  # Builds the signed, installable production APK for this branch. Only runs if the
+  # release keystore secret exists (RELEASE_KEYSTORE_BASE64), so it silently no-ops
+  # until you've added the 4 GitHub secrets listed below — see release-signing-setup.md.
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Decode release keystore
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
+
+      - name: Build signed release APK
+        run: >
+          gradle assembleRelease
+          -PRELEASE_STORE_FILE=release.keystore
+          -PRELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}
+          -PRELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}
+          -PRELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk-dusri-branch
+          path: app/build/outputs/apk/release/app-release.apk
