@@ -24,6 +24,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
 import com.grocerypos.v11.*
+import com.grocerypos.v11.pricing.DiscountCalculator
+import com.grocerypos.v11.pricing.PricingTierMath
+import com.grocerypos.v11.pricing.toUnitTiers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -918,29 +921,18 @@ class SaleActivity : AppCompatActivity() {
         refillAutoPrice()
     }
 
+    // ---- FIX: delegated to the shared, unit-tested PricingTierMath instead of a
+    // duplicated inline formula (was previously copy-pasted separately in
+    // PurchaseActivity too — any future fix now only needs to happen in one place). ----
     private fun toMainUnitPrice(entered: Double): Double {
         val product = selectedProduct ?: return entered
         val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        return when {
-            chosenUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
-                product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
-                entered * product.secondaryUnitQty * product.tertiaryUnitQty
-            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
-                entered * product.secondaryUnitQty
-            else -> entered
-        }
+        return PricingTierMath.toMainUnit(entered, product.toUnitTiers(), chosenUnit)
     }
 
     private fun fromMainUnitPrice(mainPrice: Double, chosenUnit: String): Double {
         val product = selectedProduct ?: return mainPrice
-        return when {
-            chosenUnit == product.tertiaryUnit && product.tertiaryUnit.isNotEmpty() &&
-                product.tertiaryUnitQty > 0 && product.secondaryUnitQty > 0 ->
-                mainPrice / (product.secondaryUnitQty * product.tertiaryUnitQty)
-            chosenUnit == product.secondaryUnit && product.secondaryUnitQty > 0 ->
-                mainPrice / product.secondaryUnitQty
-            else -> mainPrice
-        }
+        return PricingTierMath.fromMainUnit(mainPrice, product.toUnitTiers(), chosenUnit)
     }
 
     private fun refillAutoPrice() {
@@ -1134,13 +1126,19 @@ class SaleActivity : AppCompatActivity() {
         billedItemsDialog?.show()
     }
 
+    // ---- FIX: previously this only clamped the FINAL total at zero, but did NOT
+    // clamp the discount itself into [0, subtotal] the way saveSale() does — so a
+    // stray negative discount (or a discount typed larger than the subtotal, before
+    // the user finishes editing) could show a running total on screen that didn't
+    // match what would actually be saved. Now both use the same DiscountCalculator,
+    // so the live preview and the saved bill always agree. ----
     private fun recomputeAmounts(): Double {
         val subtotal = lines.sumOf { it.amount }
-        val discount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
+        val enteredDiscount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
+        val totals = DiscountCalculator.compute(subtotal, enteredDiscount, 0.0)
         subtotalText.text = "Rs %.2f".format(subtotal)
-        val total = (subtotal - discount).coerceAtLeast(0.0)
-        totalText.text = "Rs %.2f".format(total)
-        return total
+        totalText.text = "Rs %.2f".format(totals.total)
+        return totals.total
     }
 
     private fun updateTotals() {
@@ -1156,8 +1154,9 @@ class SaleActivity : AppCompatActivity() {
 
     private fun refreshDue() {
         val total = recomputeAmounts()
-        val paid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
-        val due = (total - paid).coerceAtLeast(0.0)
+        val enteredPaid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
+        val paidClamped = enteredPaid.coerceIn(0.0, total)
+        val due = (total - paidClamped).coerceAtLeast(0.0)
         dueAmountText.text = "Rs %.2f".format(due)
         dueAmountText.setTextColor(Color.parseColor(if (due > 0.009) red else green))
         isCashSale = due <= 0.009
@@ -1190,20 +1189,10 @@ class SaleActivity : AppCompatActivity() {
             }
             return list
         }
-        fun qsToMainPrice(p: Product, entered: Double, unit: String): Double = when {
-            unit == p.tertiaryUnit && p.tertiaryUnit.isNotEmpty() &&
-                p.tertiaryUnitQty > 0 && p.secondaryUnitQty > 0 ->
-                entered * p.secondaryUnitQty * p.tertiaryUnitQty
-            unit == p.secondaryUnit && p.secondaryUnitQty > 0 -> entered * p.secondaryUnitQty
-            else -> entered
-        }
-        fun qsFromMainPrice(p: Product, mainPrice: Double, unit: String): Double = when {
-            unit == p.tertiaryUnit && p.tertiaryUnit.isNotEmpty() &&
-                p.tertiaryUnitQty > 0 && p.secondaryUnitQty > 0 ->
-                mainPrice / (p.secondaryUnitQty * p.tertiaryUnitQty)
-            unit == p.secondaryUnit && p.secondaryUnitQty > 0 -> mainPrice / p.secondaryUnitQty
-            else -> mainPrice
-        }
+        fun qsToMainPrice(p: Product, entered: Double, unit: String): Double =
+            PricingTierMath.toMainUnit(entered, p.toUnitTiers(), unit)
+        fun qsFromMainPrice(p: Product, mainPrice: Double, unit: String): Double =
+            PricingTierMath.fromMainUnit(mainPrice, p.toUnitTiers(), unit)
         fun qsAvailableInUnit(p: Product, unit: String): Double {
             val perUnitFactor = p.toSmallestUnits(1.0, unit)
             return if (perUnitFactor > 0) p.stock / perUnitFactor else p.stock.toDouble()
@@ -1586,6 +1575,9 @@ class SaleActivity : AppCompatActivity() {
     }
 
     // ================= Save =================
+    // ---- FIX: discount/total/paid/due now come from the same DiscountCalculator
+    // used everywhere else, instead of a third copy of the coerceIn/coerceAtLeast
+    // formula (was previously duplicated separately from recomputeAmounts/refreshDue). ----
     private fun saveSale() {
         if (lines.isEmpty()) {
             Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
@@ -1594,10 +1586,13 @@ class SaleActivity : AppCompatActivity() {
         val enteredCustomer = customerName.text.toString().trim()
 
         val subtotal = lines.sumOf { it.amount }
-        val discount = (discountInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, subtotal)
-        val total = (subtotal - discount).coerceAtLeast(0.0)
-        val paid = (paidInput.text.toString().toDoubleOrNull() ?: 0.0).coerceIn(0.0, total)
-        val due = (total - paid).coerceAtLeast(0.0)
+        val enteredDiscount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
+        val enteredPaid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
+        val billTotals = DiscountCalculator.compute(subtotal, enteredDiscount, enteredPaid)
+        val discount = billTotals.discount
+        val total = billTotals.total
+        val paid = billTotals.paid
+        val due = billTotals.due
 
         if (due > 0.009 && enteredCustomer.isEmpty()) {
             Toast.makeText(this, "Due amount ke liye Customer zaroori hai", Toast.LENGTH_SHORT).show()
