@@ -200,7 +200,10 @@ object SyncApi {
             val barcode = row["barcode"] as? String ?: continue
             val existing = prodDao.find(barcode)
             if (existing != null) {
-                val stock = (row["stock"] as? Number)?.toInt() ?: existing.stock
+                // FIX (fraction control): stock is now Double — .toInt() here used to
+                // truncate a fractional server-side stock value (e.g. 2.5 Kg) on every
+                // pull-sync. Read as Double so a Gram/ml-based product's stock survives sync.
+                val stock = (row["stock"] as? Number)?.toDouble() ?: existing.stock
                 prodDao.upsert(existing.copy(stock = stock, dirty = false, updatedAt = System.currentTimeMillis()))
             }
         }
