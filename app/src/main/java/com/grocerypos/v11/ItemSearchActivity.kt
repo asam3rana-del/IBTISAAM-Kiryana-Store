@@ -190,7 +190,12 @@ class ItemSearchActivity : AppCompatActivity() {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
                 addView(TextView(this@ItemSearchActivity).apply {
-                    text = "Stock: ${product.stock} ${product.unit}"
+                    // ---- FIX: Product.stock is a SMALLEST-unit count, not a primary-unit
+                    // count, so it must never be paired with `product.unit` directly (was
+                    // showing e.g. "500 carton" when 500 was actually the dabbi count).
+                    // formatStockBreakdown() is the same helper Product/Purchase/Sale/
+                    // Dashboard/CategoriesUnits screens use, so this now always agrees.
+                    text = "Stock: ${product.formatStockBreakdown()}"
                     textSize = 11.5f
                     setTextColor(Color.parseColor(textMuted))
                 })
