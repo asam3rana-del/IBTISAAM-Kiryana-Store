@@ -35,7 +35,6 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 
 data class SaleLine(
     val barcode: String,
@@ -1019,6 +1018,15 @@ class SaleActivity : AppCompatActivity() {
         val alreadyInCartSmallest = lines.filter { it.barcode == product.barcode }
             .sumOf { product.toSmallestUnits(it.qty, it.unit) }
         val neededSmallest = product.toSmallestUnits(q, chosenUnit)
+
+        // FIX (fraction control): reject a cart-add whose qty doesn't resolve to a
+        // whole smallest-unit for non-fractional items (Piece/Dabbi/Bottle etc.) —
+        // catches the bad entry here instead of at save time.
+        if (!product.isValidSmallestQty(neededSmallest)) {
+            Toast.makeText(this, "Qty ($q $chosenUnit) whole ${product.smallestUnitName()} mein convert nahi hoti", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val availableForThisAdd = product.stock - alreadyInCartSmallest
 
         if (availableForThisAdd < neededSmallest) {
@@ -1508,6 +1516,12 @@ class SaleActivity : AppCompatActivity() {
                 Toast.makeText(this@SaleActivity, "Stock badal gaya hai, dobara try karen", Toast.LENGTH_LONG).show()
                 return@launch
             }
+            // FIX (fraction control): reject a sale qty that would leave a fractional
+            // smallest-unit qty for a non-fractional item (Piece/Dabbi/Bottle etc.).
+            if (!current.isValidSmallestQty(current.toSmallestUnits(q, unit))) {
+                Toast.makeText(this@SaleActivity, "Qty ($q $unit) whole ${current.smallestUnitName()} mein convert nahi hoti", Toast.LENGTH_LONG).show()
+                return@launch
+            }
 
             var customer: Customer? = null
             val isCredit = custName.isNotEmpty()
@@ -1564,8 +1578,7 @@ class SaleActivity : AppCompatActivity() {
             )
             db.saleDao().items(listOf(saleItem))
 
-            val smallestQty = smallestQtyForCost.roundToInt()
-            db.productDao().decrease(current.barcode, smallestQty)
+            db.productDao().decrease(current.barcode, smallestQtyForCost)
 
             if (isCredit && customer != null) {
                 db.customerDao().addBalance(customer.id, amount)
@@ -1675,7 +1688,7 @@ class SaleActivity : AppCompatActivity() {
                 originalItems.forEach { si ->
                     val p = db.productDao().find(si.barcode)
                     if (p != null) {
-                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit }).roundToInt()
+                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit })
                         db.productDao().increase(si.barcode, smallestQty)
                     }
                 }
@@ -1755,7 +1768,7 @@ class SaleActivity : AppCompatActivity() {
             for (line in lines) {
                 val product = productsByBarcode[line.barcode] ?: db.productDao().find(line.barcode)
                 if (product == null) continue
-                val smallestQty = product.toSmallestUnits(line.qty, line.unit).roundToInt()
+                val smallestQty = product.toSmallestUnits(line.qty, line.unit)
                 val rowsAffected = db.productDao().decrease(line.barcode, smallestQty)
                 if (rowsAffected == 0) {
                     Toast.makeText(
@@ -1857,7 +1870,7 @@ class SaleActivity : AppCompatActivity() {
                 items.forEach { si ->
                     val p = db.productDao().find(si.barcode)
                     if (p != null) {
-                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit }).roundToInt()
+                        val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit })
                         db.productDao().increase(si.barcode, smallestQty)
                     }
                 }
