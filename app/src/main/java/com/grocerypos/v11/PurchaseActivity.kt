@@ -36,7 +36,6 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 
 data class PurchaseLine(
     val itemName: String,
@@ -1072,6 +1071,15 @@ class PurchaseActivity : ThemedActivity() {
         if (r == null || r < 0) { rate.error = "Enter rate"; return }
         val product = selectedProduct ?: products.find { it.name.equals(enteredName, ignoreCase = true) }
         if (product == null) { openAddProductDialog(enteredName); return }
+        // FIX (fraction control): reject a purchase-line qty that doesn't resolve to a
+        // whole smallest-unit for non-fractional items (Piece/Dabbi/Bottle etc.) right
+        // here, same as SaleActivity.addItem() — previously this was only caught deep
+        // inside proceedSave() at save time (via a thrown exception), so a bad line could
+        // sit in the bill through several other item entries before the user found out.
+        if (!product.isValidSmallestQty(product.toSmallestUnits(q, unit))) {
+            Toast.makeText(this, "Qty ($q $unit) whole ${product.smallestUnitName()} mein convert nahi hoti", Toast.LENGTH_SHORT).show()
+            return
+        }
         val line = PurchaseLine(product.name, product.barcode, q, unit, r, Math.round(q * r).toDouble(), product.unit, product.secondaryUnit, product.secondaryUnitQty, product.tertiaryUnit, product.tertiaryUnitQty)
         lines.add(line); renderItemsList(); updateGrandTotal()
         itemName.setText(""); qty.setText(""); rate.setText(""); totalLotPrice.setText("")
@@ -1122,7 +1130,7 @@ class PurchaseActivity : ThemedActivity() {
                 if (scannedName.isEmpty() || scannedQty <= 0) continue
                 var product = products.find { it.name.equals(scannedName, ignoreCase = true) } ?: products.find { it.name.contains(scannedName, ignoreCase = true) || scannedName.contains(it.name, ignoreCase = true) }
                 if (product == null) {
-                    val newProduct = Product(barcode = "P" + System.currentTimeMillis() + i, name = scannedName, category = "General", cost = scannedRate, salePrice = 0.0, wholesalePrice = 0.0, stock = 0, openingStock = 0, unit = "pcs", secondaryUnit = "", secondaryUnitQty = 0.0, tertiaryUnit = "", tertiaryUnitQty = 0.0)
+                    val newProduct = Product(barcode = "P" + System.currentTimeMillis() + i, name = scannedName, category = "General", cost = scannedRate, salePrice = 0.0, wholesalePrice = 0.0, stock = 0.0, openingStock = 0.0, unit = "pcs", secondaryUnit = "", secondaryUnitQty = 0.0, tertiaryUnit = "", tertiaryUnitQty = 0.0)
                     db.productDao().upsert(newProduct); product = newProduct
                 }
                 lines.add(PurchaseLine(product.name, product.barcode, scannedQty, product.unit, scannedRate, Math.round(scannedQty * scannedRate).toDouble(), product.unit, product.secondaryUnit, product.secondaryUnitQty, product.tertiaryUnit, product.tertiaryUnitQty)); matchedCount++
@@ -1239,7 +1247,7 @@ class PurchaseActivity : ThemedActivity() {
                 if (secondaryUnit != "None" && secondaryQty <= 0) { secQtyField.error = "Enter qty"; return@setOnClickListener }
                 if (tertiaryUnit != "None" && secondaryUnit == "None") { Toast.makeText(this@PurchaseActivity, "Select Secondary first", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
                 if (secondaryUnit == "None") { tertiaryUnit = "None"; tertiaryQty = 0.0 }
-                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = 0.0, wholesalePrice = 0.0, stock = 0, openingStock = 0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty)
+                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = 0.0, wholesalePrice = 0.0, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty)
                 safeLaunch("saveNewProduct") { PosDatabase.get(this@PurchaseActivity).productDao().upsert(newProduct); Toast.makeText(this@PurchaseActivity, "Product added", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
             }
         })
@@ -1254,7 +1262,7 @@ class PurchaseActivity : ThemedActivity() {
         items.forEach { pi ->
             val product = db.productDao().find(pi.barcode) ?: return@forEach
             val factor = product.smallestUnitFactor()
-            val smallestQty = product.toSmallestUnits(pi.qty, pi.unit.ifBlank { product.unit }).roundToInt()
+            val smallestQty = product.toSmallestUnits(pi.qty, pi.unit.ifBlank { product.unit })
             if (smallestQty <= 0) return@forEach
 
             val currentCostPerSmallest = if (factor > 0) product.cost / factor else product.cost
@@ -1350,7 +1358,14 @@ class PurchaseActivity : ThemedActivity() {
                 lines.forEach { line ->
                     val barcode = line.barcode ?: return@forEach
                     val before = db.productDao().find(barcode) ?: return@forEach
-                    val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit).roundToInt()
+                    val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit)
+                    // FIX (fraction control): reject a purchase line that would leave a
+                    // fractional smallest-unit qty for a non-fractional item (Piece/Dabbi/
+                    // Bottle etc.) instead of silently rounding it away — previously stock
+                    // was an Int so e.g. "2.5 Dabbi" quietly became "2 Dabbi" or "3 Dabbi".
+                    if (!before.isValidSmallestQty(purchasedSmallest)) {
+                        throw IllegalStateException("\"${before.name}\" ke liye qty (${line.qty} ${line.unit}) whole ${before.smallestUnitName()} mein convert nahi hoti — qty check karen.")
+                    }
                     db.productDao().increase(barcode, purchasedSmallest)
                     if (purchasedSmallest > 0) {
                         val oldStockSmallest = before.stock
@@ -1358,7 +1373,7 @@ class PurchaseActivity : ThemedActivity() {
                         val oldCostPerSmallest = if (factor > 0) before.cost / factor else before.cost
                         val purchaseRatePerSmallest = line.amount / purchasedSmallest
                         val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
-                            else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest).toDouble()
+                            else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest)
                         db.productDao().updateCost(barcode, newCostPerSmallest * factor)
                     }
                 }
