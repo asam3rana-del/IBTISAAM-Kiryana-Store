@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application
+        android:name=".PosApplication"
+        android:theme="@style/Theme.GroceryPOS"
+        android:label="IBTISAAM TRADERS POS"
+        android:allowBackup="true"
+        android:supportsRtl="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
+
+        <activity android:name=".ui.SettingsActivity" android:theme="@style/Theme.SettingsSheet" />
+        <activity android:name=".ui.LoginActivity" />
+        <activity android:name=".ui.ProductActivity" />
+        <activity android:name=".ui.ReportsActivity" />
+        <activity android:name=".ui.StockReportActivity" android:exported="false" />
+        <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />
+
+        <!-- FIX (Phase 5 - Stability): removed .ui.PurchaseAddItemWindowActivity — this
+             class does not exist anywhere in the source, so this entry crashed the app
+             (ActivityNotFoundException) the moment anything tried to launch it. Nothing
+             in the codebase actually starts it (item-adding already happens inline
+             inside PurchaseActivity's own screen), so it's dead config, not a missing
+             feature — safe to drop. -->
+
+        <activity android:name=".ui.SaleActivity" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.CashActivity" />
+        <activity android:name=".ui.HistoryActivity" />
+        <activity android:name=".ui.PurchaseHistoryActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.SaleHistoryActivity" />
+        <activity android:name=".ui.ItemSearchActivity" />
+        <activity android:name=".ui.PartyActivity" />
+        <activity android:name=".ui.PartyDashboardActivity" android:exported="false" />
+        <activity android:name=".ui.UserManagementActivity" />
+        <activity android:name=".ui.PartyReportsActivity" />
+        <activity android:name=".ui.PartyTransactionActivity" android:exported="false" />
+        <activity android:name=".ui.CategoriesUnitsActivity" android:exported="false" />
+        <activity android:name=".ui.ItemsActivity" android:exported="false" />
+        <activity android:name=".ui.BillPreviewActivity" android:exported="false" />
+        <activity android:name=".ui.BillScanActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.ExpenseActivity" android:exported="false" />
+
+        <!-- NEW: Day Book (Roznamcha) - merged daily ledger -->
+        <activity android:name=".ui.DayBookActivity" android:exported="false" />
+
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>
