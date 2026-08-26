@@ -14,6 +14,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
@@ -47,6 +48,27 @@ import java.util.UUID
 object PrinterHelper {
 
     enum class PrinterType { BLUETOOTH, USB }
+
+    /**
+     * A structured receipt line, used by [printReceiptLines].
+     *
+     * Why structured instead of one big pre-formatted string: a plain string
+     * with manual space-padding (e.g. "Subtotal" + spaces + "Rs 100") only
+     * lines up in a *monospace* font. We render with a real (often
+     * proportional/Nastaliq) font, so padding-by-character-count never
+     * actually aligns on the printed bitmap. Structured lines let us align by
+     * *measured pixel width* instead, and pick RTL/LTR per line rather than
+     * for the whole receipt at once (which previously scrambled English
+     * lines whenever any Urdu text appeared anywhere in the receipt).
+     */
+    sealed class ReceiptLine {
+        data class Center(val text: String) : ReceiptLine()
+        data class Left(val text: String) : ReceiptLine()
+        /** Label/value pair rendered as two columns, each right/left-aligned by measured width. */
+        data class TwoCol(val left: String, val right: String) : ReceiptLine()
+        data class Blank(val heightPx: Int = 10) : ReceiptLine()
+        object Divider : ReceiptLine()
+    }
 
     private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private const val ACTION_USB_PERMISSION = "com.grocerypos.v11.USB_PERMISSION"
@@ -232,9 +254,13 @@ object PrinterHelper {
     /**
      * True if the text contains any Arabic-script characters (covers Urdu, since
      * Urdu is written using the Arabic script plus a few extra letters, all of
-     * which fall in these Unicode blocks). Used to decide the paragraph reading
-     * direction so the printed image lines up right-to-left, the same way the
-     * on-screen TextViews already do automatically.
+     * which fall in these Unicode blocks).
+     *
+     * IMPORTANT: callers should call this per-line (or per-column), not once
+     * for an entire multi-line receipt. Checking the whole receipt at once
+     * previously caused every English line (headers, "Ref:", "Date:", numeric
+     * totals) to be laid out RTL just because *some* Urdu text appeared
+     * somewhere else in the receipt.
      */
     private fun containsArabicScript(text: String): Boolean {
         for (ch in text) {
@@ -273,40 +299,114 @@ object PrinterHelper {
     }
 
     /**
-     * Renders Urdu (or any Unicode) text into a bitmap using Android's own text
-     * engine, which handles Arabic/Urdu shaping + RTL correctly — something the
-     * printer firmware cannot do on its own.
-     *
-     * Paragraph direction is auto-detected per print job: if the text contains
-     * Urdu/Arabic characters we lay it out RTL (matching how it actually reads),
-     * otherwise LTR. This is what previously made the print look different from
-     * the on-screen receipt — the on-screen TextViews pick their direction
-     * automatically, but the printer image was always forced LTR.
+     * Renders a list of structured [ReceiptLine]s into a single bitmap, one line
+     * at a time, so that:
+     *  - each line's RTL/LTR direction is decided independently (fixes the
+     *    whole-receipt-goes-RTL bug), and
+     *  - [ReceiptLine.TwoCol] columns are aligned by *measured pixel width*
+     *    (via Paint.measureText / Paint.Align) instead of space-padding,
+     *    which is the only way to get straight columns with a non-monospace
+     *    font.
      */
-    private fun renderTextToBitmap(text: String, fontSizePx: Float = 30f, typeface: Typeface = Typeface.DEFAULT): Bitmap {
+    private fun renderReceiptLines(lines: List<ReceiptLine>, fontSizePx: Float, typeface: Typeface): Bitmap {
+        val margin = 8
         val paint = TextPaint().apply {
             isAntiAlias = true
             textSize = fontSizePx
             color = Color.BLACK
             this.typeface = typeface
         }
+        val lineSpacingExtra = (fontSizePx * 0.35f).toInt()
+        val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
 
-        val direction = if (containsArabicScript(text))
-            TextDirectionHeuristics.RTL
-        else
-            TextDirectionHeuristics.LTR
+        data class Block(val line: ReceiptLine, val layout: StaticLayout?, val height: Int)
 
-        val layout = StaticLayout.Builder
-            .obtain(text, 0, text.length, paint, PRINTER_DOTS_WIDTH)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL) // start-of-line, direction-aware
-            .setTextDirection(direction)
-            .setLineSpacing(0f, 1.15f)
-            .build()
+        val blocks = ArrayList<Block>(lines.size)
+        var totalHeight = 8
 
-        val bitmap = Bitmap.createBitmap(PRINTER_DOTS_WIDTH, layout.height, Bitmap.Config.ARGB_8888)
+        for (line in lines) {
+            when (line) {
+                is ReceiptLine.Center, is ReceiptLine.Left -> {
+                    val text = if (line is ReceiptLine.Center) line.text else (line as ReceiptLine.Left).text
+                    val dir = if (containsArabicScript(text)) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
+                    val alignment = if (line is ReceiptLine.Center) Layout.Alignment.ALIGN_CENTER else Layout.Alignment.ALIGN_NORMAL
+                    val layout = StaticLayout.Builder
+                        .obtain(text, 0, text.length, paint, contentWidth)
+                        .setAlignment(alignment)
+                        .setTextDirection(dir)
+                        .setLineSpacing(0f, 1.15f)
+                        .build()
+                    val h = layout.height + lineSpacingExtra
+                    blocks.add(Block(line, layout, h))
+                    totalHeight += h
+                }
+                is ReceiptLine.TwoCol -> {
+                    val fm = paint.fontMetrics
+                    val h = (fm.bottom - fm.top).toInt() + lineSpacingExtra
+                    blocks.add(Block(line, null, h))
+                    totalHeight += h
+                }
+                ReceiptLine.Divider -> {
+                    val h = 10
+                    blocks.add(Block(line, null, h))
+                    totalHeight += h
+                }
+                is ReceiptLine.Blank -> {
+                    blocks.add(Block(line, null, line.heightPx))
+                    totalHeight += line.heightPx
+                }
+            }
+        }
+
+        val bitmap = Bitmap.createBitmap(PRINTER_DOTS_WIDTH, totalHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.WHITE)
-        layout.draw(canvas)
+
+        var y = 4f
+        for (block in blocks) {
+            when (val line = block.line) {
+                is ReceiptLine.Center, is ReceiptLine.Left -> {
+                    canvas.save()
+                    canvas.translate(margin.toFloat(), y)
+                    block.layout!!.draw(canvas)
+                    canvas.restore()
+                    y += block.height
+                }
+                is ReceiptLine.TwoCol -> {
+                    val fm = paint.fontMetrics
+                    val baseline = y - fm.top
+                    // Whichever side is Urdu naturally sits on the right (how Urdu reads);
+                    // the plain/numeric side takes the opposite side. Alignment is by
+                    // measured pixel width via Paint.Align, not character-count padding.
+                    val leftIsUrdu = containsArabicScript(line.left)
+                    val rightIsUrdu = containsArabicScript(line.right)
+
+                    paint.textAlign = if (leftIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
+                    val leftX = if (leftIsUrdu) (PRINTER_DOTS_WIDTH - margin).toFloat() else margin.toFloat()
+                    canvas.drawText(line.left, leftX, baseline, paint)
+
+                    paint.textAlign = if (rightIsUrdu) Paint.Align.LEFT else Paint.Align.RIGHT
+                    val rightX = if (rightIsUrdu) margin.toFloat() else (PRINTER_DOTS_WIDTH - margin).toFloat()
+                    canvas.drawText(line.right, rightX, baseline, paint)
+
+                    y += block.height
+                }
+                ReceiptLine.Divider -> {
+                    val oldStroke = paint.strokeWidth
+                    paint.strokeWidth = 2f
+                    canvas.drawLine(
+                        margin.toFloat(), y + block.height / 2f,
+                        (PRINTER_DOTS_WIDTH - margin).toFloat(), y + block.height / 2f,
+                        paint
+                    )
+                    paint.strokeWidth = oldStroke
+                    y += block.height
+                }
+                is ReceiptLine.Blank -> {
+                    y += block.height
+                }
+            }
+        }
         return bitmap
     }
 
@@ -346,9 +446,30 @@ object PrinterHelper {
     }
 
     /**
-     * Prints Urdu (or mixed Urdu/English) text by rendering it as an image first.
-     * Pass an explicit [typeface] to force one; otherwise a bundled Urdu font is
-     * used automatically if present (see [resolveUrduTypeface]).
+     * Preferred entry point: prints a receipt built from structured [ReceiptLine]s
+     * with correct per-line direction and pixel-accurate column alignment.
+     */
+    fun printReceiptLines(
+        context: Context,
+        type: PrinterType,
+        address: String,
+        lines: List<ReceiptLine>,
+        typeface: Typeface? = null,
+        fontSizePx: Float = 30f
+    ): Boolean {
+        val resolvedTypeface = typeface ?: resolveUrduTypeface(context)
+        val bitmap = renderReceiptLines(lines, fontSizePx, resolvedTypeface)
+        val payload = ESC_INIT + bitmapToEscPosRaster(bitmap) + FEED_AND_CUT
+        return sendRawBytes(context, type, address, payload)
+    }
+
+    /**
+     * Prints Urdu (or mixed Urdu/English) plain text by rendering it as an image.
+     * Kept for any existing callers that build a plain string. Each line of the
+     * input is now given its own RTL/LTR direction (fixing the old whole-receipt
+     * RTL bug); for real column alignment (labels/values, item qty/rate/amount),
+     * prefer [printReceiptLines] with [ReceiptLine.TwoCol] instead of padding
+     * with spaces, since a proportional font can't be aligned that way.
      */
     fun printUrduText(
         context: Context,
@@ -358,7 +479,10 @@ object PrinterHelper {
         typeface: Typeface? = null
     ): Boolean {
         val resolvedTypeface = typeface ?: resolveUrduTypeface(context)
-        val bitmap = renderTextToBitmap(text, typeface = resolvedTypeface)
+        val lines: List<ReceiptLine> = text.split("\n").map { raw ->
+            if (raw.isBlank()) ReceiptLine.Blank() else ReceiptLine.Left(raw)
+        }
+        val bitmap = renderReceiptLines(lines, 30f, resolvedTypeface)
         val payload = ESC_INIT + bitmapToEscPosRaster(bitmap) + FEED_AND_CUT
         return sendRawBytes(context, type, address, payload)
     }
