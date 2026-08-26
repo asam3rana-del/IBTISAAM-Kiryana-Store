@@ -25,6 +25,7 @@
         <activity android:name=".ui.ProductActivity" />
         <activity android:name=".ui.ReportsActivity" />
         <activity android:name=".ui.StockReportActivity" android:exported="false" />
+        <activity android:name=".ui.BalanceSheetActivity" android:exported="false" />
         <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />
 
         <!-- FIX (Phase 5 - Stability): removed .ui.PurchaseAddItemWindowActivity — this
