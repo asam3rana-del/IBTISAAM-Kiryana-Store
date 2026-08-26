@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 
 class HistoryActivity : AppCompatActivity() {
     private lateinit var tabRow: LinearLayout
@@ -120,7 +119,7 @@ class HistoryActivity : AppCompatActivity() {
             db.withTransaction {
                 for (it in items) {
                     val p = db.productDao().find(it.barcode)
-                    val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit })?.roundToInt() ?: it.qty.roundToInt()
+                    val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit }) ?: it.qty.toDouble()
                     db.productDao().increase(it.barcode, smallestQty)
                     db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
                 }
@@ -141,7 +140,7 @@ class HistoryActivity : AppCompatActivity() {
             db.withTransaction {
                 for (it in items) {
                     val p = db.productDao().find(it.barcode)
-                    val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit })?.roundToInt() ?: it.qty.roundToInt()
+                    val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit }) ?: it.qty.toDouble()
                     db.productDao().increase(it.barcode, smallestQty)
                 }
                 if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
@@ -192,7 +191,7 @@ class HistoryActivity : AppCompatActivity() {
         for (pi in items) {
             val product = db.productDao().find(pi.barcode) ?: continue
             val factor = product.smallestUnitFactor()
-            val smallestQty = product.toSmallestUnits(pi.qty, pi.unit.ifBlank { product.unit }).roundToInt()
+            val smallestQty = product.toSmallestUnits(pi.qty, pi.unit.ifBlank { product.unit })
             if (smallestQty <= 0) continue
 
             val currentCostPerSmallest = if (factor > 0) product.cost / factor else product.cost
