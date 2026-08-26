@@ -35,8 +35,13 @@ data class Product(
     val category:String="",
     val cost:Double=0.0,
     val salePrice:Double=0.0,
-    val stock:Int=0,
-    val reorderLevel:Int=0,
+    // FIX (fraction control): stock/reorderLevel/openingStock changed Int -> Double so
+    // weight/volume-based items (smallest unit = Gram/ml) don't get silently rounded on
+    // every purchase/sale. See MIGRATION_24_25. For piece-based items (smallest unit =
+    // Piece/Bottle/Dabbi) the UI still enforces whole numbers — see isFractionalUnit()
+    // below and the validation added in ProductActivity/PurchaseActivity/SaleActivity.
+    val stock:Double=0.0,
+    val reorderLevel:Double=0.0,
     val expiry:String="",
     val unit:String="pcs",
     val unitSize:Int=1,
@@ -44,7 +49,7 @@ data class Product(
     val secondaryUnit:String="",
     val secondaryUnitQty:Double=0.0,
     val wholesalePrice:Double=0.0,
-    val openingStock:Int=0,
+    val openingStock:Double=0.0,
     val tertiaryUnit:String="",
     val tertiaryUnitQty:Double=0.0,
     val updatedAt:Long=0L,
@@ -169,15 +174,49 @@ fun Product.fromPrimaryUnitRate(mainRate: Double, chosenUnit: String): Double {
     return if (factor > 0) mainRate / factor else mainRate
 }
 
+// FIX (fraction control): names of smallest units that are allowed to carry a
+// fractional stock value (continuous/weight/volume units). Any smallest unit
+// NOT in this list (Piece, Dabbi, Bottle, Dozen, etc.) is treated as
+// indivisible — entries that would produce a fractional smallest-unit qty for
+// such a product must be rejected by the UI instead of silently rounded, which
+// is what used to happen when `stock` was an Int.
+private val FRACTIONAL_UNIT_NAMES = setOf(
+    "gram", "grams", "gm", "g", "kg", "kilogram", "kilograms",
+    "ml", "milliliter", "millilitre", "litre", "liter", "l",
+    "tola", "maund"
+)
+
+/** True if this product's smallest unit is a continuous/weight/volume unit
+ *  (Gram, ml, etc.) and may therefore legally hold a fractional stock qty. */
+fun Product.isFractionalUnit(): Boolean =
+    smallestUnitName().trim().lowercase() in FRACTIONAL_UNIT_NAMES
+
+/**
+ * Whether [smallestQty] (already converted via toSmallestUnits) is a legal
+ * quantity for this product: whole numbers only unless the smallest unit is a
+ * fractional/continuous one. Every screen that converts an entered qty down to
+ * smallest units (Purchase, Sale, Purchase Return, Sale Return, Opening Stock)
+ * must call this before writing to `stock` and reject/re-prompt on failure
+ * instead of letting a value like "0.5 Dabbi" silently corrupt stock.
+ */
+fun Product.isValidSmallestQty(smallestQty: Double): Boolean {
+    if (isFractionalUnit()) return true
+    return kotlin.math.abs(smallestQty - kotlin.math.round(smallestQty)) < 0.0001
+}
+
 /**
  * Human-readable stock breakdown, e.g. "1 carton 2 box 1 pcs". Built directly
  * off the same unitLadder() used by toSmallestUnits/fromSmallestUnits, so the
  * display can never drift out of sync with what's actually stored/converted —
  * previously this had its own separate divide/modulo math.
  */
+private fun Double.trimZero(): String =
+    if (this == kotlin.math.round(this)) this.toLong().toString()
+    else String.format("%.3f", this).trimEnd('0').trimEnd('.')
+
 fun Product.formatStockBreakdown(): String {
     val ladder = unitLadder()
-    if (ladder.size == 1) return "$stock ${ladder[0].unit}"
+    if (ladder.size == 1) return "${stock.trimZero()} ${ladder[0].unit}"
 
     val largestToSmallest = ladder.asReversed()
     var remaining = stock
@@ -186,12 +225,15 @@ fun Product.formatStockBreakdown(): String {
     largestToSmallest.forEachIndexed { index, tier ->
         val isSmallestTier = index == largestToSmallest.lastIndex
         if (isSmallestTier) {
-            if (remaining > 0) parts.add("$remaining ${tier.unit}")
+            // FIX: smallest tier can be fractional (Gram/ml) — show up to 3
+            // decimals instead of truncating to Int, which used to drop
+            // fractional leftovers like "0.5 Gram" from the display entirely.
+            if (remaining > 0) parts.add("${remaining.trimZero()} ${tier.unit}")
         } else {
-            val perUnit = tier.smallestPerUnit.roundToInt().coerceAtLeast(1)
-            val count = remaining / perUnit
-            remaining %= perUnit
-            if (count > 0) parts.add("$count ${tier.unit}")
+            val perUnit = tier.smallestPerUnit
+            val count = kotlin.math.floor(remaining / perUnit)
+            remaining -= count * perUnit
+            if (count > 0) parts.add("${count.toLong()} ${tier.unit}")
         }
     }
 
@@ -397,11 +439,11 @@ interface ProductDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(p:Product)
     @Delete suspend fun delete(p:Product)
     @Query("UPDATE products SET stock=stock-:qty WHERE barcode=:code AND stock>=:qty")
-    suspend fun decrease(code:String,qty:Int):Int
+    suspend fun decrease(code:String,qty:Double):Int
     @Query("UPDATE products SET stock=stock-:qty WHERE barcode=:code")
-    suspend fun decreaseForce(code:String,qty:Int)
+    suspend fun decreaseForce(code:String,qty:Double)
     @Query("UPDATE products SET stock=stock+:qty WHERE barcode=:code")
-    suspend fun increase(code:String,qty:Int)
+    suspend fun increase(code:String,qty:Double)
     @Query("UPDATE products SET cost=:newCost WHERE barcode=:code")
     suspend fun updateCost(code:String,newCost:Double)
     @Query("UPDATE products SET unit=:unit WHERE barcode=:code")
@@ -412,6 +454,9 @@ interface ProductDao {
     fun expiring():Flow<List<Product>>
     @Query("SELECT * FROM products ORDER BY name")
     fun all():Flow<List<Product>>
+    // ADDED (Balance Sheet): current stock value at cost, for the "Stock in Hand" asset line.
+    @Query("SELECT COALESCE(SUM(stock*cost),0) FROM products")
+    suspend fun stockValueTotal():Double
 }
 
 @Dao interface UnitDao {
@@ -436,6 +481,13 @@ interface ProductDao {
     suspend fun addBalance(id:Long,amt:Double)
     @Query("SELECT COALESCE(name,'Walk-in') as customerName, SUM(total) as total FROM sales LEFT JOIN customers ON sales.customerId=customers.id GROUP BY customerId ORDER BY total DESC")
     suspend fun salesTotalsByCustomer():List<CustomerSalesTotal>
+    // ADDED (Balance Sheet): balance>0 = customer owes us (Accounts Receivable, an Asset).
+    // balance<0 = we've received an advance from them (a Liability), kept separate so the
+    // two don't silently net against each other on the statement.
+    @Query("SELECT COALESCE(SUM(balance),0) FROM customers WHERE balance>0")
+    suspend fun receivablesTotal():Double
+    @Query("SELECT COALESCE(SUM(-balance),0) FROM customers WHERE balance<0")
+    suspend fun advancesReceivedTotal():Double
 }
 
 @Dao interface SupplierDao {
@@ -448,6 +500,13 @@ interface ProductDao {
     @Query("SELECT * FROM suppliers ORDER BY name") fun all():Flow<List<Supplier>>
     @Query("SELECT COALESCE(name,'Cash Purchase') as supplierName, SUM(total) as total FROM purchases LEFT JOIN suppliers ON purchases.supplierId=suppliers.id GROUP BY supplierId ORDER BY total DESC")
     suspend fun purchaseTotalsBySupplier():List<SupplierPurchaseTotal>
+    // ADDED (Balance Sheet): balance>0 = we owe the supplier (Accounts Payable, a Liability).
+    // balance<0 = we've overpaid/advanced them (an Asset), kept separate for the same reason
+    // as CustomerDao.advancesReceivedTotal().
+    @Query("SELECT COALESCE(SUM(balance),0) FROM suppliers WHERE balance>0")
+    suspend fun payablesTotal():Double
+    @Query("SELECT COALESCE(SUM(-balance),0) FROM suppliers WHERE balance<0")
+    suspend fun advancesPaidTotal():Double
 }
 
 @Dao interface SaleDao {
@@ -538,6 +597,8 @@ interface ProductDao {
     @Insert suspend fun insert(t:CashTransaction): Long
     @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end") suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
+    // ADDED (Balance Sheet): all-time IN/OUT total per method, for the Cash/Bank asset lines.
+    @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method") suspend fun totalAll(type:String,method:String):Double
     @Query("DELETE FROM cash_transactions WHERE reference=:ref") suspend fun deleteByReference(ref:String)
     @Query("SELECT * FROM cash_transactions WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun between(start:Long,end:Long):List<CashTransaction>
 }
@@ -674,12 +735,56 @@ val MIGRATION_23_24 = object : Migration(23, 24) {
     }
 }
 
+// FIX (fraction control): products.stock/reorderLevel/openingStock were INTEGER,
+// so any product whose smallest unit is Gram/ml (Sugar, Daal, etc.) lost its
+// fractional part on every purchase/sale/return — e.g. 2.5 Kg silently became
+// 2 or 3 Kg. SQLite can't ALTER COLUMN type, so this recreates the table with
+// those three columns as REAL, same table-recreate pattern as MIGRATION_17_18/
+// MIGRATION_23_24. Existing rows keep their (already rounded) values — this
+// only stops NEW purchases/sales from losing precision going forward.
+val MIGRATION_24_25 = object : Migration(24, 25) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("""
+            CREATE TABLE products_new (
+                barcode TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT '',
+                cost REAL NOT NULL DEFAULT 0.0,
+                salePrice REAL NOT NULL DEFAULT 0.0,
+                stock REAL NOT NULL DEFAULT 0.0,
+                reorderLevel REAL NOT NULL DEFAULT 0.0,
+                expiry TEXT NOT NULL DEFAULT '',
+                unit TEXT NOT NULL DEFAULT 'pcs',
+                unitSize INTEGER NOT NULL DEFAULT 1,
+                unitNote TEXT NOT NULL DEFAULT '',
+                secondaryUnit TEXT NOT NULL DEFAULT '',
+                secondaryUnitQty REAL NOT NULL DEFAULT 0.0,
+                wholesalePrice REAL NOT NULL DEFAULT 0.0,
+                openingStock REAL NOT NULL DEFAULT 0.0,
+                tertiaryUnit TEXT NOT NULL DEFAULT '',
+                tertiaryUnitQty REAL NOT NULL DEFAULT 0.0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+        database.execSQL("""
+            INSERT INTO products_new SELECT
+                barcode, name, category, cost, salePrice, stock, reorderLevel, expiry,
+                unit, unitSize, unitNote, secondaryUnit, secondaryUnitQty, wholesalePrice,
+                openingStock, tertiaryUnit, tertiaryUnitQty, updatedAt, dirty
+            FROM products
+        """.trimIndent())
+        database.execSQL("DROP TABLE products")
+        database.execSQL("ALTER TABLE products_new RENAME TO products")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class],
-    version=24, exportSchema=false
+    version=25, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -703,7 +808,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }
