@@ -108,6 +108,25 @@ class ItemsActivity : AppCompatActivity() {
             setPadding(0, 4, 0, 0)
         })
         header.addView(headerCol)
+
+        // ---- NEW: "Translate" pill button — launches BulkTranslateActivity so Urdu
+        // category/unit values already saved can be renamed to English once each,
+        // instead of editing every product individually. ----
+        header.addView(TextView(this).apply {
+            text = "🌐 Translate"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#33FFFFFF"))
+                cornerRadius = 30f
+            }
+            setPadding(18, 12, 18, 12)
+            setOnClickListener {
+                startActivity(Intent(this@ItemsActivity, BulkTranslateActivity::class.java))
+            }
+        })
+
         root.addView(header)
 
         // ================= TABS =================
