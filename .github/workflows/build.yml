@@ -26,6 +26,8 @@ jobs:
           gradle-version: '8.7'
 
       - name: Decode fixed debug keystore
+        # build.gradle.kts's debug signingConfig looks for the keystore at
+        # ${rootProject.projectDir}/debug.keystore — i.e. the REPO ROOT, not app/.
         run: echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
 
       - name: Build debug APK
