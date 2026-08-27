@@ -27,6 +27,7 @@ import com.grocerypos.v11.Product
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.isValidSmallestQty
 import com.grocerypos.v11.smallestUnitName
 import com.grocerypos.v11.toSmallestUnits
 import com.grocerypos.v11.util.Loc
