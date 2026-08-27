@@ -457,6 +457,23 @@ interface ProductDao {
     // ADDED (Balance Sheet): current stock value at cost, for the "Stock in Hand" asset line.
     @Query("SELECT COALESCE(SUM(stock*cost),0) FROM products")
     suspend fun stockValueTotal():Double
+    @Query("SELECT DISTINCT category FROM products WHERE category!=''")
+suspend fun distinctCategories(): List<String>
+@Query("SELECT DISTINCT unit FROM products WHERE unit!=''")
+suspend fun distinctPrimaryUnits(): List<String>
+@Query("SELECT DISTINCT secondaryUnit FROM products WHERE secondaryUnit!=''")
+suspend fun distinctSecondaryUnits(): List<String>
+@Query("SELECT DISTINCT tertiaryUnit FROM products WHERE tertiaryUnit!=''")
+suspend fun distinctTertiaryUnits(): List<String>
+
+@Query("UPDATE products SET category=:newVal WHERE category=:oldVal")
+suspend fun renameCategoryInProducts(oldVal: String, newVal: String)
+@Query("UPDATE products SET unit=:newVal WHERE unit=:oldVal")
+suspend fun renamePrimaryUnitInProducts(oldVal: String, newVal: String)
+@Query("UPDATE products SET secondaryUnit=:newVal WHERE secondaryUnit=:oldVal")
+suspend fun renameSecondaryUnitInProducts(oldVal: String, newVal: String)
+@Query("UPDATE products SET tertiaryUnit=:newVal WHERE tertiaryUnit=:oldVal")
+suspend fun renameTertiaryUnitInProducts(oldVal: String, newVal: String)
 }
 
 @Dao interface UnitDao {
