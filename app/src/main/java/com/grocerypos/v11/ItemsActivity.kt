@@ -25,12 +25,17 @@ import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.UnitType
+import com.grocerypos.v11.formatStockBreakdown
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
  * "Items" hub — three tabs: Products, Categories, Units.
  * Each tab has its own search box, list, and a floating "+ Add ..." button.
+ *
+ * Categories tab now supports drilling into a category (tap the row) to see
+ * every product inside it, with per-product Edit / Change Category / Delete
+ * actions, plus Edit (rename) and Delete on the category row itself.
  */
 class ItemsActivity : AppCompatActivity() {
 
@@ -43,6 +48,7 @@ class ItemsActivity : AppCompatActivity() {
     private val redDark = "#C93A3E"
     private val purple = "#8B5CF6"
     private val amber = "#F5A524"
+    private val teal = "#0F9B8E"
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
     private val border = "#E7E5F3"
@@ -54,6 +60,11 @@ class ItemsActivity : AppCompatActivity() {
     private var allCategories: List<Category> = emptyList()
     private var allUnits: List<UnitType> = emptyList()
     private var searchQuery = ""
+
+    // ---- NEW: category drill-down state. When non-null, Categories tab shows
+    // that category's products instead of the category list. "" (empty string)
+    // means the special "Items Not in Any Category" bucket. ----
+    private var openCategoryName: String? = null
 
     private lateinit var tabRow: LinearLayout
     private lateinit var productsTabBtn: TextView
@@ -205,9 +216,20 @@ class ItemsActivity : AppCompatActivity() {
         switchTab(Tab.PRODUCTS)
     }
 
+    override fun onBackPressed() {
+        // ---- NEW: if a category is drilled into, Back closes the drill-down
+        // first instead of leaving the screen. ----
+        if (currentTab == Tab.CATEGORIES && openCategoryName != null) {
+            closeCategoryDetail()
+            return
+        }
+        super.onBackPressed()
+    }
+
     // ================= TAB SWITCHING =================
     private fun switchTab(tab: Tab) {
         currentTab = tab
+        openCategoryName = null
         searchQuery = ""
         searchField.setText("")
         searchField.hint = when (tab) {
@@ -220,6 +242,7 @@ class ItemsActivity : AppCompatActivity() {
             Tab.CATEGORIES -> "＋  Add Category"
             Tab.UNITS -> "＋  Add Unit"
         }
+        fab.visibility = View.VISIBLE
 
         productsTabBtn.setBackgroundColor(Color.TRANSPARENT)
         categoriesTabBtn.setBackgroundColor(Color.TRANSPARENT)
@@ -239,7 +262,23 @@ class ItemsActivity : AppCompatActivity() {
         renderCurrentTab()
     }
 
+    private fun closeCategoryDetail() {
+        openCategoryName = null
+        searchQuery = ""
+        searchField.setText("")
+        searchField.hint = "Search Category"
+        fab.text = "＋  Add Category"
+        fab.visibility = View.VISIBLE
+        renderCurrentTab()
+    }
+
     private fun onFabClicked() {
+        if (currentTab == Tab.CATEGORIES && openCategoryName != null) {
+            // Inside a category's product list — FAB adds a new product
+            // (category can be set on the product form itself).
+            startActivity(Intent(this, ProductActivity::class.java))
+            return
+        }
         when (currentTab) {
             Tab.PRODUCTS -> startActivity(Intent(this, ProductActivity::class.java))
             Tab.CATEGORIES -> promptAddCategory()
@@ -252,7 +291,7 @@ class ItemsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             PosDatabase.get(this@ItemsActivity).productDao().all().collectLatest {
                 allProducts = it
-                if (currentTab == Tab.PRODUCTS) renderCurrentTab()
+                if (currentTab == Tab.PRODUCTS || currentTab == Tab.CATEGORIES) renderCurrentTab()
             }
         }
         lifecycleScope.launch {
@@ -273,7 +312,10 @@ class ItemsActivity : AppCompatActivity() {
         listContainer.removeAllViews()
         when (currentTab) {
             Tab.PRODUCTS -> renderProducts()
-            Tab.CATEGORIES -> renderCategories()
+            Tab.CATEGORIES -> {
+                val open = openCategoryName
+                if (open != null) renderCategoryDetail(open) else renderCategories()
+            }
             Tab.UNITS -> renderUnits()
         }
     }
@@ -324,10 +366,6 @@ class ItemsActivity : AppCompatActivity() {
                 priceRow.addView(priceCol("Purchase Price", p.cost))
                 addView(priceRow)
 
-                // ---- FIX: tapping a product now opens ProductActivity pre-loaded
-                // with THIS product's full data (name, category, unit chain, prices,
-                // stock) via the same edit deep-link the Edit button uses, instead of
-                // opening a blank "New Product" form. ----
                 setOnClickListener {
                     startActivity(Intent(this@ItemsActivity, ProductActivity::class.java).apply {
                         putExtra(ProductActivity.EXTRA_EDIT_BARCODE, p.barcode)
@@ -352,15 +390,16 @@ class ItemsActivity : AppCompatActivity() {
         })
     }
 
-    // ================= CATEGORIES TAB =================
+    // ================= CATEGORIES TAB (list) =================
     private fun renderCategories() {
         val counts = allProducts.groupingBy { it.category.ifBlank { "" } }.eachCount()
         val notCategorized = counts[""] ?: 0
 
-        val rows = mutableListOf<Pair<String, Int>>()
-        rows.add("Items Not in Any Category" to notCategorized)
+        // name to (count, isSpecialUncategorizedBucket)
+        val rows = mutableListOf<Triple<String, Int, Boolean>>()
+        rows.add(Triple("Items Not in Any Category", notCategorized, true))
         for (c in allCategories) {
-            rows.add(c.name to (counts[c.name] ?: 0))
+            rows.add(Triple(c.name, counts[c.name] ?: 0, false))
         }
 
         val filtered = if (searchQuery.isEmpty()) rows
@@ -371,7 +410,7 @@ class ItemsActivity : AppCompatActivity() {
             return
         }
 
-        for ((name, count) in filtered) {
+        for ((name, count, isUncategorized) in filtered) {
             listContainer.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -380,6 +419,17 @@ class ItemsActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 10) }
+
+                // ---- Tap anywhere on the row (except the edit/delete icons) to
+                // drill into that category's products. ----
+                setOnClickListener {
+                    openCategoryName = if (isUncategorized) "" else name
+                    searchQuery = ""
+                    searchField.setText("")
+                    searchField.hint = "Search Items in \"$name\""
+                    fab.text = "＋  Add Product"
+                    renderCurrentTab()
+                }
 
                 addView(TextView(this@ItemsActivity).apply {
                     text = name
@@ -396,6 +446,25 @@ class ItemsActivity : AppCompatActivity() {
                     background = roundedBg(purple, 20)
                     setPadding(20, 6, 20, 6)
                 })
+
+                // ---- Real categories (not the "Items Not in Any Category"
+                // bucket) get Edit (rename) and Delete icons. ----
+                if (!isUncategorized) {
+                    val category = allCategories.first { it.name == name }
+                    addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
+                    addView(TextView(this@ItemsActivity).apply {
+                        text = "✏️"
+                        textSize = 15f
+                        setPadding(14, 8, 14, 8)
+                        setOnClickListener { promptEditCategory(category) }
+                    })
+                    addView(TextView(this@ItemsActivity).apply {
+                        text = "🗑️"
+                        textSize = 15f
+                        setPadding(14, 8, 14, 8)
+                        setOnClickListener { confirmDeleteCategory(category, count) }
+                    })
+                }
             })
         }
     }
@@ -409,6 +478,205 @@ class ItemsActivity : AppCompatActivity() {
                 val v = input.text.toString().trim()
                 if (v.isNotEmpty()) lifecycleScope.launch {
                     PosDatabase.get(this@ItemsActivity).categoryDao().insert(Category(v))
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ---- NEW: rename a category. Renaming also updates every product
+    // currently tagged with the old name, so nothing silently becomes
+    // "uncategorized" just because the category was renamed. ----
+    private fun promptEditCategory(category: Category) {
+        val input = EditText(this).apply {
+            setPadding(32, 24, 32, 24)
+            setText(category.name)
+            setSelection(text.length)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Rename Category")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isEmpty() || newName == category.name) return@setPositiveButton
+                lifecycleScope.launch {
+                    val db = PosDatabase.get(this@ItemsActivity)
+                    db.productDao().renameCategoryForProducts(category.name, newName)
+                    db.categoryDao().update(category.copy(name = newName))
+                    Toast.makeText(this@ItemsActivity, "Category renamed", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ---- NEW: delete a category. If it still has products in it, they are
+    // moved to "Items Not in Any Category" instead of being deleted, and the
+    // user is warned about this before confirming. ----
+    private fun confirmDeleteCategory(category: Category, productCount: Int) {
+        val message = if (productCount > 0)
+            "\"${category.name}\" has $productCount item(s). Deleting it will move them to \"Items Not in Any Category\". Continue?"
+        else
+            "Delete \"${category.name}\"? This cannot be undone."
+        AlertDialog.Builder(this)
+            .setTitle("Delete Category")
+            .setMessage(message)
+            .setPositiveButton("Delete") { _, _ ->
+                lifecycleScope.launch {
+                    val db = PosDatabase.get(this@ItemsActivity)
+                    if (productCount > 0) db.productDao().clearCategoryForProducts(category.name)
+                    db.categoryDao().delete(category)
+                    Toast.makeText(this@ItemsActivity, "Category deleted", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ================= CATEGORIES TAB (drill-down: products inside one category) =================
+    private fun renderCategoryDetail(categoryName: String) {
+        val displayName = categoryName.ifBlank { "Items Not in Any Category" }
+
+        // ---- Back row + category title ----
+        listContainer.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(4, 0, 4, 16)
+            addView(TextView(this@ItemsActivity).apply {
+                text = "←  Categories"
+                textSize = 13f
+                setTextColor(Color.parseColor(primary))
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(10, 10, 20, 10)
+                setOnClickListener { closeCategoryDetail() }
+            })
+        })
+        listContainer.addView(TextView(this).apply {
+            text = displayName
+            textSize = 17f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(4, 0, 4, 16)
+        })
+
+        val inCategory = allProducts.filter { it.category.ifBlank { "" } == categoryName }
+        val filtered = if (searchQuery.isEmpty()) inCategory
+        else inCategory.filter { it.name.contains(searchQuery, ignoreCase = true) }
+
+        if (filtered.isEmpty()) {
+            listContainer.addView(emptyState(if (inCategory.isEmpty()) "Is category mein koi item nahi" else "Koi matching item nahi mila"))
+            return
+        }
+
+        for (p in filtered) {
+            listContainer.addView(categoryProductRow(p))
+        }
+    }
+
+    private fun categoryProductRow(p: Product) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(20, 16, 20, 16)
+        background = strokedBg(border, cardBg, 14)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(0, 0, 0, 10) }
+
+        addView(TextView(this@ItemsActivity).apply {
+            text = p.name
+            textSize = 14.5f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, Typeface.BOLD)
+        })
+
+        addView(TextView(this@ItemsActivity).apply {
+            text = "📊 Stock: ${p.formatStockBreakdown()}"
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 6, 0, 0)
+        })
+
+        val priceRow = LinearLayout(this@ItemsActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 8, 0, 0)
+        }
+        priceRow.addView(priceCol("Sale Price", p.salePrice))
+        priceRow.addView(priceCol("Purchase Price", p.cost))
+        addView(priceRow)
+
+        val actionsRow = LinearLayout(this@ItemsActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 12, 0, 0)
+        }
+        actionsRow.addView(TextView(this@ItemsActivity).apply {
+            text = "✏️  Edit"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = roundedBg(primary, 30)
+            setPadding(20, 10, 20, 10)
+            setOnClickListener {
+                startActivity(Intent(this@ItemsActivity, ProductActivity::class.java).apply {
+                    putExtra(ProductActivity.EXTRA_EDIT_BARCODE, p.barcode)
+                })
+            }
+        })
+        actionsRow.addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
+        actionsRow.addView(TextView(this@ItemsActivity).apply {
+            text = "🔀  Change Category"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = roundedBg(teal, 30)
+            setPadding(20, 10, 20, 10)
+            setOnClickListener { promptChangeProductCategory(p) }
+        })
+        actionsRow.addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
+        actionsRow.addView(TextView(this@ItemsActivity).apply {
+            text = "🗑️  Delete"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = roundedBg(red, 30)
+            setPadding(20, 10, 20, 10)
+            setOnClickListener { confirmDeleteProduct(p) }
+        })
+        addView(actionsRow)
+    }
+
+    // ---- NEW: change which category a single product belongs to, from a
+    // simple pick-list of all existing categories plus "Items Not in Any
+    // Category". Updates the product row immediately and, since the product
+    // list is a live Flow, it disappears from the current category's view
+    // right away if a different category was picked. ----
+    private fun promptChangeProductCategory(p: Product) {
+        val options = mutableListOf("Items Not in Any Category")
+        options.addAll(allCategories.map { it.name })
+
+        AlertDialog.Builder(this)
+            .setTitle("Move \"${p.name}\" to")
+            .setItems(options.toTypedArray()) { _, index ->
+                val newCategory = if (index == 0) "" else options[index]
+                lifecycleScope.launch {
+                    PosDatabase.get(this@ItemsActivity).productDao().update(p.copy(category = newCategory))
+                    Toast.makeText(
+                        this@ItemsActivity,
+                        "\"${p.name}\" moved to ${newCategory.ifBlank { "Items Not in Any Category" }}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun confirmDeleteProduct(p: Product) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete Product")
+            .setMessage("Delete \"${p.name}\"? This cannot be undone.")
+            .setPositiveButton("Delete") { _, _ ->
+                lifecycleScope.launch {
+                    PosDatabase.get(this@ItemsActivity).productDao().delete(p)
+                    Toast.makeText(this@ItemsActivity, "Product deleted", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
