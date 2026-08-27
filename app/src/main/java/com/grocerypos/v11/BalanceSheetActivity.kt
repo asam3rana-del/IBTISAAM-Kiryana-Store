@@ -1,10 +1,14 @@
 package com.grocerypos.v11.ui
 
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewOutlineProvider
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -12,7 +16,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.util.Loc
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -22,7 +28,7 @@ import kotlinx.coroutines.launch
  *   ASSETS
  *     Cash in Hand        = all-time cash_transactions IN(cash) - OUT(cash)
  *     Bank Balance         = all-time cash_transactions IN(bank) - OUT(bank)
- *     Stock in Hand (cost) = SUM(product.stock * product.cost)          [products.stockValueTotal()]
+ *     Stock in Hand (cost) = SUM(product.stock * cost-per-SMALLEST-unit)     [see FIX note below]
  *     Accounts Receivable  = SUM(customer.balance) where balance > 0    [customer owes us]
  *     Advance Paid to Suppliers = SUM(-supplier.balance) where balance < 0
  *
@@ -38,16 +44,27 @@ import kotlinx.coroutines.launch
  *        here as Capital, and Assets will always equal Liabilities + Capital by
  *        construction)
  *
- * Stock is valued at cost (the same weighted-average `cost` PurchaseActivity/
- * SaleActivity already maintain per product), never at sale price — that keeps
- * this statement consistent with the COGS figure used in the P&L report.
+ * FIX (stock value was showing absurdly large numbers): this screen used to call
+ * productDao().stockValueTotal(), a raw SQL SUM(stock*cost). That's wrong because
+ * `stock` is stored in the product's SMALLEST unit (e.g. pcs inside a carton) while
+ * `cost` is the rate per PRIMARY unit (e.g. Rs per carton) — multiplying them
+ * directly overstates value by the unit-conversion factor (sometimes hundreds of
+ * times). Stock value is now computed here in Kotlin the same way StockReportActivity
+ * already does it correctly: cost is divided by the product's smallestUnitFactor()
+ * before multiplying by stock, so it's always a true "cost per smallest unit".
  */
 class BalanceSheetActivity : AppCompatActivity() {
 
-    private val bg = "#F3F4F9"
-    private val cardWhite = "#FFFFFF"
-    private val textDark = "#1A1D2E"
-    private val textMuted = "#8A8FA3"
+    // ================= PREMIUM PALETTE (shared with Items / Categories / Reports) =================
+    private val bg = "#F3F2FA"
+    private val cardBg = "#FFFFFF"
+    private val primary = "#4A3AFF"
+    private val primaryDark = "#3527D6"
+    private val teal = "#0F9B8E"
+    private val red = "#E5484D"
+    private val textDark = "#1A1A2E"
+    private val textGray = "#8A8A9E"
+    private val border = "#E7E5F3"
 
     private lateinit var resultsBox: LinearLayout
 
@@ -63,37 +80,11 @@ class BalanceSheetActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 40, 28, 32)
+            setPadding(24, 48, 24, 24)
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        val headerRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, 20)
-        }
-        headerRow.addView(TextView(this).apply {
-            text = "\u2039"
-            textSize = 20f
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, 0, 16, 0)
-            setOnClickListener { finish() }
-        })
-        headerRow.addView(TextView(this).apply {
-            text = Loc.t(this@BalanceSheetActivity, "Balance Sheet", "بیلنس شیٹ")
-            textSize = 21f
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        root.addView(headerRow)
-
-        root.addView(TextView(this).apply {
-            text = Loc.t(this@BalanceSheetActivity, "As of today \u2022 all-time figures", "آج تک \u2022 تمام وقت کے اعداد و شمار")
-            textSize = 12.5f
-            setTextColor(Color.parseColor(textMuted))
-            setPadding(4, 0, 0, 16)
-        })
+        root.addView(premiumHeader("⚖️", Loc.t(this, "Balance Sheet", "بیلنس شیٹ"), Loc.t(this, "As of today • all-time figures", "آج تک • تمام وقت کے اعداد و شمار")))
 
         resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(resultsBox)
@@ -115,7 +106,17 @@ class BalanceSheetActivity : AppCompatActivity() {
             // ---- Assets ----
             val cashInHand = db.cashTransactionDao().totalAll("IN", "cash") - db.cashTransactionDao().totalAll("OUT", "cash")
             val bankBalance = db.cashTransactionDao().totalAll("IN", "bank") - db.cashTransactionDao().totalAll("OUT", "bank")
-            val stockValue = db.productDao().stockValueTotal()
+
+            // FIX: was db.productDao().stockValueTotal() (raw SQL stock*cost, wrong
+            // unit basis — see class doc comment). Now computed per-product with the
+            // same cost-per-smallest-unit conversion StockReportActivity uses.
+            val allProducts = db.productDao().all().first()
+            val stockValue = allProducts.sumOf { p ->
+                val factor = p.smallestUnitFactor()
+                val costPerSmallestUnit = if (factor > 0) p.cost / factor else p.cost
+                p.stock * costPerSmallestUnit
+            }
+
             val receivables = db.customerDao().receivablesTotal()
             val advancePaidToSuppliers = db.supplierDao().advancesPaidTotal()
             val totalAssets = cashInHand + bankBalance + stockValue + receivables + advancePaidToSuppliers
@@ -174,41 +175,90 @@ class BalanceSheetActivity : AppCompatActivity() {
                     "نوٹ: سرمایہ ایک حساب شدہ balancing figure ہے، کیونکہ مالک کا لگایا گیا سرمایہ اس ایپ میں الگ سے درج نہیں ہوتا۔"
                 )
                 textSize = 11.5f
-                setTextColor(Color.parseColor(textMuted))
+                setTextColor(Color.parseColor(textGray))
                 setPadding(6, 4, 6, 20)
             })
         }
     }
 
-    // ---- UI helpers (mirrors ReportsActivity's card styling) ----
+    // ================= PREMIUM HEADER (matches Items/Categories/Reports) =================
+    private fun premiumHeader(icon: String, title: String, subtitle: String): LinearLayout {
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(26, 22, 26, 22)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            ).apply { cornerRadius = 22f }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 20) }
+            applyElevation(this, 10f)
+        }
+        header.addView(TextView(this).apply {
+            text = "‹"
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = ovalBg("#33FFFFFF")
+            val px = (36 * resources.displayMetrics.density).toInt()
+            width = px; height = px
+            setOnClickListener { finish() }
+        })
+        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
+        header.addView(circleIcon(icon, "#5C4DFF", 42))
+        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
+        val headerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headerCol.addView(TextView(this).apply {
+            text = title
+            textSize = 19f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        headerCol.addView(TextView(this).apply {
+            text = subtitle
+            textSize = 11f
+            setTextColor(Color.parseColor("#D8D3FF"))
+            setPadding(0, 4, 0, 0)
+        })
+        header.addView(headerCol)
+        return header
+    }
+
+    // ---- UI helpers (mirrors Reports/StockReport card styling) ----
 
     private fun statementCard(fill: (LinearLayout) -> Unit): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 18, 22, 16)
-            background = roundedBg(cardWhite, 20)
-            elevation = 4f
+            background = strokedBg(border, cardBg, 18)
+            applyElevation(this, 2f)
             fill(this)
         }
     }
 
     private fun addStatementRow(box: LinearLayout, label: String, amount: Double, bold: Boolean = false, big: Boolean = false) {
-        val color = if (amount < 0) "#C62828" else if (bold) "#1565C0" else textDark
+        val color = if (amount < 0) red else if (bold) primary else textDark
         box.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 6, 0, 6)
             addView(TextView(this@BalanceSheetActivity).apply {
                 text = label
                 textSize = if (big) 15f else 13.5f
-                setTextColor(Color.parseColor(if (bold) textDark else textMuted))
-                if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(if (bold) textDark else textGray))
+                if (bold) setTypeface(typeface, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(TextView(this@BalanceSheetActivity).apply {
                 text = "Rs %.2f".format(amount)
                 textSize = if (big) 16f else 13.5f
                 setTextColor(Color.parseColor(color))
-                setTypeface(typeface, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                setTypeface(typeface, if (bold) Typeface.BOLD else Typeface.NORMAL)
                 gravity = Gravity.END
             })
         })
@@ -216,7 +266,7 @@ class BalanceSheetActivity : AppCompatActivity() {
 
     private fun addDivider(box: LinearLayout) {
         box.addView(View(this).apply {
-            setBackgroundColor(Color.parseColor("#EDEEF5"))
+            setBackgroundColor(Color.parseColor(border))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
                 setMargins(0, 8, 0, 8)
             }
@@ -226,16 +276,44 @@ class BalanceSheetActivity : AppCompatActivity() {
     private fun sectionHeader(title: String): TextView {
         return TextView(this).apply {
             text = title
-            textSize = 13f
-            setTextColor(Color.parseColor(textMuted))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(4, 0, 0, 8)
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textGray))
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(4, 0, 0, 10)
         }
+    }
+
+    // ================= SHARED UI HELPERS (matches Items/Categories/Reports) =================
+    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
+        text = label
+        textSize = 18f
+        gravity = Gravity.CENTER
+        background = ovalBg(colorHex)
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        width = px; height = px
+    }
+
+    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.parseColor(colorHex))
     }
 
     private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(colorHex))
         cornerRadius = radius.toFloat()
+    }
+
+    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
+        setColor(Color.parseColor(fillHex))
+        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
+        cornerRadius = radius.toFloat()
+    }
+
+    private fun applyElevation(view: View, dp: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            view.elevation = dp * resources.displayMetrics.density
+            view.outlineProvider = ViewOutlineProvider.BACKGROUND
+        }
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {
