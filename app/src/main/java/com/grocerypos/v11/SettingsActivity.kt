@@ -5,14 +5,18 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.*
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -71,9 +75,21 @@ class SettingsActivity : AppCompatActivity() {
 
     private val BT_PERMISSION_REQUEST_CODE = 501
 
+    // FIX (restore reliability): Android 11+ blocks normal file-manager apps from
+    // browsing into Android/data/<package>/files, which is where Restore's list
+    // reads backups from — so a backup copied there by hand often silently fails
+    // to appear/restore. This launcher lets the user pick a .db file from ANYWHERE
+    // (Downloads, a cloud app, etc.) via the system picker, which is exempt from
+    // that restriction, and restores directly from it — no manual file-copying needed.
+    private lateinit var importBackupLauncher: ActivityResultLauncher<Array<String>>
+
     override fun onCreate(b: Bundle?) {
         setTheme(R.style.Theme_SettingsSheet)
         super.onCreate(b)
+
+        importBackupLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { confirmRestoreFromUri(it) }
+        }
 
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.parseColor("#66000000")))
 
@@ -642,6 +658,14 @@ class SettingsActivity : AppCompatActivity() {
         backupCard.addView(primaryButton("BACKUP NOW", teal) { onBackupClicked() })
         backupCard.addView(spacer(10))
         backupCard.addView(primaryButton("RESTORE BACKUP", red) { onRestoreClicked() })
+        backupCard.addView(spacer(10))
+        backupCard.addView(primaryButton("IMPORT BACKUP FILE", navy) { importBackupLauncher.launch(arrayOf("*/*")) })
+        backupCard.addView(spacer(6))
+        backupCard.addView(TextView(this).apply {
+            text = "Agar RESTORE BACKUP list mein sahi backup nahi dikh raha (jaise app reinstall karne ke baad), to IMPORT BACKUP FILE se Downloads ya kahin bhi se .db file seedha select kar ke restore karein."
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+        })
         backupCard.addView(spacer(12))
         backupCard.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1035,6 +1059,60 @@ class SettingsActivity : AppCompatActivity() {
                     Toast.makeText(this, "Restore ho gaya. App ko dobara open karein.", Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(this, "Restore fail ho gaya", Toast.LENGTH_SHORT).show()
+                }
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    /** Same confirmation flow as [confirmRestore], but for a file picked via the
+     * system document picker (see [importBackupLauncher]) instead of one already
+     * sitting in the app's own Backups folder. */
+    private fun confirmRestoreFromUri(uri: Uri) {
+        val displayName = try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && nameIndex >= 0) cursor.getString(nameIndex) else null
+            }
+        } catch (e: Exception) { null } ?: "selected file"
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+        }
+        container.addView(TextView(this).apply {
+            text = "Ye backup ($displayName) is waqt ke current data ko OVERWRITE kar dega.\n\n" +
+                "Iska matlab: is backup ke baad add ki gayi tamam sales, purchases, aur baaki entries HAMESHA ke liye mit jayengi. Ye wapis nahi hoga.\n\n" +
+                "Agar ye galat file hai to Cancel dabayein."
+            textSize = 13.5f
+            setTextColor(Color.parseColor(textDark))
+        })
+        val checkBox = CheckBox(this).apply {
+            text = "Mujhe samajh aa gaya, aage badhein"
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 28, 0, 0)
+        }
+        container.addView(checkBox)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Restore Backup?")
+            .setView(container)
+            .setPositiveButton("Restore", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val positiveBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            positiveBtn.isEnabled = false
+            positiveBtn.setTextColor(Color.parseColor(red))
+            checkBox.setOnCheckedChangeListener { _, isChecked -> positiveBtn.isEnabled = isChecked }
+            positiveBtn.setOnClickListener {
+                val ok = BackupHelper.restoreFromUri(this, uri)
+                if (ok) {
+                    Toast.makeText(this, "Restore ho gaya. App ko dobara open karein.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "Restore fail ho gaya — ye file shayad valid backup nahi hai", Toast.LENGTH_LONG).show()
                 }
                 dialog.dismiss()
             }
