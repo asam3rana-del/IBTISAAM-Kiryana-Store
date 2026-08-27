@@ -52,6 +52,7 @@ class ProductActivity : ThemedActivity() {
     private var red = "#E5484D"
     private var blue = "#3B82F6"
     private var orange = "#F5A524"
+    private var purple = "#8B5CF6"
     private var textDark = "#0B2545"
     private var textMuted = "#7C8798"
     private var border = "#E3E8EE"
@@ -309,14 +310,15 @@ class ProductActivity : ThemedActivity() {
         root.addView(titleRow)
         root.addView(spacer(10))
 
+        // ================= PRODUCT NAME CARD =================
         val nameCard = premiumCard()
-        nameCard.addView(sectionLabel("🏷️", Loc.t(this, "Product Name", "پروڈکٹ کا نام")))
+        nameCard.addView(sectionLabel("🏷️", Loc.t(this, "Product Name", "پروڈکٹ کا نام"), teal))
 
         val nameBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 6, 6, 6)
-            background = strokedBg(border, fieldFill, 12)
+            setPadding(18, 8, 8, 8)
+            background = strokedBg(border, fieldFill, 14)
         }
 
         name = EditText(this).apply {
@@ -324,7 +326,8 @@ class ProductActivity : ThemedActivity() {
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
-            textSize = 15f
+            textSize = 15.5f
+            setTypeface(typeface, Typeface.BOLD)
             maxLines = 1
             imeOptions = EditorInfo.IME_ACTION_NEXT
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
@@ -346,14 +349,15 @@ class ProductActivity : ThemedActivity() {
         nameCard.addView(nameBox)
         root.addView(nameCard)
 
+        // ================= CATEGORY CARD =================
         val categoryCard = premiumCard()
-        categoryCard.addView(sectionLabel("🗂️", Loc.t(this, "Category", "کیٹیگری")))
+        categoryCard.addView(sectionLabel("🗂️", Loc.t(this, "Category", "کیٹیگری"), purple))
 
         val categoryBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, fieldFill, 12)
-            setPadding(18, 4, 18, 4)
+            background = strokedBg(border, fieldFill, 14)
+            setPadding(18, 6, 18, 6)
         }
 
         categoryField = AutoCompleteTextView(this).apply {
@@ -376,53 +380,86 @@ class ProductActivity : ThemedActivity() {
         )
         root.addView(categoryCard)
 
+        // ================= PRICING CARD (premium: persistent labels + colored badges) =================
         val ratesCard = premiumCard()
-        ratesCard.addView(sectionLabel("💰", Loc.t(this, "Pricing", "قیمتیں")))
+        ratesCard.addView(sectionLabel("💰", Loc.t(this, "Pricing", "قیمتیں"), amber))
 
-        cost = rateField(Loc.t(this, "Purchase Rate", "خریداری کی قیمت"))
-        ratesCard.addView(fieldBox(cost, "🛒"))
+        cost = rateField()
+        ratesCard.addView(
+            premiumLabeledField(
+                cost, "🛒",
+                Loc.t(this, "Purchase Rate", "خریداری کی قیمت"),
+                amber
+            )
+        )
         ratesCard.addView(spacer(12))
 
-        wholesalePrice = rateField(Loc.t(this, "Wholesale Sale Rate", "تھوک فروخت کی قیمت"))
-        ratesCard.addView(fieldBox(wholesalePrice, "📦"))
+        wholesalePrice = rateField()
+        ratesCard.addView(
+            premiumLabeledField(
+                wholesalePrice, "📦",
+                Loc.t(this, "Wholesale Sale Rate", "تھوک فروخت کی قیمت"),
+                blue
+            )
+        )
         ratesCard.addView(spacer(12))
 
-        salePrice = rateField(Loc.t(this, "Retail Sale Rate", "پرچون فروخت کی قیمت"))
-        ratesCard.addView(fieldBox(salePrice, "🏪"))
+        salePrice = rateField()
+        ratesCard.addView(
+            premiumLabeledField(
+                salePrice, "🏪",
+                Loc.t(this, "Retail Sale Rate", "پرچون فروخت کی قیمت"),
+                teal
+            )
+        )
         ratesCard.addView(spacer(12))
 
+        // ---- Opening Stock: same premium labeled-badge treatment as the price fields above,
+        // with the unit Spinner sharing the same row so quantity + unit read as one control. ----
         stock = EditText(this).apply {
-            hint = Loc.t(this@ProductActivity, "Opening Stock", "ابتدائی اسٹاک")
+            hint = Loc.t(this@ProductActivity, "0", "0")
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
-            textSize = 15f
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_DONE
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             addTextChangedListener(simpleWatcher { updateOpeningStockPreview() })
         }
 
-        val stockBox = LinearLayout(this).apply {
+        val stockRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, fieldFill, 12)
-            setPadding(18, 4, 8, 4)
+            background = strokedBg(border, fieldFill, 14)
+            setPadding(14, 8, 8, 8)
         }
-
-        stockBox.addView(TextView(this).apply {
-            text = "🔢  "
-            textSize = 14f
+        stockRow.addView(badgeIcon("🔢", navy))
+        stockRow.addView(spacer(14).apply {
+            layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
         })
-        stockBox.addView(stock)
+        val stockCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        stockCol.addView(TextView(this).apply {
+            text = Loc.t(this@ProductActivity, "Opening Stock", "ابتدائی اسٹاک").uppercase()
+            textSize = 9.5f
+            setTextColor(Color.parseColor(navy))
+            setTypeface(typeface, Typeface.BOLD)
+            letterSpacing = 0.02f
+        })
+        stockCol.addView(stock)
+        stockRow.addView(stockCol)
 
         stockUnitSpinner = Spinner(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 110.dp(), LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
-        stockBox.addView(stockUnitSpinner)
-        ratesCard.addView(stockBox)
+        stockRow.addView(stockUnitSpinner)
+        ratesCard.addView(stockRow)
 
         stockPreview = TextView(this).apply {
             textSize = 11.5f
@@ -449,26 +486,25 @@ class ProductActivity : ThemedActivity() {
         // (0), which meant "Low Stock" alerts (StockReportActivity / ProductDao.lowStock())
         // never fired until stock hit exactly zero. Entered here in the product's SMALLEST
         // unit (same unit stock is stored/compared in), so it lines up with `stock<=reorderLevel`. ----
-        val reorderBox = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, fieldFill, 12)
-            setPadding(18, 4, 18, 4)
-        }
-        reorderBox.addView(TextView(this).apply { text = "⚠️  "; textSize = 14f })
         reorderLevel = EditText(this).apply {
-            hint = Loc.t(this@ProductActivity, "Reorder Level (smallest unit)", "ری آرڈر لیول (سب سے چھوٹی یونٹ)")
+            hint = Loc.t(this@ProductActivity, "0", "0")
             setHintTextColor(Color.parseColor(textMuted))
             setTextColor(Color.parseColor(textDark))
             background = null
-            textSize = 15f
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_DONE
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
-        reorderBox.addView(reorderLevel)
         ratesCard.addView(spacer(12))
-        ratesCard.addView(reorderBox)
+        ratesCard.addView(
+            premiumLabeledField(
+                reorderLevel, "⚠️",
+                Loc.t(this, "Reorder Level (smallest unit)", "ری آرڈر لیول (سب سے چھوٹی یونٹ)"),
+                red
+            )
+        )
         ratesCard.addView(TextView(this).apply {
             text = Loc.t(
                 this@ProductActivity,
@@ -546,7 +582,7 @@ class ProductActivity : ThemedActivity() {
 
     private fun buildProductsSection(root: LinearLayout) {
         root.addView(spacer(4))
-        productsSectionAnchor = sectionLabel("🗃️", Loc.t(this, "Products", "پروڈکٹس"))
+        productsSectionAnchor = sectionLabel("🗃️", Loc.t(this, "Products", "پروڈکٹس"), navy)
         root.addView(productsSectionAnchor)
         root.addView(spacer(10))
 
@@ -649,13 +685,85 @@ class ProductActivity : ThemedActivity() {
 
     private fun premiumCard() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(22, 18, 22, 18)
-        background = strokedBg(border, cardWhite, 16)
+        setPadding(22, 20, 22, 20)
+        background = strokedBg(border, cardWhite, 20)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, 0, 0, 14)
         }
-        applyElevation(this, 2f)
+        applyElevation(this, 3f)
     }
+
+    // ---- Small round colored icon badge, reused by sectionLabel() and premiumLabeledField()
+    // so every icon across the form reads as a consistent "premium" chip instead of a plain
+    // emoji floating in text. ----
+    private fun badgeIcon(icon: String, accentHex: String, sizeDp: Int = 30) = TextView(this).apply {
+        text = icon
+        textSize = 14f
+        gravity = Gravity.CENTER
+        setTextColor(Color.WHITE)
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(accentHex))
+        }
+        val px = sizeDp.dp()
+        width = px
+        height = px
+    }
+
+    // ---- Section label upgraded to use a colored circular icon badge (matching the style
+    // already used inside the Add Item Unit dialog) instead of a plain emoji, and now takes
+    // an accent color so each card (Name=teal, Category=purple, Pricing=amber, Products=navy)
+    // reads as visually distinct at a glance. ----
+    private fun sectionLabel(icon: String, label: String, accentHex: String = teal) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, 0, 0, 14)
+        addView(badgeIcon(icon, accentHex))
+        addView(View(this@ProductActivity).apply {
+            layoutParams = LinearLayout.LayoutParams(10.dp(), 1)
+        })
+        addView(TextView(this@ProductActivity).apply {
+            text = label.uppercase()
+            textSize = 12f
+            setTextColor(Color.parseColor(textDark))
+            setTypeface(typeface, Typeface.BOLD)
+            letterSpacing = 0.02f
+        })
+    }
+
+    // ---- PREMIUM labeled field: colored round icon badge + a small persistent label ABOVE
+    // the input, so the field's meaning stays visible even once it's filled with a number —
+    // fixes the old fieldBox() where the hint (and therefore the field's identity) disappeared
+    // the moment a value was typed in, which is what made the Pricing card confusing. ----
+    private fun premiumLabeledField(field: EditText, icon: String, label: String, accentHex: String) =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = strokedBg(border, fieldFill, 14)
+            setPadding(14, 10, 18, 10)
+
+            addView(badgeIcon(icon, accentHex, 38))
+            addView(View(this@ProductActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
+            })
+
+            val col = LinearLayout(this@ProductActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            }
+            col.addView(TextView(this@ProductActivity).apply {
+                text = label.uppercase()
+                textSize = 9.5f
+                setTextColor(Color.parseColor(accentHex))
+                setTypeface(typeface, Typeface.BOLD)
+                letterSpacing = 0.02f
+            })
+            (field.parent as? ViewGroup)?.removeView(field)
+            field.setPadding(0, 4, 0, 0)
+            field.layoutParams = LinearLayout.LayoutParams(-1, -2)
+            col.addView(field)
+            addView(col)
+        }
 
     private fun fieldBox(field: EditText, icon: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -669,23 +777,6 @@ class ProductActivity : ThemedActivity() {
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         addView(field)
-    }
-
-    private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, 0, 0, 12)
-        addView(TextView(this@ProductActivity).apply {
-            text = "$icon  "
-            textSize = 14f
-        })
-        addView(TextView(this@ProductActivity).apply {
-            text = label.uppercase()
-            textSize = 12f
-            setTextColor(Color.parseColor(teal))
-            setTypeface(typeface, Typeface.BOLD)
-            letterSpacing = 0.02f
-        })
     }
 
     // ---- Premium section label with a colored round icon badge instead of a plain emoji —
@@ -780,12 +871,16 @@ class ProductActivity : ThemedActivity() {
         setOnClickListener { onClick() }
     }
 
-    private fun rateField(hintText: String) = EditText(this).apply {
-        hint = hintText
+    // ---- Simplified: no longer takes a hint, since premiumLabeledField() now supplies the
+    // persistent label externally. Font bumped to bold + larger size so the entered amount
+    // reads clearly as the "value" half of a labeled field. ----
+    private fun rateField() = EditText(this).apply {
+        hint = "0.00"
         setHintTextColor(Color.parseColor(textMuted))
         setTextColor(Color.parseColor(textDark))
         background = null
-        textSize = 15f
+        textSize = 16f
+        setTypeface(typeface, Typeface.BOLD)
         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         imeOptions = EditorInfo.IME_ACTION_NEXT
     }
