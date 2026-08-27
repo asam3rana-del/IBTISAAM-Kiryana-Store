@@ -501,8 +501,13 @@ class ItemsActivity : AppCompatActivity() {
                 if (newName.isEmpty() || newName == category.name) return@setPositiveButton
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@ItemsActivity)
-                    db.productDao().renameCategoryForProducts(category.name, newName)
-                    db.categoryDao().update(category.copy(name = newName))
+                    // Category's primary key IS its name, so "renaming" means:
+                    // add the new name, repoint every product that used the old
+                    // name (existing helper — already used by BulkTranslateActivity),
+                    // then remove the old category row.
+                    db.categoryDao().insert(Category(newName))
+                    db.productDao().renameCategoryInProducts(category.name, newName)
+                    db.categoryDao().deleteByName(category.name)
                     Toast.makeText(this@ItemsActivity, "Category renamed", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -524,8 +529,8 @@ class ItemsActivity : AppCompatActivity() {
             .setPositiveButton("Delete") { _, _ ->
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@ItemsActivity)
-                    if (productCount > 0) db.productDao().clearCategoryForProducts(category.name)
-                    db.categoryDao().delete(category)
+                    if (productCount > 0) db.productDao().renameCategoryInProducts(category.name, "")
+                    db.categoryDao().deleteByName(category.name)
                     Toast.makeText(this@ItemsActivity, "Category deleted", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -657,7 +662,7 @@ class ItemsActivity : AppCompatActivity() {
             .setItems(options.toTypedArray()) { _, index ->
                 val newCategory = if (index == 0) "" else options[index]
                 lifecycleScope.launch {
-                    PosDatabase.get(this@ItemsActivity).productDao().update(p.copy(category = newCategory))
+                    PosDatabase.get(this@ItemsActivity).productDao().upsert(p.copy(category = newCategory))
                     Toast.makeText(
                         this@ItemsActivity,
                         "\"${p.name}\" moved to ${newCategory.ifBlank { "Items Not in Any Category" }}",
