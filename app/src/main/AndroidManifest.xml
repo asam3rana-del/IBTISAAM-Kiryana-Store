@@ -55,6 +55,11 @@
         <!-- NEW: Day Book (Roznamcha) - merged daily ledger -->
         <activity android:name=".ui.DayBookActivity" android:exported="false" />
 
+        <!-- NEW: Bulk Translate — one-time Urdu -> English rename tool for
+             Category and Unit values, applied to the master tables and cascaded
+             into every product row (category/unit/secondaryUnit/tertiaryUnit). -->
+        <activity android:name=".ui.BulkTranslateActivity" android:exported="false" />
+
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
