@@ -3,6 +3,7 @@ package com.grocerypos.v11.util
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -165,6 +166,32 @@ object BackupHelper {
             PosDatabase.closeInstance()
             val dbFile = context.getDatabasePath(DB_NAME)
             backupFile.copyTo(dbFile, overwrite = true)
+            File(dbFile.path + "-wal").delete()
+            File(dbFile.path + "-shm").delete()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Restores from a content Uri returned by the system document picker
+     * (ACTION_OPEN_DOCUMENT via [android.provider.DocumentsContract]). Unlike [restore],
+     * this doesn't require the backup file to already sit inside the app's own
+     * Backups folder — the picker can reach Downloads, a cloud-storage app, etc.
+     * even on Android 11+, where a plain file manager is blocked from browsing
+     * into Android/data/<package>/files by default. This is the reliable path for
+     * "I reinstalled the app and need to bring back an old backup".
+     */
+    fun restoreFromUri(context: Context, uri: Uri): Boolean {
+        return try {
+            PosDatabase.closeInstance()
+            val dbFile = context.getDatabasePath(DB_NAME)
+            val input = context.contentResolver.openInputStream(uri) ?: return false
+            input.use { streamIn ->
+                dbFile.outputStream().use { streamOut -> streamIn.copyTo(streamOut) }
+            }
             File(dbFile.path + "-wal").delete()
             File(dbFile.path + "-shm").delete()
             true
