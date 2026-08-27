@@ -169,9 +169,9 @@ class SaleActivity : AppCompatActivity() {
             setPadding(0, 5, 0, 0)
         })
         header.addView(headerCol)
-        header.addView(pillChip("Quick Sale") { quickSaleDialog() })
+        header.addView(pillChip("Quick Sale", textSizeSp = 13.5f, hPad = 24, vPad = 14) { quickSaleDialog() })
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((6 * resources.displayMetrics.density).toInt(), 1) })
-        header.addView(pillChip("History") { startActivity(Intent(this@SaleActivity, SaleHistoryActivity::class.java)) })
+        header.addView(pillChip("History", textSizeSp = 13.5f, hPad = 24, vPad = 14) { startActivity(Intent(this@SaleActivity, SaleHistoryActivity::class.java)) })
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((6 * resources.displayMetrics.density).toInt(), 1) })
         overflowButton = TextView(this).apply {
             text = "\u22EE"
@@ -185,14 +185,37 @@ class SaleActivity : AppCompatActivity() {
         header.addView(overflowButton)
         root.addView(header)
 
-        // Secondary action row (Hold / Recall) — kept as pill chips below the header
+        // Secondary action row (Hold / Recall) — split full-width, left half Hold, right half Recall
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
         }
-        actionRow.addView(pillChip("\u23F8  Hold") { holdBill() })
-        actionRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
-        actionRow.addView(pillChip("\u21BA  Recall") { openRecallDialog() })
+        val holdHalf = TextView(this).apply {
+            text = "\u23F8  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Hold", "روکیں")
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(navy))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = strokedBg(border, cardBg, 14)
+            setPadding(0, 22, 0, 22)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) }
+            applyElevation(this, 1.5f)
+            setOnClickListener { holdBill() }
+        }
+        val recallHalf = TextView(this).apply {
+            text = "\u21BA  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Recall", "واپس لائیں")
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(navy))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = strokedBg(border, cardBg, 14)
+            setPadding(0, 22, 0, 22)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) }
+            applyElevation(this, 1.5f)
+            setOnClickListener { openRecallDialog() }
+        }
+        actionRow.addView(holdHalf)
+        actionRow.addView(recallHalf)
         root.addView(actionRow)
 
         // ---------- Date chip ----------
@@ -222,11 +245,22 @@ class SaleActivity : AppCompatActivity() {
         root.addView(topRow)
 
         // ---------- Firm card ----------
-        val firmBox = premiumCard().apply { setPadding(22, 16, 22, 16) }
+        val firmBox = premiumCard().apply { setPadding(20, 10, 20, 10) }
         val firmRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val firmCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-        firmCol.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Firm Name", "فرم کا نام").uppercase(); textSize = 9.5f; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f })
-        firmNameText = TextView(this).apply { text = "IBTISAAM Kiryana Store"; textSize = 13.5f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 2, 0, 0) }
+        val firmCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        firmCol.addView(TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Firm Name", "فرم کا نام").uppercase()
+            textSize = 9.5f; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.05f
+            gravity = Gravity.CENTER
+        })
+        firmNameText = TextView(this).apply {
+            text = "IBTISAAM Kiryana Store"; textSize = 13.5f; setTextColor(Color.parseColor(textDark)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 2, 0, 0)
+            gravity = Gravity.CENTER
+        }
         firmCol.addView(firmNameText)
         firmRow.addView(firmCol)
         firmBox.addView(firmRow)
@@ -257,6 +291,7 @@ class SaleActivity : AppCompatActivity() {
         saleTypeBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Sale Type", "سیل کی قسم")))
         saleTypeSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Retail", "Wholesale"))
+            isFocusableInTouchMode = true
         }
         saleTypeBox.addView(saleTypeSpinner)
         root.addView(saleTypeBox)
@@ -437,7 +472,7 @@ class SaleActivity : AppCompatActivity() {
         root.addView(totalCard)
 
         // ---------- Payment section ----------
-        paymentSection = premiumCard().apply { orientation = LinearLayout.VERTICAL; setPadding(24, 20, 24, 20) }
+        paymentSection = premiumCard().apply { orientation = LinearLayout.VERTICAL; setPadding(22, 14, 22, 14) }
         val paidRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         paidRow.addView(TextView(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Paid Amount", "ادا شدہ رقم").uppercase()
@@ -467,7 +502,7 @@ class SaleActivity : AppCompatActivity() {
         })
         paidRow.addView(paidInput)
         paymentSection.addView(paidRow)
-        paymentSection.addView(spacer(10))
+        paymentSection.addView(spacer(6))
         paymentSection.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Payment Method", "ادائیگی کا طریقہ")))
         paymentMethodSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
@@ -543,6 +578,20 @@ class SaleActivity : AppCompatActivity() {
 
         customerName.setOnClickListener { if (customers.isNotEmpty()) customerName.showDropDown() }
         customerName.setOnFocusChangeListener { _, hasFocus -> if (hasFocus && customers.isNotEmpty()) customerName.showDropDown() }
+        customerName.setOnItemClickListener { _, _, position, _ ->
+            val name = customerName.adapter.getItem(position).toString()
+            customerName.setText(name)
+            customerName.setSelection(customerName.text.length)
+            goToSaleTypeFromCustomer()
+        }
+        customerName.setOnEditorActionListener { _, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT ||
+                (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+            ) {
+                goToSaleTypeFromCustomer()
+                true
+            } else false
+        }
 
         itemName.setOnItemClickListener { _, _, position, _ ->
             val name = itemName.adapter.getItem(position).toString()
@@ -557,6 +606,21 @@ class SaleActivity : AppCompatActivity() {
                 unitToggleRow.visibility = View.GONE
             }
         })
+        itemName.setOnEditorActionListener { _, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT ||
+                (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+            ) {
+                val typed = itemName.text.toString().trim()
+                val match = products.find { it.name.equals(typed, ignoreCase = true) }
+                if (match != null && selectedProduct?.barcode != match.barcode) {
+                    onItemPicked(match.name)
+                } else {
+                    qty.requestFocus()
+                    qty.selectAll()
+                }
+                true
+            } else false
+        }
         qty.addTextChangedListener(simpleWatcher { updateItemLineTotal() })
         unitPrice.addTextChangedListener(simpleWatcher {
             if (!suppressPriceWatcher) {
@@ -573,6 +637,13 @@ class SaleActivity : AppCompatActivity() {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 lastMainPrice = 0.0
                 refillAutoPrice()
+                if (saleTypeSpinner.hasFocus()) {
+                    itemName.requestFocus()
+                    itemName.post {
+                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                        imm?.showSoftInput(itemName, InputMethodManager.SHOW_IMPLICIT)
+                    }
+                }
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
@@ -580,6 +651,16 @@ class SaleActivity : AppCompatActivity() {
         if (editInvoice == null) {
             restoreDraftIfAny()
         }
+    }
+
+    // ---- Keyboard flow: after customer is picked/confirmed, jump straight into
+    // Sale Type so the rest (item -> qty -> rate -> Add Item) can be done without
+    // touching the screen. ----
+    private fun goToSaleTypeFromCustomer() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(customerName.windowToken, 0)
+        saleTypeSpinner.requestFocus()
+        saleTypeSpinner.performClick()
     }
 
     override fun onResume() {
@@ -805,8 +886,8 @@ class SaleActivity : AppCompatActivity() {
         text = label.uppercase(); textSize = 10.5f; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 6); letterSpacing = 0.05f
     }
 
-    private fun pillChip(label: String, onClick: () -> Unit) = TextView(this).apply {
-        this.text = label; textSize = 12.5f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = roundedBg(cardBg, 30); setPadding(22, 12, 22, 12); setOnClickListener { onClick() }
+    private fun pillChip(label: String, textSizeSp: Float = 12.5f, hPad: Int = 22, vPad: Int = 12, onClick: () -> Unit) = TextView(this).apply {
+        this.text = label; textSize = textSizeSp; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = roundedBg(cardBg, 30); setPadding(hPad, vPad, hPad, vPad); setOnClickListener { onClick() }
     }
 
     private fun circleIcon(label: String, colorHex: String, sizeDp: Int, onClick: (() -> Unit)? = null) = TextView(this).apply {
@@ -944,6 +1025,12 @@ class SaleActivity : AppCompatActivity() {
         conversionInfo.visibility = if (conversionInfo.text.isNotEmpty()) View.VISIBLE else View.GONE
         lastMainPrice = 0.0
         refillAutoPrice()
+        qty.requestFocus()
+        qty.selectAll()
+        qty.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.showSoftInput(qty, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun buildUnitChips(options: List<String>, selected: String) {
