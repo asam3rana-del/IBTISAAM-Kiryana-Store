@@ -26,7 +26,9 @@ jobs:
           gradle-version: '8.7'
 
       - name: Decode fixed debug keystore
-        run: echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > app/debug.keystore
+        # build.gradle.kts's debug signingConfig looks for the keystore at
+        # ${rootProject.projectDir}/debug.keystore — i.e. the REPO ROOT, not app/.
+        run: echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
 
       - name: Build debug APK
         run: gradle assembleDebug
@@ -36,42 +38,3 @@ jobs:
         with:
           name: app-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
-
-  # Builds the signed, installable production APK for this branch. Only runs if the
-  # release keystore secret exists (RELEASE_KEYSTORE_BASE64), so it silently no-ops
-  # until you've added the 4 GitHub secrets listed below — see release-signing-setup.md.
-  build-release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
-      - name: Decode release keystore
-        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
-
-      - name: Build signed release APK
-        run: >
-          gradle assembleRelease
-          -PRELEASE_STORE_FILE=release.keystore
-          -PRELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}
-          -PRELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}
-          -PRELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}
-
-      - name: Upload signed APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk-dusri-branch
-          path: app/build/outputs/apk/release/app-release.apk
