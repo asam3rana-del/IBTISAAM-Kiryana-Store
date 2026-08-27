@@ -384,6 +384,7 @@ class PurchaseActivity : AppCompatActivity() {
         itemEntrySection.addView(addItemButton)
         root.addView(itemEntrySection)
 
+        // ---------- Billed Items (collapsible list) ----------
         billedItemsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -397,7 +398,160 @@ class PurchaseActivity : AppCompatActivity() {
         billedItemsHeader.addView(TextView(this).apply {
             text = "\uD83D\uDCCB  " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Billed Items", "بل شدہ آئٹمز")
             textSize = 13.5f
-            rNull() ?: 0.0
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        billedItemsChevron = TextView(this).apply {
+            text = "\u25BE"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        billedItemsHeader.addView(billedItemsChevron)
+        root.addView(billedItemsHeader)
+
+        itemsContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 12, 0, 0)
+        }
+        root.addView(itemsContainer)
+        root.addView(spacer(16))
+
+        // ---------- Grand total ----------
+        val grandTotalRow = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        grandTotalRow.addView(TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Grand Total", "کل رقم")
+            textSize = 14.5f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        grandTotalText = TextView(this).apply {
+            text = "Rs 0"
+            textSize = 18f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(navy))
+        }
+        grandTotalRow.addView(grandTotalText)
+        root.addView(grandTotalRow)
+
+        // ---------- Payment section ----------
+        paymentSection = premiumCard().apply { orientation = LinearLayout.VERTICAL }
+        paymentSection.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Paid Amount", "ادا شدہ رقم")))
+        paidInput = EditText(this).apply {
+            hint = "0"
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15.5f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_DONE
+        }
+        paymentSection.addView(paidInput)
+        paymentSection.addView(spacer(10))
+        val dueRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        dueRow.addView(TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Due Amount", "باقی رقم")
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textMuted))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        dueAmountText = TextView(this).apply {
+            text = "Rs 0"
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(successGreen))
+        }
+        dueRow.addView(dueAmountText)
+        paymentSection.addView(dueRow)
+        paidWarningText = TextView(this).apply {
+            text = ""
+            textSize = 11.5f
+            setTextColor(Color.parseColor(red))
+            setPadding(0, 8, 0, 0)
+            visibility = View.GONE
+        }
+        paymentSection.addView(paidWarningText)
+        root.addView(paymentSection)
+        root.addView(spacer(20))
+
+        // ---------- Save / Delete ----------
+        saveButton = Button(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SAVE PURCHASE", "خریداری محفوظ کریں")
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            isAllCaps = false
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = gradientBg(navy, navyLight, cornerBottom = 14, cornerTop = 14)
+            setPadding(0, 28, 0, 28)
+            applyElevation(this, 4f)
+            setOnClickListener { savePurchase() }
+        }
+        root.addView(saveButton)
+        root.addView(spacer(12))
+
+        deleteButton = Button(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "DELETE PURCHASE", "خریداری حذف کریں")
+            setTextColor(Color.parseColor(red))
+            textSize = 14f
+            isAllCaps = false
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = strokedBg(red, cardWhite, 14)
+            setPadding(0, 24, 0, 24)
+            visibility = View.GONE
+            setOnClickListener { confirmDeletePurchase() }
+        }
+        root.addView(deleteButton)
+
+        scrollArea = ScrollView(this)
+        scrollArea.addView(root)
+        setContentView(scrollArea)
+
+        // ---------- Wiring ----------
+        addItemButton.setOnClickListener { addItem() }
+
+        partyName.setOnItemClickListener { _, _, _, _ ->
+            updateSupplierBalanceDisplay(partyName.text.toString().trim())
+        }
+        partyName.addTextChangedListener(simpleWatcher {
+            updateSupplierBalanceDisplay(partyName.text.toString().trim())
+        })
+
+        itemName.setOnItemClickListener { _, _, position, _ ->
+            val adapter = itemName.adapter
+            val pickedName = adapter.getItem(position) as String
+            onItemPicked(pickedName)
+        }
+
+        unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                refillAutoRate()
+                updateLineTotal()
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        qty.addTextChangedListener(simpleWatcher {
+            if (suppressQtyWatcher) return@simpleWatcher
+            val entered = qty.text.toString().toDoubleOrNull() ?: 0.0
+            lastMainQty = toMainUnitQty(entered)
+            updateLineTotal()
+            if (editBillNo == null) saveDraft()
+        })
+
+        rate.addTextChangedListener(simpleWatcher {
+            if (suppressRateWatcher) return@simpleWatcher
+            val entered = rate.text.toString().toDoubleOrNull() ?: 0.0
+            lastMainRate = toMainUnitRate(entered)
+            updateLineTotal()
+            if (editBillNo == null) saveDraft()
+        })
+
+        // Auto-derive per-unit rate from a total lot price (e.g. "5000 for 2 Ctn")
+        totalLotPrice.addTextChangedListener(simpleWatcher {
+            if (suppressTotalLotWatcher) return@simpleWatcher
+            val totalLot = totalLotPrice.text.toString().toDoubleOrNull() ?: 0.0
             val q = qty.text.toString().toDoubleOrNull() ?: 0.0
             if (q > 0 && totalLot > 0) {
                 val newRate = totalLot / q
@@ -408,9 +562,19 @@ class PurchaseActivity : AppCompatActivity() {
                 updateLineTotal()
             }
         })
+
         paidInput.addTextChangedListener(simpleWatcher { updateGrandTotal() })
 
-        if (editBillNo == null) restoreDraftIfAny()
+        loadFirmName()
+        loadSuppliers()
+        loadUnits()
+        loadProducts()
+
+        if (editBillNo == null) {
+            restoreDraftIfAny()
+        } else {
+            loadForEdit(editBillNo!!)
+        }
     }
 
     override fun onPause() {
