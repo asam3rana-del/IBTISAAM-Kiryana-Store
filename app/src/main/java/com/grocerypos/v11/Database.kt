@@ -488,6 +488,9 @@ interface ProductDao {
     @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insert(u:UnitType)
     @Delete suspend fun delete(u:UnitType)
     @Query("SELECT * FROM units ORDER BY name") fun all():Flow<List<UnitType>>
+    // One-shot version of all() for screens (like BulkTranslateActivity) that just need
+    // a snapshot once, without collecting a Flow.
+    @Query("SELECT * FROM units ORDER BY name") suspend fun allOnce():List<UnitType>
     // Used by BulkTranslateActivity to remove the old Urdu master row after the
     // English name has been inserted in its place.
     @Query("DELETE FROM units WHERE name=:name") suspend fun deleteByName(name: String)
@@ -496,6 +499,9 @@ interface ProductDao {
 @Dao interface CategoryDao {
     @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insert(c:Category)
     @Query("SELECT * FROM categories ORDER BY name") fun all():Flow<List<Category>>
+    // One-shot version of all() for screens (like BulkTranslateActivity) that just need
+    // a snapshot once, without collecting a Flow.
+    @Query("SELECT * FROM categories ORDER BY name") suspend fun allOnce():List<Category>
     // Used by BulkTranslateActivity to remove the old Urdu master row after the
     // English name has been inserted in its place.
     @Query("DELETE FROM categories WHERE name=:name") suspend fun deleteByName(name: String)
