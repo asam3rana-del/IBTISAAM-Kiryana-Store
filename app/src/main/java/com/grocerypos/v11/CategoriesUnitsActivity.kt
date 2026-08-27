@@ -29,6 +29,11 @@ import kotlinx.coroutines.launch
  * with its Primary Unit, Secondary Unit, Tertiary Unit, and the conversions between them
  * (1 Primary = X Secondary, 1 Secondary = X Tertiary).
  * Each product row also offers Edit (deep-links into ProductActivity's edit form) and Delete.
+ *
+ * NEW: header now has a "Bulk Translate" button that opens BulkTranslateActivity —
+ * the one-time Urdu -> English rename tool for Category/Unit values. This was the
+ * only entry point missing; BulkTranslateActivity itself was already fully built
+ * and declared in the manifest, just unreachable from any screen.
  */
 class CategoriesUnitsActivity : AppCompatActivity() {
 
@@ -89,6 +94,21 @@ class CategoriesUnitsActivity : AppCompatActivity() {
             setPadding(0, 4, 0, 0)
         })
         header.addView(headerCol)
+
+        // NEW: "Bulk Translate" pill button — opens BulkTranslateActivity so Urdu
+        // category/unit values can be renamed to English in one place, cascading
+        // into every product that references them.
+        header.addView(TextView(this).apply {
+            text = "🌐  " + Loc.t(this@CategoriesUnitsActivity, "Translate", "ترجمہ")
+            textSize = 11.5f
+            setTextColor(Color.parseColor(primaryDark))
+            setTypeface(typeface, Typeface.BOLD)
+            background = roundedBg("#FFFFFF", 30)
+            setPadding(20, 10, 20, 10)
+            setOnClickListener {
+                startActivity(Intent(this@CategoriesUnitsActivity, BulkTranslateActivity::class.java))
+            }
+        })
         root.addView(header)
 
         emptyText = TextView(this).apply {
