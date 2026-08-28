@@ -60,6 +60,10 @@
              into every product row (category/unit/secondaryUnit/tertiaryUnit). -->
         <activity android:name=".ui.BulkTranslateActivity" android:exported="false" />
 
+        <!-- NEW: Backup & Reports — combined CSV + PDF export (full data or custom
+             date range), with Open/Print/Share from the result screen. -->
+        <activity android:name=".ui.BackupExportActivity" android:exported="false" />
+
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
