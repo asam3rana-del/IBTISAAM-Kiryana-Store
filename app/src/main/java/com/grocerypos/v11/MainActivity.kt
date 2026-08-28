@@ -21,6 +21,7 @@ import com.grocerypos.v11.ui.SaleActivity
 import com.grocerypos.v11.ui.ReportsActivity
 import com.grocerypos.v11.ui.CashActivity
 import com.grocerypos.v11.ui.DayBookActivity
+import com.grocerypos.v11.ui.BackupExportActivity
 import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
 import com.grocerypos.v11.ui.ThemedActivity
@@ -248,7 +249,7 @@ class MainActivity : ThemedActivity() {
         body.addView(spacer(30))
 
         // ================= QUICK ACTIONS =================
-        // Every dashboard action (Sale, Cash, Purchase, Day Book, Customers & Suppliers,
+        // Every dashboard action (Sale, Cash, Purchase, Day Book, Backup, Customers & Suppliers,
         // Logout) now renders as the same gradient quick-action card — one consistent style,
         // one tap each, instead of Sale/Cash/Purchase being "big cards" while Day Book etc.
         // were small icon tiles buried under a separate "MORE" section. Products and Reports
@@ -274,6 +275,16 @@ class MainActivity : ThemedActivity() {
                 startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
             }
         )
+        // NEW: Backup & Reports — combined CSV + PDF export (full data or custom date range).
+        // Restricted to admin/manager since it exports the entire business dataset, same
+        // access level as Purchase above.
+        if (role == "admin" || role == "manager") {
+            quickActions.add(
+                QuickAction("Backup", "Export data (CSV + PDF)", "#5B6EE8", "#3B44A8") {
+                    startActivity(Intent(this@MainActivity, BackupExportActivity::class.java))
+                }
+            )
+        }
         quickActions.add(
             QuickAction("Customers &\nSuppliers", "Manage ledgers & dues", "#4E342E", "#2E1F1B") {
                 startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java))
