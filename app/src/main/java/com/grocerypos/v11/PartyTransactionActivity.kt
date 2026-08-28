@@ -25,14 +25,18 @@ import java.util.Locale
 /**
  * Opened from PartyDashboardActivity when the user taps a party in the Parties tab.
  * Shows ONLY that party's own transactions (sales if customer, purchases if supplier),
- * newest first. Tapping a row opens the underlying Sale/Purchase.
+ * newest first. Tapping a row shows a read-only "Billed Items" dialog for that specific
+ * sale/purchase — just the items on that bill, not the full edit screen.
  *
  * Expected intent extras:
  *   partyId: Long, partyName: String, isCustomer: Boolean
  *
- * *** ASSUMPTION *** — same as PartyDashboardActivity's transaction rows: opens
- * SaleActivity with extra "invoice" / PurchaseActivity with extra "billNo". Tell me
- * if those keys are different and I'll fix the two ADJUST-EXTRA-KEY lines below.
+ * *** CHANGE *** — previously tapping a row opened the full SaleActivity/PurchaseActivity
+ * edit screen (with Add Item, quantity/rate fields, etc.), which let the user edit/extend
+ * a bill from what was meant to be a simple history view. That has been replaced with
+ * showBilledItemsDialog(), a read-only list of just the items on that transaction, built
+ * the same way PartyReportsActivity's "Party Report by Item" reads line items
+ * (saleDao().itemsForInvoice / purchaseDao().itemsForBill).
  *
  * Edit Party Name button uses customerDao()/supplierDao() (picked via isCustomer) — each
  * needs a suspend fun find(id: Long): Customer?/Supplier? and the existing suspend fun
@@ -52,6 +56,7 @@ class PartyTransactionActivity : AppCompatActivity() {
     private val orange = "#F5A15C"
     private val red = "#E57373"
     private val teal = "#0F9B8E"
+    private val blue = "#5B6EE8"
 
     private lateinit var listContainer: LinearLayout
     private lateinit var partyNameLabel: TextView
@@ -238,9 +243,16 @@ class PartyTransactionActivity : AppCompatActivity() {
                             accent = green,
                             emoji = "\uD83D\uDED2"
                         ) {
-                            startActivity(Intent(this@PartyTransactionActivity, SaleActivity::class.java).apply {
-                                putExtra("invoice", s.invoice) // ADJUST-EXTRA-KEY
-                            })
+                            // ---- CHANGE: was startActivity(SaleActivity, "invoice") which
+                            // opened the full edit screen. Now shows just this sale's
+                            // billed items in a read-only dialog. ----
+                            showBilledItemsDialog(
+                                isSale = true,
+                                reference = s.invoice,
+                                dateText = fmt.format(Date(s.createdAt)),
+                                total = s.total,
+                                status = s.status
+                            )
                         })
                     }
                 }
@@ -258,15 +270,154 @@ class PartyTransactionActivity : AppCompatActivity() {
                             accent = orange,
                             emoji = "\uD83E\uDDFE"
                         ) {
-                            startActivity(Intent(this@PartyTransactionActivity, PurchaseActivity::class.java).apply {
-                                putExtra("billNo", p.billNo) // ADJUST-EXTRA-KEY
-                            })
-                        })
+                            // ---- CHANGE: was startActivity(PurchaseActivity, "billNo") which
+                            // opened the full edit screen. Now shows just this purchase's
+                            // billed items in a read-only dialog. ----
+                            showBilledItemsDialog(
+                                isSale = false,
+                                reference = p.billNo,
+                                dateText = fmt.format(Date(p.createdAt)),
+                                total = p.total,
+                                status = p.status
+                            )
+                        }
+                        )
                     }
                 }
             }
         }
     }
+
+    // ---------------- Billed Items (read-only) ----------------
+    // Shows just the line items on ONE sale (by invoice) or purchase (by billNo) — not
+    // the full edit screen. Mirrors how PartyReportsActivity.showItemReport() reads line
+    // items (saleDao().itemsForInvoice / purchaseDao().itemsForBill), but scoped to a
+    // single transaction instead of aggregated across all of the party's transactions.
+    private fun showBilledItemsDialog(isSale: Boolean, reference: String, dateText: String, total: Double, status: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyTransactionActivity)
+            val accent = if (isSale) green else orange
+
+            val outer = LinearLayout(this@PartyTransactionActivity).apply { orientation = LinearLayout.VERTICAL }
+
+            outer.addView(TextView(this@PartyTransactionActivity).apply {
+                text = if (isSale) Loc.t(this@PartyTransactionActivity, "Billed Items — Sale", "بل شدہ آئٹمز — سیل")
+                else Loc.t(this@PartyTransactionActivity, "Billed Items — Purchase", "بل شدہ آئٹمز — خریداری")
+                textSize = 16f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(textDark))
+                setPadding(24, 24, 24, 4)
+            })
+            outer.addView(TextView(this@PartyTransactionActivity).apply {
+                text = dateText + if (status == "returned") "  \u2022  " + Loc.t(this@PartyTransactionActivity, "Returned", "\u0648\u0627\u067E\u0633") else ""
+                textSize = 12f
+                setTextColor(Color.parseColor(if (status == "returned") red else labelGray))
+                setPadding(24, 0, 24, 12)
+            })
+
+            val body = LinearLayout(this@PartyTransactionActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(24, 0, 24, 12)
+            }
+            val scroll = ScrollView(this@PartyTransactionActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (350 * resources.displayMetrics.density).toInt()
+                )
+                addView(body)
+            }
+            outer.addView(scroll)
+
+            var itemCount = 0
+
+            if (isSale) {
+                val items = db.saleDao().itemsForInvoice(reference)
+                itemCount = items.size
+                if (items.isEmpty()) {
+                    body.addView(emptyText(Loc.t(this@PartyTransactionActivity, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")))
+                } else {
+                    items.forEach { it ->
+                        body.addView(billedItemRow(it.product, formatQty(it.qty.toDouble()), it.amount, accent))
+                    }
+                }
+            } else {
+                val items = db.purchaseDao().itemsForBill(reference)
+                itemCount = items.size
+                if (items.isEmpty()) {
+                    body.addView(emptyText(Loc.t(this@PartyTransactionActivity, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")))
+                } else {
+                    items.forEach { it ->
+                        val productName = db.productDao().find(it.barcode)?.name ?: it.barcode
+                        body.addView(billedItemRow(productName, formatQty(it.qty.toDouble()), it.amount, accent))
+                    }
+                }
+            }
+
+            if (itemCount > 0) {
+                body.addView(View(this@PartyTransactionActivity).apply {
+                    setBackgroundColor(Color.parseColor(cardBorder))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
+                        setMargins(0, 8, 0, 8)
+                    }
+                })
+                body.addView(LinearLayout(this@PartyTransactionActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(4, 6, 4, 6)
+                    addView(TextView(this@PartyTransactionActivity).apply {
+                        text = Loc.t(this@PartyTransactionActivity, "Total", "\u06A9\u0644")
+                        textSize = 14f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setTextColor(Color.parseColor(textDark))
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    })
+                    addView(TextView(this@PartyTransactionActivity).apply {
+                        text = "Rs %.2f".format(total)
+                        textSize = 14f
+                        gravity = Gravity.END
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setTextColor(Color.parseColor(accent))
+                    })
+                })
+            }
+
+            AlertDialog.Builder(this@PartyTransactionActivity)
+                .setView(outer)
+                .setPositiveButton(Loc.t(this@PartyTransactionActivity, "Close", "\u0628\u0646\u062F \u06A9\u0631\u06CC\u06BA"), null)
+                .show()
+        }
+    }
+
+    private fun billedItemRow(product: String, qtyText: String, amount: Double, accent: String): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(4, 8, 4, 8)
+            addView(LinearLayout(this@PartyTransactionActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@PartyTransactionActivity).apply {
+                    text = product
+                    textSize = 13.5f
+                    setTextColor(Color.parseColor(textDark))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                addView(TextView(this@PartyTransactionActivity).apply {
+                    text = Loc.t(this@PartyTransactionActivity, "Qty", "مقدار") + ": $qtyText"
+                    textSize = 11.5f
+                    setTextColor(Color.parseColor(labelGray))
+                })
+            })
+            addView(TextView(this@PartyTransactionActivity).apply {
+                text = "Rs %.2f".format(amount)
+                textSize = 13.5f
+                gravity = Gravity.END
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(accent))
+            })
+        }
+    }
+
+    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
     private fun row(amount: Double, dateText: String, typeLabel: String, status: String, accent: String, emoji: String, onClick: () -> Unit): LinearLayout {
         return LinearLayout(this).apply {
@@ -336,5 +487,14 @@ class PartyTransactionActivity : AppCompatActivity() {
             textSize = 13f
             gravity = Gravity.CENTER
         })
+    }
+
+    private fun emptyText(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(Color.parseColor(labelGray))
+            textSize = 13f
+            setPadding(0, 6, 0, 6)
+        }
     }
 }
