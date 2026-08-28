@@ -570,6 +570,17 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')") suspend fun totalActiveQtySold(barcode:String):Int
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paid, createdAt, status FROM sales WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun salesBetween(start:Long,end:Long):List<DayBookSale>
+
+    // ================= Party Transaction — billed item edit/delete support =================
+    // Added for PartyTransactionActivity's editable "Billed Items" dialog: lets a single
+    // sale_items row be looked up/updated/deleted by its own id (rather than the whole
+    // invoice at once via items()/deleteItems()), plus a total update for the parent Sale
+    // and an item-count check used to decide whether a delete should remove the whole sale.
+    @Update suspend fun updateSale(s:Sale)
+    @Query("SELECT * FROM sale_items WHERE id=:id LIMIT 1") suspend fun findItem(id:Long):SaleItem?
+    @Update suspend fun updateItemRow(item:SaleItem)
+    @Query("DELETE FROM sale_items WHERE id=:id") suspend fun deleteItemById(id:Long)
+    @Query("SELECT COUNT(*) FROM sale_items WHERE invoice=:invoice") suspend fun itemCountForInvoice(invoice:String):Int
 }
 
 @Dao interface ExpenseDao {
@@ -610,6 +621,14 @@ interface ProductDao {
     @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC") suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.status!='returned' GROUP BY p.name ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, paid, createdAt, status FROM purchases WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun purchasesBetween(start:Long,end:Long):List<DayBookPurchase>
+
+    // ================= Party Transaction — billed item edit/delete support =================
+    // Mirrors the SaleDao additions above, for purchase_items/purchases.
+    @Update suspend fun updatePurchase(p:Purchase)
+    @Query("SELECT * FROM purchase_items WHERE id=:id LIMIT 1") suspend fun findItem(id:Long):PurchaseItem?
+    @Update suspend fun updateItemRow(item:PurchaseItem)
+    @Query("DELETE FROM purchase_items WHERE id=:id") suspend fun deleteItemById(id:Long)
+    @Query("SELECT COUNT(*) FROM purchase_items WHERE billNo=:billNo") suspend fun itemCountForBill(billNo:String):Int
 }
 
 @Dao interface ReturnDao {
