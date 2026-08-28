@@ -1,20 +1,29 @@
 package com.grocerypos.v11.ui
 
+import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -26,6 +35,7 @@ class BillPreviewActivity : AppCompatActivity() {
         const val EXTRA_REFERENCE = "reference"
         const val EXTRA_PARTY_NAME = "party_name"
         const val EXTRA_PARTY_LABEL = "party_label"
+        const val EXTRA_PARTY_ID = "party_id"
         const val EXTRA_DATE_MILLIS = "date_millis"
         const val EXTRA_SUBTOTAL = "subtotal"
         const val EXTRA_DISCOUNT = "discount"
@@ -42,6 +52,8 @@ class BillPreviewActivity : AppCompatActivity() {
     private val green = "#1FA971"
     private val greenDark = "#158A5A"
     private val blue = "#2F6FED"
+    private val whatsapp = "#25D366"
+    private val whatsappDark = "#1DA851"
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
     private val border = "#E7E5F3"
@@ -53,6 +65,12 @@ class BillPreviewActivity : AppCompatActivity() {
     private var shopAddress = ""
     private var receiptFooter = ""
 
+    // ---- state needed for WhatsApp share ----
+    private var partyId: Long? = null
+    private var referenceNo = ""
+    private var totalAmount = 0.0
+    private lateinit var receiptCardRef: LinearLayout
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
@@ -60,6 +78,8 @@ class BillPreviewActivity : AppCompatActivity() {
         val reference = intent.getStringExtra(EXTRA_REFERENCE) ?: ""
         val partyName = intent.getStringExtra(EXTRA_PARTY_NAME) ?: ""
         val partyLabel = intent.getStringExtra(EXTRA_PARTY_LABEL) ?: "Customer"
+        val incomingPartyId = intent.getLongExtra(EXTRA_PARTY_ID, -1L)
+        partyId = if (incomingPartyId > 0) incomingPartyId else null
         val dateMillis = intent.getLongExtra(EXTRA_DATE_MILLIS, System.currentTimeMillis())
         val subtotal = intent.getDoubleExtra(EXTRA_SUBTOTAL, 0.0)
         val discount = intent.getDoubleExtra(EXTRA_DISCOUNT, 0.0)
@@ -67,6 +87,9 @@ class BillPreviewActivity : AppCompatActivity() {
         val paid = intent.getDoubleExtra(EXTRA_PAID, 0.0)
         val paymentMethod = intent.getStringExtra(EXTRA_PAYMENT_METHOD) ?: ""
         val itemsEncoded = intent.getStringExtra(EXTRA_ITEMS_ENCODED) ?: ""
+
+        referenceNo = reference
+        totalAmount = total
 
         val lines = decodeItems(itemsEncoded)
         val isSale = type == "sale"
@@ -123,6 +146,7 @@ class BillPreviewActivity : AppCompatActivity() {
             )
             applyElevation(this, 3f)
         }
+        receiptCardRef = receiptCard
 
         receiptCard.addView(TextView(this).apply {
             text = shopName
@@ -221,7 +245,24 @@ class BillPreviewActivity : AppCompatActivity() {
         receiptCard.addView(footerLine)
 
         root.addView(receiptCard)
-        root.addView(spacer(22))
+        root.addView(spacer(16))
+
+        // ---- NEW: WhatsApp share button (full width, above Print/Done) ----
+        root.addView(Button(this).apply {
+            text = "📤  WhatsApp par bhejein"
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            isAllCaps = false
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor(whatsapp), Color.parseColor(whatsappDark))
+            ).apply { cornerRadius = 16f }
+            setPadding(0, 26, 0, 26)
+            applyElevation(this, 4f)
+            setOnClickListener { handleWhatsAppShare() }
+        })
+        root.addView(spacer(12))
 
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
@@ -287,27 +328,146 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Item block stays exactly as previously fixed: Item Name, then
-    // Quantity, then Rate, then Amount directly underneath — same left
-    // alignment, no far-right jump, no '@'/'*' symbols. ----
-    //
-    // ---- BUG FIXES applied here vs the previous version: -----------------
-    // 1) Previously the whole receipt string was rendered as ONE block and
-    //    its RTL/LTR direction was decided once for the entire receipt based
-    //    on whether *any* Urdu text appeared anywhere in it. Since the shop
-    //    name / item names are Urdu, that silently flipped the English lines
-    //    (Ref/Date/headers) into RTL too. Now each line is a structured
-    //    ReceiptLine and direction is decided per line.
-    // 2) The Subtotal/Total/Paid/Ref/Date rows were aligned with row(), which
-    //    pads with spaces based on *character count* — that only lines up in
-    //    a monospace font, and the receipt is rendered with a real
-    //    (proportional) font, so those columns never actually lined up on
-    //    the printed image. They're now PrinterHelper.ReceiptLine.TwoCol,
-    //    aligned by measured pixel width.
-    // 3) Printing was hardcoded to PrinterType.BLUETOOTH even though
-    //    PrinterHelper supports USB. It now reads a "printer_type" setting
-    //    (falls back to Bluetooth if unset, so existing setups keep working).
-    // ------------------------------------------------------------------------
+    // ================= WhatsApp share (NEW) =================
+
+    private fun handleWhatsAppShare() {
+        val pid = partyId
+        if (pid == null) {
+            // Walk-in / no linked customer — just ask for a number, nothing to save to.
+            promptForPhoneAndShare(saveToCustomerId = null)
+            return
+        }
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@BillPreviewActivity)
+            val customer = db.customerDao().find(pid)
+            val phone = customer?.phone?.trim() ?: ""
+            if (phone.isNotBlank()) {
+                shareBitmapToWhatsApp(phone)
+            } else {
+                promptForPhoneAndShare(saveToCustomerId = pid)
+            }
+        }
+    }
+
+    private fun promptForPhoneAndShare(saveToCustomerId: Long?) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 8)
+        }
+        val phoneInput = EditText(this).apply {
+            hint = "Customer ka number (e.g. 03001234567)"
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+        container.addView(phoneInput)
+
+        var saveCheckbox: CheckBox? = null
+        if (saveToCustomerId != null) {
+            container.addView(spacer(10))
+            saveCheckbox = CheckBox(this).apply {
+                text = "Number save karein future ke liye"
+                isChecked = true
+            }
+            container.addView(saveCheckbox)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("WhatsApp Number")
+            .setView(container)
+            .setPositiveButton("Bhejein") { d, _ ->
+                val phone = phoneInput.text.toString().trim()
+                if (phone.length < 7) {
+                    Toast.makeText(this, "Sahi number likhein", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                if (saveToCustomerId != null && saveCheckbox?.isChecked == true) {
+                    lifecycleScope.launch {
+                        val db = PosDatabase.get(this@BillPreviewActivity)
+                        val customer = db.customerDao().find(saveToCustomerId)
+                        if (customer != null) {
+                            db.customerDao().update(customer.copy(phone = phone))
+                        }
+                        shareBitmapToWhatsApp(phone)
+                    }
+                } else {
+                    shareBitmapToWhatsApp(phone)
+                }
+                d.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun shareBitmapToWhatsApp(rawPhone: String) {
+        val bitmap = viewToBitmap(receiptCardRef)
+        val uri = try {
+            bitmapToShareUri(bitmap)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Image banane mein masla hua", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val caption = "Invoice: $referenceNo\nTotal: Rs %.2f\nShukriya!".format(totalAmount)
+        val jid = cleanPhoneToJid(rawPhone)
+
+        // Try direct chat with that number first (undocumented but widely working).
+        val directIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, caption)
+            putExtra("jid", jid)
+            setPackage("com.whatsapp")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        try {
+            startActivity(directIntent)
+        } catch (e: Exception) {
+            // Fallback: generic share sheet (WhatsApp not installed, or direct-jid trick failed)
+            try {
+                val fallback = Intent(Intent.ACTION_SEND).apply {
+                    type = "image/png"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_TEXT, caption)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(fallback, "Bill share karein"))
+            } catch (e2: Exception) {
+                Toast.makeText(this, "Share nahi ho saka. WhatsApp installed hai?", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /** Cleans an entered number into a WhatsApp jid ("<countrycode><number>@s.whatsapp.net").
+     *  Assumes Pakistan (92) if no country code was entered — adjust the default
+     *  country code below if this shop is in a different country. */
+    private fun cleanPhoneToJid(raw: String): String {
+        var digits = raw.replace(Regex("[^0-9]"), "")
+        if (digits.startsWith("0")) digits = "92" + digits.substring(1)
+        else if (!digits.startsWith("92") && digits.length <= 10) digits = "92$digits"
+        return "$digits@s.whatsapp.net"
+    }
+
+    private fun viewToBitmap(view: View): Bitmap {
+        val bitmap = Bitmap.createBitmap(
+            view.width.coerceAtLeast(1),
+            view.height.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+        view.draw(canvas)
+        return bitmap
+    }
+
+    private fun bitmapToShareUri(bitmap: Bitmap): Uri {
+        val dir = File(cacheDir, "receipts").apply { mkdirs() }
+        val file = File(dir, "bill_${System.currentTimeMillis()}.png")
+        FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
+        return FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+    }
+
+    // ================= (unchanged below) =================
+
     private fun printReceipt(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
@@ -341,13 +501,9 @@ class BillPreviewActivity : AppCompatActivity() {
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
             for (line in lines) {
-                // 1) Item Name
                 receiptLines.add(PrinterHelper.ReceiptLine.Left(line.name))
-                // 2) Quantity
                 receiptLines.add(PrinterHelper.ReceiptLine.Left("${line.qty} ${line.unit}"))
-                // 3) Rate
                 receiptLines.add(PrinterHelper.ReceiptLine.Left("%.2f".format(line.rate)))
-                // 4) Amount — directly under Rate, no @ / * prefix, no far-right jump
                 receiptLines.add(PrinterHelper.ReceiptLine.Left("Rs %.2f".format(line.amount)))
                 receiptLines.add(PrinterHelper.ReceiptLine.Blank())
             }
