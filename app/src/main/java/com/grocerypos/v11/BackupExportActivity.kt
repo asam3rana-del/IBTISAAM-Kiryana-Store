@@ -38,6 +38,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.Purchase
 import com.grocerypos.v11.Sale
+import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.util.Loc
@@ -299,13 +300,23 @@ class BackupExportActivity : AppCompatActivity() {
         val expenses = db.expenseDao().between(start, end)
         val cashTx = db.cashTransactionDao().between(start, end)
 
+        // FIX: was db.productDao().stockValueTotal() — raw SQL SUM(stock*cost), which
+        // overstates value by the unit-conversion factor because `stock` is stored in
+        // the product's SMALLEST unit while `cost` is per PRIMARY unit. Same bug already
+        // fixed in BalanceSheetActivity/StockReportActivity; computed here the same way.
+        val stockValue = products.sumOf { p ->
+            val factor = p.smallestUnitFactor()
+            val costPerSmallestUnit = if (factor > 0) p.cost / factor else p.cost
+            p.stock * costPerSmallestUnit
+        }
+
         val totals = Totals(
             totalSales = db.saleDao().totalSalesBetween(start, end),
             totalPurchases = db.purchaseDao().totalBetween(start, end),
             totalExpenses = db.expenseDao().totalBetween(start, end),
             receivables = db.customerDao().receivablesTotal(),
             payables = db.supplierDao().payablesTotal(),
-            stockValue = db.productDao().stockValueTotal()
+            stockValue = stockValue
         )
 
         return BackupData(dayBook, sales, purchases, allCustomers, customerLedgers, allSuppliers, supplierLedgers, products, expenses, cashTx, totals)
