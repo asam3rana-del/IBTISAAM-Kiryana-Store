@@ -64,6 +64,18 @@ class PartyTransactionActivity : AppCompatActivity() {
     private var partyName: String = ""
     private var isCustomer: Boolean = true
 
+    // ---- FIX (duplicate-row race) ----
+    // loadTransactions() used to be called from BOTH onCreate() and onResume(). On a
+    // fresh launch, Android calls onResume() immediately after onCreate() — before the
+    // first coroutine's suspend DB query has returned. Both loadTransactions() calls did
+    // removeAllViews() on the still-empty container, then each of their coroutines later
+    // resumed and independently added a row for the same purchase/sale, producing a
+    // transient duplicate that "settled" back to one row once nothing else reloaded.
+    // Fixed by (a) loading only once per visible entry — onResume() alone, since it
+    // already fires right after onCreate() for a fresh launch — and (b) cancelling any
+    // in-flight load before starting a new one so two loads can never both mutate the list.
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
@@ -125,7 +137,9 @@ class PartyTransactionActivity : AppCompatActivity() {
             addView(root)
         })
 
-        loadTransactions()
+        // ---- FIX: no longer loading here — onResume() (called right after onCreate on
+        // a fresh launch, and again whenever the screen returns to the foreground) is now
+        // the single place that triggers a load. See loadJob comment above for why. ----
     }
 
     override fun onResume() {
@@ -224,8 +238,11 @@ class PartyTransactionActivity : AppCompatActivity() {
     }
 
     private fun loadTransactions() {
-        listContainer.removeAllViews()
-        lifecycleScope.launch {
+        // Cancel any load already in flight so its (possibly late-arriving) results can
+        // never race with this one and duplicate rows — see loadJob comment above.
+        loadJob?.cancel()
+        loadJob = lifecycleScope.launch {
+            listContainer.removeAllViews()
             val db = PosDatabase.get(this@PartyTransactionActivity)
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
