@@ -99,6 +99,7 @@ class ProductActivity : ThemedActivity() {
     private lateinit var stockNote: TextView
     private lateinit var reorderLevel: EditText
     private lateinit var saveButton: Button
+    private lateinit var deleteFormButton: TextView
     private lateinit var cancelEditChip: TextView
     private lateinit var searchField: EditText
     private lateinit var listContainer: LinearLayout
@@ -180,14 +181,16 @@ class ProductActivity : ThemedActivity() {
         }
 
         val saveBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             setPadding(24, 14, 24, 18)
             setBackgroundColor(Color.parseColor(cardWhite))
             applyElevation(this, 8f)
             addView(
                 saveButton,
                 LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
                 )
             )
         }
@@ -294,31 +297,47 @@ class ProductActivity : ThemedActivity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
+        deleteFormButton = TextView(this).apply {
+            text = "🗑️  " + Loc.t(this@ProductActivity, "Delete", "حذف کریں")
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = gradientBg(red, "#C93B40", cornerTop = 30, cornerBottom = 30)
+            setPadding(22, 12, 22, 12)
+            visibility = View.GONE
+            applyElevation(this, 2f)
+            setOnClickListener { editingProduct?.let { confirmDeleteProduct(it) } }
+        }
+
         cancelEditChip = TextView(this).apply {
             text = "✕  " + Loc.t(this@ProductActivity, "Cancel Edit", "ترمیم منسوخ کریں")
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
-            background = roundedBg(red, 30)
+            background = roundedBg(textMuted, 30)
             setPadding(24, 12, 24, 12)
             visibility = View.GONE
             setOnClickListener { clearForm() }
         }
 
         titleRow.addView(formCardTitle)
+        titleRow.addView(deleteFormButton)
+        titleRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(8.dp(), 1)
+        })
         titleRow.addView(cancelEditChip)
         root.addView(titleRow)
         root.addView(spacer(10))
 
         // ================= PRODUCT NAME CARD =================
-        val nameCard = premiumCard()
+        val nameCard = premiumCard(accentTopHex = teal)
         nameCard.addView(sectionLabel("🏷️", Loc.t(this, "Product Name", "پروڈکٹ کا نام"), teal))
 
         val nameBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(18, 8, 8, 8)
-            background = strokedBg(border, fieldFill, 14)
+            background = strokedBg(border, fieldFill, 16)
         }
 
         name = EditText(this).apply {
@@ -340,7 +359,7 @@ class ProductActivity : ThemedActivity() {
             setTypeface(typeface, Typeface.BOLD)
             background = gradientBg(teal, "#0C8F8A", cornerTop = 30, cornerBottom = 30)
             setPadding(26, 15, 26, 15)
-            applyElevation(this, 2f)
+            applyElevation(this, 3f)
             setOnClickListener { openUnitDialog() }
         }
 
@@ -350,13 +369,13 @@ class ProductActivity : ThemedActivity() {
         root.addView(nameCard)
 
         // ================= CATEGORY CARD =================
-        val categoryCard = premiumCard()
+        val categoryCard = premiumCard(accentTopHex = purple)
         categoryCard.addView(sectionLabel("🗂️", Loc.t(this, "Category", "کیٹیگری"), purple))
 
         val categoryBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, fieldFill, 14)
+            background = strokedBg(border, fieldFill, 16)
             setPadding(18, 6, 18, 6)
         }
 
@@ -381,7 +400,7 @@ class ProductActivity : ThemedActivity() {
         root.addView(categoryCard)
 
         // ================= PRICING CARD (premium: persistent labels + colored badges) =================
-        val ratesCard = premiumCard()
+        val ratesCard = premiumCard(accentTopHex = amber)
         ratesCard.addView(sectionLabel("💰", Loc.t(this, "Pricing", "قیمتیں"), amber))
 
         cost = rateField()
@@ -432,7 +451,7 @@ class ProductActivity : ThemedActivity() {
         val stockRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, fieldFill, 14)
+            background = strokedBg(border, fieldFill, 16)
             setPadding(14, 8, 8, 8)
         }
         stockRow.addView(badgeIcon("🔢", navy))
@@ -683,31 +702,81 @@ class ProductActivity : ThemedActivity() {
 
     // ---------------- UI helpers ----------------
 
-    private fun premiumCard() = LinearLayout(this).apply {
+    // ---- ULTRA PREMIUM: cards now get a thin colored top accent strip (matching the card's
+    // section color) sitting above a softer, larger-radius white body, plus a touch more
+    // elevation than before so each card reads as a distinct "floating" surface rather than a
+    // flat bordered box. Pass null for a neutral card (no accent strip). ----
+    private fun premiumCard(accentTopHex: String? = null) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(22, 20, 22, 20)
-        background = strokedBg(border, cardWhite, 20)
+        background = strokedBg(border, cardWhite, 22)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, 14)
+            setMargins(0, 0, 0, 16)
         }
-        applyElevation(this, 3f)
+        applyElevation(this, 4f)
+
+        // ---- Thin two-tone accent strip along the top edge, matching the card's section
+        // color, so each card reads as visually distinct at a glance. Negative margins pull
+        // it out past the card's own padding so it bleeds fully edge-to-edge under the
+        // rounded top corners, rather than floating inset inside the card like a plain bar. ----
+        if (accentTopHex != null) {
+            addView(View(this@ProductActivity).apply {
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(Color.parseColor(accentTopHex), Color.parseColor(fadeHex(accentTopHex)))
+                ).apply {
+                    val d = resources.displayMetrics.density
+                    cornerRadii = floatArrayOf(
+                        22 * d, 22 * d, 22 * d, 22 * d, 0f, 0f, 0f, 0f
+                    )
+                }
+                layoutParams = LinearLayout.LayoutParams(-1, 5.dp()).apply {
+                    setMargins((-22).dp(), (-20).dp(), (-22).dp(), 14.dp())
+                }
+            }, 0)
+        }
+    }
+
+    // ---- Lightens a hex color toward white for a subtle two-tone accent strip. ----
+    private fun fadeHex(hex: String): String {
+        return try {
+            val c = Color.parseColor(hex)
+            val r = (Color.red(c) + 255) / 2
+            val g = (Color.green(c) + 255) / 2
+            val b = (Color.blue(c) + 255) / 2
+            String.format("#%02X%02X%02X", r, g, b)
+        } catch (e: Exception) {
+            hex
+        }
     }
 
     // ---- Small round colored icon badge, reused by sectionLabel() and premiumLabeledField()
     // so every icon across the form reads as a consistent "premium" chip instead of a plain
-    // emoji floating in text. ----
+    // emoji floating in text. Now carries its own soft elevation so badges lift off the card. ----
     private fun badgeIcon(icon: String, accentHex: String, sizeDp: Int = 30) = TextView(this).apply {
         text = icon
         textSize = 14f
         gravity = Gravity.CENTER
         setTextColor(Color.WHITE)
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.parseColor(accentHex))
-        }
+        background = gradientBg(accentHex, fadeHexDark(accentHex), cornerTop = sizeDp, cornerBottom = sizeDp)
         val px = sizeDp.dp()
         width = px
         height = px
+        applyElevation(this, 2f)
+    }
+
+    // ---- Darkens a hex color slightly, used as the second stop of badge/button gradients so
+    // every colored chip in the app reads as a subtle gradient rather than a flat fill. ----
+    private fun fadeHexDark(hex: String): String {
+        return try {
+            val c = Color.parseColor(hex)
+            val r = (Color.red(c) * 0.82).roundToInt().coerceIn(0, 255)
+            val g = (Color.green(c) * 0.82).roundToInt().coerceIn(0, 255)
+            val b = (Color.blue(c) * 0.82).roundToInt().coerceIn(0, 255)
+            String.format("#%02X%02X%02X", r, g, b)
+        } catch (e: Exception) {
+            hex
+        }
     }
 
     // ---- Section label upgraded to use a colored circular icon badge (matching the style
@@ -739,7 +808,7 @@ class ProductActivity : ThemedActivity() {
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, fieldFill, 14)
+            background = strokedBg(border, fieldFill, 16)
             setPadding(14, 10, 18, 10)
 
             addView(badgeIcon(icon, accentHex, 38))
@@ -1700,6 +1769,7 @@ class ProductActivity : ThemedActivity() {
         formCardTitle.text =
             "✏️  " + Loc.t(this, "Editing", "ترمیم ہو رہی ہے") + ": ${product.name}"
 
+        deleteFormButton.visibility = View.VISIBLE
         cancelEditChip.visibility = View.VISIBLE
         saveButton.text =
             "💾  " + Loc.t(this, "UPDATE PRODUCT", "پروڈکٹ اپ ڈیٹ کریں")
@@ -1956,6 +2026,7 @@ class ProductActivity : ThemedActivity() {
         editingProduct = null
         formCardTitle.text =
             "✚  " + Loc.t(this, "New Product", "نئی پروڈکٹ")
+        deleteFormButton.visibility = View.GONE
         cancelEditChip.visibility = View.GONE
         saveButton.text =
             "💾  " + Loc.t(this, "SAVE PRODUCT", "پروڈکٹ محفوظ کریں")
