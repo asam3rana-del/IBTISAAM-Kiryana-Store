@@ -940,6 +940,9 @@ class SaleActivity : AppCompatActivity() {
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
+    // ---- CHANGED: overflow "Share" now resolves the selected customer (if any) so
+    // openBillPreview() can pass a partyId through to BillPreviewActivity's WhatsApp
+    // share flow — previously only the typed name was passed. ----
     private fun showOverflowMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
         popup.menu.add(com.grocerypos.v11.util.Loc.t(this, "Print", "پرنٹ"))
@@ -954,7 +957,14 @@ class SaleActivity : AppCompatActivity() {
                 val enteredPaid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
                 val totals = DiscountCalculator.compute(subtotal, enteredDiscount, enteredPaid)
                 val method = paymentMethodSpinner.selectedItem?.toString() ?: "Cash"
-                openBillPreview(invoice, forSaving = false, party = customerName.text.toString().trim(), subtotal = subtotal, discount = totals.discount, total = totals.total, paid = totals.paid, paymentMethod = method)
+                val enteredName = customerName.text.toString().trim()
+                val matchedCustomer = customers.find { it.name.equals(enteredName, ignoreCase = true) }
+                openBillPreview(
+                    invoice, forSaving = false,
+                    party = enteredName, partyId = matchedCustomer?.id,
+                    subtotal = subtotal, discount = totals.discount, total = totals.total,
+                    paid = totals.paid, paymentMethod = method
+                )
             }
             true
         }
@@ -1903,6 +1913,7 @@ class SaleActivity : AppCompatActivity() {
                 invoice = invoice,
                 forSaving = true,
                 party = customer?.name ?: enteredCustomer,
+                partyId = customer?.id,
                 subtotal = subtotal,
                 discount = discount,
                 total = total,
@@ -1913,8 +1924,10 @@ class SaleActivity : AppCompatActivity() {
     }
 
     // ---- Purchase-style single reusable bill-preview launcher, used both for the
-    // normal post-save navigation and for the overflow menu's reprint/share flow. ----
-    private fun openBillPreview(invoice: String, forSaving: Boolean, party: String, subtotal: Double, discount: Double, total: Double, paid: Double, paymentMethod: String) {
+    // normal post-save navigation and for the overflow menu's reprint/share flow.
+    // CHANGED: now also accepts partyId so BillPreviewActivity can look up (or later
+    // save) the customer's phone number for the WhatsApp share button. ----
+    private fun openBillPreview(invoice: String, forSaving: Boolean, party: String, partyId: Long?, subtotal: Double, discount: Double, total: Double, paid: Double, paymentMethod: String) {
         val itemsEncoded = lines.joinToString("\u0002") {
             listOf(it.itemName, formatQty(it.qty), it.unit, it.unitPrice, it.amount).joinToString("\u0003")
         }
@@ -1923,6 +1936,7 @@ class SaleActivity : AppCompatActivity() {
             putExtra(BillPreviewActivity.EXTRA_REFERENCE, invoice)
             putExtra(BillPreviewActivity.EXTRA_PARTY_NAME, party)
             putExtra(BillPreviewActivity.EXTRA_PARTY_LABEL, "Customer")
+            if (partyId != null) putExtra(BillPreviewActivity.EXTRA_PARTY_ID, partyId)
             putExtra(BillPreviewActivity.EXTRA_DATE_MILLIS, saleDateMillis)
             putExtra(BillPreviewActivity.EXTRA_SUBTOTAL, subtotal)
             putExtra(BillPreviewActivity.EXTRA_DISCOUNT, discount)
