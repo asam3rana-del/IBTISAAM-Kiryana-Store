@@ -341,21 +341,26 @@ class RateComparisonActivity : ThemedActivity() {
             try {
                 val db = PosDatabase.get(this@RateComparisonActivity)
                 val suppliers = db.supplierDao().all().first()
-                val allPurchases = db.purchaseDao().allPurchases()
 
                 // supplierId -> list of (normalized rate, purchase date)
                 val bySupplier = mutableMapOf<Long, MutableList<Pair<Double, Long>>>()
 
-                for (purchase in allPurchases) {
-                    val supplierId = purchase.supplierId ?: continue
-                    val items = db.purchaseDao().itemsForBill(purchase.billNo)
-                    val matches = items.filter { it.barcode == product.barcode }
-                    if (matches.isEmpty()) continue
-                    val bucket = bySupplier.getOrPut(supplierId) { mutableListOf() }
-                    matches.forEach { item ->
-                        val unitForRate = item.unit.ifBlank { product.unit }
-                        val normalizedRate = product.toPrimaryUnitRate(item.unitCost, unitForRate)
-                        bucket.add(normalizedRate to purchase.createdAt)
+                // NOTE: purchaseDao().allPurchases() returns PurchaseWithSupplier (a join
+                // read-model with supplierName, not supplierId), so it can't be used here.
+                // Instead we go supplier-by-supplier via purchasesBySupplier(), which returns
+                // real Purchase entities that do carry supplierId.
+                for (supplier in suppliers) {
+                    val purchases = db.purchaseDao().purchasesBySupplier(supplier.id)
+                    for (purchase in purchases) {
+                        val items = db.purchaseDao().itemsForBill(purchase.billNo)
+                        val matches = items.filter { it.barcode == product.barcode }
+                        if (matches.isEmpty()) continue
+                        val bucket = bySupplier.getOrPut(supplier.id) { mutableListOf() }
+                        matches.forEach { item ->
+                            val unitForRate = item.unit.ifBlank { product.unit }
+                            val normalizedRate = product.toPrimaryUnitRate(item.unitCost, unitForRate)
+                            bucket.add(normalizedRate to purchase.createdAt)
+                        }
                     }
                 }
 
