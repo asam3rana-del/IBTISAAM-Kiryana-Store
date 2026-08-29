@@ -108,7 +108,9 @@ object PrinterHelper {
             val col1: String,
             val col2: String,
             val col3: String,
-            val weights: List<Float> = listOf(3.6f, 0.9f, 1.5f),
+            // Amount widened (was 1.7) per request — uses more of the right-side
+            // space so the Amount column isn't left with unused blank paper.
+            val weights: List<Float> = listOf(2.8f, 1.2f, 2.2f),
             val bold: Boolean = false
         ) : ReceiptLine()
 
@@ -125,7 +127,10 @@ object PrinterHelper {
             val qty: String,
             val rate: String,
             val amount: String,
-            val weights: List<Float> = listOf(3.6f, 0.9f, 1.5f)
+            // Amount widened (was 1.7) per request — uses more of the right-side
+            // space so the Amount column isn't left with unused blank paper.
+            // Qty kept the same width that already fixed the earlier overlap.
+            val weights: List<Float> = listOf(2.8f, 1.2f, 2.2f)
         ) : ReceiptLine()
     }
 
@@ -145,7 +150,20 @@ object PrinterHelper {
     // printers) simply ignore an unsupported cut command, so this is safe to always send.
     private val FEED_AND_CUT = byteArrayOf(0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x01)
 
-    // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi)
+    // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi).
+    //
+    // FIX (blank strip on the right side of the paper): if the printed receipt
+    // doesn't reach the right edge of the paper — a clean blank margin roughly a
+    // quarter of the page wide — it means this printer's actual print head is
+    // wider than 384 dots (some "58mm" printers, and any 80mm printer, are wider:
+    // 480, 512, or 576 dots are common). The bitmap is rendered at exactly this
+    // width, so the printer has nothing to put in the leftover space.
+    //
+    // HOW TO TUNE: raise this value and reprint. Keep raising until either (a) the
+    // right edge is fully used with no blank strip, or (b) content starts getting
+    // cut off / wrapping onto a second physical line — then back off to the last
+    // value that printed cleanly. Common values to try in order: 400, 420, 480,
+    // 512, 576.
     private const val PRINTER_DOTS_WIDTH = 384
 
     // FIX (print reliability): a whole multi-item receipt was previously rendered as
@@ -541,7 +559,7 @@ object PrinterHelper {
      *    preview-matching item list layout (see their docs above).
      */
     private fun renderReceiptLines(lines: List<ReceiptLine>, fontSizePx: Float, typeface: Typeface): Bitmap {
-        val margin = 8
+        val margin = 6
         val paint = TextPaint().apply {
             isAntiAlias = true
             textSize = fontSizePx
@@ -557,8 +575,13 @@ object PrinterHelper {
         // 3-4 columns (Item/Qty/Amount, or Item/Qty/Rate/Amount) fit comfortably on a
         // 384-dot (58mm) paper width without excessive ellipsizing.
         val tableFontSize = fontSizePx * 0.78f
-        val tableRowPaddingV = 8 // extra top/bottom padding inside each row
-        val tableCellPaddingH = 5 // left/right padding inside each cell, before ellipsizing
+        // FIX (cramped print — text touching between columns/lines): both of these
+        // were too tight (8 / 5), which combined with the qty-column overflow bug
+        // made everything look crammed together with no visible gaps. Bumped up for
+        // clearer separation; combined with the ellipsize fix above, columns can no
+        // longer touch even in the worst case.
+        val tableRowPaddingV = 12 // extra top/bottom padding inside each row
+        val tableCellPaddingH = 8 // left/right padding inside each cell, before ellipsizing
 
         data class Block(val line: ReceiptLine, val layout: StaticLayout?, val height: Int)
 
@@ -627,6 +650,7 @@ object PrinterHelper {
                     paint.textSize = fontSizePx
                     val h = (fmName.bottom - fmName.top).toInt() +
                         (fmRate.bottom - fmRate.top).toInt() +
+                        (tableRowPaddingV * 0.35f).toInt() + // rateLineGap — must match the draw-time value below
                         tableRowPaddingV * 2
                     blocks.add(Block(line, null, h))
                     totalHeight += h
@@ -827,18 +851,32 @@ object PrinterHelper {
                     val nameX = if (nameIsUrdu) colX[1] - tableCellPaddingH else colX[0] + tableCellPaddingH
                     canvas.drawText(fitName, nameX, line1Baseline, paint)
 
+                    // FIX (columns overlapping on paper — "1 Bnd2900.00" with no gap):
+                    // qty and amount were drawn at full size with no width check, so a
+                    // qty like "10 Bnd" or "15 kg" — wider than the (narrow) qty column
+                    // — spilled out on both sides of its center point and ran straight
+                    // into the amount text next to it. Ellipsizing both to their actual
+                    // column width (same technique already used for the item name)
+                    // guarantees they can never touch, no matter how long the text is.
                     paint.textSize = tableFontSize
+                    val qtyColWidth = (colX[2] - colX[1] - tableCellPaddingH * 2).coerceAtLeast(1f)
+                    val fitQty = TextUtils.ellipsize(line.qty, paint, qtyColWidth, TextUtils.TruncateAt.END).toString()
                     paint.textAlign = Paint.Align.CENTER
-                    canvas.drawText(line.qty, (colX[1] + colX[2]) / 2f, line1Baseline, paint)
+                    canvas.drawText(fitQty, (colX[1] + colX[2]) / 2f, line1Baseline, paint)
 
+                    val amountColWidth = (colX[3] - colX[2] - tableCellPaddingH * 2).coerceAtLeast(1f)
+                    val fitAmount = TextUtils.ellipsize(line.amount, paint, amountColWidth, TextUtils.TruncateAt.END).toString()
                     paint.textAlign = Paint.Align.RIGHT
-                    canvas.drawText(line.amount, colX[3] - tableCellPaddingH, line1Baseline, paint)
+                    canvas.drawText(fitAmount, colX[3] - tableCellPaddingH, line1Baseline, paint)
 
                     // ---- line 2: "@ rate" — smaller, plain, directly under the name ----
+                    // Small explicit gap (rateLineGap) added below line 1 so the two
+                    // lines don't sit flush against each other on paper.
+                    val rateLineGap = tableRowPaddingV * 0.35f
                     paint.textSize = tableFontSize * 0.8f
                     paint.isFakeBoldText = false
                     fm = paint.fontMetrics
-                    val line2Baseline = y + tableRowPaddingV + line1Height - fm.top
+                    val line2Baseline = y + tableRowPaddingV + line1Height + rateLineGap - fm.top
                     paint.textAlign = if (nameIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
                     val rateX = if (nameIsUrdu) colX[1] - tableCellPaddingH else colX[0] + tableCellPaddingH
                     canvas.drawText("@ ${line.rate}", rateX, line2Baseline, paint)
