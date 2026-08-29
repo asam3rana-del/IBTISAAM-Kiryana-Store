@@ -109,6 +109,7 @@ class SaleActivity : AppCompatActivity() {
     private lateinit var saveButton: Button
     private lateinit var deleteButton: Button
     private lateinit var overflowButton: TextView
+    private lateinit var scrollView: ScrollView
 
     private var customers = listOf<Customer>()
     private var products = listOf<Product>()
@@ -564,7 +565,7 @@ class SaleActivity : AppCompatActivity() {
         root.addView(saveDeleteRow)
         root.addView(spacer(30))
 
-        val scrollView = ScrollView(this).apply {
+        scrollView = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bg))
             addView(root)
         }
@@ -1160,6 +1161,11 @@ class SaleActivity : AppCompatActivity() {
         renderItemsList()
         updateTotals()
 
+        // FIX (UX): after adding an item, jump the ScrollView back to the very top so
+        // the rest of the form (Billed Items / Subtotal / Total / Payment / Save) is
+        // visible right away instead of staying wherever the keyboard had scrolled to.
+        scrollView.post { scrollView.smoothScrollTo(0, 0) }
+
         itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
         selectedProduct = null
         lastMainPrice = 0.0
@@ -1287,13 +1293,14 @@ class SaleActivity : AppCompatActivity() {
         return totals.total
     }
 
+    // FIX (Paid amount bug): this used to auto-fill Paid = Total whenever Paid was
+    // blank. That meant Paid silently got stamped with whatever the *first* item's
+    // total happened to be (since Paid was blank right after the first add), and then
+    // stayed stuck at that stale number as more items were added — while also fighting
+    // with the "Paid khali hai - Udhaar jayega" warning below, which assumes Paid
+    // starts blank. Paid is now left exactly as the user typed it; nothing auto-fills it.
     private fun updateTotals() {
-        val total = recomputeAmounts()
-        if (paidInput.text.toString().isBlank()) {
-            suppressPaidWatcher = true
-            paidInput.setText(if (total > 0) "%.2f".format(total) else "")
-            suppressPaidWatcher = false
-        }
+        recomputeAmounts()
         refreshDue()
         updateBilledItemsTrigger()
     }
