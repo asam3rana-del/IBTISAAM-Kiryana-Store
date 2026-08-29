@@ -23,6 +23,9 @@ import com.grocerypos.v11.sync.SyncWorker
 class PosApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // FIX (multi-device sync): must run before anything that builds a sync entity
+        // ID or a billNo — see DeviceTag.kt for why.
+        DeviceTag.init(this)
         SyncRepository.appContextRef = applicationContext
         SyncWorker.schedulePeriodic(this)
         NetworkMonitor.register(this)
