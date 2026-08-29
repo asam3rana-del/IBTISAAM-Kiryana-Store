@@ -65,8 +65,9 @@ object PrinterHelper {
     sealed class ReceiptLine {
         data class Center(val text: String) : ReceiptLine()
         data class Left(val text: String) : ReceiptLine()
-        /** Label/value pair rendered as two columns, each right/left-aligned by measured width. */
-        data class TwoCol(val left: String, val right: String) : ReceiptLine()
+        /** Label/value pair rendered as two columns, each right/left-aligned by measured width.
+         *  [bold] renders both sides in bold — used to make the TOTAL line stand out. */
+        data class TwoCol(val left: String, val right: String, val bold: Boolean = false) : ReceiptLine()
         data class Blank(val heightPx: Int = 10) : ReceiptLine()
         object Divider : ReceiptLine()
 
@@ -147,10 +148,17 @@ object PrinterHelper {
     // 6f -> 9f or 12f) and/or MIN_INTER_CHUNK_DELAY_MS (e.g. 100 -> 150) — those are
     // the two knobs to tune per-printer-model. Slower prints are always safer than
     // overlapping ones.
-    private const val MAX_STRIP_HEIGHT_PX = 48
-    private const val MIN_INTER_CHUNK_DELAY_MS = 100L
-    private const val MS_PER_STRIP_ROW = 6f
-    private const val SETTLE_DELAY_MS = 80L
+    // SPEED TUNING: fewer, slightly larger strips means fewer separate write+flush
+    // round-trips (each one has its own Bluetooth/USB overhead), which is a real
+    // speed win — while the *pacing per row* (MS_PER_STRIP_ROW) still guarantees each
+    // strip has fully fed through the printer before the next one lands, so the
+    // anti-overlap fix from before is preserved. Only raise MAX_STRIP_HEIGHT_PX
+    // further if you also see garbled/overlapping print return — smaller strips are
+    // always the safer fallback.
+    private const val MAX_STRIP_HEIGHT_PX = 64
+    private const val MIN_INTER_CHUNK_DELAY_MS = 90L
+    private const val MS_PER_STRIP_ROW = 5f
+    private const val SETTLE_DELAY_MS = 60L
 
     /** How long to pause after sending a strip of [stripHeightPx] dots, before sending
      *  the next one — scaled to strip height with a safe minimum floor. See FIX 2 above. */
@@ -498,13 +506,16 @@ object PrinterHelper {
             color = Color.BLACK
             this.typeface = typeface
         }
-        val lineSpacingExtra = (fontSizePx * 0.35f).toInt()
+        // SPEED TUNING: slightly tighter spacing than before shrinks the overall
+        // bitmap height (and so the total bytes sent to the printer) without making
+        // the receipt cramped or hard to read.
+        val lineSpacingExtra = (fontSizePx * 0.28f).toInt()
         val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
         // Table cells use a slightly smaller font than the rest of the receipt so
-        // 5 columns (Item/Barcode/Qty/Rate/Amount) fit comfortably on a 384-dot
-        // (58mm) paper width without excessive ellipsizing.
+        // 4-5 columns (Item/Qty/Rate/Amount) fit comfortably on a 384-dot (58mm)
+        // paper width without excessive ellipsizing.
         val tableFontSize = fontSizePx * 0.78f
-        val tableRowPaddingV = 10 // extra top/bottom padding inside each table row
+        val tableRowPaddingV = 8 // extra top/bottom padding inside each table row
         val tableCellPaddingH = 5 // left/right padding inside each cell, before ellipsizing
 
         data class Block(val line: ReceiptLine, val layout: StaticLayout?, val height: Int)
@@ -578,6 +589,9 @@ object PrinterHelper {
                     val leftIsUrdu = containsArabicScript(line.left)
                     val rightIsUrdu = containsArabicScript(line.right)
 
+                    val oldBold = paint.isFakeBoldText
+                    paint.isFakeBoldText = line.bold
+
                     paint.textAlign = if (leftIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
                     val leftX = if (leftIsUrdu) (PRINTER_DOTS_WIDTH - margin).toFloat() else margin.toFloat()
                     canvas.drawText(line.left, leftX, baseline, paint)
@@ -586,6 +600,7 @@ object PrinterHelper {
                     val rightX = if (rightIsUrdu) margin.toFloat() else (PRINTER_DOTS_WIDTH - margin).toFloat()
                     canvas.drawText(line.right, rightX, baseline, paint)
 
+                    paint.isFakeBoldText = oldBold
                     y += block.height
                 }
                 ReceiptLine.Divider -> {
