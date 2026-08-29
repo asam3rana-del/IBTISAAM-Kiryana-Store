@@ -1014,18 +1014,36 @@ class SaleActivity : AppCompatActivity() {
             .show()
     }
 
+    // ---- FIX (unit auto-selection): single source of truth for which unit tier
+    // should be pre-selected when an item is picked, used both here (normal Add
+    // Item flow) and in the Quick Sale dialog below — so both stay in sync.
+    //
+    //   1-tier (no secondary unit at all)         -> index 0 (the only unit)
+    //   2-tier (secondary exists, no tertiary)     -> index 0 (primary/1st unit)
+    //   3-tier (secondary AND tertiary both exist) -> index 1 (secondary/2nd unit)
+    //
+    // Previously this always jumped to index 1 whenever ANY secondary unit existed,
+    // which wrongly defaulted 2-tier products (e.g. Bottle/Pet only, no 3rd tier) to
+    // the secondary unit as well. Now only genuine 3-tier products default to the
+    // 2nd unit; 1-tier and 2-tier products both default to their 1st (primary) unit,
+    // saving a manual switch on every sale for the common cases. ----
+    private fun defaultUnitIndexFor(product: Product): Int {
+        val hasSecondary = product.secondaryUnit.isNotEmpty()
+        val hasTertiary = hasSecondary && product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0
+        return if (hasTertiary) 1 else 0
+    }
+
     private fun onItemPicked(name: String) {
         val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
         selectedProduct = product
         val unitChoices = mutableListOf(product.unit)
-        var defaultIndex = 0
         if (product.secondaryUnit.isNotEmpty()) {
             unitChoices.add(product.secondaryUnit)
-            defaultIndex = 1
             if (product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0) {
                 unitChoices.add(product.tertiaryUnit)
             }
         }
+        val defaultIndex = defaultUnitIndexFor(product)
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
         unitSpinner.setSelection(defaultIndex)
         buildUnitChips(unitChoices, unitChoices[defaultIndex])
@@ -1513,10 +1531,19 @@ class SaleActivity : AppCompatActivity() {
                 if (match != null) {
                     qsSelectedProduct = match
                     qsLastMainPrice = 0.0
-                    qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnitsFor(match))
-                    qsUnitSpinner.setSelection(0)
+                    val qsUnits = qsUnitsFor(match)
+                    // FIX (unit auto-selection): same rule as normal Add Item flow —
+                    // see defaultUnitIndexFor(). 1-tier/2-tier default to the 1st
+                    // (primary) unit, only genuine 3-tier products default to the 2nd
+                    // (secondary) unit. Previously Quick Sale always forced index 0
+                    // regardless of tier, which was correct for 1/2-tier but wrong for
+                    // 3-tier items (those need the 2nd unit pre-selected).
+                    val qsDefaultIndex = defaultUnitIndexFor(match)
+                    qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnits)
+                    qsUnitSpinner.setSelection(qsDefaultIndex)
                     if (qsQty.text.toString().isBlank()) qsQty.setText("1")
-                    val price = qsFromMainPrice(match, match.salePrice, match.unit)
+                    val defaultUnit = qsUnits[qsDefaultIndex]
+                    val price = qsFromMainPrice(match, match.salePrice, defaultUnit)
                     qsPrice.setText(if (price > 0) "%.2f".format(price) else "")
                     qsRefreshStock(); qsRefreshTotal()
                 }
@@ -1538,10 +1565,14 @@ class SaleActivity : AppCompatActivity() {
             qsSelectedProduct = p
             qsLastMainPrice = 0.0
             if (p != null) {
-                qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnitsFor(p))
-                qsUnitSpinner.setSelection(0)
+                val qsUnits = qsUnitsFor(p)
+                // FIX (unit auto-selection): same rule as above — see defaultUnitIndexFor().
+                val qsDefaultIndex = defaultUnitIndexFor(p)
+                qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnits)
+                qsUnitSpinner.setSelection(qsDefaultIndex)
                 qsQty.setText(if (qsQty.text.toString().isBlank()) "1" else qsQty.text.toString())
-                val price = qsFromMainPrice(p, p.salePrice, p.unit)
+                val defaultUnit = qsUnits[qsDefaultIndex]
+                val price = qsFromMainPrice(p, p.salePrice, defaultUnit)
                 qsPrice.setText(if (price > 0) "%.2f".format(price) else "")
                 qsQty.requestFocus()
                 qsQty.setSelection(qsQty.text.length)
