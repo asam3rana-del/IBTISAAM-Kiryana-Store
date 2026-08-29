@@ -93,8 +93,31 @@ object PrinterHelper {
     // horizontal strips and send them as separate GS v 0 commands, with a short pause
     // between each so the printer's buffer has time to actually print/clear before the
     // next chunk arrives.
-    private const val MAX_STRIP_HEIGHT_PX = 200
-    private const val INTER_CHUNK_DELAY_MS = 40L
+    //
+    // FIX 2 (overlapping / "double exposure" print — receipt lines printing on top of
+    // each other, e.g. "Date" merging into "29 Aug", item names showing as garbled
+    // marks): the strip height (200px) was too tall and the fixed 40ms gap between
+    // strips too short for many cheap 58mm printers' actual mechanical paper-feed
+    // speed. The printer was still physically feeding/printing strip N when strip N+1
+    // arrived, so strip N+1 started printing before the paper had advanced past strip
+    // N — producing exactly this overlapped, "printed twice in the same spot" look.
+    // Two changes fix this:
+    //   1. Smaller strips (80px instead of 200px) — less data per raster command, so
+    //      each one finishes printing/feeding faster.
+    //   2. The delay between strips is no longer a fixed 40ms — it now scales with how
+    //      tall the strip actually is (MS_PER_STRIP_ROW * stripHeight), so a full-size
+    //      strip gets a proportionally longer pause than a short one, with a safe
+    //      minimum floor.
+    // If overlap still happens on your printer, raise MS_PER_STRIP_ROW slightly (e.g.
+    // 3f -> 4f or 5f) — that's the one knob to tune per-printer-model.
+    private const val MAX_STRIP_HEIGHT_PX = 80
+    private const val MIN_INTER_CHUNK_DELAY_MS = 60L
+    private const val MS_PER_STRIP_ROW = 3f
+
+    /** How long to pause after sending a strip of [stripHeightPx] dots, before sending
+     *  the next one — scaled to strip height with a safe minimum floor. See FIX 2 above. */
+    private fun interChunkDelayFor(stripHeightPx: Int): Long =
+        maxOf(MIN_INTER_CHUNK_DELAY_MS, (stripHeightPx * MS_PER_STRIP_ROW).toLong())
 
     // Optional bundled Urdu font for correct Nastaliq/Naskh shaping when printing.
     // Place a font file at app/src/main/assets/fonts/NotoNastaliqUrdu-Regular.ttf
@@ -157,12 +180,14 @@ object PrinterHelper {
 
     /**
      * Opens one Bluetooth connection and writes ESC_INIT, then each chunk (flushed
-     * individually with a short delay between them), then FEED_AND_CUT — all over the
-     * same socket. Used instead of [sendBluetoothBytes] for raster-image receipts so
-     * long bills don't overrun the printer's buffer (see [MAX_STRIP_HEIGHT_PX]).
+     * individually with a pause scaled to that chunk's strip height — see
+     * [interChunkDelayFor] — before the next one is sent), then FEED_AND_CUT — all over
+     * the same socket. Used instead of [sendBluetoothBytes] for raster-image receipts
+     * so long bills don't overrun the printer's buffer or overlap print (see the FIX
+     * comments on [MAX_STRIP_HEIGHT_PX]).
      */
     @SuppressLint("MissingPermission")
-    private fun sendBluetoothChunks(context: Context, macAddress: String, chunks: List<ByteArray>): Boolean {
+    private fun sendBluetoothChunks(context: Context, macAddress: String, chunks: List<Pair<ByteArray, Int>>): Boolean {
         if (!hasBluetoothPermission(context)) return false
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: return false
         var socket: BluetoothSocket? = null
@@ -176,10 +201,10 @@ object PrinterHelper {
             out.write(ESC_INIT)
             out.flush()
 
-            for (chunk in chunks) {
+            for ((chunk, stripHeight) in chunks) {
                 out.write(chunk)
                 out.flush()
-                if (INTER_CHUNK_DELAY_MS > 0) Thread.sleep(INTER_CHUNK_DELAY_MS)
+                Thread.sleep(interChunkDelayFor(stripHeight))
             }
 
             out.write(FEED_AND_CUT)
@@ -277,9 +302,10 @@ object PrinterHelper {
     /**
      * USB counterpart to [sendBluetoothChunks]: opens the device once, writes
      * ESC_INIT + each chunk (each chunk itself split at 4096-byte boundaries, since a
-     * single bulkTransfer call has its own size ceiling) + FEED_AND_CUT, then closes.
+     * single bulkTransfer call has its own size ceiling, with a pause scaled to that
+     * chunk's strip height between chunks) + FEED_AND_CUT, then closes.
      */
-    private fun sendUsbChunks(context: Context, deviceName: String, chunks: List<ByteArray>): Boolean {
+    private fun sendUsbChunks(context: Context, deviceName: String, chunks: List<Pair<ByteArray, Int>>): Boolean {
         val manager = context.getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
         val device = manager.deviceList.values.find { it.deviceName == deviceName } ?: return false
         if (!manager.hasPermission(device)) return false
@@ -303,10 +329,10 @@ object PrinterHelper {
             }
 
             var ok = writeAll(ESC_INIT)
-            for (chunk in chunks) {
+            for ((chunk, stripHeight) in chunks) {
                 if (!ok) break
                 ok = writeAll(chunk)
-                if (ok && INTER_CHUNK_DELAY_MS > 0) Thread.sleep(INTER_CHUNK_DELAY_MS)
+                if (ok) Thread.sleep(interChunkDelayFor(stripHeight))
             }
             if (ok) ok = writeAll(FEED_AND_CUT)
 
@@ -329,7 +355,7 @@ object PrinterHelper {
         }
     }
 
-    private fun sendChunks(context: Context, type: PrinterType, address: String, chunks: List<ByteArray>): Boolean {
+    private fun sendChunks(context: Context, type: PrinterType, address: String, chunks: List<Pair<ByteArray, Int>>): Boolean {
         return when (type) {
             PrinterType.BLUETOOTH -> sendBluetoothChunks(context, address, chunks)
             PrinterType.USB -> sendUsbChunks(context, address, chunks)
@@ -517,12 +543,14 @@ object PrinterHelper {
     }
 
     /**
-     * Converts a Bitmap into a list of ESC/POS raster-image commands (GS v 0),
-     * 1-bit monochrome via simple luminance threshold, split into horizontal strips
-     * of at most [MAX_STRIP_HEIGHT_PX] each so a tall multi-item receipt never becomes
-     * one oversized raster command (see the comment on [MAX_STRIP_HEIGHT_PX]).
+     * Converts a Bitmap into a list of (ESC/POS raster-image command, stripHeight)
+     * pairs — 1-bit monochrome via simple luminance threshold, split into horizontal
+     * strips of at most [MAX_STRIP_HEIGHT_PX] each so a tall multi-item receipt never
+     * becomes one oversized raster command, and so each strip's actual height is known
+     * to the sender for computing a proportional pause via [interChunkDelayFor] (see
+     * the FIX comments on [MAX_STRIP_HEIGHT_PX] for why the pause needs to scale).
      */
-    private fun bitmapToEscPosRasterChunks(bitmap: Bitmap): List<ByteArray> {
+    private fun bitmapToEscPosRasterChunks(bitmap: Bitmap): List<Pair<ByteArray, Int>> {
         val width = bitmap.width
         val height = bitmap.height
         val bytesPerRow = (width + 7) / 8
@@ -532,7 +560,7 @@ object PrinterHelper {
         val pixels = IntArray(width * height)
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
-        val chunks = mutableListOf<ByteArray>()
+        val chunks = mutableListOf<Pair<ByteArray, Int>>()
         var y = 0
         while (y < height) {
             val stripHeight = minOf(MAX_STRIP_HEIGHT_PX, height - y)
@@ -559,7 +587,7 @@ object PrinterHelper {
                     }
                 }
             }
-            chunks.add(header + imageData)
+            chunks.add((header + imageData) to stripHeight)
             y += stripHeight
         }
         return chunks
@@ -568,7 +596,8 @@ object PrinterHelper {
     /**
      * Preferred entry point: prints a receipt built from structured [ReceiptLine]s
      * with correct per-line direction, pixel-accurate column alignment, and chunked
-     * raster transmission so long/multi-item receipts print reliably.
+     * raster transmission (with a per-strip pause scaled to strip height) so long/
+     * multi-item receipts print reliably without overlapping.
      */
     fun printReceiptLines(
         context: Context,
