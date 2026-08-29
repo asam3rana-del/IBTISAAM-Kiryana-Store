@@ -197,13 +197,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                         // button) never enqueued a sync_queue entry, so a name changed here
                         // never reached Firestore even though the equivalent edit dialog in
                         // PartyActivity does enqueue correctly. Mirrors that same pattern.
-                        SyncQueueHelper.enqueue(
-                            db,
-                            "customer",
-                            SyncQueueHelper.customerEntityId(updated),
-                            "update",
-                            SyncQueueHelper.customerJson(updated)
-                        )
+                        SyncQueueHelper.enqueueCustomer(db, updated)
                         SyncQueueHelper.trigger(this@PartyTransactionActivity)
                     }
                 } else {
@@ -211,13 +205,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                         found = true
                         val updated = supplier.copy(name = newName)
                         db.supplierDao().update(updated)
-                        SyncQueueHelper.enqueue(
-                            db,
-                            "supplier",
-                            SyncQueueHelper.supplierEntityId(updated),
-                            "update",
-                            SyncQueueHelper.supplierJson(updated)
-                        )
+                        SyncQueueHelper.enqueueSupplier(db, updated)
                         SyncQueueHelper.trigger(this@PartyTransactionActivity)
                     }
                 }
@@ -477,13 +465,13 @@ class PartyTransactionActivity : AppCompatActivity() {
                 if (product != null && deltaQty != 0.0) {
                     val deltaSmallest = product.toSmallestUnits(kotlin.math.abs(deltaQty), item.unit)
                     if (deltaQty > 0) {
-                        val rows = db.productDao().decrease(item.barcode, deltaSmallest)
+                        val rows = SyncQueueHelper.decreaseProductStock(db, item.barcode, deltaSmallest)
                         if (rows == 0) {
                             Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Not enough stock", "\u0627\u0633\u0679\u0627\u06A9 \u06A9\u0645 \u06C1\u06D2"), Toast.LENGTH_SHORT).show()
                             return@launch
                         }
                     } else {
-                        db.productDao().increase(item.barcode, deltaSmallest)
+                        SyncQueueHelper.increaseProductStock(db, item.barcode, deltaSmallest)
                     }
                 }
 
@@ -501,13 +489,13 @@ class PartyTransactionActivity : AppCompatActivity() {
                 db.saleDao().updateSale(updatedSale)
 
                 sale.customerId?.let { custId ->
-                    db.customerDao().addBalance(custId, deltaAmount)
+                    SyncQueueHelper.adjustCustomerBalance(db, custId, deltaAmount)
                     db.customerDao().find(custId)?.let { c -> SyncQueueHelper.enqueueCustomer(db, c) }
                 }
                 if (product != null) {
                     db.productDao().find(item.barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
                 }
-                SyncQueueHelper.enqueueSale(db, updatedSale, db.saleDao().itemCountForInvoice(updatedSale.invoice))
+                SyncQueueHelper.enqueueSale(db, updatedSale)
                 SyncQueueHelper.trigger(this@PartyTransactionActivity)
 
                 onDone()
@@ -535,7 +523,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 // Deleting a sold item gives the stock back.
                 if (product != null) {
                     val deltaSmallest = product.toSmallestUnits(item.qty, item.unit)
-                    db.productDao().increase(item.barcode, deltaSmallest)
+                    SyncQueueHelper.increaseProductStock(db, item.barcode, deltaSmallest)
                     db.productDao().find(item.barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
                 }
 
@@ -545,7 +533,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 if (remaining == 0) {
                     db.saleDao().deleteSale(sale.invoice)
                     sale.customerId?.let { custId ->
-                        db.customerDao().addBalance(custId, -item.amount)
+                        SyncQueueHelper.adjustCustomerBalance(db, custId, -item.amount)
                         db.customerDao().find(custId)?.let { c -> SyncQueueHelper.enqueueCustomer(db, c) }
                     }
                     SyncQueueHelper.enqueueDelete(db, "sale", SyncQueueHelper.saleEntityId(sale))
@@ -555,10 +543,10 @@ class PartyTransactionActivity : AppCompatActivity() {
                     val updatedSale = sale.copy(subtotal = sale.subtotal - item.amount, total = sale.total - item.amount)
                     db.saleDao().updateSale(updatedSale)
                     sale.customerId?.let { custId ->
-                        db.customerDao().addBalance(custId, -item.amount)
+                        SyncQueueHelper.adjustCustomerBalance(db, custId, -item.amount)
                         db.customerDao().find(custId)?.let { c -> SyncQueueHelper.enqueueCustomer(db, c) }
                     }
-                    SyncQueueHelper.enqueueSale(db, updatedSale, remaining)
+                    SyncQueueHelper.enqueueSale(db, updatedSale)
                     SyncQueueHelper.trigger(this@PartyTransactionActivity)
                 }
 
@@ -607,9 +595,9 @@ class PartyTransactionActivity : AppCompatActivity() {
                 if (product != null && deltaQty != 0.0) {
                     val deltaSmallest = product.toSmallestUnits(kotlin.math.abs(deltaQty), item.unit)
                     if (deltaQty > 0) {
-                        db.productDao().increase(item.barcode, deltaSmallest)
+                        SyncQueueHelper.increaseProductStock(db, item.barcode, deltaSmallest)
                     } else {
-                        val rows = db.productDao().decrease(item.barcode, deltaSmallest)
+                        val rows = SyncQueueHelper.decreaseProductStock(db, item.barcode, deltaSmallest)
                         if (rows == 0) {
                             Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Not enough stock to reduce", "\u06A9\u0645 \u06A9\u0631\u0646\u06D2 \u06A9\u06D2 \u0644\u06CC\u06D2 \u0627\u0633\u0679\u0627\u06A9 \u06A9\u0645 \u06C1\u06D2"), Toast.LENGTH_SHORT).show()
                             return@launch
@@ -630,13 +618,13 @@ class PartyTransactionActivity : AppCompatActivity() {
                 db.purchaseDao().updatePurchase(updatedPurchase)
 
                 purchase.supplierId?.let { supId ->
-                    db.supplierDao().addBalance(supId, deltaAmount)
+                    SyncQueueHelper.adjustSupplierBalance(db, supId, deltaAmount)
                     db.supplierDao().find(supId)?.let { s -> SyncQueueHelper.enqueueSupplier(db, s) }
                 }
                 if (product != null) {
                     db.productDao().find(item.barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
                 }
-                SyncQueueHelper.enqueuePurchase(db, updatedPurchase, db.purchaseDao().itemCountForBill(updatedPurchase.billNo))
+                SyncQueueHelper.enqueuePurchase(db, updatedPurchase)
                 SyncQueueHelper.trigger(this@PartyTransactionActivity)
 
                 onDone()
@@ -669,7 +657,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 // that stock has already been sold/used elsewhere.
                 if (product != null) {
                     val deltaSmallest = product.toSmallestUnits(item.qty, item.unit)
-                    val rows = db.productDao().decrease(item.barcode, deltaSmallest)
+                    val rows = SyncQueueHelper.decreaseProductStock(db, item.barcode, deltaSmallest)
                     if (rows == 0) {
                         Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Cannot delete: stock already used", "\u0688\u06CC\u0644\u06CC\u0679 \u0646\u06C1\u06CC\u06BA \u06C1\u0648 \u0633\u06A9\u062A\u0627: \u0627\u0633\u0679\u0627\u06A9 \u067E\u06C1\u0644\u06D2 \u06C1\u06CC \u0627\u0633\u062A\u0639\u0645\u0627\u0644 \u06C1\u0648 \u0686\u06A9\u0627"), Toast.LENGTH_LONG).show()
                         return@launch
@@ -683,7 +671,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 if (remaining == 0) {
                     db.purchaseDao().deletePurchase(purchase.billNo)
                     purchase.supplierId?.let { supId ->
-                        db.supplierDao().addBalance(supId, -item.amount)
+                        SyncQueueHelper.adjustSupplierBalance(db, supId, -item.amount)
                         db.supplierDao().find(supId)?.let { s -> SyncQueueHelper.enqueueSupplier(db, s) }
                     }
                     SyncQueueHelper.enqueueDelete(db, "purchase", SyncQueueHelper.purchaseEntityId(purchase))
@@ -693,10 +681,10 @@ class PartyTransactionActivity : AppCompatActivity() {
                     val updatedPurchase = purchase.copy(subtotal = purchase.subtotal - item.amount, total = purchase.total - item.amount)
                     db.purchaseDao().updatePurchase(updatedPurchase)
                     purchase.supplierId?.let { supId ->
-                        db.supplierDao().addBalance(supId, -item.amount)
+                        SyncQueueHelper.adjustSupplierBalance(db, supId, -item.amount)
                         db.supplierDao().find(supId)?.let { s -> SyncQueueHelper.enqueueSupplier(db, s) }
                     }
-                    SyncQueueHelper.enqueuePurchase(db, updatedPurchase, remaining)
+                    SyncQueueHelper.enqueuePurchase(db, updatedPurchase)
                     SyncQueueHelper.trigger(this@PartyTransactionActivity)
                 }
 
