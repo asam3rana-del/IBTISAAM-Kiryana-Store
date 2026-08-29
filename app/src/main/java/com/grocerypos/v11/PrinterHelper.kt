@@ -27,6 +27,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextDirectionHeuristics
 import android.text.TextPaint
+import android.text.TextUtils
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.io.OutputStream
@@ -68,6 +69,33 @@ object PrinterHelper {
         data class TwoCol(val left: String, val right: String) : ReceiptLine()
         data class Blank(val heightPx: Int = 10) : ReceiptLine()
         object Divider : ReceiptLine()
+
+        /**
+         * ADDED: a bordered table row — one or more cells laid out in fixed-width
+         * columns (proportioned by [weights]), with a vertical divider line drawn
+         * between every column and a horizontal divider line drawn under the row.
+         * Used for the item table (Item / Barcode / Qty / Rate / Amount), giving a
+         * ruled-grid look like a supplier invoice instead of stacked plain lines.
+         *
+         * [cells] and [weights] must be the same size — weights are relative (they
+         * don't need to sum to any particular number; a column with weight 3 is 3x
+         * as wide as one with weight 1).
+         *
+         * [bold] renders the row in bold (used for the header row).
+         * [topBorder] additionally draws a line above this row (used for the header
+         * row only — every row already draws its own bottom border, so consecutive
+         * rows naturally form a continuous grid without each one needing a top line).
+         *
+         * Cell text that doesn't fit its column width is ellipsized ("…") rather
+         * than wrapped, so every row stays exactly one line tall and the grid lines
+         * stay perfectly straight.
+         */
+        data class TableRow(
+            val cells: List<String>,
+            val weights: List<Float>,
+            val bold: Boolean = false,
+            val topBorder: Boolean = false
+        ) : ReceiptLine()
     }
 
     private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
@@ -439,6 +467,9 @@ object PrinterHelper {
      *    (via Paint.measureText / Paint.Align) instead of space-padding,
      *    which is the only way to get straight columns with a non-monospace
      *    font.
+     *  - [ReceiptLine.TableRow] draws a full ruled grid (vertical column
+     *    dividers + a bottom border per row), matching a supplier-invoice
+     *    style item table instead of stacked plain lines.
      */
     private fun renderReceiptLines(lines: List<ReceiptLine>, fontSizePx: Float, typeface: Typeface): Bitmap {
         val margin = 8
@@ -450,6 +481,12 @@ object PrinterHelper {
         }
         val lineSpacingExtra = (fontSizePx * 0.35f).toInt()
         val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
+        // Table cells use a slightly smaller font than the rest of the receipt so
+        // 5 columns (Item/Barcode/Qty/Rate/Amount) fit comfortably on a 384-dot
+        // (58mm) paper width without excessive ellipsizing.
+        val tableFontSize = fontSizePx * 0.78f
+        val tableRowPaddingV = 10 // extra top/bottom padding inside each table row
+        val tableCellPaddingH = 5 // left/right padding inside each cell, before ellipsizing
 
         data class Block(val line: ReceiptLine, val layout: StaticLayout?, val height: Int)
 
@@ -486,6 +523,15 @@ object PrinterHelper {
                 is ReceiptLine.Blank -> {
                     blocks.add(Block(line, null, line.heightPx))
                     totalHeight += line.heightPx
+                }
+                is ReceiptLine.TableRow -> {
+                    paint.textSize = tableFontSize
+                    val fm = paint.fontMetrics
+                    paint.textSize = fontSizePx
+                    var h = (fm.bottom - fm.top).toInt() + tableRowPaddingV * 2
+                    if (line.topBorder) h += 2 // room for the extra top border stroke
+                    blocks.add(Block(line, null, h))
+                    totalHeight += h
                 }
             }
         }
@@ -535,6 +581,66 @@ object PrinterHelper {
                     y += block.height
                 }
                 is ReceiptLine.Blank -> {
+                    y += block.height
+                }
+                is ReceiptLine.TableRow -> {
+                    val rowTop = y + if (line.topBorder) 2f else 0f
+                    val rowBottom = y + block.height
+                    val tableLeft = margin.toFloat()
+                    val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
+                    val tableWidth = tableRight - tableLeft
+
+                    // ---- column x boundaries, proportioned by weight ----
+                    val totalWeight = line.weights.sum().coerceAtLeast(0.01f)
+                    val colX = FloatArray(line.weights.size + 1)
+                    colX[0] = tableLeft
+                    for (i in line.weights.indices) {
+                        colX[i + 1] = colX[i] + (line.weights[i] / totalWeight) * tableWidth
+                    }
+
+                    // ---- grid lines: outer/inner verticals + bottom border (+ top border if header) ----
+                    val oldStroke = paint.strokeWidth
+                    paint.strokeWidth = 2f
+                    paint.style = Paint.Style.STROKE
+                    if (line.topBorder) canvas.drawLine(tableLeft, rowTop, tableRight, rowTop, paint)
+                    canvas.drawLine(tableLeft, rowBottom, tableRight, rowBottom, paint)
+                    for (x in colX) canvas.drawLine(x, rowTop, x, rowBottom, paint)
+                    paint.strokeWidth = oldStroke
+
+                    // ---- cell text ----
+                    paint.textSize = tableFontSize
+                    val oldBold = paint.isFakeBoldText
+                    paint.isFakeBoldText = line.bold
+                    val fm = paint.fontMetrics
+                    val baseline = rowTop + tableRowPaddingV - fm.top
+
+                    for (i in line.cells.indices) {
+                        val cellLeft = colX[i] + tableCellPaddingH
+                        val cellRight = colX[i + 1] - tableCellPaddingH
+                        val cellWidth = (cellRight - cellLeft).coerceAtLeast(1f)
+                        val rawText = line.cells[i]
+                        val fitText = TextUtils.ellipsize(rawText, paint, cellWidth, TextUtils.TruncateAt.END).toString()
+                        val isItemColumn = i == 0
+                        val isUrdu = containsArabicScript(fitText)
+
+                        when {
+                            isItemColumn && isUrdu -> {
+                                paint.textAlign = Paint.Align.RIGHT
+                                canvas.drawText(fitText, cellRight, baseline, paint)
+                            }
+                            isItemColumn -> {
+                                paint.textAlign = Paint.Align.LEFT
+                                canvas.drawText(fitText, cellLeft, baseline, paint)
+                            }
+                            else -> {
+                                paint.textAlign = Paint.Align.CENTER
+                                canvas.drawText(fitText, (cellLeft + cellRight) / 2f, baseline, paint)
+                            }
+                        }
+                    }
+                    paint.isFakeBoldText = oldBold
+                    paint.textSize = fontSizePx
+
                     y += block.height
                 }
             }
@@ -595,9 +701,9 @@ object PrinterHelper {
 
     /**
      * Preferred entry point: prints a receipt built from structured [ReceiptLine]s
-     * with correct per-line direction, pixel-accurate column alignment, and chunked
-     * raster transmission (with a per-strip pause scaled to strip height) so long/
-     * multi-item receipts print reliably without overlapping.
+     * with correct per-line direction, pixel-accurate column alignment, ruled table
+     * grids, and chunked raster transmission (with a per-strip pause scaled to strip
+     * height) so long/multi-item receipts print reliably without overlapping.
      */
     fun printReceiptLines(
         context: Context,
@@ -618,8 +724,9 @@ object PrinterHelper {
      * Kept for any existing callers that build a plain string. Each line of the
      * input is now given its own RTL/LTR direction (fixing the old whole-receipt
      * RTL bug); for real column alignment (labels/values, item qty/rate/amount),
-     * prefer [printReceiptLines] with [ReceiptLine.TwoCol] instead of padding
-     * with spaces, since a proportional font can't be aligned that way.
+     * prefer [printReceiptLines] with [ReceiptLine.TwoCol] or [ReceiptLine.TableRow]
+     * instead of padding with spaces, since a proportional font can't be aligned
+     * that way.
      */
     fun printUrduText(
         context: Context,
