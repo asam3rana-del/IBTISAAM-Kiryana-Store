@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
@@ -70,6 +71,14 @@ import java.util.Locale
  *    a single type (":app:compileDebugKotlin" failure — "Argument type mismatch: actual
  *    type is 'it(kotlin.Number & kotlin.Comparable<CapturedType(*)>)', but 'kotlin.Int'
  *    was expected"). Fixed by defaulting to 0.0 and rounding to Int explicitly.
+ *
+ * ---- NEW IN THIS VERSION ----
+ * 9. Items tab detail dialog now has an "EDIT" button next to "Close". It opens a
+ *    small dialog with Purchase / Retail Sale / Wholesale rate fields pre-filled,
+ *    editable, and saved straight to the DB via productDao().upsert() — see
+ *    showEditRatesDialog() below. ItemAgg now carries the full Product `entity` so
+ *    this update doesn't need a second DB lookup by name. Confirmed against
+ *    ProductActivity.kt, which uses the same db.productDao().upsert(product) call.
  *
  * Manifest: PartyTransactionActivity must be added:
  *   <activity android:name=".ui.PartyTransactionActivity" android:exported="false" />
@@ -140,7 +149,11 @@ class PartyDashboardActivity : AppCompatActivity() {
         val soldQty: Int,
         val soldAmt: Double,
         val purQty: Int,
-        val purAmt: Double
+        val purAmt: Double,
+        // Kept so the edit-rate dialog can update the exact row via productDao()
+        // without a second lookup — everything ItemAgg needs is already derived
+        // from this same Product.
+        val entity: Product
     )
 
     override fun onCreate(b: Bundle?) {
@@ -926,7 +939,8 @@ class PartyDashboardActivity : AppCompatActivity() {
                     soldQty = (sold?.totalQty ?: 0.0).toInt(),
                     soldAmt = sold?.totalAmount ?: 0.0,
                     purQty = (pur?.totalQty ?: 0.0).toInt(),
-                    purAmt = pur?.totalAmount ?: 0.0
+                    purAmt = pur?.totalAmount ?: 0.0,
+                    entity = p
                 )
             }.sortedBy { it.product.lowercase() }
 
@@ -1061,10 +1075,85 @@ class PartyDashboardActivity : AppCompatActivity() {
         line(Loc.t(this, "Total Sold (all-time)", "\u06A9\u0644 \u0641\u0631\u0648\u062E\u062A"), "${c.soldQty} \u00B7 Rs %.2f".format(c.soldAmt), green)
         line(Loc.t(this, "Total Purchased (all-time)", "\u06A9\u0644 \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC"), "${c.purQty} \u00B7 Rs %.2f".format(c.purAmt), orange)
 
+        // ---- NEW: EDIT button opens showEditRatesDialog() to update rates in-place. ----
         AlertDialog.Builder(this)
             .setTitle(c.product)
             .setView(body)
             .setPositiveButton(Loc.t(this, "Close", "\u0628\u0646\u062F \u06A9\u0631\u06CC\u06BA"), null)
+            .setNeutralButton(Loc.t(this, "Edit", "\u0627\u06CC\u0688\u0679")) { _, _ -> showEditRatesDialog(c) }
+            .show()
+    }
+
+    /**
+     * Small dialog to quickly update Purchase / Retail Sale / Wholesale rates for one
+     * product, without going through the full ProductActivity edit screen. Saves via
+     * productDao().upsert() — confirmed against ProductActivity.kt's saveProduct(),
+     * which uses the same db.productDao().upsert(product) call — then refreshes the
+     * Items tab so the new values show immediately in both the row and the detail
+     * dialog.
+     */
+    private fun showEditRatesDialog(c: ItemAgg) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 20, 48, 8)
+        }
+
+        fun rateField(labelText: String, initial: Double): EditText {
+            container.addView(TextView(this).apply {
+                text = labelText
+                textSize = 12.5f
+                setTextColor(Color.parseColor(labelGray))
+                setPadding(0, 14, 0, 4)
+            })
+            val field = EditText(this).apply {
+                setText(if (initial == 0.0) "" else "%.2f".format(initial))
+                hint = "0.00"
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            }
+            container.addView(field)
+            return field
+        }
+
+        val purchaseField = rateField(Loc.t(this, "Purchase Rate", "\u062E\u0631\u06CC\u062F \u0631\u06CC\u0679"), c.cost)
+        val retailField = rateField(Loc.t(this, "Retail Sale Rate", "\u0631\u06CC\u0679\u06CC\u0644 \u0631\u06CC\u0679"), c.salePrice)
+        val wholesaleField = rateField(Loc.t(this, "Wholesale Rate", "\u06C1\u0648\u0644 \u0633\u06CC\u0644 \u0631\u06CC\u0679"), c.wholesalePrice)
+
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Edit Rates", "\u0631\u06CC\u0679 \u0627\u06CC\u0688\u0679 \u06A9\u0631\u06CC\u06BA") + " \u2014 ${c.product}")
+            .setView(container)
+            .setPositiveButton(Loc.t(this, "Save", "\u0645\u062D\u0641\u0648\u0638 \u06A9\u0631\u06CC\u06BA")) { d, _ ->
+                val newCost = purchaseField.text.toString().trim().toDoubleOrNull()
+                val newRetail = retailField.text.toString().trim().toDoubleOrNull()
+                val newWholesale = wholesaleField.text.toString().trim().toDoubleOrNull()
+
+                if (newCost == null || newRetail == null || newWholesale == null ||
+                    newCost < 0 || newRetail < 0 || newWholesale < 0
+                ) {
+                    Toast.makeText(this, Loc.t(this, "Enter valid rates", "\u0635\u062D\u06CC\u062D \u0631\u06CC\u0679 \u0644\u06A9\u06BE\u06CC\u06BA"), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                lifecycleScope.launch {
+                    val db = PosDatabase.get(this@PartyDashboardActivity)
+                    // FIX: ProductActivity.kt confirms ProductDao uses upsert(product),
+                    // not update() — corrected from the earlier ADJUST-DAO-METHOD guess.
+                    db.productDao().upsert(
+                        c.entity.copy(
+                            cost = newCost,
+                            salePrice = newRetail,
+                            wholesalePrice = newWholesale
+                        )
+                    )
+                    Toast.makeText(
+                        this@PartyDashboardActivity,
+                        Loc.t(this@PartyDashboardActivity, "Rates updated", "\u0631\u06CC\u0679 \u0627\u067E\u0688\u06CC\u0679 \u06C1\u0648 \u06AF\u0626\u06CC"),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    renderItemsList(forceReload = true)
+                }
+                d.dismiss()
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
             .show()
     }
 
