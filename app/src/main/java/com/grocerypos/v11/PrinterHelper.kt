@@ -75,11 +75,26 @@ object PrinterHelper {
 
     // ESC @ - initialize/reset printer
     private val ESC_INIT = byteArrayOf(0x1B, 0x40)
-    // Feed a few lines then partial cut (GS V 1) - supported by most 58mm printers
+    // Feed a few lines then partial cut (GS V 1) - supported by most 58mm printers.
+    // NOTE: printers with no cutter hardware (most handheld/mobile 58mm Bluetooth
+    // printers) simply ignore an unsupported cut command, so this is safe to always send.
     private val FEED_AND_CUT = byteArrayOf(0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x01)
 
     // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi)
     private const val PRINTER_DOTS_WIDTH = 384
+
+    // FIX (print reliability): a whole multi-item receipt was previously rendered as
+    // ONE raster image and sent to the printer in a single GS v 0 command. Long bills
+    // (many items) produce a tall bitmap, and a lot of cheap 58mm ESC/POS printers
+    // (Bluetooth SPP in particular) have a small internal receive/render buffer — a
+    // single oversized raster command either gets truncated, prints garbled/blank, or
+    // the printer just stops responding partway through. This is the most common cause
+    // of "print theek nahi aata" on longer bills. The fix: split the bitmap into safe
+    // horizontal strips and send them as separate GS v 0 commands, with a short pause
+    // between each so the printer's buffer has time to actually print/clear before the
+    // next chunk arrives.
+    private const val MAX_STRIP_HEIGHT_PX = 200
+    private const val INTER_CHUNK_DELAY_MS = 40L
 
     // Optional bundled Urdu font for correct Nastaliq/Naskh shaping when printing.
     // Place a font file at app/src/main/assets/fonts/NotoNastaliqUrdu-Regular.ttf
@@ -130,6 +145,44 @@ object PrinterHelper {
             socket.connect()
             val out: OutputStream = socket.outputStream
             out.write(payload)
+            out.flush()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        } finally {
+            try { socket?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Opens one Bluetooth connection and writes ESC_INIT, then each chunk (flushed
+     * individually with a short delay between them), then FEED_AND_CUT — all over the
+     * same socket. Used instead of [sendBluetoothBytes] for raster-image receipts so
+     * long bills don't overrun the printer's buffer (see [MAX_STRIP_HEIGHT_PX]).
+     */
+    @SuppressLint("MissingPermission")
+    private fun sendBluetoothChunks(context: Context, macAddress: String, chunks: List<ByteArray>): Boolean {
+        if (!hasBluetoothPermission(context)) return false
+        val adapter = BluetoothAdapter.getDefaultAdapter() ?: return false
+        var socket: BluetoothSocket? = null
+        return try {
+            val device = adapter.getRemoteDevice(macAddress)
+            adapter.cancelDiscovery()
+            socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+            socket.connect()
+            val out: OutputStream = socket.outputStream
+
+            out.write(ESC_INIT)
+            out.flush()
+
+            for (chunk in chunks) {
+                out.write(chunk)
+                out.flush()
+                if (INTER_CHUNK_DELAY_MS > 0) Thread.sleep(INTER_CHUNK_DELAY_MS)
+            }
+
+            out.write(FEED_AND_CUT)
             out.flush()
             true
         } catch (e: Exception) {
@@ -221,12 +274,65 @@ object PrinterHelper {
         }
     }
 
+    /**
+     * USB counterpart to [sendBluetoothChunks]: opens the device once, writes
+     * ESC_INIT + each chunk (each chunk itself split at 4096-byte boundaries, since a
+     * single bulkTransfer call has its own size ceiling) + FEED_AND_CUT, then closes.
+     */
+    private fun sendUsbChunks(context: Context, deviceName: String, chunks: List<ByteArray>): Boolean {
+        val manager = context.getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
+        val device = manager.deviceList.values.find { it.deviceName == deviceName } ?: return false
+        if (!manager.hasPermission(device)) return false
+
+        val (usbInterface, endpoint) = findPrinterInterfaceAndEndpoint(device) ?: return false
+        var connection: UsbDeviceConnection? = null
+        return try {
+            connection = manager.openDevice(device) ?: return false
+            connection.claimInterface(usbInterface, true)
+
+            fun writeAll(bytes: ByteArray): Boolean {
+                var offset = 0
+                while (offset < bytes.size) {
+                    val len = minOf(4096, bytes.size - offset)
+                    val slice = if (offset == 0 && len == bytes.size) bytes else bytes.copyOfRange(offset, offset + len)
+                    val sent = connection!!.bulkTransfer(endpoint, slice, slice.size, 5000)
+                    if (sent < 0) return false
+                    offset += len
+                }
+                return true
+            }
+
+            var ok = writeAll(ESC_INIT)
+            for (chunk in chunks) {
+                if (!ok) break
+                ok = writeAll(chunk)
+                if (ok && INTER_CHUNK_DELAY_MS > 0) Thread.sleep(INTER_CHUNK_DELAY_MS)
+            }
+            if (ok) ok = writeAll(FEED_AND_CUT)
+
+            connection.releaseInterface(usbInterface)
+            ok
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        } finally {
+            try { connection?.close() } catch (_: Exception) {}
+        }
+    }
+
     // ================= UNIFIED BYTE SEND =================
 
     private fun sendRawBytes(context: Context, type: PrinterType, address: String, payload: ByteArray): Boolean {
         return when (type) {
             PrinterType.BLUETOOTH -> sendBluetoothBytes(context, address, payload)
             PrinterType.USB -> sendUsbBytes(context, address, payload)
+        }
+    }
+
+    private fun sendChunks(context: Context, type: PrinterType, address: String, chunks: List<ByteArray>): Boolean {
+        return when (type) {
+            PrinterType.BLUETOOTH -> sendBluetoothChunks(context, address, chunks)
+            PrinterType.USB -> sendUsbChunks(context, address, chunks)
         }
     }
 
@@ -411,43 +517,58 @@ object PrinterHelper {
     }
 
     /**
-     * Converts a Bitmap into ESC/POS raster-image bytes (GS v 0), 1-bit monochrome,
-     * using simple luminance threshold.
+     * Converts a Bitmap into a list of ESC/POS raster-image commands (GS v 0),
+     * 1-bit monochrome via simple luminance threshold, split into horizontal strips
+     * of at most [MAX_STRIP_HEIGHT_PX] each so a tall multi-item receipt never becomes
+     * one oversized raster command (see the comment on [MAX_STRIP_HEIGHT_PX]).
      */
-    private fun bitmapToEscPosRaster(bitmap: Bitmap): ByteArray {
+    private fun bitmapToEscPosRasterChunks(bitmap: Bitmap): List<ByteArray> {
         val width = bitmap.width
         val height = bitmap.height
         val bytesPerRow = (width + 7) / 8
 
-        val header = byteArrayOf(
-            0x1D, 0x76, 0x30, 0x00,                 // GS v 0, mode 0 (normal)
-            (bytesPerRow and 0xFF).toByte(),
-            ((bytesPerRow shr 8) and 0xFF).toByte(),
-            (height and 0xFF).toByte(),
-            ((height shr 8) and 0xFF).toByte()
-        )
+        // Reading all pixels once up front is much faster than repeated getPixel()
+        // calls per strip, especially for tall receipts.
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
-        val imageData = ByteArray(bytesPerRow * height)
-        for (y in 0 until height) {
-            for (x in 0 until width) {
-                val pixel = bitmap.getPixel(x, y)
-                val r = (pixel shr 16) and 0xFF
-                val g = (pixel shr 8) and 0xFF
-                val b = pixel and 0xFF
-                val luminance = r * 0.3 + g * 0.59 + b * 0.11
-                if (luminance < 128) {
-                    val byteIndex = y * bytesPerRow + (x / 8)
-                    val bitIndex = 7 - (x % 8)
-                    imageData[byteIndex] = (imageData[byteIndex].toInt() or (1 shl bitIndex)).toByte()
+        val chunks = mutableListOf<ByteArray>()
+        var y = 0
+        while (y < height) {
+            val stripHeight = minOf(MAX_STRIP_HEIGHT_PX, height - y)
+            val header = byteArrayOf(
+                0x1D, 0x76, 0x30, 0x00,
+                (bytesPerRow and 0xFF).toByte(),
+                ((bytesPerRow shr 8) and 0xFF).toByte(),
+                (stripHeight and 0xFF).toByte(),
+                ((stripHeight shr 8) and 0xFF).toByte()
+            )
+            val imageData = ByteArray(bytesPerRow * stripHeight)
+            for (row in 0 until stripHeight) {
+                val srcRowStart = (y + row) * width
+                for (x in 0 until width) {
+                    val pixel = pixels[srcRowStart + x]
+                    val r = (pixel shr 16) and 0xFF
+                    val g = (pixel shr 8) and 0xFF
+                    val bch = pixel and 0xFF
+                    val luminance = r * 0.3 + g * 0.59 + bch * 0.11
+                    if (luminance < 128) {
+                        val byteIndex = row * bytesPerRow + (x / 8)
+                        val bitIndex = 7 - (x % 8)
+                        imageData[byteIndex] = (imageData[byteIndex].toInt() or (1 shl bitIndex)).toByte()
+                    }
                 }
             }
+            chunks.add(header + imageData)
+            y += stripHeight
         }
-        return header + imageData
+        return chunks
     }
 
     /**
      * Preferred entry point: prints a receipt built from structured [ReceiptLine]s
-     * with correct per-line direction and pixel-accurate column alignment.
+     * with correct per-line direction, pixel-accurate column alignment, and chunked
+     * raster transmission so long/multi-item receipts print reliably.
      */
     fun printReceiptLines(
         context: Context,
@@ -459,8 +580,8 @@ object PrinterHelper {
     ): Boolean {
         val resolvedTypeface = typeface ?: resolveUrduTypeface(context)
         val bitmap = renderReceiptLines(lines, fontSizePx, resolvedTypeface)
-        val payload = ESC_INIT + bitmapToEscPosRaster(bitmap) + FEED_AND_CUT
-        return sendRawBytes(context, type, address, payload)
+        val chunks = bitmapToEscPosRasterChunks(bitmap)
+        return sendChunks(context, type, address, chunks)
     }
 
     /**
@@ -483,7 +604,7 @@ object PrinterHelper {
             if (raw.isBlank()) ReceiptLine.Blank() else ReceiptLine.Left(raw)
         }
         val bitmap = renderReceiptLines(lines, 30f, resolvedTypeface)
-        val payload = ESC_INIT + bitmapToEscPosRaster(bitmap) + FEED_AND_CUT
-        return sendRawBytes(context, type, address, payload)
+        val chunks = bitmapToEscPosRasterChunks(bitmap)
+        return sendChunks(context, type, address, chunks)
     }
 }
