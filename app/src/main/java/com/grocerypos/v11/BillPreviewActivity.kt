@@ -479,8 +479,19 @@ class BillPreviewActivity : AppCompatActivity() {
         return FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
     }
 
-    // ================= (unchanged below) =================
+    // ================= Thermal print =================
 
+    // FIX (item table): the item loop below used to add 4 separate plain lines per
+    // item (Name / Qty / Rate / Amount, each stacked vertically), which is exactly
+    // the "purchase receipt" layout the user complained about — no columns, no
+    // borders, and on this printer these stacked lines are also where the
+    // overlapping-print bug (see PrinterHelper's FIX 2 comments) was most visible,
+    // since it produced the most consecutive raster strips back-to-back.
+    //
+    // Now this prints a proper ruled Item / Qty / Amount table (bold header row with
+    // a top border, one bordered row per item) using PrinterHelper.ReceiptLine.TableRow
+    // — matching the customer's other supplier invoice shown for comparison, and
+    // producing fewer, denser strips per item (less chance of overlap).
     private fun printReceipt(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
@@ -513,13 +524,24 @@ class BillPreviewActivity : AppCompatActivity() {
             if (paymentMethod.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Payment", paymentMethod.replaceFirstChar { it.uppercase() }))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
+            // ---- Item / Qty / Amount ruled table (bold header row) ----
+            receiptLines.add(
+                PrinterHelper.ReceiptLine.TableRow(
+                    cells = listOf("Item", "Qty", "Amount"),
+                    weights = listOf(3f, 1.3f, 1.5f),
+                    bold = true,
+                    topBorder = true
+                )
+            )
             for (line in lines) {
-                receiptLines.add(PrinterHelper.ReceiptLine.Left(line.name))
-                receiptLines.add(PrinterHelper.ReceiptLine.Left("${line.qty} ${line.unit}"))
-                receiptLines.add(PrinterHelper.ReceiptLine.Left("%.2f".format(line.rate)))
-                receiptLines.add(PrinterHelper.ReceiptLine.Left("Rs %.2f".format(line.amount)))
-                receiptLines.add(PrinterHelper.ReceiptLine.Blank())
+                receiptLines.add(
+                    PrinterHelper.ReceiptLine.TableRow(
+                        cells = listOf(line.name, "${line.qty} ${line.unit}", "%.2f".format(line.amount)),
+                        weights = listOf(3f, 1.3f, 1.5f)
+                    )
+                )
             }
+            receiptLines.add(PrinterHelper.ReceiptLine.Blank())
 
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
             receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Subtotal", "Rs %.2f".format(subtotal)))
