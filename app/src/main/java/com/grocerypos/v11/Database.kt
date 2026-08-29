@@ -562,8 +562,38 @@ interface ProductDao {
     @Query("DELETE FROM sale_items WHERE invoice=:invoice") suspend fun deleteItems(invoice:String)
     @Query("DELETE FROM sales WHERE invoice=:invoice") suspend fun deleteSale(invoice:String)
     @Query("UPDATE sales SET status='returned' WHERE invoice=:invoice") suspend fun markReturned(invoice:String)
-    @Query("SELECT COALESCE(SUM(si.amount-si.cost),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'") suspend fun profitBetween(start:Long,end:Long):Double
-    @Query("SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch','localtime') as day, COALESCE(SUM(si.amount-si.cost),0) as profit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned' GROUP BY day ORDER BY day") suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
+    // FIX (Today's Profit / discount bug): previously
+    //   SELECT SUM(si.amount - si.cost) FROM sale_items si JOIN sales s ...
+    // si.amount is the PRE-DISCOUNT line total (qty * unitPrice) and is never reduced
+    // when a bill-level discount is applied in SaleActivity/PurchaseActivity flows —
+    // only sales.total is discount-adjusted. So the old query overstated profit by
+    // exactly the discount amount on every sale that had one.
+    //
+    // Now computed per-sale as (sales.total - COGS for that sale), then summed. This
+    // uses the already discount-adjusted sales.total and only sums sale_items.cost
+    // (which discount never touches), so it matches Total Sales (totalSalesBetween)
+    // minus COGS (cogsBetween) exactly — the same Gross Profit formula ReportsActivity
+    // already uses, and what MainActivity's "Today's Profit" now also computes.
+    @Query("""
+        SELECT COALESCE(SUM(
+            s.total - (SELECT COALESCE(SUM(si.cost),0) FROM sale_items si WHERE si.invoice = s.invoice)
+        ),0)
+        FROM sales s
+        WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'
+    """)
+    suspend fun profitBetween(start:Long,end:Long):Double
+    // FIX (same discount bug as profitBetween above): per-day profit is now also
+    // (sales.total - that sale's COGS) summed per day, instead of SUM(si.amount-si.cost).
+    @Query("""
+        SELECT strftime('%Y-%m-%d', s.createdAt/1000,'unixepoch','localtime') as day,
+            COALESCE(SUM(
+                s.total - (SELECT COALESCE(SUM(si.cost),0) FROM sale_items si WHERE si.invoice = s.invoice)
+            ),0) as profit
+        FROM sales s
+        WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'
+        GROUP BY day ORDER BY day
+    """)
+    suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
     @Query("SELECT COALESCE(SUM(si.cost),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'") suspend fun cogsBetween(start:Long,end:Long):Double
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId AND s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
     @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC") suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
