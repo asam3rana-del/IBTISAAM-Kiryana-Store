@@ -525,7 +525,11 @@ class BillPreviewActivity : AppCompatActivity() {
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
             // ---- Item / Qty / Rate / Amount ruled table (bold header row) ----
-            val tableWeights = listOf(2.6f, 1.1f, 1.3f, 1.5f)
+            // WIDENED: Item column was too narrow for Urdu names ("muskil se parha
+            // jata"), while Qty/Rate/Amount had a lot of unused blank space on the
+            // right since those values are short. Item now takes roughly half the
+            // row width instead of ~40%, taken from the numeric columns' slack.
+            val tableWeights = listOf(3.6f, 0.9f, 1.2f, 1.5f)
             receiptLines.add(
                 PrinterHelper.ReceiptLine.TableRow(
                     cells = listOf("Item", "Qty", "Rate", "Amount"),
