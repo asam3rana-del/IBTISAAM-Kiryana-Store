@@ -524,11 +524,12 @@ class BillPreviewActivity : AppCompatActivity() {
             if (paymentMethod.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Payment", paymentMethod.replaceFirstChar { it.uppercase() }))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
-            // ---- Item / Qty / Amount ruled table (bold header row) ----
+            // ---- Item / Qty / Rate / Amount ruled table (bold header row) ----
+            val tableWeights = listOf(2.6f, 1.1f, 1.3f, 1.5f)
             receiptLines.add(
                 PrinterHelper.ReceiptLine.TableRow(
-                    cells = listOf("Item", "Qty", "Amount"),
-                    weights = listOf(3f, 1.3f, 1.5f),
+                    cells = listOf("Item", "Qty", "Rate", "Amount"),
+                    weights = tableWeights,
                     bold = true,
                     topBorder = true
                 )
@@ -536,8 +537,8 @@ class BillPreviewActivity : AppCompatActivity() {
             for (line in lines) {
                 receiptLines.add(
                     PrinterHelper.ReceiptLine.TableRow(
-                        cells = listOf(line.name, "${line.qty} ${line.unit}", "%.2f".format(line.amount)),
-                        weights = listOf(3f, 1.3f, 1.5f)
+                        cells = listOf(line.name, "${line.qty} ${line.unit}", "%.2f".format(line.rate), "%.2f".format(line.amount)),
+                        weights = tableWeights
                     )
                 )
             }
@@ -546,10 +547,10 @@ class BillPreviewActivity : AppCompatActivity() {
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
             receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Subtotal", "Rs %.2f".format(subtotal)))
             if (discount > 0) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Discount", "-Rs %.2f".format(discount)))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("TOTAL", "Rs %.2f".format(total)))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("TOTAL", "Rs %.2f".format(total), bold = true))
             receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Paid", "Rs %.2f".format(paid)))
             val balance = total - paid
-            if (balance > 0.009) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Balance Due", "Rs %.2f".format(balance)))
+            if (balance > 0.009) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Balance Due", "Rs %.2f".format(balance), bold = true))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
             receiptLines.add(PrinterHelper.ReceiptLine.Center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }))
 
