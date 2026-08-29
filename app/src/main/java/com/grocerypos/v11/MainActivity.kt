@@ -702,6 +702,17 @@ class MainActivity : ThemedActivity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, heightPx)
     }
 
+    // ---- FIX (Today's Profit bug): previously used SaleDao.profitBetween(), which sums
+    // (sale_items.amount - sale_items.cost). sale_items.amount is the pre-discount line
+    // total (qty * unitPrice) — it is NEVER reduced when a bill-level discount is applied
+    // in SaleActivity (only sales.total is discount-adjusted). So any sale with a discount
+    // made profitBetween() overstate profit by the discount amount, which is why "Today's
+    // Profit" could show a suspiciously high number/margin compared to "Today's Sale".
+    //
+    // Now computed the same way ReportsActivity's "Gross Profit" already does it —
+    // Total Sales (discount-adjusted, from totalSalesBetween()) minus COGS (from
+    // cogsBetween(), which only sums sale_items.cost and is unaffected by discount) —
+    // so the dashboard number always agrees with the Reports screen and reflects discounts.
     private fun loadDashboard() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@MainActivity)
@@ -716,7 +727,8 @@ class MainActivity : ThemedActivity() {
             todaySaleValue.text = "Rs %.2f".format(todaySale)
 
             if (role == "admin") {
-                val todayProfit = db.saleDao().profitBetween(startOfDay, endOfDay)
+                val cogs = db.saleDao().cogsBetween(startOfDay, endOfDay)
+                val todayProfit = todaySale - cogs
                 todayProfitValue?.text = "Rs %.2f".format(todayProfit)
             }
         }
