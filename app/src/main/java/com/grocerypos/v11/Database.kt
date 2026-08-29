@@ -611,6 +611,13 @@ interface ProductDao {
     @Update suspend fun updateItemRow(item:SaleItem)
     @Query("DELETE FROM sale_items WHERE id=:id") suspend fun deleteItemById(id:Long)
     @Query("SELECT COUNT(*) FROM sale_items WHERE invoice=:invoice") suspend fun itemCountForInvoice(invoice:String):Int
+
+    // ADDED (multi-device two-way sync): applying a pulled sale from another device.
+    // REPLACE-on-conflict is safe here because `invoice` is the natural, already-unique
+    // key (not a local autoincrement id), so a "conflict" only ever means "this exact
+    // sale already exists locally, overwrite it with the newer server copy".
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertSale(s:Sale)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertItems(items:List<SaleItem>)
 }
 
 @Dao interface ExpenseDao {
@@ -620,6 +627,10 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE createdAt BETWEEN :start AND :end") suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT * FROM expenses ORDER BY createdAt DESC") fun all():Flow<List<Expense>>
     @Query("SELECT * FROM expenses WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun between(start:Long,end:Long):List<Expense>
+    // ADDED (multi-device two-way sync): needed so a pulled expense that this same
+    // device already pushed gets updated in place instead of inserted as a duplicate.
+    @Update suspend fun update(e:Expense)
+    @Query("SELECT * FROM expenses WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Expense?
 }
 
 @Dao interface HeldDao {
@@ -659,6 +670,11 @@ interface ProductDao {
     @Update suspend fun updateItemRow(item:PurchaseItem)
     @Query("DELETE FROM purchase_items WHERE id=:id") suspend fun deleteItemById(id:Long)
     @Query("SELECT COUNT(*) FROM purchase_items WHERE billNo=:billNo") suspend fun itemCountForBill(billNo:String):Int
+
+    // ADDED (multi-device two-way sync): same reasoning as SaleDao.upsertSale above —
+    // billNo is the natural unique key, so REPLACE just means "update with server copy".
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertPurchase(p:Purchase)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertItems(items:List<PurchaseItem>)
 }
 
 @Dao interface ReturnDao {
@@ -687,6 +703,9 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method") suspend fun totalAll(type:String,method:String):Double
     @Query("DELETE FROM cash_transactions WHERE reference=:ref") suspend fun deleteByReference(ref:String)
     @Query("SELECT * FROM cash_transactions WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun between(start:Long,end:Long):List<CashTransaction>
+    // ADDED (multi-device two-way sync): same reasoning as ExpenseDao above.
+    @Update suspend fun update(t:CashTransaction)
+    @Query("SELECT * FROM cash_transactions WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):CashTransaction?
 }
 
 @Dao interface CashRegisterDao {
