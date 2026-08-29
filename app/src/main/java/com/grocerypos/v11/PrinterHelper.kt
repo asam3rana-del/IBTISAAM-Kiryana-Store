@@ -99,6 +99,14 @@ object PrinterHelper {
         ) : ReceiptLine()
     }
 
+    // Urdu/Arabic item names were reported "muskil se parha jata" (barely readable)
+    // at the same small size used for numeric cells. Since the item column is now
+    // wider (see tableWeights in BillPreviewActivity), we can afford to draw Arabic
+    // item names noticeably bigger and slightly bolder than the numeric columns —
+    // this alone meaningfully improves legibility on thermal print, on top of the
+    // width increase.
+    private const val ARABIC_ITEM_FONT_BOOST = 1.2f
+
     private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private const val ACTION_USB_PERMISSION = "com.grocerypos.v11.USB_PERMISSION"
 
@@ -555,7 +563,10 @@ object PrinterHelper {
                     totalHeight += line.heightPx
                 }
                 is ReceiptLine.TableRow -> {
-                    paint.textSize = tableFontSize
+                    // Height is computed using the bigger of the two possible cell font
+                    // sizes (the Arabic item-name boost), so a row has enough vertical
+                    // room whether or not it actually contains Arabic text this time.
+                    paint.textSize = tableFontSize * ARABIC_ITEM_FONT_BOOST
                     val fm = paint.fontMetrics
                     paint.textSize = fontSizePx
                     var h = (fm.bottom - fm.top).toInt() + tableRowPaddingV * 2
@@ -653,9 +664,20 @@ object PrinterHelper {
                         val cellRight = colX[i + 1] - tableCellPaddingH
                         val cellWidth = (cellRight - cellLeft).coerceAtLeast(1f)
                         val rawText = line.cells[i]
-                        val fitText = TextUtils.ellipsize(rawText, paint, cellWidth, TextUtils.TruncateAt.END).toString()
                         val isItemColumn = i == 0
-                        val isUrdu = containsArabicScript(fitText)
+                        val isUrdu = containsArabicScript(rawText)
+
+                        // Urdu item names get a bigger, slightly bolder rendering than
+                        // the numeric columns — see ARABIC_ITEM_FONT_BOOST above. This
+                        // must be set BEFORE ellipsize so the "does it fit" measurement
+                        // matches what's actually drawn.
+                        val useArabicBoost = isItemColumn && isUrdu
+                        if (useArabicBoost) {
+                            paint.textSize = tableFontSize * ARABIC_ITEM_FONT_BOOST
+                            paint.isFakeBoldText = true
+                        }
+
+                        val fitText = TextUtils.ellipsize(rawText, paint, cellWidth, TextUtils.TruncateAt.END).toString()
 
                         when {
                             isItemColumn && isUrdu -> {
@@ -670,6 +692,11 @@ object PrinterHelper {
                                 paint.textAlign = Paint.Align.CENTER
                                 canvas.drawText(fitText, (cellLeft + cellRight) / 2f, baseline, paint)
                             }
+                        }
+
+                        if (useArabicBoost) {
+                            paint.textSize = tableFontSize
+                            paint.isFakeBoldText = line.bold
                         }
                     }
                     paint.isFakeBoldText = oldBold
