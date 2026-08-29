@@ -65,7 +65,11 @@ object SyncRepository {
             pulledOk = true,
             customersReceived = changes.customers.size,
             suppliersReceived = changes.suppliers.size,
-            productsReceived = changes.products.size
+            productsReceived = changes.products.size,
+            salesReceived = changes.sales.size,
+            purchasesReceived = changes.purchases.size,
+            expensesReceived = changes.expenses.size,
+            cashTxReceived = changes.cashTransactions.size
         )
     }
 
@@ -76,6 +80,26 @@ object SyncRepository {
         val customersReceived: Int = 0,
         val suppliersReceived: Int = 0,
         val productsReceived: Int = 0,
+        val salesReceived: Int = 0,
+        val purchasesReceived: Int = 0,
+        val expensesReceived: Int = 0,
+        val cashTxReceived: Int = 0,
         val error: String? = null
-    )
+    ) {
+        // ADDED (sync diagnostics): a short, human-readable one-liner so Settings'
+        // "Sync Now" button can actually tell the user what happened instead of just
+        // showing "Syncing…" and nothing else — that silence was making real failures
+        // (e.g. a missing Firestore index, no internet, wrong Firebase project) look
+        // exactly the same as success from the user's point of view.
+        fun summary(): String {
+            if (!pulledOk) return "Sync failed: ${error ?: "unknown error"}"
+            val totalReceived = customersReceived + suppliersReceived + productsReceived +
+                salesReceived + purchasesReceived + expensesReceived + cashTxReceived
+            val parts = mutableListOf<String>()
+            if (pushedCount > 0) parts.add("sent $pushedCount")
+            if (totalReceived > 0) parts.add("received $totalReceived")
+            if (failedCount > 0) parts.add("$failedCount failed")
+            return if (parts.isEmpty()) "Already up to date" else parts.joinToString(", ").replaceFirstChar { it.uppercase() }
+        }
+    }
 }
