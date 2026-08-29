@@ -51,14 +51,22 @@ data class PurchaseLine(
     val tertiaryUnitQty: Double = 0.0
 )
 
+// FIX (multi-device collision bug): billNo used to be a pure local sequence number
+// ("PUR-Aug26-0001", "0002", ...) with nothing device-specific in it. Two different
+// devices at the same branch would independently generate the exact same billNo
+// (e.g. both devices' very first purchase this month becomes "PUR-Aug26-0001"), and
+// since billNo is also the Firestore document ID this purchase syncs under, one
+// device's purchase would silently overwrite the other's instead of both existing.
+// Appending each device's DeviceTag makes billNo unique across devices while keeping
+// the same readable per-device sequence.
 private suspend fun genBillNo(db: PosDatabase): String {
     val prefix = "PUR-" + SimpleDateFormat("MMMyy", Locale.getDefault()).format(Date()) + "-"
     val existing = db.purchaseDao().allPurchases().map { it.billNo }.toHashSet()
     var seqNum = existing.count { it.startsWith(prefix) } + 1
-    var candidate = prefix + seqNum.toString().padStart(4, '0')
+    var candidate = prefix + seqNum.toString().padStart(4, '0') + "-" + DeviceTag.current
     while (existing.contains(candidate)) {
         seqNum++
-        candidate = prefix + seqNum.toString().padStart(4, '0')
+        candidate = prefix + seqNum.toString().padStart(4, '0') + "-" + DeviceTag.current
     }
     return candidate
 }
@@ -1274,7 +1282,7 @@ class PurchaseActivity : ThemedActivity() {
 
             val newCostPerSmallest = if (newStock > 0) totalValueAfterRemoval / newStock else 0.0
 
-            db.productDao().decreaseForce(pi.barcode, smallestQty)
+            SyncQueueHelper.decreaseProductStockForce(db, pi.barcode, smallestQty)
             db.productDao().updateCost(pi.barcode, newCostPerSmallest * factor)
         }
     }
@@ -1290,7 +1298,7 @@ class PurchaseActivity : ThemedActivity() {
         db.withTransaction {
             reverseStockAndCostForItems(db, items)
             val outstanding = purchase.total - purchase.paid
-            if (purchase.supplierId != null && outstanding > 0) { db.supplierDao().addBalance(purchase.supplierId, -outstanding) }
+            if (purchase.supplierId != null && outstanding > 0) { SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -outstanding) }
             db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
         }
         SyncQueueHelper.enqueue(db, "purchase", "purchase:$billNo", "delete", org.json.JSONObject().apply { put("billNo", billNo) }.toString())
@@ -1344,7 +1352,7 @@ class PurchaseActivity : ThemedActivity() {
                 if (original != null) {
                     reverseStockAndCostForItems(db, originalItems)
                     val originalOutstanding = original.total - original.paid
-                    if (original.supplierId != null && originalOutstanding > 0) { db.supplierDao().addBalance(original.supplierId, -originalOutstanding) }
+                    if (original.supplierId != null && originalOutstanding > 0) { SyncQueueHelper.adjustSupplierBalance(db, original.supplierId, -originalOutstanding) }
                     db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo); db.paymentDao().deleteByReference(billNo); db.cashTransactionDao().deleteByReference(billNo)
                 }
                 val purchaseRecord = Purchase(billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid, createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount)
@@ -1353,7 +1361,7 @@ class PurchaseActivity : ThemedActivity() {
                 db.purchaseDao().items(purchaseItems)
                 SyncQueueHelper.enqueue(
                     db, "purchase", SyncQueueHelper.purchaseEntityId(purchaseRecord), if (original != null) "update" else "create",
-                    SyncQueueHelper.purchaseJson(purchaseRecord, purchaseItems.size)
+                    SyncQueueHelper.purchaseJson(db, purchaseRecord)
                 )
                 lines.forEach { line ->
                     val barcode = line.barcode ?: return@forEach
@@ -1366,7 +1374,7 @@ class PurchaseActivity : ThemedActivity() {
                     if (!before.isValidSmallestQty(purchasedSmallest)) {
                         throw IllegalStateException("\"${before.name}\" ke liye qty (${line.qty} ${line.unit}) whole ${before.smallestUnitName()} mein convert nahi hoti — qty check karen.")
                     }
-                    db.productDao().increase(barcode, purchasedSmallest)
+                    SyncQueueHelper.increaseProductStock(db, barcode, purchasedSmallest)
                     if (purchasedSmallest > 0) {
                         val oldStockSmallest = before.stock
                         val factor = before.smallestUnitFactor()
@@ -1378,7 +1386,7 @@ class PurchaseActivity : ThemedActivity() {
                     }
                 }
                 val outstanding = grandTotal - amountPaid
-                if (supplierId != null && outstanding > 0) { db.supplierDao().addBalance(supplierId!!, outstanding) }
+                if (supplierId != null && outstanding > 0) { SyncQueueHelper.adjustSupplierBalance(db, supplierId!!, outstanding) }
                 if (supplierId != null && amountPaid > 0) {
                     val payment = Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")
                     db.paymentDao().insert(payment)
@@ -1388,7 +1396,7 @@ class PurchaseActivity : ThemedActivity() {
                     val cashTx = CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)
                     val cashTxId = db.cashTransactionDao().insert(cashTx)
                     val savedCashTx = cashTx.copy(id = cashTxId)
-                    SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
+                    SyncQueueHelper.enqueueCashTransaction(db, savedCashTx)
                 }
                 } // end db.withTransaction
                 suppressDraftSave = true; clearDraft(); editBillNo = billNo
