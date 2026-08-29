@@ -75,17 +75,18 @@ object PrinterHelper {
          * A bordered table row — one or more cells laid out in fixed-width
          * columns (proportioned by [weights]), with a vertical divider line drawn
          * between every column and a horizontal divider line drawn under the row.
-         * Used for the item table (Item / Qty / Amount), giving a ruled-grid look
-         * like a supplier invoice instead of stacked plain lines.
+         *
+         * Kept for callers that still want a ruled grid somewhere on the receipt.
+         * The item table itself no longer uses this (see [Row3]/[ItemRow] below) —
+         * the customer wanted the printed item list to match the on-screen preview
+         * card, which has no grid lines at all.
          *
          * [cells] and [weights] must be the same size — weights are relative (they
          * don't need to sum to any particular number; a column with weight 3 is 3x
          * as wide as one with weight 1).
          *
          * [bold] renders the row in bold (used for the header row).
-         * [topBorder] additionally draws a line above this row (used for the header
-         * row only — every row already draws its own bottom border, so consecutive
-         * rows naturally form a continuous grid without each one needing a top line).
+         * [topBorder] additionally draws a line above this row.
          *
          * Cell text that doesn't fit its column width is ellipsized ("…") rather
          * than wrapped, so every row stays exactly one line tall and the grid lines
@@ -97,14 +98,41 @@ object PrinterHelper {
             val bold: Boolean = false,
             val topBorder: Boolean = false
         ) : ReceiptLine()
+
+        /**
+         * Plain, borderless 3-column row (col1 left/RTL-aware, col2 centered,
+         * col3 right-aligned) — used for the "Item / Qty / Amount" header row
+         * so it matches the on-screen preview card, which has no grid.
+         */
+        data class Row3(
+            val col1: String,
+            val col2: String,
+            val col3: String,
+            val weights: List<Float> = listOf(3.6f, 0.9f, 1.5f),
+            val bold: Boolean = false
+        ) : ReceiptLine()
+
+        /**
+         * One item row rendered exactly like the on-screen preview card:
+         * line 1 is the item name (bold, left/RTL-aware) with qty centered and
+         * amount right-aligned in the same row; line 2 is "@ rate" in smaller
+         * plain text directly under the name. No borders, no grid — just the
+         * two stacked lines per item, same as BillPreviewActivity's `kv`-style
+         * item rows on screen.
+         */
+        data class ItemRow(
+            val name: String,
+            val qty: String,
+            val rate: String,
+            val amount: String,
+            val weights: List<Float> = listOf(3.6f, 0.9f, 1.5f)
+        ) : ReceiptLine()
     }
 
     // Urdu/Arabic item names were reported "muskil se parha jata" (barely readable)
-    // at the same small size used for numeric cells. Since the item column is now
-    // wider (see tableWeights in BillPreviewActivity), we can afford to draw Arabic
-    // item names noticeably bigger and slightly bolder than the numeric columns —
-    // this alone meaningfully improves legibility on thermal print, on top of the
-    // width increase.
+    // at the same small size used for numeric cells. Item names are drawn noticeably
+    // bigger and slightly bolder than the numeric columns for legibility on thermal
+    // print, on top of the wider item column.
     private const val ARABIC_ITEM_FONT_BOOST = 1.2f
 
     private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
@@ -163,6 +191,11 @@ object PrinterHelper {
     // anti-overlap fix from before is preserved. Only raise MAX_STRIP_HEIGHT_PX
     // further if you also see garbled/overlapping print return — smaller strips are
     // always the safer fallback.
+    //
+    // FIX 3 (item table now matches the on-screen preview): the ruled grid table
+    // (TableRow) was replaced for the item list with borderless Row3/ItemRow lines
+    // (see below), which also has the side benefit of fewer draw operations per
+    // item (no grid strokes), so this doesn't fight the anti-overlap pacing above.
     private const val MAX_STRIP_HEIGHT_PX = 64
     private const val MIN_INTER_CHUNK_DELAY_MS = 90L
     private const val MS_PER_STRIP_ROW = 5f
@@ -503,8 +536,9 @@ object PrinterHelper {
      *    which is the only way to get straight columns with a non-monospace
      *    font.
      *  - [ReceiptLine.TableRow] draws a full ruled grid (vertical column
-     *    dividers + a bottom border per row), matching a supplier-invoice
-     *    style item table instead of stacked plain lines.
+     *    dividers + a bottom border per row) for callers that still want one.
+     *  - [ReceiptLine.Row3] / [ReceiptLine.ItemRow] draw the borderless,
+     *    preview-matching item list layout (see their docs above).
      */
     private fun renderReceiptLines(lines: List<ReceiptLine>, fontSizePx: Float, typeface: Typeface): Bitmap {
         val margin = 8
@@ -519,11 +553,11 @@ object PrinterHelper {
         // the receipt cramped or hard to read.
         val lineSpacingExtra = (fontSizePx * 0.28f).toInt()
         val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
-        // Table cells use a slightly smaller font than the rest of the receipt so
-        // 4-5 columns (Item/Qty/Rate/Amount) fit comfortably on a 384-dot (58mm)
-        // paper width without excessive ellipsizing.
+        // Table/row cells use a slightly smaller font than the rest of the receipt so
+        // 3-4 columns (Item/Qty/Amount, or Item/Qty/Rate/Amount) fit comfortably on a
+        // 384-dot (58mm) paper width without excessive ellipsizing.
         val tableFontSize = fontSizePx * 0.78f
-        val tableRowPaddingV = 8 // extra top/bottom padding inside each table row
+        val tableRowPaddingV = 8 // extra top/bottom padding inside each row
         val tableCellPaddingH = 5 // left/right padding inside each cell, before ellipsizing
 
         data class Block(val line: ReceiptLine, val layout: StaticLayout?, val height: Int)
@@ -571,6 +605,29 @@ object PrinterHelper {
                     paint.textSize = fontSizePx
                     var h = (fm.bottom - fm.top).toInt() + tableRowPaddingV * 2
                     if (line.topBorder) h += 2 // room for the extra top border stroke
+                    blocks.add(Block(line, null, h))
+                    totalHeight += h
+                }
+                is ReceiptLine.Row3 -> {
+                    paint.textSize = tableFontSize
+                    val fm = paint.fontMetrics
+                    paint.textSize = fontSizePx
+                    val h = (fm.bottom - fm.top).toInt() + tableRowPaddingV
+                    blocks.add(Block(line, null, h))
+                    totalHeight += h
+                }
+                is ReceiptLine.ItemRow -> {
+                    // Two stacked lines: bold name/qty/amount row, then smaller "@ rate"
+                    // row. Measured using the boosted Arabic size for line 1 so there's
+                    // enough room whether or not the item name is Urdu this time.
+                    paint.textSize = tableFontSize * ARABIC_ITEM_FONT_BOOST
+                    val fmName = paint.fontMetrics
+                    paint.textSize = tableFontSize * 0.8f
+                    val fmRate = paint.fontMetrics
+                    paint.textSize = fontSizePx
+                    val h = (fmName.bottom - fmName.top).toInt() +
+                        (fmRate.bottom - fmRate.top).toInt() +
+                        tableRowPaddingV * 2
                     blocks.add(Block(line, null, h))
                     totalHeight += h
                 }
@@ -704,6 +761,88 @@ object PrinterHelper {
 
                     y += block.height
                 }
+                is ReceiptLine.Row3 -> {
+                    // Borderless header-style row: col1 left/RTL-aware, col2 centered,
+                    // col3 right-aligned — matches the on-screen "ITEM / QTY / AMOUNT"
+                    // header, no grid lines drawn.
+                    paint.textSize = tableFontSize
+                    val oldBold = paint.isFakeBoldText
+                    paint.isFakeBoldText = line.bold
+                    val fm = paint.fontMetrics
+                    val baseline = y + tableRowPaddingV / 2 - fm.top
+
+                    val tableLeft = margin.toFloat()
+                    val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
+                    val tableWidth = tableRight - tableLeft
+                    val totalWeight = line.weights.sum().coerceAtLeast(0.01f)
+                    val colX = FloatArray(4)
+                    colX[0] = tableLeft
+                    for (i in 0..2) colX[i + 1] = colX[i] + (line.weights[i] / totalWeight) * tableWidth
+
+                    val col1Rtl = containsArabicScript(line.col1)
+                    paint.textAlign = if (col1Rtl) Paint.Align.RIGHT else Paint.Align.LEFT
+                    val col1X = if (col1Rtl) colX[1] - tableCellPaddingH else colX[0] + tableCellPaddingH
+                    canvas.drawText(line.col1, col1X, baseline, paint)
+
+                    paint.textAlign = Paint.Align.CENTER
+                    canvas.drawText(line.col2, (colX[1] + colX[2]) / 2f, baseline, paint)
+
+                    paint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText(line.col3, colX[3] - tableCellPaddingH, baseline, paint)
+
+                    paint.isFakeBoldText = oldBold
+                    paint.textSize = fontSizePx
+                    y += block.height
+                }
+                is ReceiptLine.ItemRow -> {
+                    // Matches the on-screen preview card's item rows exactly:
+                    //   line 1: <name>                <qty>            <amount>   (name+amount bold)
+                    //   line 2: @ <rate>                                            (smaller, plain)
+                    // No borders, no grid.
+                    val tableLeft = margin.toFloat()
+                    val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
+                    val tableWidth = tableRight - tableLeft
+                    val totalWeight = line.weights.sum().coerceAtLeast(0.01f)
+                    val colX = FloatArray(4)
+                    colX[0] = tableLeft
+                    for (i in 0..2) colX[i + 1] = colX[i] + (line.weights[i] / totalWeight) * tableWidth
+
+                    val nameIsUrdu = containsArabicScript(line.name)
+                    val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 1f)
+
+                    // ---- line 1: name (bold, ellipsized) + qty (center) + amount (right, bold) ----
+                    paint.textSize = nameSize
+                    paint.isFakeBoldText = true
+                    var fm = paint.fontMetrics
+                    val line1Baseline = y + tableRowPaddingV - fm.top
+                    val line1Height = fm.bottom - fm.top
+
+                    val nameColWidth = (colX[1] - colX[0] - tableCellPaddingH * 2).coerceAtLeast(1f)
+                    val fitName = TextUtils.ellipsize(line.name, paint, nameColWidth, TextUtils.TruncateAt.END).toString()
+                    paint.textAlign = if (nameIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
+                    val nameX = if (nameIsUrdu) colX[1] - tableCellPaddingH else colX[0] + tableCellPaddingH
+                    canvas.drawText(fitName, nameX, line1Baseline, paint)
+
+                    paint.textSize = tableFontSize
+                    paint.textAlign = Paint.Align.CENTER
+                    canvas.drawText(line.qty, (colX[1] + colX[2]) / 2f, line1Baseline, paint)
+
+                    paint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText(line.amount, colX[3] - tableCellPaddingH, line1Baseline, paint)
+
+                    // ---- line 2: "@ rate" — smaller, plain, directly under the name ----
+                    paint.textSize = tableFontSize * 0.8f
+                    paint.isFakeBoldText = false
+                    fm = paint.fontMetrics
+                    val line2Baseline = y + tableRowPaddingV + line1Height - fm.top
+                    paint.textAlign = if (nameIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
+                    val rateX = if (nameIsUrdu) colX[1] - tableCellPaddingH else colX[0] + tableCellPaddingH
+                    canvas.drawText("@ ${line.rate}", rateX, line2Baseline, paint)
+
+                    paint.textSize = fontSizePx
+                    paint.textAlign = Paint.Align.LEFT
+                    y += block.height
+                }
             }
         }
         return bitmap
@@ -762,9 +901,9 @@ object PrinterHelper {
 
     /**
      * Preferred entry point: prints a receipt built from structured [ReceiptLine]s
-     * with correct per-line direction, pixel-accurate column alignment, ruled table
-     * grids, and chunked raster transmission (with a per-strip pause scaled to strip
-     * height) so long/multi-item receipts print reliably without overlapping.
+     * with correct per-line direction, pixel-accurate column alignment, and chunked
+     * raster transmission (with a per-strip pause scaled to strip height) so
+     * long/multi-item receipts print reliably without overlapping.
      */
     fun printReceiptLines(
         context: Context,
@@ -785,9 +924,9 @@ object PrinterHelper {
      * Kept for any existing callers that build a plain string. Each line of the
      * input is now given its own RTL/LTR direction (fixing the old whole-receipt
      * RTL bug); for real column alignment (labels/values, item qty/rate/amount),
-     * prefer [printReceiptLines] with [ReceiptLine.TwoCol] or [ReceiptLine.TableRow]
-     * instead of padding with spaces, since a proportional font can't be aligned
-     * that way.
+     * prefer [printReceiptLines] with [ReceiptLine.TwoCol]/[ReceiptLine.Row3]/
+     * [ReceiptLine.ItemRow] instead of padding with spaces, since a proportional
+     * font can't be aligned that way.
      */
     fun printUrduText(
         context: Context,
