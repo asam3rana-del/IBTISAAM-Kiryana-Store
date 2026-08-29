@@ -17,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.UnitType
+import com.grocerypos.v11.util.DuplicateUnitFix
 import kotlinx.coroutines.launch
 
 /**
@@ -33,6 +34,16 @@ import kotlinx.coroutines.launch
  * Now uses plain one-shot suspend queries (allOnce()) instead of a Flow, and
  * wraps the whole load in try/catch so any real failure shows as a Toast
  * instead of silently producing an empty screen.
+ *
+ * ADDED: a "Fix Duplicate Unit Names" maintenance button (separate from the
+ * Urdu->English translation flow above — this screen only surfaces
+ * Urdu-script values via looksUrdu(), so an already-English but accidentally
+ * duplicated value like "Box\nBox" would never show up as a row here and
+ * could never be fixed through the translate-and-save flow). The button
+ * calls DuplicateUnitFix.run(db), which scans Primary/Secondary/Tertiary
+ * unit values across every product for an exact-duplicated word (e.g.
+ * "Box\nBox", "Box Box") and collapses it to the single clean word, using
+ * the same rename* functions this screen already uses above.
  */
 class BulkTranslateActivity : AppCompatActivity() {
 
@@ -44,6 +55,8 @@ class BulkTranslateActivity : AppCompatActivity() {
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
     private val border = "#E7E5F3"
+    private val teal = "#0F9B8E"
+    private val tealDark = "#0C7C71"
 
     companion object {
         private const val TAG = "BulkTranslate"
@@ -58,6 +71,7 @@ class BulkTranslateActivity : AppCompatActivity() {
     private lateinit var emptyText: TextView
     private lateinit var saveBtn: TextView
     private lateinit var loadingText: TextView
+    private lateinit var fixDuplicatesBtn: TextView
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -93,6 +107,50 @@ class BulkTranslateActivity : AppCompatActivity() {
             setPadding(0, 6, 0, 0)
         })
         root.addView(header)
+
+        // ================= FIX DUPLICATE UNIT NAMES (maintenance action) =================
+        // Separate from the Urdu translate flow below: this fixes values like "Box\nBox"
+        // (an already-English word accidentally typed twice into one unit field), which
+        // never shows up in the Urdu rows above since looksUrdu() would exclude it.
+        val fixCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22, 18, 22, 18)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardBg))
+                setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(teal))
+                cornerRadius = 16f
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 20) }
+        }
+        fixCard.addView(TextView(this).apply {
+            text = "🔧 Fix Duplicate Unit Names"
+            textSize = 14.5f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+        })
+        fixCard.addView(TextView(this).apply {
+            text = "Cleans up unit fields that got typed twice by accident (e.g. \"Box\\nBox\" -> \"Box\") across every product, in every category."
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 6, 0, 14)
+        })
+        fixDuplicatesBtn = TextView(this).apply {
+            text = "RUN FIX"
+            textSize = 13.5f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(teal), Color.parseColor(tealDark))
+            ).apply { cornerRadius = 14f }
+            setPadding(0, 24, 0, 24)
+            setOnClickListener { runDuplicateUnitFix() }
+        }
+        fixCard.addView(fixDuplicatesBtn)
+        root.addView(fixCard)
 
         loadingText = TextView(this).apply {
             text = "Loading…"
@@ -147,6 +205,35 @@ class BulkTranslateActivity : AppCompatActivity() {
         loadValues()
     }
 
+    // ---- Runs the one-time duplicate-unit cleanup (see DuplicateUnitFix.kt) and
+    // reloads the Urdu translate rows afterward, since a fixed unit's distinct
+    // value set may have changed. ----
+    private fun runDuplicateUnitFix() {
+        fixDuplicatesBtn.isEnabled = false
+        lifecycleScope.launch {
+            try {
+                val db = PosDatabase.get(this@BulkTranslateActivity)
+                val count = DuplicateUnitFix.run(db)
+                Toast.makeText(
+                    this@BulkTranslateActivity,
+                    if (count > 0) "$count unit name(s) fixed across all products"
+                    else "No duplicated unit names found",
+                    Toast.LENGTH_LONG
+                ).show()
+                loadValues()
+            } catch (e: Exception) {
+                Log.e(TAG, "runDuplicateUnitFix failed", e)
+                Toast.makeText(
+                    this@BulkTranslateActivity,
+                    "Could not fix duplicates: ${e.message ?: "unknown error"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                fixDuplicatesBtn.isEnabled = true
+            }
+        }
+    }
+
     private fun loadValues() {
         lifecycleScope.launch {
             try {
@@ -169,6 +256,13 @@ class BulkTranslateActivity : AppCompatActivity() {
 
                 loadingText.visibility = View.GONE
 
+                // Clear any rows from a previous load (runDuplicateUnitFix calls this
+                // again after fixing, so the container must not just keep appending).
+                catContainer.removeAllViews()
+                unitContainer.removeAllViews()
+                categoryFields.clear()
+                unitFields.clear()
+
                 renderRows(catContainer, urduCats, categoryFields)
                 renderRows(unitContainer, urduUnits, unitFields)
 
@@ -176,6 +270,7 @@ class BulkTranslateActivity : AppCompatActivity() {
                     emptyText.visibility = View.VISIBLE
                     saveBtn.visibility = View.GONE
                 } else {
+                    emptyText.visibility = View.GONE
                     saveBtn.visibility = View.VISIBLE
                 }
             } catch (e: Exception) {
