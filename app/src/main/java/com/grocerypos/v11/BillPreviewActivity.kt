@@ -1,6 +1,7 @@
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
+import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -247,7 +248,7 @@ class BillPreviewActivity : AppCompatActivity() {
         root.addView(receiptCard)
         root.addView(spacer(16))
 
-        // ---- NEW: WhatsApp share button (full width, above Print/Done) ----
+        // ---- WhatsApp share button (full width, above Print/Done) ----
         root.addView(Button(this).apply {
             text = "📤  WhatsApp par bhejein"
             setTextColor(Color.WHITE)
@@ -328,7 +329,7 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    // ================= WhatsApp share (NEW) =================
+    // ================= WhatsApp share =================
 
     private fun handleWhatsAppShare() {
         val pid = partyId
@@ -409,13 +410,24 @@ class BillPreviewActivity : AppCompatActivity() {
         val caption = "Invoice: $referenceNo\nTotal: Rs %.2f\nShukriya!".format(totalAmount)
         val jid = cleanPhoneToJid(rawPhone)
 
-        // Try direct chat with that number first (undocumented but widely working).
+        // FIX (share reliability): a content:// URI passed only via EXTRA_STREAM,
+        // without a matching ClipData, does not reliably get its read permission
+        // grant honoured by the receiving app on many Android versions/OEMs — WhatsApp
+        // would silently fail to load the image (blank/broken attachment) even though
+        // startActivity() itself never threw. Setting ClipData explicitly fixes that.
+        val clip = ClipData.newUri(contentResolver, "receipt", uri)
+
+        // Try direct chat with that number first (undocumented but widely working on
+        // regular WhatsApp; some OEM/WhatsApp builds ignore the "jid" extra and just
+        // open the normal contact/share picker instead — that's an acceptable fallback,
+        // not a crash, so we still consider this the "success" path).
         val directIntent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_TEXT, caption)
             putExtra("jid", jid)
             setPackage("com.whatsapp")
+            clipData = clip
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
@@ -428,6 +440,7 @@ class BillPreviewActivity : AppCompatActivity() {
                     type = "image/png"
                     putExtra(Intent.EXTRA_STREAM, uri)
                     putExtra(Intent.EXTRA_TEXT, caption)
+                    clipData = clip
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 startActivity(Intent.createChooser(fallback, "Bill share karein"))
