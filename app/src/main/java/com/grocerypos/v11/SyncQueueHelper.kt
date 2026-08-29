@@ -4,39 +4,18 @@ import android.content.Context
 import com.google.gson.Gson
 import com.grocerypos.v11.sync.SyncWorker
 
-// FIX (Phase 3 - Online): every ...Json() builder below stamps its payload with
-// "branchId" (BuildConfig.BRANCH_ID) before it's pushed to Firestore, so records from
-// different branches can be told apart / filtered on pull (see SyncApi.kt).
-//
-// FIX (sync bug #2): previously NOTHING called db.syncQueueDao().enqueue(...) anywhere
-// in the app, so sync_queue stayed empty forever no matter how many sales/customers/etc.
-// were created. Below, every ...Json() builder now has a matching enqueueX() function
-// that builds the JSON AND inserts the sync_queue row AND triggers a sync — in one call.
-//
-// Call the relevant enqueueX() right after each successful DAO insert/update, e.g.:
-//
-//     val newId = db.customerDao().insert(customer)
-//     SyncQueueHelper.enqueueCustomer(db, customer.copy(id = newId))
-//
-//     db.saleDao().sale(sale)
-//     db.saleDao().items(saleItems)
-//     SyncQueueHelper.enqueueSale(db, sale, saleItems.size)
-//
-// Do this at every insert/update call site for: customers, suppliers, products, sales,
-// purchases, payments, expenses, cash_transactions, users. Deletes should call
-// SyncQueueHelper.enqueueDelete(db, entityType, entityId) instead.
 object SyncQueueHelper {
 
     private val gson = Gson()
 
-    fun customerEntityId(c: Customer) = "customer:${c.id}"
-    fun supplierEntityId(s: Supplier) = "supplier:${s.id}"
+    fun customerEntityId(c: Customer) = "customer:${DeviceTag.current}-${c.id}"
+    fun supplierEntityId(s: Supplier) = "supplier:${DeviceTag.current}-${s.id}"
     fun productEntityId(p: Product) = p.barcode
     fun saleEntityId(sale: Sale) = "sale:${sale.invoice}"
     fun purchaseEntityId(purchase: Purchase) = "purchase:${purchase.billNo}"
     fun paymentEntityId(payment: Payment) = "payment:${payment.reference}"
-    fun expenseEntityId(expense: Expense) = "expense:${expense.id}"
-    fun cashTransactionEntityId(t: CashTransaction) = "cash_transaction:${t.id}"
+    fun expenseEntityId(expense: Expense) = "expense:${DeviceTag.current}-${expense.id}"
+    fun cashTransactionEntityId(t: CashTransaction) = "cash_transaction:${DeviceTag.current}-${t.id}"
     fun userEntityId(u: User) = "user:${u.username}"
 
     suspend fun enqueue(db: PosDatabase, entityType: String, entityId: String, operation: String, payloadJson: String) {
@@ -54,17 +33,17 @@ object SyncQueueHelper {
         SyncWorker.syncNowOnce(context)
     }
 
-    // ---------- One-call helpers: build payload + enqueue ----------
-    // (context is optional — pass it if you want the sync to fire immediately instead
-    // of waiting for the next periodic run; omit it to just queue the row.)
-
     suspend fun enqueueCustomer(db: PosDatabase, c: Customer, context: Context? = null) {
-        enqueue(db, "customer", customerEntityId(c), "upsert", customerJson(c))
+        val id = customerEntityId(c)
+        if (c.serverId != id) db.customerDao().update(c.copy(serverId = id))
+        enqueue(db, "customer", id, "upsert", customerJson(c))
         context?.let { trigger(it) }
     }
 
     suspend fun enqueueSupplier(db: PosDatabase, s: Supplier, context: Context? = null) {
-        enqueue(db, "supplier", supplierEntityId(s), "upsert", supplierJson(s))
+        val id = supplierEntityId(s)
+        if (s.serverId != id) db.supplierDao().update(s.copy(serverId = id))
+        enqueue(db, "supplier", id, "upsert", supplierJson(s))
         context?.let { trigger(it) }
     }
 
@@ -73,13 +52,39 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
-    suspend fun enqueueSale(db: PosDatabase, sale: Sale, itemCount: Int, context: Context? = null) {
-        enqueue(db, "sale", saleEntityId(sale), "upsert", saleJson(sale, itemCount))
+    suspend fun adjustCustomerBalance(db: PosDatabase, customerId: Long, amount: Double) {
+        db.customerDao().addBalance(customerId, amount)
+        db.customerDao().find(customerId)?.let { enqueueCustomer(db, it) }
+    }
+
+    suspend fun adjustSupplierBalance(db: PosDatabase, supplierId: Long, amount: Double) {
+        db.supplierDao().addBalance(supplierId, amount)
+        db.supplierDao().find(supplierId)?.let { enqueueSupplier(db, it) }
+    }
+
+    suspend fun decreaseProductStock(db: PosDatabase, barcode: String, qty: Double): Int {
+        val rows = db.productDao().decrease(barcode, qty)
+        db.productDao().find(barcode)?.let { enqueueProduct(db, it) }
+        return rows
+    }
+
+    suspend fun decreaseProductStockForce(db: PosDatabase, barcode: String, qty: Double) {
+        db.productDao().decreaseForce(barcode, qty)
+        db.productDao().find(barcode)?.let { enqueueProduct(db, it) }
+    }
+
+    suspend fun increaseProductStock(db: PosDatabase, barcode: String, qty: Double) {
+        db.productDao().increase(barcode, qty)
+        db.productDao().find(barcode)?.let { enqueueProduct(db, it) }
+    }
+
+    suspend fun enqueueSale(db: PosDatabase, sale: Sale, context: Context? = null) {
+        enqueue(db, "sale", saleEntityId(sale), "upsert", saleJson(db, sale))
         context?.let { trigger(it) }
     }
 
-    suspend fun enqueuePurchase(db: PosDatabase, purchase: Purchase, itemCount: Int, context: Context? = null) {
-        enqueue(db, "purchase", purchaseEntityId(purchase), "upsert", purchaseJson(purchase, itemCount))
+    suspend fun enqueuePurchase(db: PosDatabase, purchase: Purchase, context: Context? = null) {
+        enqueue(db, "purchase", purchaseEntityId(purchase), "upsert", purchaseJson(db, purchase))
         context?.let { trigger(it) }
     }
 
@@ -89,12 +94,18 @@ object SyncQueueHelper {
     }
 
     suspend fun enqueueExpense(db: PosDatabase, expense: Expense, context: Context? = null) {
-        enqueue(db, "expense", expenseEntityId(expense), "upsert", expenseJson(expense))
+        val id = expenseEntityId(expense)
+        val stamped = if (expense.serverId != id) expense.copy(serverId = id) else expense
+        if (stamped !== expense) db.expenseDao().update(stamped)
+        enqueue(db, "expense", id, "upsert", expenseJson(stamped))
         context?.let { trigger(it) }
     }
 
     suspend fun enqueueCashTransaction(db: PosDatabase, t: CashTransaction, context: Context? = null) {
-        enqueue(db, "cash_transaction", cashTransactionEntityId(t), "upsert", cashTransactionJson(t))
+        val id = cashTransactionEntityId(t)
+        val stamped = if (t.serverId != id) t.copy(serverId = id) else t
+        if (stamped !== t) db.cashTransactionDao().update(stamped)
+        enqueue(db, "cash_transaction", id, "upsert", cashTransactionJson(stamped))
         context?.let { trigger(it) }
     }
 
@@ -149,7 +160,14 @@ object SyncQueueHelper {
         return gson.toJson(map)
     }
 
-    fun saleJson(sale: Sale, itemCount: Int): String {
+    suspend fun saleJson(db: PosDatabase, sale: Sale): String {
+        val items = db.saleDao().itemsForInvoice(sale.invoice)
+        val itemMaps = items.map {
+            mapOf(
+                "barcode" to it.barcode, "product" to it.product, "qty" to it.qty,
+                "unit" to it.unit, "unitPrice" to it.unitPrice, "cost" to it.cost, "amount" to it.amount
+            )
+        }
         val map = mapOf(
             "serverId" to saleEntityId(sale),
             "invoice" to sale.invoice,
@@ -162,14 +180,22 @@ object SyncQueueHelper {
             "saleType" to sale.saleType,
             "createdAt" to sale.createdAt,
             "status" to sale.status,
-            "itemCount" to itemCount,
+            "itemCount" to items.size,
+            "items" to itemMaps,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
         )
         return gson.toJson(map)
     }
 
-    fun purchaseJson(purchase: Purchase, itemCount: Int): String {
+    suspend fun purchaseJson(db: PosDatabase, purchase: Purchase): String {
+        val items = db.purchaseDao().itemsForBill(purchase.billNo)
+        val itemMaps = items.map {
+            mapOf(
+                "barcode" to it.barcode, "qty" to it.qty, "unit" to it.unit,
+                "unitCost" to it.unitCost, "amount" to it.amount
+            )
+        }
         val map = mapOf(
             "serverId" to purchaseEntityId(purchase),
             "billNo" to purchase.billNo,
@@ -179,7 +205,9 @@ object SyncQueueHelper {
             "total" to purchase.total,
             "paid" to purchase.paid,
             "createdAt" to purchase.createdAt,
-            "itemCount" to itemCount,
+            "status" to purchase.status,
+            "itemCount" to items.size,
+            "items" to itemMaps,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
         )
