@@ -649,24 +649,28 @@ object PrinterHelper {
                     y += block.height
                 }
                 is ReceiptLine.TwoCol -> {
+                    // FIX (alignment bug): this used to detect Urdu on either side and
+                    // "flip" that side's anchor to the opposite margin — meant to look
+                    // smart, but when the RIGHT side (the value) was Urdu, both the
+                    // label and the value ended up anchored at the LEFT margin and drew
+                    // on top of each other. The on-screen preview (`kv()` in
+                    // BillPreviewActivity) never does this: the label is always on the
+                    // left, the value is always on the right, no matter which script it's
+                    // in — Canvas.drawText with Paint.Align.RIGHT/LEFT already shapes and
+                    // positions Arabic/Urdu glyphs correctly at a fixed anchor, so no
+                    // side-swapping is needed. Fixed sides here match that, and stop the
+                    // overlap.
                     val fm = paint.fontMetrics
                     val baseline = y - fm.top
-                    // Whichever side is Urdu naturally sits on the right (how Urdu reads);
-                    // the plain/numeric side takes the opposite side. Alignment is by
-                    // measured pixel width via Paint.Align, not character-count padding.
-                    val leftIsUrdu = containsArabicScript(line.left)
-                    val rightIsUrdu = containsArabicScript(line.right)
 
                     val oldBold = paint.isFakeBoldText
                     paint.isFakeBoldText = line.bold
 
-                    paint.textAlign = if (leftIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
-                    val leftX = if (leftIsUrdu) (PRINTER_DOTS_WIDTH - margin).toFloat() else margin.toFloat()
-                    canvas.drawText(line.left, leftX, baseline, paint)
+                    paint.textAlign = Paint.Align.LEFT
+                    canvas.drawText(line.left, margin.toFloat(), baseline, paint)
 
-                    paint.textAlign = if (rightIsUrdu) Paint.Align.LEFT else Paint.Align.RIGHT
-                    val rightX = if (rightIsUrdu) margin.toFloat() else (PRINTER_DOTS_WIDTH - margin).toFloat()
-                    canvas.drawText(line.right, rightX, baseline, paint)
+                    paint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText(line.right, (PRINTER_DOTS_WIDTH - margin).toFloat(), baseline, paint)
 
                     paint.isFakeBoldText = oldBold
                     y += block.height
