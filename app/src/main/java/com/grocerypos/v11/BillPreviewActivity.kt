@@ -522,7 +522,10 @@ class BillPreviewActivity : AppCompatActivity() {
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
             // ---- Item / Qty / Amount — borderless, same layout as the preview card ----
-            val rowWeights = listOf(3.6f, 0.9f, 1.5f)
+            // Weights: Item/Qty tuned earlier to stop overlap; Amount widened further
+            // (2.2, was 1.7) so it uses the blank space that was sitting unused on the
+            // right side of the paper.
+            val rowWeights = listOf(2.8f, 1.2f, 2.2f)
             receiptLines.add(
                 PrinterHelper.ReceiptLine.Row3("Item", "Qty", "Amount", rowWeights, bold = true)
             )
