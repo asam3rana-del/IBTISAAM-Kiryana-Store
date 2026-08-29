@@ -1004,7 +1004,7 @@ class SaleActivity : AppCompatActivity() {
                     // FIX (sync): new customer created here was never enqueued, so it
                     // stayed local-only and never reached Firestore. Now enqueued like
                     // the equivalent flow in PartyActivity.
-                    SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(newCustomer.copy(id = newId)))
+                    SyncQueueHelper.enqueueCustomer(db, newCustomer.copy(id = newId))
                     SyncQueueHelper.trigger(this@SaleActivity)
                     Toast.makeText(this@SaleActivity, "Customer added", Toast.LENGTH_SHORT).show()
                     customerName.setText(v)
@@ -1669,7 +1669,7 @@ class SaleActivity : AppCompatActivity() {
                     // FIX (sync): new customer created inline during Quick Sale was
                     // never enqueued — the SyncQueueHelper.trigger() call later in this
                     // function will now also push this along with the sale.
-                    SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(customer))
+                    SyncQueueHelper.enqueueCustomer(db, customer)
                 }
             }
 
@@ -1713,17 +1713,14 @@ class SaleActivity : AppCompatActivity() {
             )
             db.saleDao().items(listOf(saleItem))
 
-            db.productDao().decrease(current.barcode, smallestQtyForCost)
+            SyncQueueHelper.decreaseProductStock(db, current.barcode, smallestQtyForCost)
 
             if (isCredit && customer != null) {
-                db.customerDao().addBalance(customer.id, amount)
+                SyncQueueHelper.adjustCustomerBalance(db, customer.id, amount)
             }
 
             val savedSale = db.saleDao().findSale(invoice)!!
-            SyncQueueHelper.enqueue(
-                db, "sale", SyncQueueHelper.saleEntityId(savedSale), "create",
-                SyncQueueHelper.saleJson(savedSale, 1)
-            )
+            SyncQueueHelper.enqueueSale(db, savedSale)
 
             if (paid > 0) {
                 val cashTx = CashTransaction(
@@ -1735,7 +1732,7 @@ class SaleActivity : AppCompatActivity() {
                 )
                 val cashTxId = db.cashTransactionDao().insert(cashTx)
                 val savedCashTx = cashTx.copy(id = cashTxId)
-                SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
+                SyncQueueHelper.enqueueCashTransaction(db, savedCashTx)
             }
 
             SyncQueueHelper.trigger(this@SaleActivity)
@@ -1824,12 +1821,12 @@ class SaleActivity : AppCompatActivity() {
                     val p = db.productDao().find(si.barcode)
                     if (p != null) {
                         val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit })
-                        db.productDao().increase(si.barcode, smallestQty)
+                        SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty)
                     }
                 }
                 val originalOutstanding = original.total - original.paid
                 if (original.customerId != null && originalOutstanding > 0) {
-                    db.customerDao().addBalance(original.customerId, -originalOutstanding)
+                    SyncQueueHelper.adjustCustomerBalance(db, original.customerId, -originalOutstanding)
                 }
                 db.saleDao().deleteItems(invoice)
                 db.saleDao().deleteSale(invoice)
@@ -1862,7 +1859,7 @@ class SaleActivity : AppCompatActivity() {
                 // FIX (sync): new customer created inline during Save Sale was never
                 // enqueued — the SyncQueueHelper.trigger() call after this transaction
                 // now also pushes this along with the sale.
-                SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(customer!!))
+                SyncQueueHelper.enqueueCustomer(db, customer!!)
             }
 
             db.saleDao().sale(
@@ -1895,16 +1892,13 @@ class SaleActivity : AppCompatActivity() {
             db.saleDao().items(saleItems)
 
             val savedSale = db.saleDao().findSale(invoice)!!
-            SyncQueueHelper.enqueue(
-                db, "sale", SyncQueueHelper.saleEntityId(savedSale), if (original != null) "update" else "create",
-                SyncQueueHelper.saleJson(savedSale, saleItems.size)
-            )
+            SyncQueueHelper.enqueueSale(db, savedSale)
 
             for (line in lines) {
                 val product = productsByBarcode[line.barcode] ?: db.productDao().find(line.barcode)
                 if (product == null) continue
                 val smallestQty = product.toSmallestUnits(line.qty, line.unit)
-                val rowsAffected = db.productDao().decrease(line.barcode, smallestQty)
+                val rowsAffected = SyncQueueHelper.decreaseProductStock(db, line.barcode, smallestQty)
                 if (rowsAffected == 0) {
                     Toast.makeText(
                         this@SaleActivity,
@@ -1915,7 +1909,7 @@ class SaleActivity : AppCompatActivity() {
             }
 
             if (customer != null && paid < total) {
-                db.customerDao().addBalance(customer!!.id, total - paid)
+                SyncQueueHelper.adjustCustomerBalance(db, customer!!.id, total - paid)
             }
 
             if (paid > 0) {
@@ -1928,7 +1922,7 @@ class SaleActivity : AppCompatActivity() {
                 )
                 val cashTxId = db.cashTransactionDao().insert(cashTx)
                 val savedCashTx = cashTx.copy(id = cashTxId)
-                SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedCashTx), "create", SyncQueueHelper.cashTransactionJson(savedCashTx))
+                SyncQueueHelper.enqueueCashTransaction(db, savedCashTx)
             }
 
             } // end db.withTransaction
@@ -2010,21 +2004,18 @@ class SaleActivity : AppCompatActivity() {
                     val p = db.productDao().find(si.barcode)
                     if (p != null) {
                         val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit })
-                        db.productDao().increase(si.barcode, smallestQty)
+                        SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty)
                     }
                 }
                 val outstanding = sale.total - sale.paid
                 if (sale.customerId != null && outstanding > 0) {
-                    db.customerDao().addBalance(sale.customerId, -outstanding)
+                    SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -outstanding)
                 }
                 db.saleDao().deleteItems(invoice)
                 db.saleDao().deleteSale(invoice)
                 db.cashTransactionDao().deleteByReference(invoice)
             }
-            SyncQueueHelper.enqueue(
-                db, "sale", "sale:$invoice", "delete",
-                org.json.JSONObject().apply { put("invoice", invoice) }.toString()
-            )
+            SyncQueueHelper.enqueueDelete(db, "sale", "sale:$invoice")
             SyncQueueHelper.trigger(this@SaleActivity)
 
             Toast.makeText(this@SaleActivity, "Sale deleted", Toast.LENGTH_SHORT).show()
