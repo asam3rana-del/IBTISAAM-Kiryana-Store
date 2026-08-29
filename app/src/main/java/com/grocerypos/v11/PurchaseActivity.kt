@@ -1359,10 +1359,7 @@ class PurchaseActivity : ThemedActivity() {
                 db.purchaseDao().purchase(purchaseRecord)
                 val purchaseItems = lines.map { line -> PurchaseItem(billNo = billNo, barcode = line.barcode ?: "", qty = line.qty, unitCost = line.rate, amount = line.amount, unit = line.unit) }
                 db.purchaseDao().items(purchaseItems)
-                SyncQueueHelper.enqueue(
-                    db, "purchase", SyncQueueHelper.purchaseEntityId(purchaseRecord), if (original != null) "update" else "create",
-                    SyncQueueHelper.purchaseJson(db, purchaseRecord)
-                )
+                SyncQueueHelper.enqueuePurchase(db, purchaseRecord)
                 lines.forEach { line ->
                     val barcode = line.barcode ?: return@forEach
                     val before = db.productDao().find(barcode) ?: return@forEach
