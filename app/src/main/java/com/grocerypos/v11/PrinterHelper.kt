@@ -71,11 +71,11 @@ object PrinterHelper {
         object Divider : ReceiptLine()
 
         /**
-         * ADDED: a bordered table row — one or more cells laid out in fixed-width
+         * A bordered table row — one or more cells laid out in fixed-width
          * columns (proportioned by [weights]), with a vertical divider line drawn
          * between every column and a horizontal divider line drawn under the row.
-         * Used for the item table (Item / Barcode / Qty / Rate / Amount), giving a
-         * ruled-grid look like a supplier invoice instead of stacked plain lines.
+         * Used for the item table (Item / Qty / Amount), giving a ruled-grid look
+         * like a supplier invoice instead of stacked plain lines.
          *
          * [cells] and [weights] must be the same size — weights are relative (they
          * don't need to sum to any particular number; a column with weight 3 is 3x
@@ -123,24 +123,34 @@ object PrinterHelper {
     // next chunk arrives.
     //
     // FIX 2 (overlapping / "double exposure" print — receipt lines printing on top of
-    // each other, e.g. "Date" merging into "29 Aug", item names showing as garbled
-    // marks): the strip height (200px) was too tall and the fixed 40ms gap between
-    // strips too short for many cheap 58mm printers' actual mechanical paper-feed
-    // speed. The printer was still physically feeding/printing strip N when strip N+1
-    // arrived, so strip N+1 started printing before the paper had advanced past strip
-    // N — producing exactly this overlapped, "printed twice in the same spot" look.
-    // Two changes fix this:
-    //   1. Smaller strips (80px instead of 200px) — less data per raster command, so
-    //      each one finishes printing/feeding faster.
-    //   2. The delay between strips is no longer a fixed 40ms — it now scales with how
-    //      tall the strip actually is (MS_PER_STRIP_ROW * stripHeight), so a full-size
-    //      strip gets a proportionally longer pause than a short one, with a safe
-    //      minimum floor.
-    // If overlap still happens on your printer, raise MS_PER_STRIP_ROW slightly (e.g.
-    // 3f -> 4f or 5f) — that's the one knob to tune per-printer-model.
-    private const val MAX_STRIP_HEIGHT_PX = 80
-    private const val MIN_INTER_CHUNK_DELAY_MS = 60L
-    private const val MS_PER_STRIP_ROW = 3f
+    // each other, e.g. "Date" merging into the next line, item names showing as
+    // garbled/tangled marks): real-world testing on a customer's printer showed this
+    // STILL happening with the original 200px/40ms values, and even after the first
+    // round of tuning (80px / 3ms-per-row / 60ms floor) some units continued to
+    // overlap — most visible on Urdu lines, where two overlapping cursive lines
+    // produce meaningless tangled shapes instead of legible letters (this is what
+    // looked like "garbled Urdu font" but was actually two strips overlapping on the
+    // paper, not a font/shaping problem).
+    //
+    // Root cause: the printer was still physically feeding/printing strip N when
+    // strip N+1 arrived, so strip N+1 started printing before the paper had advanced
+    // past strip N. Three changes tighten this further:
+    //   1. Smaller strips (48px instead of 80px) — even less data per raster command,
+    //      so each one finishes printing/feeding faster and pacing is finer-grained.
+    //   2. A larger per-row pause (6ms/row instead of 3ms/row) and a higher minimum
+    //      floor (100ms instead of 60ms) — gives slower mechanical feed more margin.
+    //   3. A short settle delay right after ESC_INIT (before the first strip) and
+    //      right before FEED_AND_CUT (after the last strip) — some printers need a
+    //      moment to finish initializing / finish their last print job before the
+    //      next command is safe to send.
+    // If overlap still happens on your printer, raise MS_PER_STRIP_ROW further (e.g.
+    // 6f -> 9f or 12f) and/or MIN_INTER_CHUNK_DELAY_MS (e.g. 100 -> 150) — those are
+    // the two knobs to tune per-printer-model. Slower prints are always safer than
+    // overlapping ones.
+    private const val MAX_STRIP_HEIGHT_PX = 48
+    private const val MIN_INTER_CHUNK_DELAY_MS = 100L
+    private const val MS_PER_STRIP_ROW = 6f
+    private const val SETTLE_DELAY_MS = 80L
 
     /** How long to pause after sending a strip of [stripHeightPx] dots, before sending
      *  the next one — scaled to strip height with a safe minimum floor. See FIX 2 above. */
@@ -228,6 +238,9 @@ object PrinterHelper {
 
             out.write(ESC_INIT)
             out.flush()
+            // Settle delay — see FIX 2 above. Let the printer finish initializing
+            // before the first raster strip lands on it.
+            Thread.sleep(SETTLE_DELAY_MS)
 
             for ((chunk, stripHeight) in chunks) {
                 out.write(chunk)
@@ -235,6 +248,8 @@ object PrinterHelper {
                 Thread.sleep(interChunkDelayFor(stripHeight))
             }
 
+            // Settle delay before feed/cut — give the last strip time to fully print.
+            Thread.sleep(SETTLE_DELAY_MS)
             out.write(FEED_AND_CUT)
             out.flush()
             true
@@ -357,12 +372,16 @@ object PrinterHelper {
             }
 
             var ok = writeAll(ESC_INIT)
+            if (ok) Thread.sleep(SETTLE_DELAY_MS)
             for ((chunk, stripHeight) in chunks) {
                 if (!ok) break
                 ok = writeAll(chunk)
                 if (ok) Thread.sleep(interChunkDelayFor(stripHeight))
             }
-            if (ok) ok = writeAll(FEED_AND_CUT)
+            if (ok) {
+                Thread.sleep(SETTLE_DELAY_MS)
+                ok = writeAll(FEED_AND_CUT)
+            }
 
             connection.releaseInterface(usbInterface)
             ok
