@@ -300,9 +300,24 @@ class SettingsActivity : AppCompatActivity() {
             refreshSyncStatus()
             return
         }
-        SyncQueueHelper.trigger(this)
+        // FIX (sync diagnostics): this used to just enqueue a background WorkManager job
+        // and immediately show a static "Syncing…" toast with no idea whether it actually
+        // worked — a real failure (missing Firestore index, wrong Firebase project,
+        // permission error, etc.) looked identical to success. Run it directly here and
+        // await the real result so the user (and anyone debugging this) can actually see
+        // what happened.
         Toast.makeText(this, "Syncing…", Toast.LENGTH_SHORT).show()
-        refreshSyncStatus()
+        lifecycleScope.launch {
+            val result = try {
+                com.grocerypos.v11.sync.SyncRepository.syncNow(this@SettingsActivity)
+            } catch (e: Exception) {
+                Toast.makeText(this@SettingsActivity, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
+                refreshSyncStatus()
+                return@launch
+            }
+            Toast.makeText(this@SettingsActivity, result.summary(), Toast.LENGTH_LONG).show()
+            refreshSyncStatus()
+        }
     }
 
     // ================= PREMIUM GRADIENT HEADER (matches Product/Purchase/Sale headers) =================
