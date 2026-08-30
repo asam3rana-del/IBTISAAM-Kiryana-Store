@@ -235,22 +235,29 @@ class UserManagementActivity : AppCompatActivity() {
         }
 
         return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL
             background = strokedBg(border, "#FAFAFF", 14)
             setPadding(16, 14, 16, 14)
 
-            addView(TextView(this@UserManagementActivity).apply {
+            val topRow = LinearLayout(this@UserManagementActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            topRow.addView(TextView(this@UserManagementActivity).apply {
                 text = user.displayName.take(1).uppercase()
                 textSize = 15f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
                 background = ovalBg(roleColor)
+                // ADDED: dim the avatar when the user is inactive, so it's visually
+                // obvious at a glance without having to read the badge text.
+                alpha = if (user.active) 1f else 0.4f
                 val px = (36 * resources.displayMetrics.density).toInt()
                 width = px; height = px
             })
-            addView(spacerH(14))
+            topRow.addView(spacerH(14))
 
             val info = LinearLayout(this@UserManagementActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -259,7 +266,7 @@ class UserManagementActivity : AppCompatActivity() {
             info.addView(TextView(this@UserManagementActivity).apply {
                 text = "${user.displayName}  ·  ${user.username}"
                 textSize = 14f
-                setTextColor(Color.parseColor(textDark))
+                setTextColor(Color.parseColor(if (user.active) textDark else textGray))
                 setTypeface(typeface, Typeface.BOLD)
             })
             if (user.phone.isNotBlank()) {
@@ -270,13 +277,109 @@ class UserManagementActivity : AppCompatActivity() {
                     setPadding(0, 2, 0, 0)
                 })
             }
-            info.addView(roleBadge(user.role, roleColor))
-            addView(info)
+            val badgeRow = LinearLayout(this@UserManagementActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            badgeRow.addView(roleBadge(user.role, roleColor))
+            // ADDED: Active/Inactive status badge next to the role badge.
+            badgeRow.addView(spacerH(6))
+            badgeRow.addView(roleBadge(if (user.active) "Active" else "Inactive", if (user.active) green else textGray))
+            info.addView(badgeRow)
+            topRow.addView(info)
+            addView(topRow)
 
-            if (user.username != myUsername) {
-                addView(secondaryButton("🗑  DELETE", red) { confirmDelete(user) })
+            // ADDED: action row — Reset Password (any user) + Activate/Deactivate
+            // toggle (any user except yourself, so you can never lock yourself out
+            // by accident) + Delete (unchanged, still hidden for yourself).
+            addView(spacer(10))
+            val actionRow = LinearLayout(this@UserManagementActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
             }
+            val weighted = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            actionRow.addView(secondaryButton("🔑 Reset PW", blue) { openResetPasswordDialog(user) }, weighted)
+            actionRow.addView(spacerH(8))
+            if (user.username != myUsername) {
+                actionRow.addView(
+                    secondaryButton(
+                        if (user.active) "⏸ Deactivate" else "▶ Activate",
+                        if (user.active) amber else green
+                    ) { toggleActive(user) },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                )
+                actionRow.addView(spacerH(8))
+                actionRow.addView(
+                    secondaryButton("🗑 DELETE", red) { confirmDelete(user) },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                )
+            }
+            addView(actionRow)
         }
+    }
+
+    // ADDED: lets an admin set a brand-new password for any user (including one who
+    // forgot theirs) without needing to know the old one. Purely local — passwordHash
+    // is deliberately never included in what gets synced (see SyncQueueHelper.userJson),
+    // so this never enqueues a sync row; each device keeps its own password for a
+    // given username, by design.
+    private fun openResetPasswordDialog(user: User) {
+        val newPasswordField = EditText(this).apply {
+            hint = "New password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(28, 22, 28, 22)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Reset Password — ${user.displayName}")
+            .setMessage("${user.username} ke liye naya password set karein.")
+            .setView(newPasswordField)
+            .setPositiveButton("Reset") { _, _ ->
+                val newPassword = newPasswordField.text.toString()
+                if (newPassword.length < 4) {
+                    Toast.makeText(this, "Password kam az kam 4 characters ka ho", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    val db = PosDatabase.get(this@UserManagementActivity)
+                    db.userDao().upsert(user.copy(passwordHash = PasswordHasher.hash(newPassword)))
+                    Toast.makeText(this@UserManagementActivity, "Password reset ho gaya", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ADDED: flips a user's active flag. Unlike password, `active` IS part of the
+    // synced payload (see userJson), so this enqueues like any other user edit —
+    // deactivating someone on one device correctly deactivates them everywhere once
+    // synced.
+    private fun toggleActive(user: User) {
+        val turningOff = user.active
+        val action = if (turningOff) "Deactivate" else "Activate"
+        AlertDialog.Builder(this)
+            .setTitle("$action ${user.displayName}?")
+            .setMessage(
+                if (turningOff) "${user.username} ab login nahi kar sakega jab tak dobara activate na kiya jaye."
+                else "${user.username} ab dobara login kar sakega."
+            )
+            .setPositiveButton(action) { _, _ ->
+                lifecycleScope.launch {
+                    val db = PosDatabase.get(this@UserManagementActivity)
+                    val updated = user.copy(active = !user.active)
+                    db.userDao().upsert(updated)
+                    SyncQueueHelper.enqueue(
+                        db = db,
+                        entityType = "user",
+                        entityId = SyncQueueHelper.userEntityId(updated),
+                        operation = "upsert",
+                        payloadJson = SyncQueueHelper.userJson(updated)
+                    )
+                    SyncQueueHelper.trigger(this@UserManagementActivity)
+                    Toast.makeText(
+                        this@UserManagementActivity,
+                        if (updated.active) "User activated" else "User deactivated",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun roleBadge(role: String, colorHex: String) = TextView(this).apply {

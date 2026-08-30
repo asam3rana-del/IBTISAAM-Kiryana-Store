@@ -350,11 +350,11 @@ class PartyActivity : AppCompatActivity() {
                 val limit = creditLimitField.text.toString().toDoubleOrNull() ?: 0.0
                 val customer = Customer(name = n, phone = phone, creditLimit = limit, openingBalance = opening, balance = 0.0)
                 val newId = db.customerDao().insert(customer)
-                SyncQueueHelper.enqueue(db, "customer", "customer:$newId", "create", SyncQueueHelper.customerJson(customer.copy(id = newId)))
+                SyncQueueHelper.enqueueCustomer(db, customer.copy(id = newId))
             } else {
                 val supplier = Supplier(name = n, phone = phone, openingBalance = opening, balance = 0.0)
                 val newId = db.supplierDao().insert(supplier)
-                SyncQueueHelper.enqueue(db, "supplier", "supplier:$newId", "create", SyncQueueHelper.supplierJson(supplier.copy(id = newId)))
+                SyncQueueHelper.enqueueSupplier(db, supplier.copy(id = newId))
             }
             SyncQueueHelper.trigger(this@PartyActivity)
             Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
@@ -563,7 +563,7 @@ class PartyActivity : AppCompatActivity() {
                     )
                     val db = PosDatabase.get(this@PartyActivity)
                     db.customerDao().update(updated)
-                    SyncQueueHelper.enqueue(db, "customer", "customer:${updated.id}", "update", SyncQueueHelper.customerJson(updated))
+                    SyncQueueHelper.enqueueCustomer(db, updated)
                     SyncQueueHelper.trigger(this@PartyActivity)
                     Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Updated", "اپ ڈیٹ ہو گیا"), Toast.LENGTH_SHORT).show()
                 }
@@ -603,7 +603,7 @@ class PartyActivity : AppCompatActivity() {
                     )
                     val db = PosDatabase.get(this@PartyActivity)
                     db.supplierDao().update(updated)
-                    SyncQueueHelper.enqueue(db, "supplier", "supplier:${updated.id}", "update", SyncQueueHelper.supplierJson(updated))
+                    SyncQueueHelper.enqueueSupplier(db, updated)
                     SyncQueueHelper.trigger(this@PartyActivity)
                     Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Updated", "اپ ڈیٹ ہو گیا"), Toast.LENGTH_SHORT).show()
                 }
@@ -625,7 +625,10 @@ class PartyActivity : AppCompatActivity() {
                     // FIX (sync): SyncApi.push() handles "delete" generically for any
                     // collection, so this is now enqueued — previously a deleted customer
                     // stayed in Firestore forever since nothing told the server to remove it.
-                    SyncQueueHelper.enqueue(db, "customer", "customer:${c.id}", "delete", "{}")
+                    // Prefer the id already stamped on this row (matches whatever was
+                    // actually pushed, even pre-DeviceTag data) — only compute fresh if
+                    // this customer was somehow never synced at all.
+                    SyncQueueHelper.enqueue(db, "customer", c.serverId ?: SyncQueueHelper.customerEntityId(c), "delete", "{}")
                     SyncQueueHelper.trigger(this@PartyActivity)
                     Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Deleted", "حذف ہو گیا"), Toast.LENGTH_SHORT).show()
                 }
@@ -643,7 +646,7 @@ class PartyActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@PartyActivity)
                     db.supplierDao().delete(s)
-                    SyncQueueHelper.enqueue(db, "supplier", "supplier:${s.id}", "delete", "{}")
+                    SyncQueueHelper.enqueue(db, "supplier", s.serverId ?: SyncQueueHelper.supplierEntityId(s), "delete", "{}")
                     SyncQueueHelper.trigger(this@PartyActivity)
                     Toast.makeText(this@PartyActivity, Loc.t(this@PartyActivity, "Deleted", "حذف ہو گیا"), Toast.LENGTH_SHORT).show()
                 }

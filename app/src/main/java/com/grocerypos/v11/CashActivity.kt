@@ -335,7 +335,7 @@ class CashActivity : AppCompatActivity() {
             val tx = CashTransaction(type = type, method = method, amount = amt, reason = fullReason)
             val newId = db.cashTransactionDao().insert(tx)
             val savedTx = tx.copy(id = newId)
-            SyncQueueHelper.enqueue(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(savedTx), "create", SyncQueueHelper.cashTransactionJson(savedTx))
+            SyncQueueHelper.enqueueCashTransaction(db, savedTx)
             SyncQueueHelper.trigger(this@CashActivity)
             Toast.makeText(this@CashActivity, Loc.t(this@CashActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             amount.text.clear()

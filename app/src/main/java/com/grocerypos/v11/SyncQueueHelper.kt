@@ -4,15 +4,44 @@ import android.content.Context
 import com.google.gson.Gson
 import com.grocerypos.v11.sync.SyncWorker
 
+// FIX (Phase 3 - Online): every ...Json() builder below stamps its payload with
+// "branchId" (BuildConfig.BRANCH_ID) before it's pushed to Firestore, so records from
+// different branches can be told apart / filtered on pull (see SyncApi.kt).
+//
+// FIX (sync bug #2): previously NOTHING called db.syncQueueDao().enqueue(...) anywhere
+// in the app, so sync_queue stayed empty forever no matter how many sales/customers/etc.
+// were created. Below, every ...Json() builder now has a matching enqueueX() function
+// that builds the JSON AND inserts the sync_queue row AND triggers a sync — in one call.
+//
+// Call the relevant enqueueX() right after each successful DAO insert/update, e.g.:
+//
+//     val newId = db.customerDao().insert(customer)
+//     SyncQueueHelper.enqueueCustomer(db, customer.copy(id = newId))
+//
+//     db.saleDao().sale(sale)
+//     db.saleDao().items(saleItems)
+//     SyncQueueHelper.enqueueSale(db, sale, saleItems.size)
+//
+// Do this at every insert/update call site for: customers, suppliers, products, sales,
+// purchases, payments, expenses, cash_transactions, users. Deletes should call
+// SyncQueueHelper.enqueueDelete(db, entityType, entityId) instead.
 object SyncQueueHelper {
 
     private val gson = Gson()
 
+    // FIX (multi-device sync bug): customer/supplier/expense/cash_transaction/payment
+    // IDs are built from a LOCAL autoincrement id, which two different devices can and
+    // will generate identically (e.g. both devices' first customer is local id=1) —
+    // without DeviceTag mixed in, one device's Firestore doc would silently overwrite
+    // the other's. Sale/Purchase/Product/User don't need this: their keys (invoice,
+    // billNo, barcode, username) are already naturally unique, not local-id-based.
     fun customerEntityId(c: Customer) = "customer:${DeviceTag.current}-${c.id}"
     fun supplierEntityId(s: Supplier) = "supplier:${DeviceTag.current}-${s.id}"
     fun productEntityId(p: Product) = p.barcode
     fun saleEntityId(sale: Sale) = "sale:${sale.invoice}"
     fun purchaseEntityId(purchase: Purchase) = "purchase:${purchase.billNo}"
+    // NOTE: payment.reference is the natural key (it's the sale invoice / purchase
+    // billNo it belongs to), already collision-safe — no DeviceTag needed here.
     fun paymentEntityId(payment: Payment) = "payment:${payment.reference}"
     fun expenseEntityId(expense: Expense) = "expense:${DeviceTag.current}-${expense.id}"
     fun cashTransactionEntityId(t: CashTransaction) = "cash_transaction:${DeviceTag.current}-${t.id}"
@@ -33,6 +62,17 @@ object SyncQueueHelper {
         SyncWorker.syncNowOnce(context)
     }
 
+    // ---------- One-call helpers: build payload + enqueue ----------
+    // (context is optional — pass it if you want the sync to fire immediately instead
+    // of waiting for the next periodic run; omit it to just queue the row.)
+
+    // FIX (self-duplication on pull): entityId is deterministic (built purely from the
+    // local row's own id), but the local row's own `serverId` column was never being
+    // set to that same value — so on the very next pull, this device wouldn't recognize
+    // its own just-pushed record (findByServerId would find nothing) and would insert
+    // it again as a brand-new "pulled" row, duplicating it locally. Stamping serverId
+    // onto the local row immediately (no need to wait for the actual network push,
+    // since the id is computed locally and doesn't depend on the server) fixes this.
     suspend fun enqueueCustomer(db: PosDatabase, c: Customer, context: Context? = null) {
         val id = customerEntityId(c)
         if (c.serverId != id) db.customerDao().update(c.copy(serverId = id))
@@ -52,6 +92,16 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // ---------- Balance / stock adjustment wrappers ----------
+    // FIX (sync bug #3 — the big one): db.customerDao().addBalance()/supplierDao()
+    // .addBalance()/productDao().decrease()/increase()/decreaseForce() are raw SQL
+    // UPDATE queries used everywhere a sale/purchase/return/edit/delete changes a
+    // balance or stock level. NONE of these ever enqueued a sync row, so a customer's
+    // running balance and a product's running stock — the two numbers that matter most
+    // for two devices sharing one register — never actually synced, even though the
+    // customer/supplier/product record itself looked like it was "syncing" whenever it
+    // was first created. Use these wrappers instead of calling the DAO methods
+    // directly, wherever a balance or stock change should be visible on other devices.
     suspend fun adjustCustomerBalance(db: PosDatabase, customerId: Long, amount: Double) {
         db.customerDao().addBalance(customerId, amount)
         db.customerDao().find(customerId)?.let { enqueueCustomer(db, it) }
@@ -160,6 +210,13 @@ object SyncQueueHelper {
         return gson.toJson(map)
     }
 
+    // FIX (multi-device: sales/purchases weren't two-way syncable): previously only
+    // itemCount was sent, so even if a sale/purchase document was ever pulled back
+    // down to another device, there weren't enough details to reconstruct the actual
+    // sale_items/purchase_items rows — the other device would see a total but not
+    // what was actually sold/bought. Now sends the full item list. Suspend + takes db
+    // because it needs to look the items up itself (every call site already has both
+    // in scope, so nothing else needs to change).
     suspend fun saleJson(db: PosDatabase, sale: Sale): String {
         val items = db.saleDao().itemsForInvoice(sale.invoice)
         val itemMaps = items.map {

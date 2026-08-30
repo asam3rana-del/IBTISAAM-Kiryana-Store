@@ -1720,7 +1720,10 @@ class SaleActivity : AppCompatActivity() {
             }
 
             val savedSale = db.saleDao().findSale(invoice)!!
-            SyncQueueHelper.enqueueSale(db, savedSale)
+            SyncQueueHelper.enqueue(
+                db, "sale", SyncQueueHelper.saleEntityId(savedSale), "create",
+                SyncQueueHelper.saleJson(db, savedSale)
+            )
 
             if (paid > 0) {
                 val cashTx = CashTransaction(
@@ -1892,7 +1895,10 @@ class SaleActivity : AppCompatActivity() {
             db.saleDao().items(saleItems)
 
             val savedSale = db.saleDao().findSale(invoice)!!
-            SyncQueueHelper.enqueueSale(db, savedSale)
+            SyncQueueHelper.enqueue(
+                db, "sale", SyncQueueHelper.saleEntityId(savedSale), if (original != null) "update" else "create",
+                SyncQueueHelper.saleJson(db, savedSale)
+            )
 
             for (line in lines) {
                 val product = productsByBarcode[line.barcode] ?: db.productDao().find(line.barcode)
@@ -2015,7 +2021,10 @@ class SaleActivity : AppCompatActivity() {
                 db.saleDao().deleteSale(invoice)
                 db.cashTransactionDao().deleteByReference(invoice)
             }
-            SyncQueueHelper.enqueueDelete(db, "sale", "sale:$invoice")
+            SyncQueueHelper.enqueue(
+                db, "sale", "sale:$invoice", "delete",
+                org.json.JSONObject().apply { put("invoice", invoice) }.toString()
+            )
             SyncQueueHelper.trigger(this@SaleActivity)
 
             Toast.makeText(this@SaleActivity, "Sale deleted", Toast.LENGTH_SHORT).show()

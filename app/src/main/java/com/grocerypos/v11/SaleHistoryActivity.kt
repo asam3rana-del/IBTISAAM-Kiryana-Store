@@ -218,7 +218,7 @@ class SaleHistoryActivity : AppCompatActivity() {
     }
 
     // ---- FIX: stock reversal ab stored si.unit ke sath Product.toSmallestUnits()
-    // (multiply-only) use karta hai — pehle `db.productDao().increase(it.barcode, it.qty)`
+    // (multiply-only) use karta hai — pehle `SyncQueueHelper.increaseProductStock(db, it.barcode, it.qty)`
     // primary-unit qty seedha smallest-unit stock mein add kar raha tha, jo unit-tier
     // products (secondary/tertiary unit wale) ke liye galat stock reverse karta tha.
     // Ab SaleActivity.deleteSale() / PurchaseActivity.reverseStockForItems() jaisa hi. ----
@@ -235,14 +235,14 @@ class SaleHistoryActivity : AppCompatActivity() {
                     val p = db.productDao().find(si.barcode)
                     if (p != null) {
                         val smallestQty = p.toSmallestUnits(si.qty.toDouble(), si.unit.ifBlank { p.unit })
-                        db.productDao().increase(si.barcode, smallestQty)
+                        SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty)
                     }
                 }
 
                 // Reverse any outstanding balance this sale added to the customer.
                 val outstanding = sale.total - sale.paid
                 if (sale.customerId != null && outstanding > 0) {
-                    db.customerDao().addBalance(sale.customerId, -outstanding)
+                    SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -outstanding)
                 }
 
                 db.saleDao().deleteItems(invoice)

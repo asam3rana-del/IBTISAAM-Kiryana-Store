@@ -163,7 +163,7 @@ class HistoryActivity : AppCompatActivity() {
     // ---- FIX: stock reversal now converts si.qty (stored in whatever unit was entered,
     // e.g. "dozen") to smallest-unit stock via Product.toSmallestUnits() before touching
     // stock, same as SaleActivity.deleteSale() / SaleHistoryActivity.deleteSale(). Previously
-    // this called db.productDao().increase(it.barcode, it.qty) directly, which added back the
+    // this called SyncQueueHelper.increaseProductStock(db, it.barcode, it.qty) directly, which added back the
     // raw entered-unit number as if it were already smallest units — wrong for any product
     // with a secondary/tertiary unit. ----
     // FIX (Phase 1 - Data Safety): stock increase + return-row insert + balance reversal +
@@ -183,10 +183,10 @@ class HistoryActivity : AppCompatActivity() {
                 for (it in items) {
                     val p = db.productDao().find(it.barcode)
                     val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit }) ?: it.qty.toDouble()
-                    db.productDao().increase(it.barcode, smallestQty)
+                    SyncQueueHelper.increaseProductStock(db, it.barcode, smallestQty)
                     db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
                 }
-                if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
+                if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
                 db.cashTransactionDao().deleteByReference(invoice); db.saleDao().markReturned(invoice)
             }
             loadSales()
@@ -204,9 +204,9 @@ class HistoryActivity : AppCompatActivity() {
                 for (it in items) {
                     val p = db.productDao().find(it.barcode)
                     val smallestQty = p?.toSmallestUnits(it.qty.toDouble(), it.unit.ifBlank { p.unit }) ?: it.qty.toDouble()
-                    db.productDao().increase(it.barcode, smallestQty)
+                    SyncQueueHelper.increaseProductStock(db, it.barcode, smallestQty)
                 }
-                if (sale.customerId != null && sale.paid < sale.total) db.customerDao().addBalance(sale.customerId, -(sale.total - sale.paid))
+                if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
                 db.cashTransactionDao().deleteByReference(invoice); db.saleDao().deleteItems(invoice); db.saleDao().deleteSale(invoice)
             }
             loadSales()
@@ -273,7 +273,7 @@ class HistoryActivity : AppCompatActivity() {
             val totalValueAfterRemoval = (totalValueBefore - pi.amount).coerceAtLeast(0.0)
             val newCostPerSmallest = if (newStock > 0) totalValueAfterRemoval / newStock else 0.0
 
-            db.productDao().decreaseForce(pi.barcode, smallestQty)
+            SyncQueueHelper.decreaseProductStockForce(db, pi.barcode, smallestQty)
             db.productDao().updateCost(pi.barcode, newCostPerSmallest * factor)
         }
     }
@@ -289,7 +289,7 @@ class HistoryActivity : AppCompatActivity() {
                 for (item in items) {
                     db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = item.qty, amount = item.amount))
                 }
-                if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
+                if (purchase.supplierId != null && purchase.paid < purchase.total) SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -(purchase.total - purchase.paid))
                 db.cashTransactionDao().deleteByReference(billNo); db.purchaseDao().markReturned(billNo)
             }
             loadPurchases()
@@ -303,7 +303,7 @@ class HistoryActivity : AppCompatActivity() {
             val items = db.purchaseDao().itemsForBill(billNo)
             db.withTransaction {
                 reverseStockAndCostForPurchaseItems(db, items)
-                if (purchase.supplierId != null && purchase.paid < purchase.total) db.supplierDao().addBalance(purchase.supplierId, -(purchase.total - purchase.paid))
+                if (purchase.supplierId != null && purchase.paid < purchase.total) SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -(purchase.total - purchase.paid))
                 db.cashTransactionDao().deleteByReference(billNo); db.paymentDao().deleteByReference(billNo); db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo)
             }
             loadPurchases()

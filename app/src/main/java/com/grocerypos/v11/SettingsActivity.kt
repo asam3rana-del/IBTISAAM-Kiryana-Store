@@ -145,6 +145,14 @@ class SettingsActivity : AppCompatActivity() {
         // ---- Sync Now (now shows live Connected/Offline status) ----
         list.addView(buildSyncRow())
 
+        // ADDED (multi-tenant support): lets this device be pointed at its own
+        // Firebase project instead of always using whatever this build shipped with —
+        // see CloudConfigStore.kt for why. Sync Now above stays disabled/no-op until
+        // this is filled in (or this build already has a usable default baked in).
+        list.addView(menuRow("☁️", "Cloud Sync Setup", showChevron = true) {
+            openCloudSyncSetupDialog()
+        })
+
         list.addView(spacer(10))
 
         // ---- Settings (expandable — holds all the real settings sections) ----
@@ -239,11 +247,28 @@ class SettingsActivity : AppCompatActivity() {
         return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    /** Updates the small dot + label under "Sync Now" to reflect current connectivity. */
+    /** Updates the small dot + label under "Sync Now" to reflect current connectivity
+     *  AND whether this device even has a cloud project configured — see
+     *  CloudConfigStore.kt. Previously this only checked network connectivity, so a
+     *  device with no cloud project at all still showed a reassuring green
+     *  "Connected" dot even though Sync Now could never do anything. */
     private fun refreshSyncStatus() {
         val online = isNetworkConnected()
-        syncRowDot.setTextColor(Color.parseColor(if (online) teal else red))
-        syncRowStatusText.text = if (online) "Connected" else "Offline"
+        val cloudConfigured = com.grocerypos.v11.CloudConfigStore.firebaseApp(this) != null
+        when {
+            !cloudConfigured -> {
+                syncRowDot.setTextColor(Color.parseColor(amber))
+                syncRowStatusText.text = "Not set up — tap Cloud Sync Setup"
+            }
+            online -> {
+                syncRowDot.setTextColor(Color.parseColor(teal))
+                syncRowStatusText.text = "Connected"
+            }
+            else -> {
+                syncRowDot.setTextColor(Color.parseColor(red))
+                syncRowStatusText.text = "Offline"
+            }
+        }
     }
 
     /** Builds the "Sync Now" row with a live Connected/Offline status line under the label,
@@ -319,6 +344,80 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this@SettingsActivity, result.summary(), Toast.LENGTH_LONG).show()
             refreshSyncStatus()
         }
+    }
+
+    // ADDED (multi-tenant support): admin pastes their own Firebase project's 4
+    // values here (from Firebase Console > Project Settings > General > Your apps).
+    // See CloudConfigStore.kt for exactly why this exists and how it's used.
+    private fun openCloudSyncSetupDialog() {
+        val existing = com.grocerypos.v11.CloudConfigStore.get(this)
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 24, 32, 8)
+        }
+
+        fun labeledField(label: String, prefill: String): EditText {
+            container.addView(TextView(this).apply {
+                text = label
+                textSize = 11f
+                setTextColor(Color.parseColor(textGray))
+                setPadding(2, 14, 0, 4)
+            })
+            val field = EditText(this).apply {
+                setText(prefill)
+                setSingleLine(true)
+                background = strokedBg(border, cardBg, 10)
+                setPadding(20, 18, 20, 18)
+                textSize = 13.5f
+            }
+            container.addView(field)
+            return field
+        }
+
+        container.addView(TextView(this).apply {
+            text = "Firebase Console → Project Settings → General → Your apps (Android) → Config mein ye 4 values milengi. Khali chhod kar wapas is build ke default project par ja sakte hain (agar koi ho)."
+            textSize = 11.5f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(2, 0, 0, 4)
+        })
+
+        val projectIdField = labeledField("Project ID", existing?.projectId ?: "")
+        val apiKeyField = labeledField("API Key", existing?.apiKey ?: "")
+        val appIdField = labeledField("App ID", existing?.appId ?: "")
+        val storageBucketField = labeledField("Storage Bucket", existing?.storageBucket ?: "")
+
+        val scroll = ScrollView(this).apply { addView(container) }
+
+        AlertDialog.Builder(this)
+            .setTitle("Cloud Sync Setup")
+            .setView(scroll)
+            .setPositiveButton("Save") { _, _ ->
+                val projectId = projectIdField.text.toString().trim()
+                val apiKey = apiKeyField.text.toString().trim()
+                val appId = appIdField.text.toString().trim()
+                val storageBucket = storageBucketField.text.toString().trim()
+
+                if (projectId.isEmpty() || apiKey.isEmpty() || appId.isEmpty()) {
+                    Toast.makeText(this, "Project ID, API Key aur App ID zaroori hain", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                com.grocerypos.v11.CloudConfigStore.save(
+                    this,
+                    com.grocerypos.v11.CloudConfig(projectId, apiKey, appId, storageBucket)
+                )
+                Toast.makeText(this, "Cloud project connected — ab Sync Now try karein", Toast.LENGTH_LONG).show()
+                refreshSyncStatus()
+            }
+            .setNeutralButton(if (existing != null) "Disconnect" else "Cancel") { _, _ ->
+                if (existing != null) {
+                    com.grocerypos.v11.CloudConfigStore.clear(this)
+                    Toast.makeText(this, "Cloud project disconnected", Toast.LENGTH_SHORT).show()
+                    refreshSyncStatus()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ================= PREMIUM GRADIENT HEADER (matches Product/Purchase/Sale headers) =================

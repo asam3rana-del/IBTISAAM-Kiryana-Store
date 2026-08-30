@@ -1,8 +1,10 @@
 package com.grocerypos.v11.sync
 
+import android.content.Context
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.tasks.await
+import com.grocerypos.v11.CloudConfigStore
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.Supplier
@@ -26,15 +28,28 @@ import com.grocerypos.v11.CashTransaction
  *   payments/{serverId}           (still push-only, see NOTE below)
  *   expenses/{serverId}
  *   cash_transactions/{serverId}
+ *
+ * CHANGED (multi-tenant support): which Firestore project this talks to is no longer
+ * fixed at compile time — see CloudConfigStore. Every entry point below now takes a
+ * Context and resolves the right FirebaseFirestore instance per call via
+ * firestoreFor(context), which returns null if this device has no cloud project
+ * configured at all (custom or default) — callers must treat that as "nothing to
+ * sync to" rather than crashing.
  */
 object SyncApi {
 
-    private val db by lazy { FirebaseFirestore.getInstance() }
     private val gson by lazy { com.google.gson.Gson() }
+
+    /** Returns null if this device has no Firebase project configured (custom or default). */
+    private fun firestoreFor(context: Context): FirebaseFirestore? {
+        val app = CloudConfigStore.firebaseApp(context) ?: return null
+        return FirebaseFirestore.getInstance(app)
+    }
 
     // ---------- PUSH ----------
 
-    suspend fun push(entry: com.grocerypos.v11.SyncQueueEntry): Boolean {
+    suspend fun push(context: Context, entry: com.grocerypos.v11.SyncQueueEntry): Boolean {
+        val db = firestoreFor(context) ?: return false
         return try {
             val collection = when (entry.entityType) {
                 "customer" -> "customers"
@@ -108,7 +123,8 @@ object SyncApi {
     // collection and the whole pull is aborted (see SyncRepository's try/catch) — so if
     // sync has been failing silently, this is the most likely reason; check Settings >
     // Sync Now's result message for the actual Firestore error text.
-    suspend fun pull(since: Long): PullResult {
+    suspend fun pull(context: Context, since: Long): PullResult {
+        val db = firestoreFor(context) ?: return PullResult(serverTime = since)
         val branchId = com.grocerypos.v11.BuildConfig.BRANCH_ID
 
         fun query(collection: String) = db.collection(collection)

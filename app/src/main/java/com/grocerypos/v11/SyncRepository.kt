@@ -23,13 +23,21 @@ object SyncRepository {
         val db = PosDatabase.get(context)
         val queueDao = db.syncQueueDao()
 
+        // FIX (multi-tenant support): if this device has no Firebase project
+        // configured at all (no custom Cloud Sync Setup entered, and this build has
+        // no usable default), there is nothing to sync to — say so plainly instead of
+        // quietly trying and failing, or worse, silently succeeding with zero effect.
+        if (com.grocerypos.v11.CloudConfigStore.firebaseApp(context) == null) {
+            return SyncResult(0, 0, pulledOk = false, error = "Cloud sync not set up — add your project in Settings > Cloud Sync Setup")
+        }
+
         var pushedCount = 0
         var failedCount = 0
 
         // ---- 1. PUSH: drain the local queue up to Firestore ----
         val pending = queueDao.pending(limit = 200)
         for (entry in pending) {
-            val ok = SyncApi.push(entry)
+            val ok = SyncApi.push(context, entry)
             if (ok) {
                 queueDao.markSynced(entry.id)
                 pushedCount++
@@ -44,7 +52,7 @@ object SyncRepository {
         val since = prefs.getLong(KEY_LAST_SYNC, 0L)
 
         val changes = try {
-            SyncApi.pull(since)
+            SyncApi.pull(context, since)
         } catch (e: Exception) {
             return SyncResult(pushedCount, failedCount, pulledOk = false, error = e.message)
         }
