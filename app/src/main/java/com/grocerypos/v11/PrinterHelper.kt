@@ -563,6 +563,15 @@ object PrinterHelper {
             textSize = fontSizePx
             color = Color.BLACK
             this.typeface = typeface
+            // FIX (print too light / faint): thin anti-aliased glyph edges were often
+            // landing as mid-gray in the 1-bit conversion below, which a lot of thermal
+            // print heads render as barely-there. FILL_AND_STROKE + a small stroke width
+            // thickens every character uniformly (a "synthetic bold" effect) so more of
+            // each glyph crosses the black/white threshold — same technique as bolding a
+            // whole font, but applied globally without changing which lines are already
+            // marked bold vs normal (those still look heavier relative to this baseline).
+            style = Paint.Style.FILL_AND_STROKE
+            strokeWidth = fontSizePx * 0.035f
         }
         // SPEED TUNING: slightly tighter spacing than before shrinks the overall
         // bitmap height (and so the total bytes sent to the printer) without making
@@ -734,6 +743,10 @@ object PrinterHelper {
                     canvas.drawLine(tableLeft, rowBottom, tableRight, rowBottom, paint)
                     for (x in colX) canvas.drawLine(x, rowTop, x, rowBottom, paint)
                     paint.strokeWidth = oldStroke
+                    // FIX: restore to the global FILL_AND_STROKE synthetic-bold style
+                    // (set once in renderReceiptLines) — left as pure STROKE here would
+                    // have made the cell text below render as hollow/outline-only glyphs.
+                    paint.style = Paint.Style.FILL_AND_STROKE
 
                     // ---- cell text ----
                     paint.textSize = tableFontSize
@@ -926,7 +939,13 @@ object PrinterHelper {
                     val g = (pixel shr 8) and 0xFF
                     val bch = pixel and 0xFF
                     val luminance = r * 0.3 + g * 0.59 + bch * 0.11
-                    if (luminance < 128) {
+                    // FIX (print too light): was <128 — only fairly dark pixels became
+                    // black dots, so lighter gray (anti-aliased edges, thin strokes)
+                    // printed as nothing at all. Raised to <195 so those pixels also
+                    // print solid, which — combined with the synthetic-bold stroke
+                    // above — makes the whole receipt noticeably darker and easier to
+                    // read on a faint-printing thermal head.
+                    if (luminance < 195) {
                         val byteIndex = row * bytesPerRow + (x / 8)
                         val bitIndex = 7 - (x % 8)
                         imageData[byteIndex] = (imageData[byteIndex].toInt() or (1 shl bitIndex)).toByte()
