@@ -61,4 +61,4 @@ jobs:
       - name: Print SHA-1 / SHA-256 fingerprints
         run: |
           keytool -list -v -keystore release.keystore -alias ibtisaam \
-            -storepass "${{ secrets.RELEASE_STORE_PASSWORD }}" | grep -E "SHA1:|SHA256:|Alias name:"
+            -storepass "${{ secrets.RELEASE_STORE_PASSWORD }}" || true
