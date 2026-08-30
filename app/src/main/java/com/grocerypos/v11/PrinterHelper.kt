@@ -145,6 +145,32 @@ object PrinterHelper {
 
     // ESC @ - initialize/reset printer
     private val ESC_INIT = byteArrayOf(0x1B, 0x40)
+
+    // FIX (print still too light after bitmap-level darkening): bolding glyphs and
+    // widening the black/white threshold (see renderReceiptLines/bitmapToEscPosRasterChunks)
+    // changes how much of the bitmap is marked black — it can't change how HOT the print
+    // head burns each dot, which is controlled by the printer's own firmware. If the print
+    // is still faint after that fix, the bitmap isn't the bottleneck; this tries to raise
+    // the actual heat/darkness at the hardware level instead.
+    //
+    // ESC 7 n1 n2 n3 ("set heating parameters") is a de-facto-standard vendor command that
+    // a large share of cheap 58mm ESC/POS clone controllers (not just genuine Epson units)
+    // respond to:
+    //   n1 = additional heating dots  (more dots heated per burn = darker)
+    //   n2 = heating time             (longer burn = darker, but slower)
+    //   n3 = heating interval         (shorter gap = darker, but more heat stress on the head)
+    // Values below (15, 120, 2) are a commonly-used "maximum darkness" preset for these
+    // clone boards. This is NOT guaranteed to do anything — genuine Epson printers and some
+    // clones ignore unrecognized commands safely, which is why it's always safe to send.
+    //
+    // HOW TO TEST: print with this in place. Darker -> keep it (this WAS the fix). No
+    // difference -> the printer's darkness truly is fixed in hardware/firmware (worn head,
+    // or firmware doesn't expose this control) and nothing here can change it further.
+    // If print ever looks smudged, has faint gray "ghost" doubling, or the head feels hot
+    // after printing, LOWER n1/n2 or remove this line entirely — that combination is too
+    // aggressive for this particular head.
+    private val ESC_HEATING_DENSITY = byteArrayOf(0x1B, 0x37, 0x0F, 0x78, 0x02)
+
     // Feed a few lines then partial cut (GS V 1) - supported by most 58mm printers.
     // NOTE: printers with no cutter hardware (most handheld/mobile 58mm Bluetooth
     // printers) simply ignore an unsupported cut command, so this is safe to always send.
@@ -303,6 +329,10 @@ object PrinterHelper {
 
             out.write(ESC_INIT)
             out.flush()
+            // Experimental hardware-level darkness boost — see ESC_HEATING_DENSITY's
+            // comment above for what this does and how to tell if it's helping.
+            out.write(ESC_HEATING_DENSITY)
+            out.flush()
             // Settle delay — see FIX 2 above. Let the printer finish initializing
             // before the first raster strip lands on it.
             Thread.sleep(SETTLE_DELAY_MS)
@@ -437,6 +467,9 @@ object PrinterHelper {
             }
 
             var ok = writeAll(ESC_INIT)
+            // Experimental hardware-level darkness boost — see ESC_HEATING_DENSITY's
+            // comment above for what this does and how to tell if it's helping.
+            if (ok) ok = writeAll(ESC_HEATING_DENSITY)
             if (ok) Thread.sleep(SETTLE_DELAY_MS)
             for ((chunk, stripHeight) in chunks) {
                 if (!ok) break
