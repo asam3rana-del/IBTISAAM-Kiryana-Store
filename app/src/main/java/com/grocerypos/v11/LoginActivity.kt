@@ -558,6 +558,22 @@ class LoginActivity : AppCompatActivity() {
                         loggedInUser = user
                         db.appSettingDao().set(AppSetting("last_username", user.username))
                         completeLogin()
+                    } else if (db.userDao().activeCount() == 1 && db.userDao().soleActiveUserOrNull() != null) {
+                        // FIX (OTP first-link deadlock): only one account exists (typical
+                        // single-owner store) — Firebase already proved this phone's
+                        // ownership, so auto-link it instead of sending the person to a
+                        // Manage Users screen they can't reach without already being logged in.
+                        val onlyUser = db.userDao().soleActiveUserOrNull()!!
+                        val linked = onlyUser.copy(phone = phone)
+                        db.userDao().upsert(linked)
+                        loggedInUser = linked
+                        db.appSettingDao().set(AppSetting("last_username", linked.username))
+                        Toast.makeText(
+                            this@LoginActivity,
+                            "Ye number ${linked.displayName} ke account se link kar diya gaya.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        completeLogin()
                     } else {
                         Toast.makeText(
                             this@LoginActivity,
