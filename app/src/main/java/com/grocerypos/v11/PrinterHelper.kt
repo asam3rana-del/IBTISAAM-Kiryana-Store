@@ -108,9 +108,9 @@ object PrinterHelper {
             val col1: String,
             val col2: String,
             val col3: String,
-            // Amount widened (was 1.7) per request — uses more of the right-side
-            // space so the Amount column isn't left with unused blank paper.
-            val weights: List<Float> = listOf(2.8f, 1.2f, 2.2f),
+            // Amount widened further (2.2 -> 2.7) per request — Item trimmed to
+            // compensate so the row keeps using the same total width.
+            val weights: List<Float> = listOf(2.3f, 1.2f, 2.7f),
             val bold: Boolean = false
         ) : ReceiptLine()
 
@@ -152,19 +152,17 @@ object PrinterHelper {
 
     // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi).
     //
-    // FIX (blank strip on the right side of the paper): if the printed receipt
-    // doesn't reach the right edge of the paper — a clean blank margin roughly a
-    // quarter of the page wide — it means this printer's actual print head is
-    // wider than 384 dots (some "58mm" printers, and any 80mm printer, are wider:
-    // 480, 512, or 576 dots are common). The bitmap is rendered at exactly this
-    // width, so the printer has nothing to put in the leftover space.
+    // FIX (blank strip on the right side of the paper): widening the Amount column's
+    // weight alone didn't close the gap — confirmed this isn't a column-sizing issue,
+    // it's the bitmap itself being narrower than this printer's actual print head.
+    // Raised 384 -> 480 (a common width for higher-density 58mm printers and some
+    // 80mm units) so the rendered receipt uses more of the physical paper.
     //
-    // HOW TO TUNE: raise this value and reprint. Keep raising until either (a) the
-    // right edge is fully used with no blank strip, or (b) content starts getting
-    // cut off / wrapping onto a second physical line — then back off to the last
-    // value that printed cleanly. Common values to try in order: 400, 420, 480,
-    // 512, 576.
-    private const val PRINTER_DOTS_WIDTH = 384
+    // HOW TO TUNE FURTHER: reprint and check the right edge. If there's still a
+    // blank strip, raise this again (try 512, then 576). If instead text starts
+    // getting cut off or wrapping onto a second physical line, drop back down
+    // (try 420, then 400) until it prints cleanly with no leftover blank margin.
+    private const val PRINTER_DOTS_WIDTH = 480
 
     // FIX (print reliability): a whole multi-item receipt was previously rendered as
     // ONE raster image and sent to the printer in a single GS v 0 command. Long bills
