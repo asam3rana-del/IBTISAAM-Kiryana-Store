@@ -691,6 +691,13 @@ interface ProductDao {
     @Query("SELECT * FROM users WHERE phone=:phone AND active=1 LIMIT 1") suspend fun findByPhone(phone:String):User?
     @Query("SELECT * FROM users ORDER BY username") fun all():Flow<List<User>>
     @Query("DELETE FROM users WHERE username=:u") suspend fun delete(u:String)
+    // FIX (OTP first-link deadlock): a phone that Firebase already verified but that
+    // isn't linked to any user has no in-app way to get linked, since Manage Users
+    // itself requires being logged in first. When there's exactly one active user
+    // (the common single-owner-store case), auto-link that verified phone to them
+    // instead of dead-ending — see LoginActivity.verifyAndLogin().
+    @Query("SELECT COUNT(*) FROM users WHERE active=1") suspend fun activeCount(): Int
+    @Query("SELECT * FROM users WHERE active=1 LIMIT 1") suspend fun soleActiveUserOrNull(): User?
 }
 
 @Dao interface AuditDao { @Insert suspend fun insert(a:Audit) }
