@@ -367,7 +367,7 @@ class SettingsActivity : AppCompatActivity() {
             val field = EditText(this).apply {
                 setText(prefill)
                 setSingleLine(true)
-                background = strokedBg(border, cardBg, 10)
+                background = strokedBg(border, cardWhite, 10)
                 setPadding(20, 18, 20, 18)
                 textSize = 13.5f
             }
