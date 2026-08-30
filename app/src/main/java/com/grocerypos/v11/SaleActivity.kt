@@ -53,8 +53,14 @@ data class SaleLine(
 
 /** Thrown to abort saveSale()'s db.withTransaction block early (e.g. stock changed
  *  under us) and roll back everything done so far in that transaction. Caught right
- *  after the transaction call — see saveSale(). */
-private class SaveAbortedException : Exception()
+ *  after the transaction call — see saveSale().
+ *
+ *  NOTE: must NOT be `private` — the suspend lambda passed to db.withTransaction()
+ *  gets compiled into a coroutine state machine, and Kotlin's visibility check for
+ *  a private top-level class fails across that generated boundary ("Cannot access
+ *  'class SaveAbortedException : Exception': it is private in file."). Keeping it
+ *  file-visible (internal/default) avoids that compiler error. */
+class SaveAbortedException : Exception()
 
 class SaleActivity : AppCompatActivity() {
 
@@ -62,6 +68,10 @@ class SaleActivity : AppCompatActivity() {
         const val EXTRA_INVOICE = "invoice"
         private const val PREFS_NAME = "sale_draft_prefs"
         private const val KEY_DRAFT = "draft_json"
+
+        // ---- CHANGED (category-based unit auto-select): category name compared
+        // case-insensitively against Product.category for 2-tier products. ----
+        private const val BEVERAGE_CATEGORY = "Beverages"
     }
 
     // ---------- Palette (same colors as before, Purchase-style card vocabulary) ----------
@@ -484,6 +494,10 @@ class SaleActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         paidRow.addView(TextView(this).apply { text = "Rs "; textSize = 17f; setTextColor(Color.parseColor(green)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
+        // ---- CHANGED (keyboard-driven save): paidInput now finishes with IME_ACTION_DONE
+        // and a listener that hides the keyboard and calls saveSale() directly — so once
+        // the user is on Paid Amount, Enter/Done on the keyboard saves the sale without
+        // touching the screen. ----
         paidInput = EditText(this).apply {
             hint = "0.00"
             setHintTextColor(Color.parseColor(textGray))
@@ -494,6 +508,19 @@ class SaleActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             minWidth = (120 * resources.displayMetrics.density).toInt()
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { _, actionId, event ->
+                if (actionId == EditorInfo.IME_ACTION_DONE ||
+                    (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                ) {
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                    imm?.hideSoftInputFromWindow(windowToken, 0)
+                    saveSale()
+                    true
+                } else {
+                    false
+                }
+            }
         }
         paidInput.addTextChangedListener(simpleWatcher {
             if (!suppressPaidWatcher) {
@@ -634,11 +661,15 @@ class SaleActivity : AppCompatActivity() {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { refillAutoPrice() }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
+        // ---- CHANGED (auto-scroll on Sale Type select): once a sale type is picked, the
+        // ScrollView jumps back to the very top (so Item Name is visible right under the
+        // header, matching the reference screenshot) before focus moves into Item Name. ----
         saleTypeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 lastMainPrice = 0.0
                 refillAutoPrice()
                 if (saleTypeSpinner.hasFocus()) {
+                    scrollView.post { scrollView.smoothScrollTo(0, 0) }
                     itemName.requestFocus()
                     itemName.post {
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -1019,18 +1050,26 @@ class SaleActivity : AppCompatActivity() {
     // Item flow) and in the Quick Sale dialog below — so both stay in sync.
     //
     //   1-tier (no secondary unit at all)         -> index 0 (the only unit)
-    //   2-tier (secondary exists, no tertiary)     -> index 0 (primary/1st unit)
+    //   2-tier (secondary exists, no tertiary):
+    //       - Beverages category                  -> index 0 (1st/primary unit)
+    //       - every other category                 -> index 1 (2nd/secondary unit)
     //   3-tier (secondary AND tertiary both exist) -> index 1 (secondary/2nd unit)
     //
-    // Previously this always jumped to index 1 whenever ANY secondary unit existed,
-    // which wrongly defaulted 2-tier products (e.g. Bottle/Pet only, no 3rd tier) to
-    // the secondary unit as well. Now only genuine 3-tier products default to the
-    // 2nd unit; 1-tier and 2-tier products both default to their 1st (primary) unit,
-    // saving a manual switch on every sale for the common cases. ----
+    // ---- CHANGED (category-based unit auto-select): previously every 2-tier product
+    // (no tertiary) defaulted to index 0 regardless of category. Now Beverages keep
+    // defaulting to the 1st unit, while every other 2-tier category defaults to the
+    // 2nd unit instead — matching how those items are actually sold day to day. ----
     private fun defaultUnitIndexFor(product: Product): Int {
         val hasSecondary = product.secondaryUnit.isNotEmpty()
         val hasTertiary = hasSecondary && product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0
-        return if (hasTertiary) 1 else 0
+
+        if (!hasSecondary) return 0          // 1-tier: only one unit exists
+        if (hasTertiary) return 1            // 3-tier: always default to the 2nd unit
+
+        // 2-tier: Beverages keep the 1st (primary) unit; everything else defaults
+        // to the 2nd (secondary) unit.
+        val isBeverage = product.category.equals(BEVERAGE_CATEGORY, ignoreCase = true)
+        return if (isBeverage) 0 else 1
     }
 
     private fun onItemPicked(name: String) {
@@ -1263,7 +1302,10 @@ class SaleActivity : AppCompatActivity() {
     }
 
     // ---- Purchase-style billed items dialog: a plain AlertDialog with a Close
-    // button, restoring focus to the Paid field on dismiss. ----
+    // button, restoring focus to the Paid field on dismiss.
+    // ---- CHANGED (billed items -> paid amount flow): the ScrollView now also scrolls
+    // down to the Payment section on dismiss (in addition to focusing paidInput), so
+    // the field the keyboard is about to fill is actually visible on screen. ----
     private fun openBilledItemsDialog() {
         if (lines.isEmpty()) {
             Toast.makeText(
@@ -1288,6 +1330,7 @@ class SaleActivity : AppCompatActivity() {
             .setOnDismissListener {
                 (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
                 billedItemsDialog = null
+                scrollView.post { scrollView.smoothScrollTo(0, paymentSection.top) }
                 paidInput.requestFocus()
                 paidInput.post {
                     paidInput.selectAll()
@@ -1533,11 +1576,9 @@ class SaleActivity : AppCompatActivity() {
                     qsLastMainPrice = 0.0
                     val qsUnits = qsUnitsFor(match)
                     // FIX (unit auto-selection): same rule as normal Add Item flow —
-                    // see defaultUnitIndexFor(). 1-tier/2-tier default to the 1st
-                    // (primary) unit, only genuine 3-tier products default to the 2nd
-                    // (secondary) unit. Previously Quick Sale always forced index 0
-                    // regardless of tier, which was correct for 1/2-tier but wrong for
-                    // 3-tier items (those need the 2nd unit pre-selected).
+                    // see defaultUnitIndexFor(). 1-tier defaults to the only unit,
+                    // 2-tier defaults by category (Beverages -> 1st, others -> 2nd),
+                    // and 3-tier always defaults to the 2nd (secondary) unit.
                     val qsDefaultIndex = defaultUnitIndexFor(match)
                     qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnits)
                     qsUnitSpinner.setSelection(qsDefaultIndex)
