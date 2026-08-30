@@ -19,6 +19,17 @@ object SyncRepository {
     // sync-related work without needing to pass a Context around everywhere.
     var appContextRef: Context? = null
 
+    /** Rewinds the pull checkpoint to the given time, so the next syncNow() re-pulls
+     *  everything changed on the server since then (instead of only what changed since
+     *  the last successful sync). Used by Settings' "Sync Now" long-press → "Resync from
+     *  a specific time" so a missed window (e.g. a day where sync wasn't working) can be
+     *  recovered without needing a full re-install/clear-data. Does not touch the local
+     *  push queue (sync_queue) at all — only what gets pulled *from* the server. */
+    fun resetSyncCheckpoint(context: Context, timestampMillis: Long) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putLong(KEY_LAST_SYNC, timestampMillis).apply()
+    }
+
     suspend fun syncNow(context: Context): SyncResult {
         val db = PosDatabase.get(context)
         val queueDao = db.syncQueueDao()
