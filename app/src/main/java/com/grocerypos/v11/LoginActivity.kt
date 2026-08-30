@@ -84,9 +84,21 @@ class LoginActivity : AppCompatActivity() {
             }
 
             val method = db.appSettingDao().get("login_method")?.value ?: "password"
+            // FIX (logout infinite-loop / screen blink): "No Password" mode used to jump
+            // straight to MainActivity here with NO session check at all. That's correct
+            // while someone is already logged in (that's the whole point of this mode),
+            // but right after Logout the session is empty — MainActivity would then bounce
+            // straight back to LoginActivity, which would immediately bounce back to
+            // MainActivity again, forever (the rapid Login<->Main flashing the user saw).
+            // Now "none" only auto-skips the login screen when a session already exists;
+            // with no session (e.g. just logged out) it falls through to the normal login
+            // UI below so the person can sign in once, which sets a fresh session.
             if (method == "none") {
-                goToMain()
-                return@launch
+                val session = getSharedPreferences("session", MODE_PRIVATE)
+                if (session.getString("username", null) != null) {
+                    goToMain()
+                    return@launch
+                }
             }
             buildUi()
             applyLoginMethod(db)
