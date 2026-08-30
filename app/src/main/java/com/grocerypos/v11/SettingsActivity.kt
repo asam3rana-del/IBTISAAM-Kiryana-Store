@@ -315,6 +315,10 @@ class SettingsActivity : AppCompatActivity() {
         row.addView(textCol)
 
         row.setOnClickListener { onSyncNowClicked() }
+        // NEW: long-press "Sync Now" to rewind the pull checkpoint to a chosen date/time
+        // and immediately resync from there — recovers a window where sync wasn't working
+        // (e.g. "yesterday 11am onward") without needing a full re-install/clear-data.
+        row.setOnLongClickListener { showResyncFromDialog(); true }
 
         refreshSyncStatus()
         return row
@@ -344,6 +348,44 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this@SettingsActivity, result.summary(), Toast.LENGTH_LONG).show()
             refreshSyncStatus()
         }
+    }
+
+    /** Long-press "Sync Now" → pick a date & time → rewinds the pull checkpoint to that
+     *  moment and immediately resyncs, so anything the server has changed since that time
+     *  gets re-pulled (recovers a window where sync wasn't working, e.g. "yesterday 11am
+     *  onward"). Does not affect what's queued to be pushed — only what gets pulled. */
+    private fun showResyncFromDialog() {
+        val cal = java.util.Calendar.getInstance()
+        android.app.DatePickerDialog(
+            this,
+            { _, y, m, d ->
+                cal.set(java.util.Calendar.YEAR, y)
+                cal.set(java.util.Calendar.MONTH, m)
+                cal.set(java.util.Calendar.DAY_OF_MONTH, d)
+                android.app.TimePickerDialog(
+                    this,
+                    { _, hour, minute ->
+                        cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
+                        cal.set(java.util.Calendar.MINUTE, minute)
+                        cal.set(java.util.Calendar.SECOND, 0)
+                        com.grocerypos.v11.sync.SyncRepository.resetSyncCheckpoint(this, cal.timeInMillis)
+                        val fmt = java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault())
+                        Toast.makeText(
+                            this,
+                            "Resyncing from ${fmt.format(cal.time)}…",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        onSyncNowClicked()
+                    },
+                    cal.get(java.util.Calendar.HOUR_OF_DAY),
+                    cal.get(java.util.Calendar.MINUTE),
+                    false
+                ).show()
+            },
+            cal.get(java.util.Calendar.YEAR),
+            cal.get(java.util.Calendar.MONTH),
+            cal.get(java.util.Calendar.DAY_OF_MONTH)
+        ).show()
     }
 
     // ADDED (multi-tenant support): admin pastes their own Firebase project's 4
