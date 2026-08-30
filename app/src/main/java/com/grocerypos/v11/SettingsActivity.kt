@@ -57,6 +57,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var fingerprintOnlyRadio: RadioButton
     private lateinit var bothRadio: RadioButton
     private lateinit var noPasswordRadio: RadioButton
+    private lateinit var otpRadio: RadioButton
 
     // Shop Information fields
     private lateinit var shopNameField: EditText
@@ -577,10 +578,15 @@ class SettingsActivity : AppCompatActivity() {
         // "No Password" — app opens straight to the dashboard, no login screen at all
         // (see LoginActivity.onCreate — it checks this setting before building any UI).
         noPasswordRadio = radioOption("No Password (App won't lock)")
+        // NEW: "OTP (Phone Number)" — activates LoginActivity's existing otpSection /
+        // Firebase Phone Auth flow (applyLoginMethod's "otp" branch), which previously
+        // had no way to be turned on since this radio didn't exist.
+        otpRadio = radioOption("OTP (Phone Number)")
         loginMethodGroup.addView(passwordOnlyRadio)
         loginMethodGroup.addView(fingerprintOnlyRadio)
         loginMethodGroup.addView(bothRadio)
         loginMethodGroup.addView(noPasswordRadio)
+        loginMethodGroup.addView(otpRadio)
         securityCard.addView(loginMethodGroup)
 
         loginMethodGroup.setOnCheckedChangeListener { _, checkedId ->
@@ -588,6 +594,7 @@ class SettingsActivity : AppCompatActivity() {
                 fingerprintOnlyRadio.id -> "fingerprint"
                 bothRadio.id -> "both"
                 noPasswordRadio.id -> "none"
+                otpRadio.id -> "otp"
                 else -> "password"
             }
             lifecycleScope.launch {
@@ -923,6 +930,7 @@ class SettingsActivity : AppCompatActivity() {
                 "fingerprint" -> fingerprintOnlyRadio.isChecked = true
                 "both" -> bothRadio.isChecked = true
                 "none" -> noPasswordRadio.isChecked = true
+                "otp" -> otpRadio.isChecked = true
                 else -> passwordOnlyRadio.isChecked = true
             }
         }
