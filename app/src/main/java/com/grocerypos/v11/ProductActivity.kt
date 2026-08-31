@@ -1915,6 +1915,14 @@ class ProductActivity : ThemedActivity() {
                     if (existing != null) "update" else "create",
                     SyncQueueHelper.productJson(product)
                 )
+                // FIX (conflict-safe sync): productJson() no longer carries "stock" at
+                // all (see SyncQueueHelper.kt) — a brand-new product's opening stock is
+                // sent separately as an increment instead, same mechanism as every other
+                // stock change, so it merges correctly even if another device is also
+                // mid-sync.
+                if (existing == null) {
+                    SyncQueueHelper.enqueueProductOpeningStock(db, product.barcode, product.stock)
+                }
                 SyncQueueHelper.trigger(this@ProductActivity)
 
                 Toast.makeText(
