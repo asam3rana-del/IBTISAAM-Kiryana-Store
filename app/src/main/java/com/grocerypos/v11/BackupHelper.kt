@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.grocerypos.v11.DeviceTag
 import com.grocerypos.v11.PosDatabase
 import java.io.File
 import java.io.FileInputStream
@@ -20,25 +21,34 @@ import java.util.Locale
  * Backs up / restores the Room database file.
  *
  * - Main copy (used for Restore): app-specific storage at
- *   Android/data/com.grocerypos.v11/files/Backups (no permission needed).
- * - Extra copy (for the user to see/share easily): public Downloads folder,
- *   saved via MediaStore so no storage permission is needed on any Android version.
+ *   Android/data/com.grocerypos.v11/files/IBTISAAM POS Backups (no permission needed).
+ * - Extra copy (for the user to see/share easily): public
+ *   Downloads/IBTISAAM POS Backups folder (its own named subfolder, not mixed loose
+ *   into Downloads), saved via MediaStore so no storage permission is needed on any
+ *   Android version.
  * - shareBackup(): opens the Android Share menu so the user can send a
  *   backup file to Google Drive, WhatsApp, Gmail, etc. with one tap.
+ *
+ * UPDATED: folder renamed from generic "Backups" to "IBTISAAM POS Backups" (the shop's
+ * software name) so it's identifiable when browsing storage — especially on the public
+ * Downloads side, where it used to sit as loose files mixed in with every other download.
+ * Filenames now also include the device tag (see DeviceTag.kt) so, on a 2-device setup
+ * (Admin + Cashier), it's obvious which device a given backup file came from.
  */
 object BackupHelper {
 
     private const val DB_NAME = "grocery_pos_v11.db"
+    private const val FOLDER_NAME = "IBTISAAM POS Backups"
 
     fun backupFolder(context: Context): File {
-        val dir = File(context.getExternalFilesDir(null), "Backups")
+        val dir = File(context.getExternalFilesDir(null), FOLDER_NAME)
         if (!dir.exists()) dir.mkdirs()
         return dir
     }
 
     /**
      * Copies the current database to the app's Backups folder AND to the
-     * public Downloads folder, both with a timestamped name.
+     * public Downloads folder, both with a timestamped, device-tagged name.
      * Returns the app-folder file (used internally for Restore/Share), or null on failure.
      *
      * FIX: Room runs in WAL (write-ahead logging) mode by default. Recent writes
@@ -61,7 +71,9 @@ object BackupHelper {
             checkpointWal(context)
 
             val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
-            val fileName = "IBTISAAM_backup_$stamp.db"
+            // Device tag (e.g. "A1B2") identifies which device this backup came from —
+            // useful once there are 2 devices (Admin + Cashier) producing backups.
+            val fileName = "IBTISAAM_${DeviceTag.current}_backup_$stamp.db"
 
             // 1) App-specific copy (used by Restore and Share)
             val destFile = File(backupFolder(context), fileName)
@@ -91,7 +103,7 @@ object BackupHelper {
         }
     }
 
-    /** Saves a copy of the given file into the public Downloads folder. */
+    /** Saves a copy of the given file into a named subfolder inside public Downloads. */
     private fun copyToDownloads(context: Context, sourceFile: File, fileName: String) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -99,7 +111,7 @@ object BackupHelper {
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                     put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER_NAME)
                 }
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 if (uri != null) {
@@ -109,7 +121,10 @@ object BackupHelper {
                 }
             } else {
                 @Suppress("DEPRECATION")
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val downloadsDir = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    FOLDER_NAME
+                )
                 if (!downloadsDir.exists()) downloadsDir.mkdirs()
                 val destFile = File(downloadsDir, fileName)
                 sourceFile.copyTo(destFile, overwrite = true)

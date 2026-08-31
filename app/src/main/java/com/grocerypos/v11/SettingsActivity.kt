@@ -27,8 +27,11 @@ import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import com.grocerypos.v11.util.BackupHelper
+import com.grocerypos.v11.util.BackupPasswordStore
 import com.grocerypos.v11.util.PrinterHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -961,9 +964,17 @@ class SettingsActivity : AppCompatActivity() {
         backupCard.addView(primaryButton("RESTORE BACKUP", red) { onRestoreClicked() })
         backupCard.addView(spacer(10))
         backupCard.addView(primaryButton("IMPORT BACKUP FILE", navy) { importBackupLauncher.launch(arrayOf("*/*")) })
+        backupCard.addView(spacer(10))
+        backupCard.addView(primaryButton("BACKUP PASSWORD DEKHEIN", navy) { onViewBackupPasswordClicked() })
         backupCard.addView(spacer(6))
         backupCard.addView(TextView(this).apply {
-            text = "Agar RESTORE BACKUP list mein sahi backup nahi dikh raha (jaise app reinstall karne ke baad), to IMPORT BACKUP FILE se Downloads ya kahin bhi se .db file seedha select kar ke restore karein."
+            text = "Backups ab encrypted hoti hain (.ibbackup). BACKUP PASSWORD DEKHEIN se apna password kahin surakshit likh kar rakh lein — dusre phone par ya app reinstall ke baad restore karne ke liye zaroori hoga."
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+        })
+        backupCard.addView(spacer(6))
+        backupCard.addView(TextView(this).apply {
+            text = "Agar RESTORE BACKUP list mein sahi backup nahi dikh raha (jaise app reinstall karne ke baad), to IMPORT BACKUP FILE se Downloads ya kahin bhi se backup file seedha select kar ke restore karein."
             textSize = 11f
             setTextColor(Color.parseColor(textGray))
         })
@@ -1294,14 +1305,80 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ================= BACKUP / RESTORE =================
+    // FIX (perf): backupNow() does a WAL checkpoint + file copy + AES encryption + a
+    // second copy into Downloads — all real disk/CPU work that used to run directly
+    // on the main thread here, freezing the UI for the duration of every backup.
+    // Moved onto Dispatchers.IO; only the Toast/share (UI work) hops back to Main.
     private fun onBackupClicked() {
-        val file = BackupHelper.backupNow(this)
-        if (file != null) {
-            Toast.makeText(this, "Backup ho gaya: ${file.name}", Toast.LENGTH_LONG).show()
-            BackupHelper.shareBackup(this, file)
-        } else {
-            Toast.makeText(this, "Backup fail ho gaya", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val file = withContext(Dispatchers.IO) { BackupHelper.backupNow(this@SettingsActivity) }
+            if (file != null) {
+                Toast.makeText(this@SettingsActivity, "Backup ho gaya: ${file.name}", Toast.LENGTH_LONG).show()
+                BackupHelper.shareBackup(this@SettingsActivity, file)
+            } else {
+                Toast.makeText(this@SettingsActivity, "Backup fail ho gaya", Toast.LENGTH_SHORT).show()
+            }
         }
+    }
+
+    /** Shows the current backup password (view/copy) — the owner should save this
+     * somewhere safe outside the phone; it's needed to restore a backup on a
+     * different device, or after reinstalling the app. */
+    private fun onViewBackupPasswordClicked() {
+        val password = BackupPasswordStore.getOrCreate(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+        }
+        container.addView(TextView(this).apply {
+            text = "Ye password aapki backup files ko decrypt karne ke liye chahiye — " +
+                "isay kahin surakshit likh kar rakh lein (dusre phone par restore karne ke liye zaroori hai):"
+            textSize = 13.5f
+            setTextColor(Color.parseColor(textDark))
+        })
+        val passwordField = EditText(this).apply {
+            setText(password)
+            isFocusable = false
+            isClickable = false
+            setPadding(0, 32, 0, 0)
+            textSize = 18f
+            setTextColor(Color.parseColor(textDark))
+        }
+        container.addView(passwordField)
+
+        AlertDialog.Builder(this)
+            .setTitle("Backup Password")
+            .setView(container)
+            .setPositiveButton("Copy") { _, _ ->
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Backup Password", password))
+                Toast.makeText(this, "Password copy ho gaya", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Change") { _, _ -> onChangeBackupPasswordClicked() }
+            .setNegativeButton("Band Karein", null)
+            .show()
+    }
+
+    private fun onChangeBackupPasswordClicked() {
+        val field = EditText(this).apply {
+            hint = "Naya password"
+            setPadding(48, 32, 48, 0)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Backup Password Badlein")
+            .setMessage("Yaad rahe: purani backups is naye password se decrypt nahi hongi — unke liye purana password chahiye hoga.")
+            .setView(field)
+            .setPositiveButton("Save") { _, _ ->
+                val newPass = field.text.toString().trim()
+                if (newPass.length < 4) {
+                    Toast.makeText(this, "Password kam se kam 4 characters ka ho", Toast.LENGTH_SHORT).show()
+                } else {
+                    BackupPasswordStore.setPassword(this, newPass)
+                    Toast.makeText(this, "Password update ho gaya", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun onRestoreClicked() {
@@ -1356,16 +1433,44 @@ class SettingsActivity : AppCompatActivity() {
             positiveBtn.setTextColor(Color.parseColor(red))
             checkBox.setOnCheckedChangeListener { _, isChecked -> positiveBtn.isEnabled = isChecked }
             positiveBtn.setOnClickListener {
-                val ok = BackupHelper.restore(this, file)
-                if (ok) {
-                    Toast.makeText(this, "Restore ho gaya. App ko dobara open karein.", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this, "Restore fail ho gaya", Toast.LENGTH_SHORT).show()
-                }
                 dialog.dismiss()
+                if (BackupHelper.needsPassword(file)) {
+                    promptPasswordAndRestore { pass -> runRestore { BackupHelper.restore(this, file, pass) } }
+                } else {
+                    runRestore { BackupHelper.restore(this, file) }
+                }
             }
         }
         dialog.show()
+    }
+
+    /** Prompts for the backup password, pre-filled with this device's saved one
+     * (same-device restore is then just tap-confirm; a different/reinstalled
+     * device needs the owner to type in the password they saved earlier). */
+    private fun promptPasswordAndRestore(onPassword: (String) -> Unit) {
+        val field = EditText(this).apply {
+            setText(BackupPasswordStore.getOrCreate(this@SettingsActivity))
+            setPadding(48, 32, 48, 0)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Backup Password Dalein")
+            .setView(field)
+            .setPositiveButton("Restore") { _, _ -> onPassword(field.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // FIX (perf): restore also does real file I/O (+ decryption) — same main-thread
+    // freeze issue as backup. Moved onto Dispatchers.IO.
+    private fun runRestore(action: () -> Boolean) {
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) { action() }
+            if (ok) {
+                Toast.makeText(this@SettingsActivity, "Restore ho gaya. App ko dobara open karein.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this@SettingsActivity, "Restore fail ho gaya — password check karein", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     /** Same confirmation flow as [confirmRestore], but for a file picked via the
@@ -1410,13 +1515,13 @@ class SettingsActivity : AppCompatActivity() {
             positiveBtn.setTextColor(Color.parseColor(red))
             checkBox.setOnCheckedChangeListener { _, isChecked -> positiveBtn.isEnabled = isChecked }
             positiveBtn.setOnClickListener {
-                val ok = BackupHelper.restoreFromUri(this, uri)
-                if (ok) {
-                    Toast.makeText(this, "Restore ho gaya. App ko dobara open karein.", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this, "Restore fail ho gaya — ye file shayad valid backup nahi hai", Toast.LENGTH_LONG).show()
-                }
                 dialog.dismiss()
+                // We can't tell if the picked file is encrypted until it's read, so
+                // always ask for the password — restoreFromUri only uses it if the
+                // file turns out to actually need one (ignored for old plain .db files).
+                promptPasswordAndRestore { pass ->
+                    runRestore { BackupHelper.restoreFromUri(this, uri, pass) }
+                }
             }
         }
         dialog.show()

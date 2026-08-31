@@ -26,6 +26,12 @@ import java.util.concurrent.TimeUnit
  * Each checkpoint only fires once per calendar day (tracked in SharedPreferences),
  * so re-opening the app after 9 PM doesn't spam backups.
  *
+ * FIX (too many files): the app-close trigger used to call backupNow() unconditionally
+ * on every single background/close — a cashier tapping Home and reopening the app
+ * repeatedly through the day could generate dozens of near-identical backup files.
+ * It now goes through BackupHelper.backupIfDue(), which skips the backup if the last
+ * one (of any kind — checkpoint or close) ran less than 30 minutes ago.
+ *
  * Uses the same BackupHelper.backupNow() as the manual button — same WAL checkpoint,
  * same destination folders (app Backups + Downloads) — just triggered automatically
  * instead of by a tap.
@@ -116,7 +122,10 @@ object BackupScheduler {
     private fun runBackup(context: Context) {
         scope.launch {
             try {
-                BackupHelper.backupNow(context)
+                // Throttled: skipped if a backup already ran in the last 30 minutes,
+                // so repeatedly minimizing/reopening the app doesn't flood the backup
+                // folder with files.
+                BackupHelper.backupIfDue(context, minGapMinutes = 30)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
