@@ -133,6 +133,13 @@ class SaleActivity : AppCompatActivity() {
     private var originalItems: List<SaleItem> = emptyList()
 
     private var lastMainPrice: Double = 0.0
+    // FIX (sale-type keyboard-scroll bug): hasFocus() was unreliable right after a
+    // touch-driven Spinner selection on some OEM keyboards (e.g. Samsung), so the
+    // scroll-to-top / focus-Item-Name step below would silently skip. This flag is
+    // set true the instant the spinner is actually touched, so the scroll/focus no
+    // longer depends on focus state — it fires on every real user selection, but not
+    // on the automatic first-item callback Android fires when the adapter is set.
+    private var saleTypeUserInteracted = false
     private var suppressPriceWatcher = false
     private var suppressPaidWatcher = false
 
@@ -663,12 +670,16 @@ class SaleActivity : AppCompatActivity() {
         }
         // ---- CHANGED (auto-scroll on Sale Type select): once a sale type is picked, the
         // ScrollView jumps back to the very top (so Item Name is visible right under the
-        // header, matching the reference screenshot) before focus moves into Item Name. ----
+        // header, matching the reference screenshot) before focus moves into Item Name.
+        // FIX: previously gated on saleTypeSpinner.hasFocus(), which was unreliable right
+        // after a touch-driven selection on some OEM keyboards — now gated on
+        // saleTypeUserInteracted instead (set true by the touch listener below), so this
+        // reliably fires on every real user selection. ----
         saleTypeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 lastMainPrice = 0.0
                 refillAutoPrice()
-                if (saleTypeSpinner.hasFocus()) {
+                if (saleTypeUserInteracted) {
                     scrollView.post { scrollView.smoothScrollTo(0, 0) }
                     itemName.requestFocus()
                     itemName.post {
@@ -678,6 +689,10 @@ class SaleActivity : AppCompatActivity() {
                 }
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        saleTypeSpinner.setOnTouchListener { _, _ ->
+            saleTypeUserInteracted = true
+            false // let the touch continue so the dropdown still opens normally
         }
 
         if (editInvoice == null) {
