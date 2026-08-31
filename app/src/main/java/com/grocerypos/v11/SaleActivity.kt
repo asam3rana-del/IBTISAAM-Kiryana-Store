@@ -680,7 +680,12 @@ class SaleActivity : AppCompatActivity() {
                 lastMainPrice = 0.0
                 refillAutoPrice()
                 if (saleTypeUserInteracted) {
-                    scrollView.post { scrollView.smoothScrollTo(0, 0) }
+                    // FIX (position bug): scrolling to absolute 0 landed at the very top
+                    // of the screen (Header/Quick Sale/Date/Firm/Customer cards), which
+                    // pushed the Add Item section back down under the keyboard. Scrolling
+                    // to saleTypeBox's own top position instead matches the reference
+                    // screenshot — Sale Type box at the top, Add Item right below it.
+                    scrollView.post { scrollView.smoothScrollTo(0, saleTypeBox.top) }
                     itemName.requestFocus()
                     itemName.post {
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
