@@ -700,7 +700,13 @@ interface ProductDao {
     @Query("SELECT * FROM users WHERE active=1 LIMIT 1") suspend fun soleActiveUserOrNull(): User?
 }
 
-@Dao interface AuditDao { @Insert suspend fun insert(a:Audit) }
+@Dao interface AuditDao {
+    @Insert suspend fun insert(a:Audit)
+    // ADDED (sync recoverability): lets Settings > Sync History show what happened,
+    // especially conflicts — see SyncApi.kt's push()/applyServerChanges().
+    @Query("SELECT * FROM audit ORDER BY createdAt DESC LIMIT 300") suspend fun recent(): List<Audit>
+    @Query("SELECT * FROM audit WHERE action IN ('sync_conflict','sync_push_failed') ORDER BY createdAt DESC LIMIT 300") suspend fun syncIssues(): List<Audit>
+}
 
 @Dao interface CashTransactionDao {
     @Insert suspend fun insert(t:CashTransaction): Long
@@ -729,7 +735,13 @@ interface ProductDao {
 
 @Dao interface SyncQueueDao {
     @Insert suspend fun enqueue(e: SyncQueueEntry): Long
-    @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL ORDER BY createdAt ASC LIMIT :limit")
+    // FIX (risk-free POS): previously this retried EVERY unsynced entry forever, with
+    // no limit — a single permanently-broken entry (e.g. a malformed record from an old
+    // bug) would retry on every single sync cycle forever, wasting time/battery and
+    // spamming Sync History with the same failure repeatedly. Now stops auto-retrying
+    // an entry once it's failed 10 times in a row — it stays in the table (nothing is
+    // lost) but needs a manual "Retry Now" (see Settings > Sync History) to try again.
+    @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND retryCount < 10 ORDER BY createdAt ASC LIMIT :limit")
     suspend fun pending(limit: Int = 50): List<SyncQueueEntry>
     @Query("UPDATE sync_queue SET syncedAt=:ts WHERE id=:id")
     suspend fun markSynced(id: Long, ts: Long = System.currentTimeMillis())
@@ -739,6 +751,16 @@ interface ProductDao {
     suspend fun pruneSynced(before: Long)
     @Query("SELECT COUNT(*) FROM sync_queue WHERE syncedAt IS NULL")
     fun pendingCountFlow(): Flow<Int>
+    // ADDED (risk-free POS): entries that gave up after 10 failed attempts — surfaced
+    // in Settings > Sync History so they don't just vanish from view.
+    @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND retryCount >= 10 ORDER BY createdAt ASC")
+    suspend fun stuck(): List<SyncQueueEntry>
+    // ADDED: resets a stuck entry's retry count so it's picked up by pending() again —
+    // used by the "Retry Now" action.
+    @Query("UPDATE sync_queue SET retryCount=0, lastError=NULL WHERE id=:id")
+    suspend fun resetRetry(id: Long)
+    @Query("UPDATE sync_queue SET retryCount=0, lastError=NULL WHERE syncedAt IS NULL AND retryCount >= 10")
+    suspend fun resetAllStuck()
 }
 
 val MIGRATION_13_14 = object : Migration(13, 14) {
