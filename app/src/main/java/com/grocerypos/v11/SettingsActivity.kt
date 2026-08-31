@@ -153,6 +153,14 @@ class SettingsActivity : AppCompatActivity() {
             openCloudSyncSetupDialog()
         })
 
+        // ADDED (sync recoverability): shows the audit log SyncApi.kt now writes to —
+        // mainly conflicts (two devices editing the same record while both offline) and
+        // push failures, so if something looks wrong after a sync, there's a trail to
+        // check instead of it being a silent mystery.
+        list.addView(menuRow("🧾", "Sync History", showChevron = true) {
+            openSyncHistoryDialog()
+        })
+
         list.addView(spacer(10))
 
         // ---- Settings (expandable — holds all the real settings sections) ----
@@ -391,6 +399,136 @@ class SettingsActivity : AppCompatActivity() {
     // ADDED (multi-tenant support): admin pastes their own Firebase project's 4
     // values here (from Firebase Console > Project Settings > General > Your apps).
     // See CloudConfigStore.kt for exactly why this exists and how it's used.
+    // ADDED (sync recoverability): a simple read-only viewer for the audit log —
+    // conflicts and push failures first (most likely to need attention), then
+    // everything else, newest first. Purely local — doesn't touch Firestore.
+    private fun openSyncHistoryDialog() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 16, 24, 8)
+        }
+        val scroll = ScrollView(this).apply { addView(container) }
+        val loading = TextView(this).apply {
+            text = "Loading…"
+            setPadding(4, 8, 4, 8)
+            setTextColor(Color.parseColor(textGray))
+        }
+        container.addView(loading)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Sync History")
+            .setView(scroll)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.show()
+
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SettingsActivity)
+            val stuckItems = try {
+                db.syncQueueDao().stuck()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            val entries = try {
+                db.auditDao().recent()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            container.removeAllViews()
+
+            // ADDED (risk-free POS): items that gave up retrying after 10 failed
+            // attempts — shown first with a one-tap way to give them another chance,
+            // e.g. after fixing whatever was wrong (internet, Firestore rules, etc).
+            if (stuckItems.isNotEmpty()) {
+                container.addView(LinearLayout(this@SettingsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(16, 12, 16, 12)
+                    background = strokedBg("#F5A524", "#FFF8F0", 12)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { setMargins(0, 0, 0, 12) }
+
+                    addView(TextView(this@SettingsActivity).apply {
+                        text = "⚠️ ${stuckItems.size} item(s) 10 baar fail hone ke baad rukk gaye"
+                        textSize = 12f
+                        setTextColor(Color.parseColor(amber))
+                        setTypeface(typeface, Typeface.BOLD)
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    })
+                    addView(TextView(this@SettingsActivity).apply {
+                        text = "🔄 Retry Now"
+                        textSize = 12f
+                        setTextColor(Color.WHITE)
+                        setTypeface(typeface, Typeface.BOLD)
+                        background = roundedBg(amber, 20)
+                        setPadding(20, 10, 20, 10)
+                        setOnClickListener {
+                            lifecycleScope.launch {
+                                db.syncQueueDao().resetAllStuck()
+                                Toast.makeText(this@SettingsActivity, "Dobara try kiya jayega agli Sync Now par", Toast.LENGTH_SHORT).show()
+                                dialog.dismiss()
+                            }
+                        }
+                    })
+                })
+            }
+
+            if (entries.isEmpty()) {
+                container.addView(TextView(this@SettingsActivity).apply {
+                    text = "Koi sync activity ya conflict abhi tak record nahi hua."
+                    setTextColor(Color.parseColor(textGray))
+                    setPadding(4, 8, 4, 8)
+                })
+                return@launch
+            }
+
+            val fmt = java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault())
+            for (e in entries) {
+                val isConflict = e.action == "sync_conflict"
+                val isFailure = e.action == "sync_push_failed"
+                val labelColor = when {
+                    isConflict -> amber
+                    isFailure -> red
+                    else -> textGray
+                }
+                container.addView(LinearLayout(this@SettingsActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(16, 12, 16, 12)
+                    background = strokedBg(border, if (isConflict || isFailure) "#FFF8F0" else cardWhite, 12)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { setMargins(0, 0, 0, 8) }
+
+                    addView(TextView(this@SettingsActivity).apply {
+                        text = when (e.action) {
+                            "sync_conflict" -> "⚠️ Conflict — ${e.reference}"
+                            "sync_push_failed" -> "❌ Push failed — ${e.reference}"
+                            else -> e.reference
+                        }
+                        setTextColor(Color.parseColor(labelColor))
+                        setTypeface(typeface, Typeface.BOLD)
+                        textSize = 12.5f
+                    })
+                    if (e.details.isNotBlank()) {
+                        addView(TextView(this@SettingsActivity).apply {
+                            text = e.details
+                            setTextColor(Color.parseColor(textDark))
+                            textSize = 11.5f
+                            setPadding(0, 4, 0, 0)
+                        })
+                    }
+                    addView(TextView(this@SettingsActivity).apply {
+                        text = fmt.format(java.util.Date(e.createdAt))
+                        setTextColor(Color.parseColor(textGray))
+                        textSize = 10.5f
+                        setPadding(0, 4, 0, 0)
+                    })
+                })
+            }
+        }
+    }
+
     private fun openCloudSyncSetupDialog() {
         val existing = com.grocerypos.v11.CloudConfigStore.get(this)
 
