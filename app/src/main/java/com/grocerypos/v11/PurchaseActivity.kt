@@ -189,11 +189,13 @@ class PurchaseActivity : ThemedActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         // FIX (Phase 4 - Security): role check enforced here — MainActivity only shows
-        // the Purchase quick-action to admin/manager, it doesn't stop a cashier opening
+        // the Purchase quick-action to admin, it doesn't stop a cashier/manager opening
         // this Activity another way.
+        // UPDATED: Purchase editing restricted to admin only (manager access removed per
+        // owner's request — every kind of editing in the app should be admin-only now).
         val myRole = getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier"
-        if (myRole != "admin" && myRole != "manager") {
-            Toast.makeText(this, "Sirf Admin/Manager is screen ko access kar sakte hain", Toast.LENGTH_LONG).show()
+        if (myRole != "admin") {
+            Toast.makeText(this, "Sirf Admin is screen ko access kar sakte hain", Toast.LENGTH_LONG).show()
             finish()
             return
         }

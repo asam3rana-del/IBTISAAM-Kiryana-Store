@@ -13,6 +13,8 @@ import com.grocerypos.v11.sync.SyncWorker
  * - SyncWorker periodic background sync (every 15 minutes)
  * - NetworkMonitor (triggers an immediate sync when connectivity returns)
  * - AppLock (watches every Activity, forces re-auth per Settings > Security)
+ * - BackupScheduler (automatic local .db backup at ~12 PM, ~9 PM, and whenever the
+ *   app is closed/backgrounded — on top of the existing manual Backup button)
  *
  * IMPORTANT: AndroidManifest.xml's <application> tag must have
  * android:name=".PosApplication" — without that line the OS never instantiates
@@ -30,5 +32,7 @@ class PosApplication : Application() {
         SyncWorker.schedulePeriodic(this)
         NetworkMonitor.register(this)
         AppLock.register(this)
+        BackupScheduler.register(this)
+        BackupScheduler.scheduleDailyCheckpoints(this)
     }
 }

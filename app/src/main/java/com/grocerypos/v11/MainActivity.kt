@@ -263,7 +263,10 @@ class MainActivity : ThemedActivity() {
                 startActivity(Intent(this@MainActivity, CashActivity::class.java))
             }
         )
-        if (role == "admin" || role == "manager") {
+        // UPDATED: Purchase editing restricted to admin only (manager access removed —
+        // every kind of editing in the app is now admin-only). Button hidden for manager
+        // too, matching the enforcement inside PurchaseActivity itself.
+        if (role == "admin") {
             quickActions.add(
                 QuickAction("Purchase", "Record a purchase", "#D6408F", "#8E2A6C") {
                     startActivity(Intent(this@MainActivity, PurchaseActivity::class.java))
