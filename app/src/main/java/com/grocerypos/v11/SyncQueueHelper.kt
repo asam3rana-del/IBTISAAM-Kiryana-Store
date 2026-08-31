@@ -102,30 +102,76 @@ object SyncQueueHelper {
     // customer/supplier/product record itself looked like it was "syncing" whenever it
     // was first created. Use these wrappers instead of calling the DAO methods
     // directly, wherever a balance or stock change should be visible on other devices.
+    //
+    // FIX (conflict-safe sync): these used to push the ABSOLUTE resulting balance/stock
+    // as a plain snapshot (via enqueueCustomer/enqueueSupplier/enqueueProduct). That's
+    // fine when only one device ever touches a given customer/product between syncs —
+    // but if TWO devices are offline at the same time and both sell from the same
+    // product (or both adjust the same customer's balance), whichever device's snapshot
+    // happens to push LAST silently overwrites the other's — the earlier device's sale
+    // effect on stock/balance is lost even though the sale record itself is safe.
+    // Now these send the DELTA as a Firestore FieldValue.increment() operation instead
+    // (see SyncApi.push()'s "increment_stock"/"increment_balance" handling) — Firestore
+    // applies increments from multiple offline devices atomically and additively on its
+    // own servers, regardless of what order they arrive in, so no device's contribution
+    // is ever lost. `stock` and `balance` are deliberately excluded from
+    // productJson()/customerJson()/supplierJson() below for the same reason: those
+    // full-snapshot payloads must never carry these two fields again, or a routine name/
+    // price edit could clobber a correctly-merged server value back to a stale local one.
     suspend fun adjustCustomerBalance(db: PosDatabase, customerId: Long, amount: Double) {
         db.customerDao().addBalance(customerId, amount)
-        db.customerDao().find(customerId)?.let { enqueueCustomer(db, it) }
+        val c = db.customerDao().find(customerId) ?: return
+        enqueue(db, "customer", customerEntityId(c), "increment_balance", balanceDeltaJson(amount))
     }
 
     suspend fun adjustSupplierBalance(db: PosDatabase, supplierId: Long, amount: Double) {
         db.supplierDao().addBalance(supplierId, amount)
-        db.supplierDao().find(supplierId)?.let { enqueueSupplier(db, it) }
+        val s = db.supplierDao().find(supplierId) ?: return
+        enqueue(db, "supplier", supplierEntityId(s), "increment_balance", balanceDeltaJson(amount))
     }
 
     suspend fun decreaseProductStock(db: PosDatabase, barcode: String, qty: Double): Int {
         val rows = db.productDao().decrease(barcode, qty)
-        db.productDao().find(barcode)?.let { enqueueProduct(db, it) }
+        if (rows > 0) enqueue(db, "product", barcode, "increment_stock", stockDeltaJson(-qty))
         return rows
     }
 
     suspend fun decreaseProductStockForce(db: PosDatabase, barcode: String, qty: Double) {
         db.productDao().decreaseForce(barcode, qty)
-        db.productDao().find(barcode)?.let { enqueueProduct(db, it) }
+        enqueue(db, "product", barcode, "increment_stock", stockDeltaJson(-qty))
     }
 
     suspend fun increaseProductStock(db: PosDatabase, barcode: String, qty: Double) {
         db.productDao().increase(barcode, qty)
-        db.productDao().find(barcode)?.let { enqueueProduct(db, it) }
+        enqueue(db, "product", barcode, "increment_stock", stockDeltaJson(qty))
+    }
+
+    // ADDED for the increment fix above: a new product's opening stock has nowhere
+    // else to go now that productJson() never carries "stock" — this treats the
+    // opening stock the same as any other delta, incrementing up from an implicit 0
+    // (Firestore's FieldValue.increment() on a field that doesn't exist yet on the
+    // document starts from 0, so this correctly sets the very first value too).
+    suspend fun enqueueProductOpeningStock(db: PosDatabase, barcode: String, qty: Double) {
+        if (qty == 0.0) return
+        enqueue(db, "product", barcode, "increment_stock", stockDeltaJson(qty))
+    }
+
+    private fun stockDeltaJson(delta: Double): String {
+        val map = mapOf(
+            "delta" to delta,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+        )
+        return gson.toJson(map)
+    }
+
+    private fun balanceDeltaJson(delta: Double): String {
+        val map = mapOf(
+            "delta" to delta,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+        )
+        return gson.toJson(map)
     }
 
     suspend fun enqueueSale(db: PosDatabase, sale: Sale, context: Context? = null) {
@@ -177,7 +223,9 @@ object SyncQueueHelper {
             "serverId" to customerEntityId(c),
             "name" to c.name,
             "phone" to c.phone,
-            "balance" to c.balance,
+            // FIX (conflict-safe sync): "balance" deliberately excluded — see the big
+            // comment above adjustCustomerBalance(). balance is now ONLY ever touched
+            // via the increment_balance operation, never overwritten by a full snapshot.
             "creditLimit" to c.creditLimit,
             "openingBalance" to c.openingBalance,
             "updatedAt" to System.currentTimeMillis(),
@@ -191,7 +239,7 @@ object SyncQueueHelper {
             "serverId" to supplierEntityId(s),
             "name" to s.name,
             "phone" to s.phone,
-            "balance" to s.balance,
+            // FIX (conflict-safe sync): "balance" excluded — same reasoning as customerJson.
             "openingBalance" to s.openingBalance,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
@@ -203,7 +251,11 @@ object SyncQueueHelper {
         val map = mapOf(
             "barcode" to productEntityId(p),
             "name" to p.name,
-            "stock" to p.stock,
+            // FIX (conflict-safe sync): "stock" deliberately excluded — see the big
+            // comment above decreaseProductStock()/increaseProductStock(). stock is now
+            // ONLY ever touched via the increment_stock operation (including a brand-new
+            // product's opening stock — see enqueueProductOpeningStock()), never
+            // overwritten by a full snapshot like this one.
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
         )
