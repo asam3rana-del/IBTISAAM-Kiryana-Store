@@ -236,6 +236,38 @@ class ItemSearchActivity : AppCompatActivity() {
 
             detailContainer.addView(spacer(14))
 
+            // ---- NEW: Compare Suppliers — groups the same purchase records by
+            // supplier so the user can see, at a glance, who is currently cheapest
+            // for this item (last rate) and who tends to be cheapest overall (avg
+            // rate), without reading through the full chronological list above. ----
+            detailContainer.addView(sectionHeader("Compare Suppliers", navy))
+            if (purchaseRecords.isEmpty()) {
+                detailContainer.addView(emptyRow("No supplier data yet for this item"))
+            } else {
+                val bySupplier = purchaseRecords.groupBy { it.supplierName }
+                val summaries = bySupplier.map { (supplier, records) ->
+                    // records are already newest-first (query orders by createdAt DESC),
+                    // so the first one per supplier is that supplier's latest rate.
+                    val lastRate = records.first().unitCost
+                    val avgRate = records.sumOf { it.unitCost } / records.size
+                    Triple(supplier, lastRate, Pair(avgRate, records.size))
+                }.sortedBy { it.second }
+                val cheapestRate = summaries.minOf { it.second }
+                summaries.forEach { (supplier, lastRate, avgAndCount) ->
+                    detailContainer.addView(
+                        supplierCompareRow(
+                            supplier = supplier,
+                            lastRate = lastRate,
+                            avgRate = avgAndCount.first,
+                            purchaseCount = avgAndCount.second,
+                            isBest = lastRate == cheapestRate
+                        )
+                    )
+                }
+            }
+
+            detailContainer.addView(spacer(14))
+
             // ---- Purchase rate history (newest first, so latest cost rate is on top) ----
             detailContainer.addView(sectionHeader("Purchase Rate History", orange))
             if (purchaseRecords.isEmpty()) {
@@ -254,6 +286,53 @@ class ItemSearchActivity : AppCompatActivity() {
                     )
                 }
             }
+        }
+    }
+
+    // NEW: one row of the Compare Suppliers table — supplier name, their last rate
+    // and running average, purchase count, and a "BEST RATE" badge on whoever is
+    // currently cheapest (by last rate).
+    private fun supplierCompareRow(supplier: String, lastRate: Double, avgRate: Double, purchaseCount: Int, isBest: Boolean): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 14, 18, 14)
+            background = strokedBg(if (isBest) navy else border, if (isBest) "#EAF2FF" else cardWhite, 12)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 8) }
+
+            val top = LinearLayout(this@ItemSearchActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            top.addView(TextView(this@ItemSearchActivity).apply {
+                text = supplier
+                textSize = 13.5f
+                setTextColor(Color.parseColor(textDark))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            if (isBest) {
+                top.addView(TextView(this@ItemSearchActivity).apply {
+                    text = "BEST RATE"
+                    textSize = 9.5f
+                    setTextColor(Color.WHITE)
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBg(navy, 20)
+                    setPadding(14, 4, 14, 4)
+                })
+                top.addView(View(this@ItemSearchActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
+            }
+            top.addView(TextView(this@ItemSearchActivity).apply {
+                text = "Rs %.2f".format(lastRate)
+                textSize = 14f
+                setTextColor(Color.parseColor(if (isBest) navy else textDark))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(top)
+            addView(TextView(this@ItemSearchActivity).apply {
+                text = "Last rate  •  Avg Rs %.2f over %d purchase%s".format(avgRate, purchaseCount, if (purchaseCount == 1) "" else "s")
+                textSize = 11.5f
+                setTextColor(Color.parseColor(textMuted))
+                setPadding(0, 4, 0, 0)
+            })
         }
     }
 

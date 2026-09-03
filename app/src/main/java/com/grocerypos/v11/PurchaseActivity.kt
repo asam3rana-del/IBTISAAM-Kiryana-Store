@@ -97,6 +97,12 @@ class PurchaseActivity : ThemedActivity() {
     private lateinit var conversionInfo: TextView
     private lateinit var totalAmountText: TextView
     private lateinit var addItemButton: Button
+    // NEW: shown only while editing an existing billed line, lets the user back out
+    // without saving the change (row keeps its old values).
+    private lateinit var cancelEditButton: TextView
+    // NEW: handle to the "Billed Items" popup so editLine() can close it before the
+    // entry fields (which live outside the dialog) are scrolled into view.
+    private var billedItemsDialog: android.app.AlertDialog? = null
     private lateinit var billedItemsHeader: LinearLayout
     private lateinit var billedItemsSummaryText: TextView
     private lateinit var billedItemsChevron: TextView
@@ -115,6 +121,10 @@ class PurchaseActivity : ThemedActivity() {
     private var products = listOf<Product>()
     private var allUnits = listOf("pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi")
     private val lines = mutableListOf<PurchaseLine>()
+    // NEW: when a billed item's ✎ (edit) icon is tapped, its index is stashed here so
+    // addItem() updates that line in place instead of appending a new one — previously
+    // fixing a mistake meant deleting the line and re-typing it from scratch.
+    private var editingLineIndex: Int? = null
     private var purchaseDateMillis = System.currentTimeMillis()
     private var selectedProduct: Product? = null
 
@@ -352,6 +362,10 @@ class PurchaseActivity : ThemedActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         itemNameRow.addView(itemName)
+        // NEW: 📊 opens a quick supplier-comparison popup for the currently selected
+        // item, right here while purchasing — so the user can see who's cheapest
+        // before typing in a rate, instead of switching to the Item Search screen.
+        itemNameRow.addView(circleIcon("\uD83D\uDCCA", navy, 30) { showSupplierComparison() })
         itemNameRow.addView(circleIcon("+", teal, 30) { openAddProductDialog(itemName.text.toString().trim()) })
         itemBox.addView(itemNameRow)
         itemEntrySection.addView(itemBox)
@@ -434,6 +448,24 @@ class PurchaseActivity : ThemedActivity() {
             applyElevation(this, 3f)
         }
         itemEntrySection.addView(addItemButton)
+        cancelEditButton = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Cancel Edit", "ترمیم منسوخ کریں")
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(red))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 16, 0, 0)
+            visibility = View.GONE
+            setOnClickListener {
+                endLineEdit()
+                itemName.setText(""); qty.setText(""); rate.setText(""); totalLotPrice.setText("")
+                selectedProduct = null; lastMainQty = 0.0; lastMainRate = 0.0
+                conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
+                totalAmountText.text = "Total Amount: Rs 0"
+                hideKeyboard()
+            }
+        }
+        itemEntrySection.addView(cancelEditButton)
         root.addView(itemEntrySection)
 
         billedItemsHeader = LinearLayout(this).apply {
@@ -855,11 +887,16 @@ class PurchaseActivity : ThemedActivity() {
             setPadding(20, 10, 20, 4)
             addView(itemsContainer)
         }
-        android.app.AlertDialog.Builder(this)
+        billedItemsDialog = android.app.AlertDialog.Builder(this)
             .setTitle(com.grocerypos.v11.util.Loc.t(this, "Billed Items", "بل شدہ آئٹمز"))
             .setView(wrapper)
             .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Close", "بند کریں"), null)
             .setOnDismissListener {
+                billedItemsDialog = null
+                // NEW: skip the "jump back to Paid" behaviour if the dialog is closing
+                // because the user tapped ✎ to edit a line — editLine() already moved
+                // focus to the item-entry fields.
+                if (editingLineIndex != null) return@setOnDismissListener
                 paidInput.requestFocus()
                 paidInput.post {
                     paidInput.selectAll()
@@ -931,7 +968,7 @@ class PurchaseActivity : ThemedActivity() {
         purchaseDateMillis = data.purchase.createdAt; dateValueText.text = formatDate(purchaseDateMillis)
         partyName.setText(data.supplierName); updateSupplierBalanceDisplay(data.supplierName)
         paidInput.setText(if (data.purchase.paid > 0) Math.round(data.purchase.paid).toString() else "")
-        lines.clear(); lines.addAll(data.lines)
+        endLineEdit(); lines.clear(); lines.addAll(data.lines)
         renderItemsList(); updateGrandTotal(); deleteButton.visibility = View.VISIBLE
     }
     private fun onItemPicked(pickedName: String) {
@@ -1057,7 +1094,15 @@ class PurchaseActivity : ThemedActivity() {
             return
         }
         val line = PurchaseLine(product.name, product.barcode, q, unit, r, Math.round(q * r).toDouble(), product.unit, product.secondaryUnit, product.secondaryUnitQty, product.tertiaryUnit, product.tertiaryUnitQty)
-        lines.add(line); renderItemsList(); updateGrandTotal()
+        // NEW: editing an existing billed item updates it in place instead of appending
+        val editIndex = editingLineIndex
+        if (editIndex != null && editIndex in lines.indices) {
+            lines[editIndex] = line
+        } else {
+            lines.add(line)
+        }
+        endLineEdit()
+        renderItemsList(); updateGrandTotal()
         itemName.setText(""); qty.setText(""); rate.setText(""); totalLotPrice.setText("")
         selectedProduct = null; lastMainQty = 0.0; lastMainRate = 0.0
         conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
@@ -1068,6 +1113,99 @@ class PurchaseActivity : ThemedActivity() {
             paidWarningText.visibility = View.VISIBLE
             paymentSection.background = strokedBg("#FF9800", "#FFF8E1", 18)
             paymentSection.postDelayed({ paymentSection.background = strokedBg(border, cardWhite, 18) }, 2000)
+        }
+    }
+    // NEW: populate the entry fields from an already-billed line so the user can correct
+    // a mistake (wrong qty/rate/unit) without deleting the line and retyping it.
+    private fun editLine(index: Int) {
+        if (index !in lines.indices) return
+        val line = lines[index]
+        editingLineIndex = index
+        val product = products.find { it.name.equals(line.itemName, ignoreCase = true) }
+        if (product != null) { applyPickedProduct(product) }
+        itemName.setText(line.itemName)
+        qty.setText(formatQty(line.qty))
+        rate.setText(if (line.rate == line.rate.toLong().toDouble()) line.rate.toLong().toString() else line.rate.toString())
+        totalLotPrice.setText("")
+        val unitOptions = (unitSpinner.adapter as? ArrayAdapter<*>)?.let { adapter -> (0 until adapter.count).map { adapter.getItem(it).toString() } } ?: listOf(line.unit)
+        val unitIndex = unitOptions.indexOf(line.unit)
+        if (unitIndex >= 0) { unitSpinner.setSelection(unitIndex); buildUnitChips(unitOptions, line.unit) }
+        updateLineTotal()
+        addItemButton.text = com.grocerypos.v11.util.Loc.t(this, "UPDATE ITEM", "آئٹم اپ ڈیٹ کریں")
+        cancelEditButton.visibility = View.VISIBLE
+        scrollTargetView = itemEntrySection
+        scrollAlignTop = true
+        scrollArea.post { scrollToShowView(itemEntrySection, true) }
+        qty.requestFocus(); qty.selectAll()
+    }
+    private fun endLineEdit() {
+        editingLineIndex = null
+        addItemButton.text = com.grocerypos.v11.util.Loc.t(this, "ADD ITEM", "آئٹم شامل کریں")
+        cancelEditButton.visibility = View.GONE
+    }
+    // NEW: 📊 popup on the item-entry row — pulls this item's past purchases,
+    // groups them by supplier (last rate + running average), and shows who's
+    // currently cheapest, so the user can decide before typing today's rate.
+    private fun showSupplierComparison() {
+        val typed = itemName.text.toString().trim()
+        val product = selectedProduct ?: products.find { it.name.equals(typed, ignoreCase = true) }
+        if (product == null) {
+            Toast.makeText(this, com.grocerypos.v11.util.Loc.t(this, "Select an item first", "پہلے آئٹم منتخب کریں"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PurchaseActivity)
+            val records = db.purchaseDao().purchaseRecordsForItem(product.barcode)
+            val body = ScrollView(this@PurchaseActivity).apply {
+                val col = LinearLayout(this@PurchaseActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 16, 32, 16) }
+                if (records.isEmpty()) {
+                    col.addView(TextView(this@PurchaseActivity).apply {
+                        text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "No supplier data yet for this item", "اس آئٹم کے لیے ابھی کوئی سپلائر ڈیٹا نہیں")
+                        setTextColor(Color.parseColor(textMuted)); textSize = 13.5f
+                    })
+                } else {
+                    val bySupplier = records.groupBy { it.supplierName }
+                    val summaries = bySupplier.map { (supplier, rows) ->
+                        Triple(supplier, rows.first().unitCost, Pair(rows.sumOf { it.unitCost } / rows.size, rows.size))
+                    }.sortedBy { it.second }
+                    val cheapest = summaries.minOf { it.second }
+                    summaries.forEach { (supplier, lastRate, avgAndCount) ->
+                        val isBest = lastRate == cheapest
+                        col.addView(LinearLayout(this@PurchaseActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            setPadding(24, 16, 24, 16)
+                            background = strokedBg(if (isBest) navy else border, if (isBest) "#EAF2FF" else cardWhite, 12)
+                            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 10) }
+                            val top = LinearLayout(this@PurchaseActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                            top.addView(TextView(this@PurchaseActivity).apply {
+                                text = supplier; textSize = 14f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark))
+                                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                            })
+                            if (isBest) top.addView(TextView(this@PurchaseActivity).apply {
+                                text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "BEST", "بہترین")
+                                textSize = 9.5f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD)
+                                background = roundedBg(navy, 20); setPadding(14, 4, 14, 4)
+                            })
+                            top.addView(View(this@PurchaseActivity).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
+                            top.addView(TextView(this@PurchaseActivity).apply {
+                                text = "Rs %.2f".format(lastRate); textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                                setTextColor(Color.parseColor(if (isBest) navy else textDark))
+                            })
+                            addView(top)
+                            addView(TextView(this@PurchaseActivity).apply {
+                                text = "Avg Rs %.2f  •  %d purchase%s".format(avgAndCount.first, avgAndCount.second, if (avgAndCount.second == 1) "" else "s")
+                                textSize = 11.5f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 4, 0, 0)
+                            })
+                        })
+                    }
+                }
+                addView(col)
+            }
+            android.app.AlertDialog.Builder(this@PurchaseActivity)
+                .setTitle("${product.name} \u2014 " + com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Suppliers", "سپلائرز"))
+                .setView(body)
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Close", "بند کریں"), null)
+                .show()
         }
     }
     private fun normalizeUnitName(u: String) = u.trim().lowercase()
@@ -1124,7 +1262,17 @@ class PurchaseActivity : ThemedActivity() {
             topRow.addView(badge)
             topRow.addView(TextView(this).apply { text = "  ${line.itemName}"; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
             topRow.addView(TextView(this).apply { text = "Rs %.0f".format(line.amount); textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)) })
-            topRow.addView(TextView(this).apply { text = "  \u2715"; textSize = 14f; setTextColor(Color.parseColor(red)); setTypeface(typeface, android.graphics.Typeface.BOLD); setOnClickListener { lines.removeAt(index); renderItemsList(); updateGrandTotal(); if (editBillNo == null) saveDraft() } })
+            // NEW: ✎ edit — loads this line back into the entry fields for correction
+            // instead of forcing a delete + re-add of the whole line.
+            topRow.addView(TextView(this).apply { text = "  \u270E"; textSize = 14f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD); setOnClickListener { billedItemsDialog?.dismiss(); editLine(index) } })
+            topRow.addView(TextView(this).apply { text = "  \u2715"; textSize = 14f; setTextColor(Color.parseColor(red)); setTypeface(typeface, android.graphics.Typeface.BOLD); setOnClickListener {
+                val editing = editingLineIndex
+                when {
+                    editing == index -> endLineEdit()
+                    editing != null && editing > index -> editingLineIndex = editing - 1
+                }
+                lines.removeAt(index); renderItemsList(); updateGrandTotal(); if (editBillNo == null) saveDraft()
+            } })
             row.addView(topRow)
             row.addView(TextView(this).apply { text = "${formatQty(line.qty)} ${line.unit} x ${line.rate} = Rs %.0f".format(line.amount); textSize = 12.5f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 6, 0, 0) })
             itemsContainer.addView(row)
@@ -1245,12 +1393,49 @@ class PurchaseActivity : ThemedActivity() {
             android.app.AlertDialog.Builder(this)
                 .setTitle("Confirm Credit Purchase")
                 .setMessage("You have not entered Paid Amount.\nTotal: Rs %.0f\n\nThis bill will be saved as CREDIT (Udhaar).\nSupplier balance will increase.\n\nAre you sure?".format(grandTotal))
-                .setPositiveButton("Yes, Save as Credit") { _, _ -> proceedSave(party, grandTotal) }
+                .setPositiveButton("Yes, Save as Credit") { _, _ -> checkDuplicateAndProceed(party, grandTotal) }
                 .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); scrollArea.post { scrollArea.smoothScrollTo(0, paymentSection.top); paidInput.requestFocus() } }
                 .show()
             return
         }
-        proceedSave(party, grandTotal)
+        checkDuplicateAndProceed(party, grandTotal)
+    }
+    // NEW: before actually saving, look for a recent (last 24h), non-returned purchase
+    // from the same supplier for the exact same total — a common sign the bill was
+    // accidentally entered twice. If found, ask for confirmation instead of silently
+    // saving a second copy; skips the bill currently being edited so re-saving an
+    // edit of itself never triggers a false alarm.
+    private fun checkDuplicateAndProceed(party: String, grandTotal: Double) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PurchaseActivity)
+            val recent = db.purchaseDao().allPurchases()
+            val windowMillis = 24 * 60 * 60 * 1000L
+            val now = System.currentTimeMillis()
+            val duplicate = recent.firstOrNull { r ->
+                r.billNo != editBillNo &&
+                r.status != "returned" &&
+                r.supplierName.equals(party, ignoreCase = true) &&
+                r.total == grandTotal &&
+                (now - r.createdAt) <= windowMillis
+            }
+            if (duplicate == null) {
+                proceedSave(party, grandTotal)
+                return@launch
+            }
+            val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+            android.app.AlertDialog.Builder(this@PurchaseActivity)
+                .setTitle(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Possible Duplicate Bill", "ممکنہ ڈپلیکیٹ بل"))
+                .setMessage(
+                    com.grocerypos.v11.util.Loc.t(
+                        this@PurchaseActivity,
+                        "A purchase from $party for Rs %.0f was already saved on ${fmt.format(Date(duplicate.createdAt))} (Bill #${duplicate.billNo}).\n\nSave this one anyway?".format(grandTotal),
+                        "$party کی طرف سے Rs %.0f کی خریداری پہلے ہی ${fmt.format(Date(duplicate.createdAt))} کو محفوظ ہو چکی ہے (بل نمبر ${duplicate.billNo})۔\n\nکیا پھر بھی محفوظ کریں؟".format(grandTotal)
+                    )
+                )
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ -> proceedSave(party, grandTotal) }
+                .setNegativeButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Cancel", "منسوخ کریں"), null)
+                .show()
+        }
     }
 
     private fun proceedSave(party: String, grandTotal: Double) {
