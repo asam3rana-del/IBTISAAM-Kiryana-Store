@@ -475,6 +475,41 @@ data class Expense(
     val dirty:Boolean=true
 )
 
+// NEW (Zakat tracker): one row per Zakat year the user has started (Ramadan-to-Ramadan,
+// per their request), holding the asset snapshot + 2.5% payable calculated at the time
+// the year was started. `dirty`/`serverId` follow the same shape as every other synced
+// entity in this app for future-proofing, but — unlike Payment/CashTransaction/Expense —
+// these are NOT currently pushed through SyncQueueHelper, since that requires a matching
+// server-side endpoint this file can't add on its own; treat Zakat data as local-only
+// until that's wired up.
+@Entity(tableName="zakat_years")
+data class ZakatYear(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val startDate:Long,
+    val endDate:Long,
+    val assetsSnapshot:Double,
+    val totalPayable:Double,
+    val createdAt:Long=System.currentTimeMillis(),
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
+// NEW (Zakat tracker): a partial or full payment recorded against a ZakatYear —
+// letting the user pay all at once or spread across several installments.
+@Entity(tableName="zakat_payments")
+data class ZakatPayment(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val zakatYearId:Long,
+    val amount:Double,
+    val method:String,
+    val note:String="",
+    val createdAt:Long=System.currentTimeMillis(),
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
 @Entity(tableName="held_bills")
 data class HeldBill(
     @PrimaryKey val holdId:String,
@@ -736,6 +771,17 @@ interface ProductDao {
     // device already pushed gets updated in place instead of inserted as a duplicate.
     @Update suspend fun update(e:Expense)
     @Query("SELECT * FROM expenses WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Expense?
+}
+
+// NEW (Zakat tracker)
+@Dao interface ZakatDao {
+    @Insert suspend fun insertYear(y:ZakatYear):Long
+    @Update suspend fun updateYear(y:ZakatYear)
+    @Query("SELECT * FROM zakat_years ORDER BY startDate DESC LIMIT 1") suspend fun latestYear():ZakatYear?
+    @Query("SELECT * FROM zakat_years ORDER BY startDate DESC") suspend fun allYears():List<ZakatYear>
+    @Insert suspend fun insertPayment(p:ZakatPayment): Long
+    @Query("SELECT * FROM zakat_payments WHERE zakatYearId=:yearId ORDER BY createdAt DESC") suspend fun paymentsForYear(yearId:Long):List<ZakatPayment>
+    @Query("SELECT COALESCE(SUM(amount),0) FROM zakat_payments WHERE zakatYearId=:yearId") suspend fun totalPaidForYear(yearId:Long):Double
 }
 
 @Dao interface HeldDao {
@@ -1109,12 +1155,45 @@ val MIGRATION_27_28 = object : Migration(27, 28) {
     }
 }
 
+// NEW (Zakat tracker): fresh tables, no data migration needed from any existing table.
+val MIGRATION_28_29 = object : Migration(28, 29) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS zakat_years (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                startDate INTEGER NOT NULL,
+                endDate INTEGER NOT NULL,
+                assetsSnapshot REAL NOT NULL,
+                totalPayable REAL NOT NULL,
+                createdAt INTEGER NOT NULL,
+                serverId TEXT,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS zakat_payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                zakatYearId INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                method TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL,
+                serverId TEXT,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
-        CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class],
-    version=28, exportSchema=false
+        CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
+        ZakatYear::class,ZakatPayment::class],
+    version=29, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1135,11 +1214,12 @@ abstract class PosDatabase:RoomDatabase(){
     abstract fun appSettingDao():AppSettingDao
     abstract fun syncQueueDao():SyncQueueDao
     abstract fun stockMovementDao():StockMovementDao
+    abstract fun zakatDao():ZakatDao
     companion object{
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }
