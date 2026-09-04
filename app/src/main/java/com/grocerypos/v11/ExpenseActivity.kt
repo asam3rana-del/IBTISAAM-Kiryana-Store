@@ -33,6 +33,7 @@ class ExpenseActivity : AppCompatActivity() {
         "Food Authority License Fees",
         "Utility Bills",
         "Wages",
+        "Salaries",
         "Fuel Expense",
         "Pick up Maintenance",
         "Fines",
