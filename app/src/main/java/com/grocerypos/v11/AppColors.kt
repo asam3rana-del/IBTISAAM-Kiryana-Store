@@ -1,4 +1,4 @@
-package com.grocerypos.v11.ui.theme l
+package com.grocerypos.v11.ui.theme
 
 /**
  * Single source of truth for the "premium" palette that ReportsActivity,
