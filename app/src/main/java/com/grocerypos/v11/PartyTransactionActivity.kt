@@ -8,14 +8,18 @@ import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
+import com.grocerypos.v11.CashTransaction
+import com.grocerypos.v11.Payment
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.PurchaseItem
@@ -139,6 +143,26 @@ class PartyTransactionActivity : AppCompatActivity() {
             setPadding(22, 12, 22, 12)
             setOnClickListener { promptEditPartyName() }
         })
+        // NEW: "Receive Payment" (customer) / "Make Payment" (supplier) — previously there
+        // was no way at all to record money actually changing hands against the running
+        // balance; the only entries possible were full sale/purchase bills. This opens a
+        // small dialog (amount, cash/bank, optional note) that adjusts the balance directly.
+        headerRow.addView(TextView(this).apply {
+            text = "  \uD83D\uDCB0  " + (if (isCustomer) Loc.t(this@PartyTransactionActivity, "Receive Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06A9\u0631\u06CC\u06BA")
+                else Loc.t(this@PartyTransactionActivity, "Make Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06A9\u0631\u06CC\u06BA"))
+            textSize = 12.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(if (isCustomer) green else orange))
+                cornerRadius = 30f
+            }
+            setPadding(22, 12, 22, 12)
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.marginStart = 12
+            layoutParams = lp
+            setOnClickListener { showPaymentDialog() }
+        })
         root.addView(headerRow)
 
         root.addView(TextView(this).apply {
@@ -245,6 +269,73 @@ class PartyTransactionActivity : AppCompatActivity() {
         }
     }
 
+    // ---------------- Receive Payment / Make Payment ----------------
+
+    // NEW: small dialog to record money actually paid/received against this party's
+    // balance, without needing a full sale or purchase bill.
+    private fun showPaymentDialog() {
+        val padding = (24 * resources.displayMetrics.density).toInt()
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
+
+        val amountInput = EditText(this).apply {
+            hint = Loc.t(this@PartyTransactionActivity, "Amount", "\u0631\u0642\u0645")
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        col.addView(amountInput)
+
+        val methodSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@PartyTransactionActivity, android.R.layout.simple_spinner_dropdown_item, listOf("cash", "bank"))
+        }
+        col.addView(methodSpinner)
+
+        val noteInput = EditText(this).apply {
+            hint = Loc.t(this@PartyTransactionActivity, "Note (optional)", "\u0646\u0648\u0679 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)")
+        }
+        col.addView(noteInput)
+
+        AlertDialog.Builder(this)
+            .setTitle(if (isCustomer) Loc.t(this, "Receive Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06A9\u0631\u06CC\u06BA")
+                else Loc.t(this, "Make Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06A9\u0631\u06CC\u06BA"))
+            .setView(col)
+            .setPositiveButton(Loc.t(this, "Save", "\u0645\u062D\u0641\u0648\u0638 \u06A9\u0631\u06CC\u06BA")) { _, _ ->
+                val amt = amountInput.text.toString().toDoubleOrNull()
+                if (amt == null || amt <= 0.0) {
+                    Toast.makeText(this, Loc.t(this, "Enter a valid amount", "\u0635\u062D\u06CC\u062D \u0631\u0642\u0645 \u0644\u06A9\u06BE\u06CC\u06BA"), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                savePayment(amt, methodSpinner.selectedItem?.toString() ?: "cash", noteInput.text.toString().trim())
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
+            .show()
+    }
+
+    private fun savePayment(amount: Double, method: String, note: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyTransactionActivity)
+            val partyType = if (isCustomer) "customer" else "supplier"
+            val reference = "manual-$partyType-$partyId-${System.currentTimeMillis()}"
+            val reasonText = (if (isCustomer) "Payment received from $partyName" else "Payment made to $partyName") +
+                if (note.isNotEmpty()) " | $note" else ""
+
+            val payment = Payment(reference = reference, partyType = partyType, partyId = partyId, amount = amount, method = method, note = note)
+            val paymentId = db.paymentDao().insert(payment)
+            SyncQueueHelper.enqueuePayment(db, payment.copy(id = paymentId))
+
+            // A customer paying us reduces what they owe (balance goes down); us paying a
+            // supplier reduces what we owe them — both are a negative adjustment.
+            if (isCustomer) SyncQueueHelper.adjustCustomerBalance(db, partyId, -amount)
+            else SyncQueueHelper.adjustSupplierBalance(db, partyId, -amount)
+
+            val cashTx = CashTransaction(type = if (isCustomer) "IN" else "OUT", method = method.lowercase(), amount = amount, reason = reasonText, reference = reference)
+            val cashTxId = db.cashTransactionDao().insert(cashTx)
+            SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
+            SyncQueueHelper.trigger(this@PartyTransactionActivity)
+
+            Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Payment saved", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0645\u062D\u0641\u0648\u0638 \u06C1\u0648 \u06AF\u0626\u06CC"), Toast.LENGTH_SHORT).show()
+            loadTransactions()
+        }
+    }
+
     private fun loadTransactions() {
         // Cancel any load already in flight so its (possibly late-arriving) results can
         // never race with this one and duplicate rows — see loadJob comment above.
@@ -254,47 +345,63 @@ class PartyTransactionActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@PartyTransactionActivity)
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
+            // NEW: standalone payments recorded via the Receive Payment/Make Payment button
+            // — merged chronologically with the sale/purchase bills below so the full money
+            // trail for this party shows in one list instead of only ever showing bills.
+            val payments = db.paymentDao().listByParty(if (isCustomer) "customer" else "supplier", partyId)
+
+            data class Entry(val createdAt: Long, val view: LinearLayout)
+            val entries = mutableListOf<Entry>()
+
             if (isCustomer) {
-                val sales = db.saleDao().salesByCustomer(partyId).sortedByDescending { it.createdAt }
-                if (sales.isEmpty()) {
-                    listContainer.addView(placeholderCard(Loc.t(this@PartyTransactionActivity, "No transactions yet", "\u0627\u0628\u06BE\u06CC \u062A\u06A9 \u06A9\u0648\u0626\u06CC \u0644\u06CC\u0646 \u062F\u06CC\u0646 \u0646\u06C1\u06CC\u06BA \u06C1\u06D2")))
-                } else {
-                    sales.forEach { s ->
-                        listContainer.addView(row(
-                            amount = s.total,
-                            dateText = fmt.format(Date(s.createdAt)),
-                            typeLabel = Loc.t(this@PartyTransactionActivity, "Sale", "\u0633\u06CC\u0644"),
-                            status = s.status,
-                            accent = green,
-                            emoji = "\uD83D\uDED2"
-                        ) {
-                            // ---- CHANGE: opens billed items dialog with edit/delete
-                            // instead of the full SaleActivity edit screen. ----
-                            showBilledItemsDialog(isSale = true, invoice = s.invoice, billNo = "")
-                        })
-                    }
+                db.saleDao().salesByCustomer(partyId).forEach { s ->
+                    entries.add(Entry(s.createdAt, row(
+                        amount = s.total,
+                        dateText = fmt.format(Date(s.createdAt)),
+                        typeLabel = Loc.t(this@PartyTransactionActivity, "Sale", "\u0633\u06CC\u0644"),
+                        status = s.status,
+                        accent = green,
+                        emoji = "\uD83D\uDED2"
+                    ) {
+                        // ---- CHANGE: opens billed items dialog with edit/delete
+                        // instead of the full SaleActivity edit screen. ----
+                        showBilledItemsDialog(isSale = true, invoice = s.invoice, billNo = "")
+                    }))
                 }
             } else {
-                val purchases = db.purchaseDao().purchasesBySupplier(partyId).sortedByDescending { it.createdAt }
-                if (purchases.isEmpty()) {
-                    listContainer.addView(placeholderCard(Loc.t(this@PartyTransactionActivity, "No transactions yet", "\u0627\u0628\u06BE\u06CC \u062A\u06A9 \u06A9\u0648\u0626\u06CC \u0644\u06CC\u0646 \u062F\u06CC\u0646 \u0646\u06C1\u06CC\u06BA \u06C1\u06D2")))
-                } else {
-                    purchases.forEach { p ->
-                        listContainer.addView(row(
-                            amount = p.total,
-                            dateText = fmt.format(Date(p.createdAt)),
-                            typeLabel = Loc.t(this@PartyTransactionActivity, "Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC"),
-                            status = p.status,
-                            accent = orange,
-                            emoji = "\uD83E\uDDFE"
-                        ) {
-                            // ---- CHANGE: opens billed items dialog with edit/delete
-                            // instead of the full PurchaseActivity edit screen. ----
-                            showBilledItemsDialog(isSale = false, invoice = "", billNo = p.billNo)
-                        }
-                        )
-                    }
+                db.purchaseDao().purchasesBySupplier(partyId).forEach { p ->
+                    entries.add(Entry(p.createdAt, row(
+                        amount = p.total,
+                        dateText = fmt.format(Date(p.createdAt)),
+                        typeLabel = Loc.t(this@PartyTransactionActivity, "Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC"),
+                        status = p.status,
+                        accent = orange,
+                        emoji = "\uD83E\uDDFE"
+                    ) {
+                        // ---- CHANGE: opens billed items dialog with edit/delete
+                        // instead of the full PurchaseActivity edit screen. ----
+                        showBilledItemsDialog(isSale = false, invoice = "", billNo = p.billNo)
+                    }))
                 }
+            }
+            payments.forEach { pay ->
+                val label = (if (isCustomer) Loc.t(this@PartyTransactionActivity, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC")
+                    else Loc.t(this@PartyTransactionActivity, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC")) +
+                    "  \u2022  " + pay.method.uppercase() + (if (pay.note.isNotEmpty()) "  \u2022  ${pay.note}" else "")
+                entries.add(Entry(pay.createdAt, row(
+                    amount = pay.amount,
+                    dateText = fmt.format(Date(pay.createdAt)),
+                    typeLabel = label,
+                    status = "",
+                    accent = teal,
+                    emoji = "\uD83D\uDCB5"
+                ) { }))
+            }
+
+            if (entries.isEmpty()) {
+                listContainer.addView(placeholderCard(Loc.t(this@PartyTransactionActivity, "No transactions yet", "\u0627\u0628\u06BE\u06CC \u062A\u06A9 \u06A9\u0648\u0626\u06CC \u0644\u06CC\u0646 \u062F\u06CC\u0646 \u0646\u06C1\u06CC\u06BA \u06C1\u06D2")))
+            } else {
+                entries.sortedByDescending { it.createdAt }.forEach { listContainer.addView(it.view) }
             }
         }
     }

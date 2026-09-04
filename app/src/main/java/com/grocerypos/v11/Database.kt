@@ -758,6 +758,10 @@ interface ProductDao {
     // same reasoning as ExpenseDao/CashTransactionDao above.
     @Update suspend fun update(p:Payment)
     @Query("SELECT * FROM payments WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Payment?
+    // ADDED (Amount Payable/Receivable — standalone payments): lets PartyTransactionActivity
+    // show a party's manually-recorded "Receive Payment"/"Make Payment" entries (not tied to
+    // a specific bill) alongside their sale/purchase history.
+    @Query("SELECT * FROM payments WHERE partyType=:partyType AND partyId=:partyId ORDER BY createdAt DESC") suspend fun listByParty(partyType:String,partyId:Long):List<Payment>
 }
 
 @Dao interface PurchaseDao {
