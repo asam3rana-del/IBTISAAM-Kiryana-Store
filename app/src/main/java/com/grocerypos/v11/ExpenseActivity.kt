@@ -39,6 +39,7 @@ class ExpenseActivity : AppCompatActivity() {
         "Fines",
         "Rent",
         "Income Tax Fees",
+        "Zakat",
         "Miscellaneous"
     )
 

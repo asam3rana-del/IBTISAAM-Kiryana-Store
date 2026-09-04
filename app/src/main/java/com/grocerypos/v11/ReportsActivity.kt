@@ -26,6 +26,7 @@ class ReportsActivity : AppCompatActivity() {
     private val purple = "#8B5CF6"
     private val amber = "#F5A524"
     private val teal = "#0F9B8E"
+    private val gold = "#C9A24B"
     private val red = "#E5484D"
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
@@ -123,6 +124,16 @@ class ReportsActivity : AppCompatActivity() {
             title = Loc.t(this, "Balance Sheet", "بیلنس شیٹ"),
             subtitle = Loc.t(this, "Assets, liabilities & capital", "اثاثے، واجبات اور سرمایہ")
         ) { startActivity(android.content.Intent(this@ReportsActivity, BalanceSheetActivity::class.java)) })
+
+        navCard.addView(navDivider())
+
+        // NEW: Zakat tracker — Ramadan-to-Ramadan year, auto-calculated from the same
+        // asset figures Balance Sheet uses, with monthly-installment support.
+        navCard.addView(navRow(
+            icon = "\u262A", accentHex = gold, tintHex = "#F4EEDD",
+            title = Loc.t(this, "Zakat", "زکوٰۃ"),
+            subtitle = Loc.t(this, "Track & pay this year's Zakat", "اس سال کی زکوٰۃ ٹریک اور ادا کریں")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, ZakatActivity::class.java)) })
 
         root.addView(navCard)
 
