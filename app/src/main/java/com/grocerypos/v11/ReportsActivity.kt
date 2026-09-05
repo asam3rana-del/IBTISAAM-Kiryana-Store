@@ -186,6 +186,16 @@ class ReportsActivity : AppCompatActivity() {
 
         navCard.addView(navDivider())
 
+        // NEW: Bottle Shell Ledger — who owes an empty shell back, plus the shop's own
+        // empty-shell stock count.
+        navCard.addView(navRow(
+            icon = "\uD83C\uDF7E", accentHex = teal, tintHex = "#E0F2F1",
+            title = Loc.t(this, "Bottle Shell Ledger", "بوتل شیل کھاتہ"),
+            subtitle = Loc.t(this, "Empty shells with customers & shop stock", "گاہکوں اور دکان کے پاس خالی شیلز")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, ShellLedgerActivity::class.java)) })
+
+        navCard.addView(navDivider())
+
         navCard.addView(navRow(
             icon = "⚖️", accentHex = teal, tintHex = "#E0F2F1",
             title = Loc.t(this, "Balance Sheet", "بیلنس شیٹ"),

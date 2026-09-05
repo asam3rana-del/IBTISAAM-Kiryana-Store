@@ -537,6 +537,57 @@ data class ZakatPayment(
     val dirty:Boolean=true
 )
 
+// NEW (Bottle Shell Ledger): a customer who has been given a filled bottle without
+// handing back an empty shell in exchange — shellsOwed is the running count of shells
+// they still owe the shop. This is a standalone ledger (not tied to the Customer table)
+// since a shell-taking "customer" here is often just a name/phone jotted down, not a
+// full party record. serverId/updatedAt/dirty follow the same shape as ZakatYear above
+// for future-proofing, but — like Zakat — this is NOT currently pushed through
+// SyncQueueHelper; treat it as local-only until a matching server-side endpoint exists.
+@Entity(tableName="shell_customers")
+data class ShellCustomer(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val name:String,
+    val phone:String="",
+    val shellsOwed:Int=0,
+    val createdAt:Long=System.currentTimeMillis(),
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
+// NEW (Bottle Shell Ledger): one row per issue/return against a ShellCustomer, so the
+// running shellsOwed total always has a history behind it (who took what, when).
+@Entity(
+    tableName="shell_transactions",
+    indices=[Index(value=["customerId"], name="index_shell_transactions_customerId")]
+)
+data class ShellTransaction(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val customerId:Long,
+    val type:String, // "ISSUE" (filled given, shell owed) or "RETURN" (empty shell handed back)
+    val qty:Int,
+    val note:String="",
+    val createdAt:Long=System.currentTimeMillis(),
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
+// NEW (Bottle Shell Ledger): the shop's OWN empty-shell count — separate from what
+// customers owe. A plain signed delta log (same shape as StockMovement above), summed
+// for the current total, so "how many empties are sitting at the shop right now" always
+// has a history behind it too (collected from a return, sent off for refill, or a
+// manual recount correction).
+@Entity(tableName="shop_empty_shell_log")
+data class ShopEmptyShellLog(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val delta:Int,
+    val reason:String, // MANUAL_ADD, MANUAL_REMOVE, CUSTOMER_RETURN, SENT_FOR_REFILL
+    val note:String="",
+    val createdAt:Long=System.currentTimeMillis()
+)
+
 @Entity(tableName="held_bills")
 data class HeldBill(
     @PrimaryKey val holdId:String,
@@ -845,6 +896,24 @@ interface ProductDao {
     @Insert suspend fun insertPayment(p:ZakatPayment): Long
     @Query("SELECT * FROM zakat_payments WHERE zakatYearId=:yearId ORDER BY createdAt DESC") suspend fun paymentsForYear(yearId:Long):List<ZakatPayment>
     @Query("SELECT COALESCE(SUM(amount),0) FROM zakat_payments WHERE zakatYearId=:yearId") suspend fun totalPaidForYear(yearId:Long):Double
+}
+
+@Dao interface ShellDao {
+    @Insert suspend fun insertCustomer(c:ShellCustomer):Long
+    @Update suspend fun updateCustomer(c:ShellCustomer)
+    @Query("SELECT * FROM shell_customers WHERE id=:id LIMIT 1") suspend fun getCustomer(id:Long):ShellCustomer?
+    // COLLATE NOCASE: so "Ahmed" and "ahmed" resolve to the same ledger entry instead
+    // of silently creating a duplicate customer with a fresh shellsOwed=0.
+    @Query("SELECT * FROM shell_customers WHERE name=:name COLLATE NOCASE LIMIT 1") suspend fun findByName(name:String):ShellCustomer?
+    @Query("SELECT * FROM shell_customers ORDER BY shellsOwed DESC, name COLLATE NOCASE ASC") suspend fun allCustomers():List<ShellCustomer>
+    @Query("SELECT COALESCE(SUM(shellsOwed),0) FROM shell_customers") suspend fun totalOwedByCustomers():Int
+
+    @Insert suspend fun insertTransaction(t:ShellTransaction):Long
+    @Query("SELECT * FROM shell_transactions WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun historyForCustomer(customerId:Long):List<ShellTransaction>
+
+    @Insert suspend fun insertShopLog(l:ShopEmptyShellLog):Long
+    @Query("SELECT COALESCE(SUM(delta),0) FROM shop_empty_shell_log") suspend fun shopStockTotal():Int
+    @Query("SELECT * FROM shop_empty_shell_log ORDER BY createdAt DESC LIMIT 100") suspend fun shopLogHistory():List<ShopEmptyShellLog>
 }
 
 @Dao interface PaymentDao {
@@ -1252,13 +1321,56 @@ val MIGRATION_29_30 = object : Migration(29, 30) {
     }
 }
 
+// NEW (Bottle Shell Ledger): shell_customers/shell_transactions track what customers
+// owe the shop; shop_empty_shell_log tracks the shop's own empty-shell count. All three
+// are brand-new tables, same CREATE-TABLE-IF-NOT-EXISTS pattern as MIGRATION_28_29.
+val MIGRATION_30_31 = object : Migration(30, 31) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS shell_customers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL DEFAULT '',
+                shellsOwed INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL,
+                serverId TEXT,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS shell_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                customerId INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                qty INTEGER NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL,
+                serverId TEXT,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+        database.execSQL("CREATE INDEX IF NOT EXISTS index_shell_transactions_customerId ON shell_transactions(customerId)")
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS shop_empty_shell_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                delta INTEGER NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
-        ZakatYear::class,ZakatPayment::class],
-    version=30, exportSchema=false
+        ZakatYear::class,ZakatPayment::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class],
+    version=31, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1280,11 +1392,12 @@ abstract class PosDatabase:RoomDatabase(){
     abstract fun syncQueueDao():SyncQueueDao
     abstract fun stockMovementDao():StockMovementDao
     abstract fun zakatDao():ZakatDao
+    abstract fun shellDao():ShellDao
     companion object{
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }
