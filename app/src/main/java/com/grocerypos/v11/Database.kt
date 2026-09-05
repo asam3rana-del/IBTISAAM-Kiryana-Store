@@ -773,6 +773,12 @@ interface ProductDao {
     @Query("SELECT * FROM expenses WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Expense?
 }
 
+@Dao interface HeldDao {
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun hold(h:HeldBill)
+    @Query("SELECT * FROM held_bills ORDER BY createdAt DESC") fun all():Flow<List<HeldBill>>
+    @Delete suspend fun delete(h:HeldBill)
+}
+
 // NEW (Zakat tracker)
 @Dao interface ZakatDao {
     @Insert suspend fun insertYear(y:ZakatYear):Long
@@ -782,12 +788,6 @@ interface ProductDao {
     @Insert suspend fun insertPayment(p:ZakatPayment): Long
     @Query("SELECT * FROM zakat_payments WHERE zakatYearId=:yearId ORDER BY createdAt DESC") suspend fun paymentsForYear(yearId:Long):List<ZakatPayment>
     @Query("SELECT COALESCE(SUM(amount),0) FROM zakat_payments WHERE zakatYearId=:yearId") suspend fun totalPaidForYear(yearId:Long):Double
-}
-
-@Dao interface HeldDao {
-    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun hold(h:HeldBill)
-    @Query("SELECT * FROM held_bills ORDER BY createdAt DESC") fun all():Flow<List<HeldBill>>
-    @Delete suspend fun delete(h:HeldBill)
 }
 
 @Dao interface PaymentDao {
