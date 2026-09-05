@@ -1274,8 +1274,30 @@ class PurchaseActivity : ThemedActivity() {
                 lines.removeAt(index); renderItemsList(); updateGrandTotal(); if (editBillNo == null) saveDraft()
             } })
             row.addView(topRow)
-            row.addView(TextView(this).apply { text = "${formatQty(line.qty)} ${line.unit} x ${line.rate} = Rs %.0f".format(line.amount); textSize = 12.5f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 6, 0, 0) })
+            // NEW: split into a muted "Item Subtotal" label + the calculation line below it,
+            // matching the reference bill-view layout (label on its own line, qty x rate = amount underneath).
+            row.addView(TextView(this).apply { text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Item Subtotal", "آئٹم سب ٹوٹل"); textSize = 11f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 8, 0, 0) })
+            row.addView(TextView(this).apply { text = "${formatQty(line.qty)} ${line.unit} x ${line.rate} = Rs %.0f".format(line.amount); textSize = 12.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
             itemsContainer.addView(row)
+        }
+        // NEW: footer summary row — Total Qty + Subtotal — shown under the item cards inside
+        // the Billed Items dialog, so the totals are visible without closing the dialog.
+        if (lines.isNotEmpty()) {
+            val totalQty = lines.sumOf { it.qty }
+            val footerRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(18, 14, 18, 4)
+                addView(TextView(this@PurchaseActivity).apply {
+                    text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Total Qty", "کل مقدار") + ": ${formatQty(totalQty)}"
+                    textSize = 12.5f; setTextColor(Color.parseColor(textMuted))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(TextView(this@PurchaseActivity).apply {
+                    text = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Subtotal", "سب ٹوٹل") + ": Rs %.0f".format(totalSoFar)
+                    textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)); gravity = Gravity.END
+                })
+            }
+            itemsContainer.addView(footerRow)
         }
     }
     private fun updateGrandTotal() {

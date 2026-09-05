@@ -22,7 +22,11 @@ import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.Payment
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.PurchaseActivity
 import com.grocerypos.v11.PurchaseItem
+import com.grocerypos.v11.PurchaseRepository
+import com.grocerypos.v11.RoomSaleRepository
+import com.grocerypos.v11.SaleActivity
 import com.grocerypos.v11.SaleItem
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.smallestPerUnitOf
@@ -477,10 +481,18 @@ class PartyTransactionActivity : AppCompatActivity() {
                 outer.addView(scroll)
 
                 var itemCount = 0
+                var totalQty = 0.0
+                // NEW: kept so the "Delete bill" action below can pass the exact item
+                // snapshot into SaleRepository/PurchaseRepository's delete function —
+                // same tested reversal logic (stock/balance/cash) the full edit screens use.
+                var saleItemsSnapshot: List<SaleItem> = emptyList()
+                var purchaseItemsSnapshot: List<PurchaseItem> = emptyList()
 
                 if (isSale) {
                     val items = db.saleDao().itemsForInvoice(reference)
                     itemCount = items.size
+                    totalQty = items.sumOf { it.qty }
+                    saleItemsSnapshot = items
                     if (items.isEmpty()) {
                         body.addView(emptyText(Loc.t(this@PartyTransactionActivity, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")))
                     } else {
@@ -498,6 +510,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                 } else {
                     val items = db.purchaseDao().itemsForBill(reference)
                     itemCount = items.size
+                    totalQty = items.sumOf { it.qty }
+                    purchaseItemsSnapshot = items
                     if (items.isEmpty()) {
                         body.addView(emptyText(Loc.t(this@PartyTransactionActivity, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")))
                     } else {
@@ -522,6 +536,18 @@ class PartyTransactionActivity : AppCompatActivity() {
                             setMargins(0, 8, 0, 8)
                         }
                     })
+                    // NEW: Total Qty row above the Total amount row, matching the reference
+                    // bill-view layout (qty + subtotal shown together as a summary strip).
+                    body.addView(LinearLayout(this@PartyTransactionActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(4, 0, 4, 2)
+                        addView(TextView(this@PartyTransactionActivity).apply {
+                            text = Loc.t(this@PartyTransactionActivity, "Total Qty", "\u06A9\u0644 \u0645\u0642\u062F\u0627\u0631") + ": ${formatQty(totalQty)}"
+                            textSize = 12f
+                            setTextColor(Color.parseColor(labelGray))
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        })
+                    })
                     body.addView(LinearLayout(this@PartyTransactionActivity).apply {
                         orientation = LinearLayout.HORIZONTAL
                         setPadding(4, 6, 4, 6)
@@ -543,13 +569,52 @@ class PartyTransactionActivity : AppCompatActivity() {
                 }
 
                 dialog?.dismiss()
-                dialog = AlertDialog.Builder(this@PartyTransactionActivity)
+                val builder = AlertDialog.Builder(this@PartyTransactionActivity)
                     .setView(outer)
                     .setPositiveButton(Loc.t(this@PartyTransactionActivity, "Close", "\u0628\u0646\u062F \u06A9\u0631\u06CC\u06BA")) { _, _ ->
                         loadTransactions()
                     }
                     .setOnCancelListener { loadTransactions() }
-                    .show()
+                // NEW: "Edit bill" opens the full Sale/PurchaseActivity screen (already
+                // handles reloading every line + party + payment for editing) and
+                // "Delete bill" reuses the same repository delete used by the History
+                // screens (reverses stock/balance/cash in one transaction) — both only
+                // offered when the bill actually has items to act on.
+                if (itemCount > 0) {
+                    builder.setNegativeButton(Loc.t(this@PartyTransactionActivity, "Edit bill", "\u0628\u0644 \u062A\u0631\u0645\u06CC\u0645 \u06A9\u0631\u06CC\u06BA")) { _, _ ->
+                        val intent = if (isSale) {
+                            Intent(this@PartyTransactionActivity, SaleActivity::class.java)
+                                .putExtra(SaleActivity.EXTRA_INVOICE, reference)
+                        } else {
+                            Intent(this@PartyTransactionActivity, PurchaseActivity::class.java)
+                                .putExtra(PurchaseActivity.EXTRA_BILL_NO, reference)
+                        }
+                        startActivity(intent)
+                    }
+                    builder.setNeutralButton(Loc.t(this@PartyTransactionActivity, "Delete bill", "\u0628\u0644 \u062D\u0630\u0641 \u06A9\u0631\u06CC\u06BA")) { _, _ ->
+                        android.app.AlertDialog.Builder(this@PartyTransactionActivity)
+                            .setTitle(Loc.t(this@PartyTransactionActivity, "Delete bill", "\u0628\u0644 \u062D\u0630\u0641 \u06A9\u0631\u06CC\u06BA"))
+                            .setMessage(Loc.t(this@PartyTransactionActivity, "This will remove the whole bill and reverse its stock and balance effect. Continue?", "\u0627\u0633 \u0633\u06D2 \u067E\u0648\u0631\u0627 \u0628\u0644 \u062E\u062A\u0645 \u06C1\u0648 \u062C\u0627\u0626\u06D2 \u06AF\u0627 \u0627\u0648\u0631 \u0627\u0633 \u06A9\u0627 \u0633\u0679\u0627\u06A9 \u0627\u0648\u0631 \u0628\u0642\u0627\u06CC\u0627 \u0627\u062B\u0631 \u0648\u0627\u067E\u0633 \u06C1\u0648\u06AF\u0627\u06D4 \u062C\u0627\u0631\u06CC \u0631\u06A9\u06BE\u06CC\u06BA\u061F"))
+                            .setPositiveButton(Loc.t(this@PartyTransactionActivity, "Delete", "\u062D\u0630\u0641 \u06A9\u0631\u06CC\u06BA")) { _, _ ->
+                                lifecycleScope.launch {
+                                    try {
+                                        if (isSale) {
+                                            RoomSaleRepository(db, applicationContext).deleteSale(reference, sale, saleItemsSnapshot)
+                                        } else {
+                                            PurchaseRepository(db, applicationContext).deletePurchase(reference, purchase, purchaseItemsSnapshot)
+                                        }
+                                        Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Bill deleted", "\u0628\u0644 \u062D\u0630\u0641 \u06C1\u0648 \u06AF\u06CC\u0627"), Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(this@PartyTransactionActivity, e.message ?: "Delete failed", Toast.LENGTH_SHORT).show()
+                                    }
+                                    loadTransactions()
+                                }
+                            }
+                            .setNegativeButton(Loc.t(this@PartyTransactionActivity, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
+                            .show()
+                    }
+                }
+                dialog = builder.show()
             }
         }
 

@@ -1303,11 +1303,19 @@ class SaleActivity : AppCompatActivity() {
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 })
                 addView(top)
+                // NEW: split into a muted "Item Subtotal" label + the calculation line below it,
+                // matching the reference bill-view layout (label on its own line, qty x rate = amount underneath).
                 addView(TextView(this@SaleActivity).apply {
-                    text = "Qty: ${line.qty} ${line.unit}   •   Rate: ${line.unitPrice}"
-                    textSize = 12.5f
+                    text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Item Subtotal", "آئٹم سب ٹوٹل")
+                    textSize = 11f
                     setTextColor(Color.parseColor(textGray))
-                    setPadding(0, 6, 0, 0)
+                    setPadding(0, 8, 0, 0)
+                })
+                addView(TextView(this@SaleActivity).apply {
+                    text = "${formatQty(line.qty)} ${line.unit} x ${line.unitPrice} = Rs %.2f".format(line.amount)
+                    textSize = 12.5f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(textDark))
                 })
                 addView(TextView(this@SaleActivity).apply {
                     text = "\u2715 " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Remove", "ہٹائیں")
@@ -1322,6 +1330,29 @@ class SaleActivity : AppCompatActivity() {
                         if (editInvoice == null) saveDraft()
                         if (lines.isEmpty()) billedItemsDialog?.dismiss()
                     }
+                })
+            })
+        }
+        // NEW: footer summary row — Total Qty + Subtotal — shown under the item cards inside
+        // the Billed Items dialog, so the totals are visible without closing the dialog.
+        if (lines.isNotEmpty()) {
+            val totalQty = lines.sumOf { it.qty }
+            val subtotal = lines.sumOf { it.amount }
+            itemsContainer.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(18, 14, 18, 4)
+                addView(TextView(this@SaleActivity).apply {
+                    text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Total Qty", "کل مقدار") + ": ${formatQty(totalQty)}"
+                    textSize = 12.5f
+                    setTextColor(Color.parseColor(textGray))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(TextView(this@SaleActivity).apply {
+                    text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Subtotal", "سب ٹوٹل") + ": Rs %.2f".format(subtotal)
+                    textSize = 13f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(teal))
+                    gravity = Gravity.END
                 })
             })
         }
