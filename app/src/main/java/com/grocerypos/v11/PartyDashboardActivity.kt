@@ -645,7 +645,9 @@ class PartyDashboardActivity : AppCompatActivity() {
         val options = arrayOf(
             Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
             Loc.t(this, "Add Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
-            Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC")
+            Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC"),
+            "  \uD83D\uDCB0  " + Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
+            "  \uD83D\uDCB8  " + Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC")
         )
         AlertDialog.Builder(this)
             .setItems(options) { _, which ->
@@ -653,9 +655,99 @@ class PartyDashboardActivity : AppCompatActivity() {
                     0 -> startActivity(Intent(this, SaleActivity::class.java))
                     1 -> startActivity(Intent(this, PurchaseActivity::class.java))
                     2 -> startActivity(Intent(this, PartyActivity::class.java))
+                    3 -> showPartyPickerForPayment(forCustomer = true)
+                    4 -> showPartyPickerForPayment(forCustomer = false)
                 }
             }
             .show()
+    }
+
+    // ---------------- NEW: quick "Payment Received" / "Payment Made" from the "+" menu ----------------
+    // Previously the only way to record a standalone payment (money changing hands with no
+    // new sale/purchase bill) was to open a specific party's ledger first, then tap the
+    // "Receive Payment"/"Make Payment" button there. This adds a fast path straight from the
+    // dashboard's "+" menu: pick the customer (for money received) or supplier (for money paid)
+    // from a searchable list, then jump straight into PartyTransactionActivity with the
+    // payment dialog already open (via the "openPayment" extra), skipping the extra tap.
+    private fun showPartyPickerForPayment(forCustomer: Boolean) {
+        val candidates = allItems.filter { it.isCustomer == forCustomer }.sortedBy { it.name.lowercase() }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 24, 32, 8)
+        }
+        val searchBox = EditText(this).apply {
+            hint = Loc.t(this@PartyDashboardActivity,
+                if (forCustomer) "Search customer" else "Search supplier",
+                if (forCustomer) "\u06A9\u0633\u0679\u0645\u0631 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA" else "\u0633\u067E\u0644\u0627\u0626\u0631 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA")
+            setPadding(20, 18, 20, 18)
+            background = roundedBackground("#F3F4F9", 18)
+        }
+        root.addView(searchBox)
+
+        val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            addView(listContainer)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (320 * resources.displayMetrics.density).toInt()
+            )
+        }
+        root.addView(scroll)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(Loc.t(this,
+                if (forCustomer) "Payment Received" else "Payment Made",
+                if (forCustomer) "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC" else "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC"))
+            .setView(root)
+            .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
+            .create()
+
+        fun renderList(query: String) {
+            listContainer.removeAllViews()
+            val filtered = if (query.isBlank()) candidates
+                else candidates.filter { it.name.contains(query, ignoreCase = true) || it.phone.contains(query) }
+            if (filtered.isEmpty()) {
+                listContainer.addView(TextView(this).apply {
+                    text = Loc.t(this@PartyDashboardActivity,
+                        if (forCustomer) "No customers found" else "No suppliers found",
+                        if (forCustomer) "\u06A9\u0648\u0626\u06CC \u06A9\u0633\u0679\u0645\u0631 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627" else "\u06A9\u0648\u0626\u06CC \u0633\u067E\u0644\u0627\u0626\u0631 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")
+                    textSize = 13.5f
+                    setTextColor(Color.parseColor("#9AA0B4"))
+                    gravity = Gravity.CENTER
+                    setPadding(20, 40, 20, 40)
+                })
+                return
+            }
+            for (item in filtered) {
+                listContainer.addView(TextView(this).apply {
+                    text = item.name + if (item.phone.isNotBlank()) "  \u00B7  ${item.phone}" else ""
+                    textSize = 14.5f
+                    setTextColor(Color.parseColor("#2E3242"))
+                    setPadding(20, 26, 20, 26)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        dialog.dismiss()
+                        startActivity(Intent(this@PartyDashboardActivity, PartyTransactionActivity::class.java).apply {
+                            putExtra("partyId", item.id)
+                            putExtra("partyName", item.name)
+                            putExtra("isCustomer", item.isCustomer)
+                            putExtra("openPayment", true)
+                        })
+                    }
+                })
+            }
+        }
+
+        searchBox.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) { renderList(s?.toString() ?: "") }
+        })
+
+        renderList("")
+        dialog.show()
     }
 
     // ================= DATA LOAD (Parties tab / summary cards) =================

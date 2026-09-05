@@ -184,6 +184,15 @@ class PartyTransactionActivity : AppCompatActivity() {
         // ---- FIX: no longer loading here — onResume() (called right after onCreate on
         // a fresh launch, and again whenever the screen returns to the foreground) is now
         // the single place that triggers a load. See loadJob comment above for why. ----
+
+        // NEW: dashboard "+" quick menu's "Payment Received"/"Payment Made" launches this
+        // screen with openPayment=true after the user already picked the party, so open the
+        // payment dialog immediately instead of making them tap the header button again.
+        // Showing an AlertDialog here doesn't trigger onPause/onResume of this activity, so
+        // this only runs once per launch (never re-fires when the dialog itself is dismissed).
+        if (intent.getBooleanExtra("openPayment", false)) {
+            showPaymentDialog()
+        }
     }
 
     override fun onResume() {
