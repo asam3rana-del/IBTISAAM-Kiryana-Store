@@ -40,8 +40,11 @@ import kotlinx.coroutines.launch
 class ItemsActivity : AppCompatActivity() {
 
     // ================= PREMIUM COLOR PALETTE (matches Settings / Product) =================
-    private val bg = "#F3F2FA"
+    // NOTE: bg switched from lavender to plain white — reskin request to match a
+    // reference screenshot's flat white look. Logic/behavior below is unchanged.
+    private val bg = "#FFFFFF"
     private val cardBg = "#FFFFFF"
+    private val tagBg = "#F1F0F5"
     private val primary = "#4A3AFF"
     private val primaryDark = "#3527D6"
     private val red = "#E5484D"
@@ -87,20 +90,19 @@ class ItemsActivity : AppCompatActivity() {
         }
 
         // ================= HEADER =================
+        // Restyled to a flat white bar (was a purple gradient) to match the reference
+        // screenshot's look. Same title/subtitle/back-behavior as before.
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
+            setPadding(20, 18, 20, 18)
+            background = strokedBg(border, cardBg, 18)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 18) }
-            applyElevation(this, 10f)
+            applyElevation(this, 3f)
         }
-        header.addView(circleIcon("🗃️", "#5C4DFF", 42))
+        header.addView(circleIcon("🗃️", "#EFECFF", 42))
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -109,13 +111,13 @@ class ItemsActivity : AppCompatActivity() {
         headerCol.addView(TextView(this).apply {
             text = "Items"
             textSize = 20f
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, Typeface.BOLD)
         })
         headerCol.addView(TextView(this).apply {
             text = "Products, Categories & Units"
             textSize = 11.5f
-            setTextColor(Color.parseColor("#D8D3FF"))
+            setTextColor(Color.parseColor(textGray))
             setPadding(0, 4, 0, 0)
         })
         header.addView(headerCol)
@@ -126,12 +128,9 @@ class ItemsActivity : AppCompatActivity() {
         header.addView(TextView(this).apply {
             text = "🌐 Translate"
             textSize = 11f
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor(primary))
             setTypeface(typeface, Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#33FFFFFF"))
-                cornerRadius = 30f
-            }
+            background = strokedBg(primary, "#EFECFF", 30)
             setPadding(18, 12, 18, 12)
             setOnClickListener {
                 startActivity(Intent(this@ItemsActivity, BulkTranslateActivity::class.java))
@@ -141,10 +140,10 @@ class ItemsActivity : AppCompatActivity() {
         root.addView(header)
 
         // ================= TABS =================
+        // Restyled as separate outlined pills (was one filled segmented control) to
+        // match the reference screenshot's Parties/Transactions/Items look.
         tabRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = strokedBg(border, cardBg, 14)
-            setPadding(6, 6, 6, 6)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 16) }
@@ -244,9 +243,9 @@ class ItemsActivity : AppCompatActivity() {
         }
         fab.visibility = View.VISIBLE
 
-        productsTabBtn.setBackgroundColor(Color.TRANSPARENT)
-        categoriesTabBtn.setBackgroundColor(Color.TRANSPARENT)
-        unitsTabBtn.setBackgroundColor(Color.TRANSPARENT)
+        productsTabBtn.background = strokedBg(border, cardBg, 30)
+        categoriesTabBtn.background = strokedBg(border, cardBg, 30)
+        unitsTabBtn.background = strokedBg(border, cardBg, 30)
         productsTabBtn.setTextColor(Color.parseColor(textGray))
         categoriesTabBtn.setTextColor(Color.parseColor(textGray))
         unitsTabBtn.setTextColor(Color.parseColor(textGray))
@@ -256,8 +255,8 @@ class ItemsActivity : AppCompatActivity() {
             Tab.CATEGORIES -> categoriesTabBtn
             Tab.UNITS -> unitsTabBtn
         }
-        selected.background = roundedBg(primary, 10)
-        selected.setTextColor(Color.WHITE)
+        selected.background = strokedBg(red, "#FDE8E8", 30)
+        selected.setTextColor(Color.parseColor(red))
 
         renderCurrentTab()
     }
@@ -339,25 +338,44 @@ class ItemsActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 10) }
 
-                addView(TextView(this@ItemsActivity).apply {
+                // Top row: name on the left, category tag + share icon on the right —
+                // matches the reference screenshot's item row layout.
+                val topRow = LinearLayout(this@ItemsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                topRow.addView(TextView(this@ItemsActivity).apply {
                     text = p.name
                     textSize = 14.5f
                     setTextColor(Color.parseColor(textDark))
                     setTypeface(typeface, Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
                 if (p.category.isNotBlank()) {
-                    addView(TextView(this@ItemsActivity).apply {
+                    topRow.addView(TextView(this@ItemsActivity).apply {
                         text = p.category
-                        textSize = 10.5f
-                        setTextColor(Color.WHITE)
+                        textSize = 10f
+                        setTextColor(Color.parseColor(textGray))
                         setTypeface(typeface, Typeface.BOLD)
-                        background = roundedBg(purple, 16)
-                        setPadding(16, 4, 16, 4)
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply { setMargins(0, 8, 0, 0) }
+                        background = roundedBg(tagBg, 8)
+                        setPadding(14, 6, 14, 6)
                     })
                 }
+                topRow.addView(TextView(this@ItemsActivity).apply {
+                    text = "\u27A4"
+                    textSize = 13f
+                    setTextColor(Color.parseColor(textGray))
+                    setPadding(20, 0, 0, 0)
+                    setOnClickListener {
+                        val summary = "${p.name}\nSale Price: Rs %.2f\nPurchase Price: Rs %.2f".format(p.salePrice, p.cost)
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, summary)
+                        }, null))
+                    }
+                })
+                addView(topRow)
+
                 val priceRow = LinearLayout(this@ItemsActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     setPadding(0, 10, 0, 0)
@@ -770,11 +788,13 @@ class ItemsActivity : AppCompatActivity() {
 
     private fun tabButton(label: String, onClick: () -> Unit) = TextView(this).apply {
         text = label
-        textSize = 12.5f
+        textSize = 12f
         gravity = Gravity.CENTER
         setTypeface(typeface, Typeface.BOLD)
         setPadding(0, 20, 0, 20)
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginEnd = 8
+        }
         setOnClickListener { onClick() }
     }
 
