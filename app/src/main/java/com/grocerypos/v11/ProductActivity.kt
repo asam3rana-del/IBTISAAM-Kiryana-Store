@@ -93,6 +93,14 @@ class ProductActivity : ThemedActivity() {
     private lateinit var cost: EditText
     private lateinit var wholesalePrice: EditText
     private lateinit var salePrice: EditText
+    // ---- NEW: tracks whether the shopkeeper has personally typed into Retail/
+    // Wholesale (or the item already had a saved rate) for this open form. See
+    // autoFillRatesFromCost() — a field stays untouched by auto-markup once
+    // either is true, so an item's price can be pinned regardless of Purchase
+    // Rate changes just by not clearing that field. ----
+    private var retailManuallyEdited = false
+    private var wholesaleManuallyEdited = false
+    private var isAutoFillingRates = false
     private lateinit var stock: EditText
     private lateinit var stockUnitSpinner: Spinner
     private lateinit var stockPreview: TextView
@@ -432,6 +440,17 @@ class ProductActivity : ThemedActivity() {
             )
         )
         ratesCard.addView(spacer(12))
+
+        // ---- NEW: auto-fill Wholesale/Retail from Purchase Rate using the
+        // shop's saved Markup % (see RateMarkupSettings, set from the Dashboard's
+        // Items tab). Only ever fills a field the shopkeeper hasn't personally
+        // typed into and that doesn't already have a saved rate — see
+        // autoFillRatesFromCost(). ----
+        salePrice.addTextChangedListener(simpleWatcher { if (!isAutoFillingRates) retailManuallyEdited = true })
+        wholesalePrice.addTextChangedListener(simpleWatcher { if (!isAutoFillingRates) wholesaleManuallyEdited = true })
+        cost.addTextChangedListener(simpleWatcher {
+            autoFillRatesFromCost(cost.text.toString().trim().toDoubleOrNull() ?: 0.0)
+        })
 
         // ---- Opening Stock: same premium labeled-badge treatment as the price fields above,
         // with the unit Spinner sharing the same row so quantity + unit read as one control. ----
@@ -1753,6 +1772,15 @@ class ProductActivity : ThemedActivity() {
             if (product.wholesalePrice > 0) product.wholesalePrice.toString() else ""
         )
         salePrice.setText(if (product.salePrice > 0) product.salePrice.toString() else "")
+        // ---- NEW: an item that already has a saved Retail/Wholesale rate is
+        // treated as manually set from here on — opening this item again and
+        // changing its Purchase Rate will NOT recompute a rate the shopkeeper
+        // already fixed. A field that's still blank (0) gets one auto-fill offer
+        // right away if a Markup % is configured, instead of waiting for the
+        // Purchase Rate to be retyped. ----
+        retailManuallyEdited = product.salePrice > 0
+        wholesaleManuallyEdited = product.wholesalePrice > 0
+        if (product.cost > 0) autoFillRatesFromCost(product.cost)
         reorderLevel.setText(if (product.reorderLevel > 0) trimNum(product.reorderLevel) else "")
 
         stock.setText(trimNum(product.stock))
@@ -2006,6 +2034,32 @@ class ProductActivity : ThemedActivity() {
             .show()
     }
 
+    /**
+     * NEW: same auto-markup behaviour as PartyDashboardActivity's quick "Edit
+     * Rates" dialog — see RateMarkupSettings. Fills Wholesale/Retail Sale Rate
+     * from Purchase Rate using the shop's saved markup %, but ONLY for a field
+     * that hasn't been manually typed into during this form AND doesn't already
+     * carry a saved rate (see loadProductForEdit()/clearForm() for how the two
+     * flags get set). That's what lets a shopkeeper pin one item's price so it
+     * stays put even when its Purchase Rate goes up later — they just leave the
+     * field as-is, nothing here will touch it.
+     */
+    private fun autoFillRatesFromCost(costValue: Double) {
+        if (costValue <= 0.0) return
+        val retailPct = RateMarkupSettings.getRetailMarkupPercent(this)
+        val wholesalePct = RateMarkupSettings.getWholesaleMarkupPercent(this)
+        isAutoFillingRates = true
+        if (!retailManuallyEdited && retailPct > 0.0) {
+            val computed = RateMarkupSettings.computeFromCost(costValue, retailPct)
+            if (computed > 0.0) salePrice.setText("%.2f".format(computed))
+        }
+        if (!wholesaleManuallyEdited && wholesalePct > 0.0) {
+            val computed = RateMarkupSettings.computeFromCost(costValue, wholesalePct)
+            if (computed > 0.0) wholesalePrice.setText("%.2f".format(computed))
+        }
+        isAutoFillingRates = false
+    }
+
     private fun clearForm() {
         name.text.clear()
         cost.text.clear()
@@ -2013,6 +2067,9 @@ class ProductActivity : ThemedActivity() {
         salePrice.text.clear()
         stock.text.clear()
         reorderLevel.text.clear()
+        // ---- NEW: a fresh "New Product" form should offer auto-fill again ----
+        retailManuallyEdited = false
+        wholesaleManuallyEdited = false
 
         stock.isEnabled = true
         stockUnitSpinner.isEnabled = true

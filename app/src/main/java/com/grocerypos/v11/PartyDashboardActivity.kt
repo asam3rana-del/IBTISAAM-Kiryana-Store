@@ -115,6 +115,11 @@ class PartyDashboardActivity : AppCompatActivity() {
     // ---- Items tab cache + search query ----
     private var itemCache: List<ItemAgg> = emptyList()
     private var itemQuery: String = ""
+    // ---- NEW: "Missing Rate" filter toggle — when on, the Items tab only shows
+    // products still needing a Retail or Wholesale rate, so the shopkeeper isn't
+    // scrolling past every already-configured item to find the next one that
+    // needs attention. See buildItemSearchRow() / renderItemRows(). ----
+    private var showMissingRateOnly: Boolean = false
 
     private enum class Tab { PARTIES, TRANSACTIONS, ITEMS }
     private enum class FilterMode { ALL, CUSTOMERS, SUPPLIERS }
@@ -514,8 +519,10 @@ class PartyDashboardActivity : AppCompatActivity() {
         return row
     }
 
-    /** Search box + "Add Item" button — Items tab only. */
+    /** Search box + "Add Item" button, plus (NEW) a "Missing Rate" filter chip and
+     *  a Markup % shortcut — Items tab only. */
     private fun buildItemSearchRow(): LinearLayout {
+        val wrapper = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
 
         val searchBox = LinearLayout(this).apply {
@@ -556,8 +563,50 @@ class PartyDashboardActivity : AppCompatActivity() {
             }
             setOnClickListener { startActivity(Intent(this@PartyDashboardActivity, ProductActivity::class.java)) }
         })
+        wrapper.addView(row)
 
-        return row
+        // ---- NEW: "Missing Rate" filter chip + Markup % shortcut, so the two
+        // problems (scrolling to find un-rated items, retyping rates by hand every
+        // time) can both be fixed from right here without opening every item. ----
+        val toolsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 10, 0, 0)
+        }
+        val missingCount = itemCache.count { it.salePrice <= 0.0 || it.wholesalePrice <= 0.0 }
+        toolsRow.addView(TextView(this).apply {
+            text = "\u26A0\uFE0F " + Loc.t(this@PartyDashboardActivity, "Missing Rate", "\u0646\u0627\u0645\u06A9\u0645\u0644 \u0631\u06CC\u0679") +
+                    if (missingCount > 0) " ($missingCount)" else ""
+            textSize = 12.5f
+            setTypeface(typeface, if (showMissingRateOnly) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+            setTextColor(Color.parseColor(if (showMissingRateOnly) "#FFFFFF" else orange))
+            setPadding(20, 10, 20, 10)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(if (showMissingRateOnly) orange else "#FFF1E3"))
+                cornerRadius = 20f
+            }
+            setOnClickListener {
+                showMissingRateOnly = !showMissingRateOnly
+                renderSearchRow()
+                renderItemRows()
+            }
+        })
+        toolsRow.addView(spacerHoriz(10))
+        toolsRow.addView(TextView(this).apply {
+            text = "\u2699\uFE0F " + Loc.t(this@PartyDashboardActivity, "Markup %", "\u0645\u0627\u0631\u06A9 \u0627\u067E")
+            textSize = 12.5f
+            setTextColor(Color.parseColor(labelGray))
+            setPadding(20, 10, 20, 10)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadius = 20f
+                setStroke(2, Color.parseColor(cardBorder))
+            }
+            setOnClickListener { showMarkupSettingsDialog() }
+        })
+        wrapper.addView(toolsRow)
+
+        return wrapper
     }
 
     private fun spacerHoriz(widthDp: Int) = View(this).apply {
@@ -1045,10 +1094,20 @@ class PartyDashboardActivity : AppCompatActivity() {
         if (activeTab != Tab.ITEMS) return
         listContainer.removeAllViews()
         val q = itemQuery.trim().lowercase()
-        val filtered = itemCache.filter { it.product.lowercase().contains(q) }
+        var filtered = itemCache.filter { it.product.lowercase().contains(q) }
+        // ---- NEW: "Missing Rate" toggle (see buildItemSearchRow) — only items
+        // still needing a Retail or Wholesale rate. ----
+        if (showMissingRateOnly) {
+            filtered = filtered.filter { it.salePrice <= 0.0 || it.wholesalePrice <= 0.0 }
+        }
 
         if (filtered.isEmpty()) {
-            listContainer.addView(placeholderCard(Loc.t(this, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")))
+            listContainer.addView(placeholderCard(
+                if (showMissingRateOnly)
+                    Loc.t(this, "All items have rates set \uD83C\uDF89", "\u062A\u0645\u0627\u0645 \u0622\u0626\u0679\u0645\u0632 \u06A9\u06D2 \u0631\u06CC\u0679 \u0633\u06CC\u0679 \u06C1\u06CC\u06BA")
+                else
+                    Loc.t(this, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")
+            ))
             return
         }
 
@@ -1210,6 +1269,56 @@ class PartyDashboardActivity : AppCompatActivity() {
         val retailField = rateField(Loc.t(this, "Retail Sale Rate", "\u0631\u06CC\u0679\u06CC\u0644 \u0631\u06CC\u0679"), c.salePrice)
         val wholesaleField = rateField(Loc.t(this, "Wholesale Rate", "\u06C1\u0648\u0644 \u0633\u06CC\u0644 \u0631\u06CC\u0679"), c.wholesalePrice)
 
+        // ---- NEW: auto-fill Retail/Wholesale from Purchase Rate using the saved
+        // Markup % (see RateMarkupSettings / showMarkupSettingsDialog), so the
+        // shopkeeper doesn't have to compute and retype both rates by hand every
+        // time. Auto-fill only ever touches a field the shopkeeper hasn't
+        // personally typed into during this dialog (or that didn't already have a
+        // rate saved) — a deliberately customized rate for one item is never
+        // silently overwritten. Values stay fully editable either way. ----
+        val retailPct = RateMarkupSettings.getRetailMarkupPercent(this)
+        val wholesalePct = RateMarkupSettings.getWholesaleMarkupPercent(this)
+        var retailManuallyEdited = c.salePrice > 0.0
+        var wholesaleManuallyEdited = c.wholesalePrice > 0.0
+        var isAutoFilling = false
+
+        fun autoFillFrom(cost: Double) {
+            if (cost <= 0.0) return
+            isAutoFilling = true
+            if (!retailManuallyEdited && retailPct > 0.0) {
+                val computed = RateMarkupSettings.computeFromCost(cost, retailPct)
+                if (computed > 0.0) retailField.setText("%.2f".format(computed))
+            }
+            if (!wholesaleManuallyEdited && wholesalePct > 0.0) {
+                val computed = RateMarkupSettings.computeFromCost(cost, wholesalePct)
+                if (computed > 0.0) wholesaleField.setText("%.2f".format(computed))
+            }
+            isAutoFilling = false
+        }
+
+        retailField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { if (!isAutoFilling) retailManuallyEdited = true }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        wholesaleField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { if (!isAutoFilling) wholesaleManuallyEdited = true }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        purchaseField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                autoFillFrom(s?.toString()?.trim()?.toDoubleOrNull() ?: 0.0)
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        // Also run once immediately: most items opened here already HAVE a
+        // Purchase Rate (from an earlier purchase entry) and only need
+        // Retail/Wholesale filled in — don't wait for the Purchase Rate to be
+        // retyped before offering a computed value.
+        if (retailPct > 0.0 || wholesalePct > 0.0) autoFillFrom(c.cost)
+
         AlertDialog.Builder(this)
             .setTitle(Loc.t(this, "Edit Rates", "\u0631\u06CC\u0679 \u0627\u06CC\u0688\u0679 \u06A9\u0631\u06CC\u06BA") + " \u2014 ${c.product}")
             .setView(container)
@@ -1243,6 +1352,74 @@ class PartyDashboardActivity : AppCompatActivity() {
                     ).show()
                     renderItemsList(forceReload = true)
                 }
+                d.dismiss()
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
+            .show()
+    }
+
+    /**
+     * NEW: lets the shopkeeper set a one-time "% above Purchase Rate" for Retail
+     * and Wholesale (stored in RateMarkupSettings / SharedPreferences, no schema
+     * change needed). showEditRatesDialog() reads these to auto-fill Retail/
+     * Wholesale whenever a Purchase Rate is present, so both don't need to be
+     * typed by hand for every single item. Leaving a % at 0 turns auto-fill off
+     * for that rate — existing behavior (fully manual entry) is unchanged until a
+     * shopkeeper opts in here.
+     */
+    private fun showMarkupSettingsDialog() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 20, 48, 8)
+        }
+        container.addView(TextView(this).apply {
+            text = Loc.t(
+                this@PartyDashboardActivity,
+                "Retail/Wholesale will auto-fill this % above Purchase Rate (still editable). Leave 0 to enter rates manually.",
+                "\u0631\u06CC\u0679\u06CC\u0644/\u06C1\u0648\u0644 \u0633\u06CC\u0644 \u0631\u06CC\u0679 \u062E\u0648\u062F\u06A9\u0627\u0631 \u062E\u0631\u06CC\u062F \u0631\u06CC\u0679 \u067E\u0631 \u0627\u0633 % \u0633\u06D2 \u0628\u06BE\u0631 \u062C\u0627\u0626\u06D2 \u06AF\u06CC (\u067E\u06BE\u0631 \u0628\u06BE\u06CC \u062A\u0628\u062F\u06CC\u0644 \u06C1\u0648 \u0633\u06A9\u062A\u06D2 \u06C1\u06CC\u06BA)\u06D4 \u062E\u0648\u062F 0 \u0631\u06C1\u0646\u06D2 \u062F\u06CC\u06BA \u062A\u0627\u06A9\u06C1 \u062E\u0648\u062F \u0644\u06A9\u06BE\u06CC\u06BA\u06D4"
+            )
+            textSize = 12f
+            setTextColor(Color.parseColor(labelGray))
+            setPadding(0, 0, 0, 10)
+        })
+
+        fun pctField(labelText: String, initial: Double): EditText {
+            container.addView(TextView(this).apply {
+                text = labelText; textSize = 12.5f
+                setTextColor(Color.parseColor(labelGray))
+                setPadding(0, 14, 0, 4)
+            })
+            val field = EditText(this).apply {
+                setText(if (initial <= 0.0) "" else "%.1f".format(initial))
+                hint = "0.0"
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            }
+            container.addView(field)
+            return field
+        }
+
+        val retailPctField = pctField(
+            Loc.t(this, "Retail Markup %", "\u0631\u06CC\u0679\u06CC\u0644 \u0645\u0627\u0631\u06A9 \u0627\u067E %"),
+            RateMarkupSettings.getRetailMarkupPercent(this)
+        )
+        val wholesalePctField = pctField(
+            Loc.t(this, "Wholesale Markup %", "\u06C1\u0648\u0644 \u0633\u06CC\u0644 \u0645\u0627\u0631\u06A9 \u0627\u067E %"),
+            RateMarkupSettings.getWholesaleMarkupPercent(this)
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Markup Settings", "\u0645\u0627\u0631\u06A9 \u0627\u067E \u0633\u06CC\u0679\u0646\u06AF\u0632"))
+            .setView(container)
+            .setPositiveButton(Loc.t(this, "Save", "\u0645\u062D\u0641\u0648\u0638 \u06A9\u0631\u06CC\u06BA")) { d, _ ->
+                val retailPct = retailPctField.text.toString().trim().toDoubleOrNull() ?: 0.0
+                val wholesalePct = wholesalePctField.text.toString().trim().toDoubleOrNull() ?: 0.0
+                RateMarkupSettings.setRetailMarkupPercent(this, retailPct)
+                RateMarkupSettings.setWholesaleMarkupPercent(this, wholesalePct)
+                Toast.makeText(
+                    this,
+                    Loc.t(this, "Markup settings saved", "\u0645\u0627\u0631\u06A9 \u0627\u067E \u0633\u06CC\u0679\u0646\u06AF\u0632 \u0645\u062D\u0641\u0648\u0638 \u06C1\u0648 \u06AF\u0626\u06CC\u06BA"),
+                    Toast.LENGTH_SHORT
+                ).show()
                 d.dismiss()
             }
             .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
