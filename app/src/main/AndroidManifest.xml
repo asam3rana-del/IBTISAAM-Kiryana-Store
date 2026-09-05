@@ -29,6 +29,7 @@
         <activity android:name=".ui.StockAdjustmentActivity" android:exported="false" />
         <activity android:name=".ui.InventoryInsightsActivity" android:exported="false" />
         <activity android:name=".ui.DueRemindersActivity" android:exported="false" />
+        <activity android:name=".ui.ShellLedgerActivity" android:exported="false" />
         <activity android:name=".ui.BalanceSheetActivity" android:exported="false" />
         <activity android:name=".ui.ZakatActivity" android:exported="false" />
         <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />
