@@ -119,6 +119,73 @@ class ReportsActivity : AppCompatActivity() {
 
         navCard.addView(navDivider())
 
+        // NEW: Stock Adjustment (log damage/loss or a manual correction) plus the four
+        // Inventory Insights tabs (Reorder Suggestions, Damage/Loss Report, Profit
+        // Margin per Item, Fast/Slow Movers) and Due Date Reminders.
+        navCard.addView(navRow(
+            icon = "\uD83D\uDD27", accentHex = red, tintHex = "#FDE8E8",
+            title = Loc.t(this, "Stock Adjustment", "اسٹاک ایڈجسٹمنٹ"),
+            subtitle = Loc.t(this, "Log damage, loss, or a correction", "نقصان یا درستگی درج کریں")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, StockAdjustmentActivity::class.java)) })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            icon = "\uD83D\uDECD\uFE0F", accentHex = amber, tintHex = "#FFF3E0",
+            title = Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"),
+            subtitle = Loc.t(this, "Items at or below reorder level", "کم اسٹاک آئٹمز")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
+            i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_REORDER)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            icon = "\uD83D\uDCA5", accentHex = red, tintHex = "#FDE8E8",
+            title = Loc.t(this, "Damage / Loss Report", "نقصان کی رپورٹ"),
+            subtitle = Loc.t(this, "Value of stock damaged or lost", "خراب یا ضائع اسٹاک کی مالیت")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
+            i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_DAMAGE)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            icon = "\uD83D\uDCC8", accentHex = teal, tintHex = "#E0F2F1",
+            title = Loc.t(this, "Profit Margin per Item", "فی آئٹم منافع"),
+            subtitle = Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
+            i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_PROFIT)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            icon = "\u23F1\uFE0F", accentHex = purple, tintHex = "#F0EBFF",
+            title = Loc.t(this, "Fast / Slow Movers", "تیز / سست چلنے والے"),
+            subtitle = Loc.t(this, "Which items sell, and which don't", "کون سے آئٹم بکتے ہیں")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
+            i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_MOVERS)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            icon = "\u23F0", accentHex = primary, tintHex = "#E9E6FF",
+            title = Loc.t(this, "Due Date Reminders", "ادائیگی کی یاد دہانی"),
+            subtitle = Loc.t(this, "Credit sales still owed, by due date", "ادھار سیلز جو واجب الادا ہیں")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, DueRemindersActivity::class.java)) })
+
+        navCard.addView(navDivider())
+
         navCard.addView(navRow(
             icon = "⚖️", accentHex = teal, tintHex = "#E0F2F1",
             title = Loc.t(this, "Balance Sheet", "بیلنس شیٹ"),

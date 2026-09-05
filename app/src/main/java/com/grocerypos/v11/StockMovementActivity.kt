@@ -234,6 +234,9 @@ class StockMovementActivity : AppCompatActivity() {
         "SALE_REVERSAL" -> Loc.t(this, "SALE RETURNED/DELETED", "سیل واپس/حذف") to amber
         "SALE_ITEM_DELETE" -> Loc.t(this, "SALE ITEM DELETED", "سیل آئٹم حذف") to red
         "OPENING_STOCK" -> Loc.t(this, "OPENING STOCK", "ابتدائی اسٹاک") to purple
+        // NEW: written by StockAdjustmentActivity via SyncQueueHelper.
+        "DAMAGE" -> Loc.t(this, "DAMAGE / LOSS", "نقصان") to red
+        "ADJUSTMENT" -> Loc.t(this, "ADJUSTMENT", "ایڈجسٹمنٹ") to amber
         else -> type to textGray
     }
 

@@ -22,6 +22,19 @@ data class ItemPurchaseRecord(val supplierName:String,val qty:Double,val unitCos
 data class DayBookSale(val invoice:String,val customerName:String,val total:Double,val paid:Double,val createdAt:Long,val status:String)
 data class DayBookPurchase(val billNo:String,val supplierName:String,val total:Double,val paid:Double,val createdAt:Long,val status:String)
 
+// ---- NEW (Inventory Insights: Fast/Slow Moving Items) — per-product sales aggregate
+// over a date range, keyed by barcode (unlike TopProduct/PartyItemReport above, which
+// group by the free-text product NAME and so can't be joined back to a Product row for
+// its current stock/reorderLevel/cost). Used by InventoryInsightsActivity's Movers tab.
+data class ItemMovement(val barcode:String,val product:String,val totalQty:Double,val totalAmount:Double)
+
+// ---- NEW (Due Date Reminders) — a credit/partially-paid sale that still owes money,
+// joined with its customer's name and phone (phone lets the reminders screen offer a
+// direct "call" action). dueDate is 0L for a sale whose owner hasn't set a reminder date
+// yet — DueRemindersActivity still lists it (so nothing owed is ever hidden), just
+// grouped as "no date set" instead of overdue/upcoming.
+data class DueSale(val invoice:String,val customerId:Long?,val customerName:String,val customerPhone:String,val total:Double,val paid:Double,val dueDate:Long,val createdAt:Long)
+
 @Entity(tableName="units")
 data class UnitType(@PrimaryKey val name:String)
 
@@ -84,6 +97,15 @@ interface StockMovementDao {
     fun costHistoryForProduct(barcode: String): Flow<List<StockMovement>>
     @Query("SELECT DISTINCT barcode FROM stock_movements")
     suspend fun distinctBarcodes(): List<String>
+
+    // ================= NEW: Stock Adjustment / Damage-Loss Report =================
+    // "DAMAGE" and "ADJUSTMENT" are new `type` values written by StockAdjustmentActivity
+    // (no schema change needed — type was always a free-text column). qty is stored
+    // signed (negative for stock going down), cost is the product's per-unit cost AT
+    // THE TIME of the adjustment, so damageBetween()'s value math survives later cost
+    // changes on the product itself.
+    @Query("SELECT * FROM stock_movements WHERE type='DAMAGE' AND createdAt BETWEEN :start AND :end ORDER BY createdAt DESC")
+    suspend fun damageBetween(start:Long,end:Long):List<StockMovement>
 }
 
 @Entity(tableName="products")
@@ -359,7 +381,12 @@ data class Sale(
     val createdAt:Long=System.currentTimeMillis(),
     val status:String="active",
     val updatedAt:Long=0L,
-    val dirty:Boolean=true
+    val dirty:Boolean=true,
+    // NEW (Due Date Reminders): optional reminder date for a credit/partially-paid sale,
+    // as an epoch-millis midnight timestamp. 0L means "no reminder set yet" — set/changed
+    // from DueRemindersActivity, never touched by the normal checkout flow in SaleActivity.
+    // See MIGRATION_29_30 for the matching ALTER TABLE.
+    @ColumnInfo(defaultValue="0") val dueDate:Long=0L
 )
 
 // FIX (fractional qty consistency): qty is REAL/Double, matching PurchaseItem.qty,
@@ -740,6 +767,36 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')") suspend fun totalActiveQtySold(barcode:String):Int
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paid, createdAt, status FROM sales WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun salesBetween(start:Long,end:Long):List<DayBookSale>
+
+    // ================= NEW: Inventory Insights (Fast/Slow Movers) =================
+    // Same shape as topProducts()/itemReportByCustomer() above, but grouped by
+    // si.barcode instead of si.product so results can be matched back to a live
+    // Product row (current stock, reorderLevel, cost) for the Movers tab.
+    @Query("""
+        SELECT si.barcode as barcode, si.product as product,
+            COALESCE(SUM(si.qty),0) as totalQty, COALESCE(SUM(si.amount),0) as totalAmount
+        FROM sale_items si JOIN sales s ON si.invoice=s.invoice
+        WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'
+        GROUP BY si.barcode ORDER BY totalQty DESC
+    """)
+    suspend fun itemMovementBetween(start:Long,end:Long):List<ItemMovement>
+
+    // ================= NEW: Due Date Reminders =================
+    // Any active sale still owing money (paid < total), regardless of whether a
+    // reminder date has been set yet — DueRemindersActivity groups/sorts these
+    // client-side (0 = no date set, sorted after real dates).
+    @Query("""
+        SELECT s.invoice as invoice, s.customerId as customerId,
+            COALESCE(c.name,'Walk-in') as customerName, COALESCE(c.phone,'') as customerPhone,
+            s.total as total, s.paid as paid, s.dueDate as dueDate, s.createdAt as createdAt
+        FROM sales s LEFT JOIN customers c ON c.id=s.customerId
+        WHERE s.status='active' AND (s.total - s.paid) > 0.009
+        ORDER BY (s.dueDate = 0) ASC, s.dueDate ASC, s.createdAt ASC
+    """)
+    suspend fun dueSales():List<DueSale>
+
+    @Query("UPDATE sales SET dueDate=:dueDate, updatedAt=:now, dirty=1 WHERE invoice=:invoice")
+    suspend fun setDueDate(invoice:String,dueDate:Long,now:Long=System.currentTimeMillis())
 
     // ================= Party Transaction — billed item edit/delete support =================
     // Added for PartyTransactionActivity's editable "Billed Items" dialog: lets a single
@@ -1187,13 +1244,21 @@ val MIGRATION_28_29 = object : Migration(28, 29) {
     }
 }
 
+// NEW (Due Date Reminders): Sale.dueDate, a plain nullable-by-default ADD COLUMN —
+// same simple pattern as MIGRATION_25_26's returnReversed, no table recreate needed.
+val MIGRATION_29_30 = object : Migration(29, 30) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE sales ADD COLUMN dueDate INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
         ZakatYear::class,ZakatPayment::class],
-    version=29, exportSchema=false
+    version=30, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1219,7 +1284,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }
