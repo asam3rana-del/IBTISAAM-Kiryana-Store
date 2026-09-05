@@ -11,6 +11,9 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.sync.SyncWorker
 import com.grocerypos.v11.ui.LoginActivity
@@ -165,6 +168,19 @@ class MainActivity : ThemedActivity() {
         topRow.addView(premiumIconBadge(if (ThemeManager.isDarkMode(this)) "☀️" else "🌙", "#6B74E0", 40, 17f).apply {
             isClickable = true
             setOnClickListener { toggleTheme() }
+        })
+
+        topRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1)
+        })
+
+        // ---- QUICK SWITCH USER — one tap opens a list of active staff accounts
+        // (Admin/Manager/Cashier); tapping a name verifies fingerprint first (falls
+        // back to that user's password) and switches the session instantly, without
+        // going through the full Login screen / OTP flow. ----
+        topRow.addView(premiumIconBadge("🔀", "#0F9B8E", 40, 16f).apply {
+            isClickable = true
+            setOnClickListener { openQuickSwitchDialog() }
         })
 
         topRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
@@ -688,6 +704,175 @@ class MainActivity : ThemedActivity() {
         }
         startActivity(intent)
         finish()
+    }
+
+    // ================= QUICK SWITCH USER =================
+    // List of every active staff account, tap-to-switch — a fast alternative to Logout +
+    // full Login screen when the person handing the counter over is just changing who's
+    // ringing up sales (Admin/Manager/Cashier). Each switch still requires proving it's
+    // really that person: fingerprint is tried first, password is always the fallback.
+    private fun openQuickSwitchDialog() {
+        lifecycleScope.launch {
+            val users = PosDatabase.get(this@MainActivity).userDao().all().first().filter { it.active }
+            if (users.isEmpty()) return@launch
+
+            val myUsername = getSharedPreferences("session", MODE_PRIVATE).getString("username", "")
+
+            val list = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(12, 8, 12, 8)
+            }
+            val dialog = AlertDialog.Builder(this@MainActivity)
+                .setTitle("Switch User")
+                .setView(ScrollView(this@MainActivity).apply { addView(list) })
+                .setNegativeButton("Cancel", null)
+                .create()
+
+            users.forEach { user ->
+                list.addView(quickSwitchRow(user, user.username == myUsername) {
+                    dialog.dismiss()
+                    attemptQuickSwitch(user)
+                })
+                list.addView(spacer(8))
+            }
+            dialog.show()
+        }
+    }
+
+    private fun quickSwitchRow(user: User, isCurrent: Boolean, onTap: () -> Unit): LinearLayout {
+        val roleColor = when (user.role) {
+            "admin" -> "#4A3AFF"
+            "manager" -> "#2F6FED"
+            else -> "#F5A524"
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 16, 18, 16)
+            background = roundedBackgroundBordered(cardWhite, 14)
+            isClickable = !isCurrent
+            if (!isCurrent) setOnClickListener { onTap() }
+            alpha = if (isCurrent) 0.55f else 1f
+
+            addView(TextView(this@MainActivity).apply {
+                text = user.displayName.take(1).uppercase()
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor(roleColor))
+                }
+                val px = (38 * resources.displayMetrics.density).toInt()
+                width = px; height = px
+            })
+            addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams((14 * resources.displayMetrics.density).toInt(), 1)
+            })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply {
+                    text = if (isCurrent) "${user.displayName} (Current)" else user.displayName
+                    textSize = 14f
+                    setTextColor(Color.parseColor(textDark))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = user.role.replaceFirstChar { it.uppercase() }
+                    textSize = 11.5f
+                    setTextColor(Color.parseColor(roleColor))
+                    setPadding(0, 2, 0, 0)
+                })
+            })
+            if (!isCurrent) {
+                addView(TextView(this@MainActivity).apply {
+                    text = "›"
+                    textSize = 18f
+                    setTextColor(Color.parseColor(textMuted))
+                })
+            }
+        }
+    }
+
+    // Fingerprint first; falls back to that user's own password if fingerprint isn't set
+    // up on this device, or if the person cancels/fails the prompt.
+    private fun attemptQuickSwitch(user: User) {
+        val biometricManager = BiometricManager.from(this)
+        val canAuthenticate = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+
+        if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+            askPasswordForSwitch(user)
+            return
+        }
+
+        val executor = ContextCompat.getMainExecutor(this)
+        val biometricPrompt = BiometricPrompt(
+            this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    completeQuickSwitch(user)
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    // Cancelled / failed to open / "Use Password" tapped — password
+                    // fallback picks up from here either way.
+                    askPasswordForSwitch(user)
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    Toast.makeText(this@MainActivity, "Fingerprint match nahi hua, dobara try karein", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Fingerprint Verify Karein")
+            .setSubtitle("${user.displayName} ke account par switch karne ke liye")
+            .setNegativeButtonText("Password Use Karein")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .build()
+
+        biometricPrompt.authenticate(promptInfo)
+    }
+
+    private fun askPasswordForSwitch(user: User) {
+        val passwordField = EditText(this).apply {
+            hint = "${user.displayName} ka password"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(28, 22, 28, 22)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Password Verify Karein")
+            .setView(passwordField)
+            .setPositiveButton("Switch") { _, _ ->
+                val typed = passwordField.text.toString()
+                lifecycleScope.launch {
+                    if (PasswordHasher.verify(typed, user.passwordHash)) {
+                        completeQuickSwitch(user)
+                    } else {
+                        Toast.makeText(this@MainActivity, "Ghalat password", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun completeQuickSwitch(user: User) {
+        getSharedPreferences("session", MODE_PRIVATE).edit()
+            .putString("username", user.username)
+            .putString("role", user.role)
+            .apply()
+        Toast.makeText(this, "${user.displayName} par switch ho gaya", Toast.LENGTH_SHORT).show()
+        // Simplest correct refresh: re-run onCreate (same pattern used by toggleTheme()
+        // above) so every role-gated button/card on this screen rebuilds against the
+        // new session instead of drifting out of sync.
+        recreate()
     }
 
     private data class QuickAction(val title: String, val subtitle: String, val accentHex: String, val accentHex2: String, val onClick: () -> Unit)
