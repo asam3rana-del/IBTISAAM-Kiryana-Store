@@ -215,7 +215,19 @@ class UserManagementActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             val me = PosDatabase.get(this@UserManagementActivity).userDao().find(myUsername)
-            if (me != null && PasswordHasher.verify(typed, me.passwordHash)) {
+            // FIX: match LoginActivity's backward-compat check — PasswordHasher.verify()
+            // always returns false for a still-plain-text passwordHash (pre-hashing-update
+            // accounts, e.g. the seeded admin), so it can't be the only check here or a
+            // correct password would always be rejected as "Ghalat password".
+            val passwordOk = if (me != null && PasswordHasher.isHashed(me.passwordHash)) {
+                PasswordHasher.verify(typed, me.passwordHash)
+            } else {
+                me != null && me.passwordHash == typed
+            }
+            if (me != null && passwordOk) {
+                if (!PasswordHasher.isHashed(me.passwordHash)) {
+                    PosDatabase.get(this@UserManagementActivity).userDao().upsert(me.copy(passwordHash = PasswordHasher.hash(typed)))
+                }
                 buildManagementUi(myUsername)
             } else {
                 lockErrorText.text = "Ghalat password"

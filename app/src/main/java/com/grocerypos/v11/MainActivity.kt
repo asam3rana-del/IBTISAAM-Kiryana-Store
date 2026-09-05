@@ -852,7 +852,19 @@ class MainActivity : ThemedActivity() {
             .setPositiveButton("Switch") { _, _ ->
                 val typed = passwordField.text.toString()
                 lifecycleScope.launch {
-                    if (PasswordHasher.verify(typed, user.passwordHash)) {
+                    // FIX: same backward-compat check as LoginActivity — PasswordHasher.verify()
+                    // always returns false for a still-plain-text passwordHash (pre-hashing-update
+                    // accounts, e.g. the seeded admin), so it can't be the only check here or a
+                    // correct password would always be rejected as "Ghalat password".
+                    val passwordOk = if (PasswordHasher.isHashed(user.passwordHash)) {
+                        PasswordHasher.verify(typed, user.passwordHash)
+                    } else {
+                        user.passwordHash == typed
+                    }
+                    if (passwordOk) {
+                        if (!PasswordHasher.isHashed(user.passwordHash)) {
+                            PosDatabase.get(this@MainActivity).userDao().upsert(user.copy(passwordHash = PasswordHasher.hash(typed)))
+                        }
                         completeQuickSwitch(user)
                     } else {
                         Toast.makeText(this@MainActivity, "Ghalat password", Toast.LENGTH_SHORT).show()
