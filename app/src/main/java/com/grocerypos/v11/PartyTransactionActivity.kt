@@ -22,11 +22,11 @@ import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.Payment
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
-import com.grocerypos.v11.PurchaseActivity
 import com.grocerypos.v11.PurchaseItem
-import com.grocerypos.v11.PurchaseRepository
-import com.grocerypos.v11.RoomSaleRepository
-import com.grocerypos.v11.SaleActivity
+import com.grocerypos.v11.data.PurchaseRepository
+import com.grocerypos.v11.data.RoomSaleRepository
+import com.grocerypos.v11.ui.PurchaseActivity
+import com.grocerypos.v11.ui.SaleActivity
 import com.grocerypos.v11.SaleItem
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.smallestPerUnitOf
