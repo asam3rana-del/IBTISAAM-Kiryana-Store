@@ -163,6 +163,15 @@ class SaleHistoryActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(8, 0, 12, 0)
         })
+        if (sale.status != "returned") {
+            addView(TextView(this@SaleHistoryActivity).apply {
+                text = "↩"
+                textSize = 16f
+                setTextColor(Color.parseColor(teal))
+                setPadding(10, 0, 4, 0)
+                setOnClickListener { confirmReturn(sale.invoice) }
+            })
+        }
         addView(TextView(this@SaleHistoryActivity).apply {
             text = "🗑"
             textSize = 15f
@@ -205,6 +214,44 @@ class SaleHistoryActivity : AppCompatActivity() {
                     setPadding(4, 6, 4, 6)
                 })
             }
+        }
+    }
+
+    private fun confirmReturn(invoice: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Return sale")
+            .setMessage("Return this sale? Stock will be added back and any outstanding customer balance from it will be reversed.")
+            .setPositiveButton("Return") { _, _ -> returnSale(invoice) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // Mirrors HistoryActivity.returnSale() — same atomic transaction: stock reversal,
+    // ReturnLine insert (so it shows up in Reports > Sale Returns), customer balance
+    // reversal, and markReturned — kept in sync so both entry points behave identically.
+    private fun returnSale(invoice: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SaleHistoryActivity)
+            val sale = db.saleDao().findSale(invoice) ?: return@launch
+            if (sale.status == "returned") return@launch
+            val items = db.saleDao().itemsForInvoice(invoice)
+
+            db.withTransaction {
+                items.forEach { si ->
+                    val p = db.productDao().find(si.barcode)
+                    val smallestQty = si.smallestQty(p)
+                    SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty, "SALE_REVERSAL", invoice)
+                    db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = si.barcode, qty = si.qty, amount = si.amount))
+                }
+                if (sale.customerId != null && sale.paid < sale.total) {
+                    SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
+                }
+                db.cashTransactionDao().deleteByReference(invoice)
+                db.saleDao().markReturned(invoice)
+            }
+
+            Toast.makeText(this@SaleHistoryActivity, "Sale returned", Toast.LENGTH_SHORT).show()
+            refresh()
         }
     }
 
