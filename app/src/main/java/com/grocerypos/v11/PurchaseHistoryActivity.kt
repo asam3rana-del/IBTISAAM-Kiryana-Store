@@ -313,7 +313,19 @@ class PurchaseHistoryActivity : ThemedActivity() {
     private data class ReturnRow(val item: PurchaseItem, val productName: String, val unit: String)
 
     private fun openReturnPurchaseDialog(billNo: String, rows: List<ReturnRow>) {
-        val scroll = ScrollView(this)
+        // FIX (dialog buttons hidden off-screen): with many items, the item list used to
+        // grow to its full wrap_content height, pushing the AlertDialog's Return/Cancel
+        // buttons below the bottom of the screen with no way to reach them. Capping the
+        // list's height keeps it independently scrollable while guaranteeing the button
+        // row always stays visible.
+        val maxListHeightPx = (resources.displayMetrics.heightPixels * 0.42).toInt()
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                maxListHeightPx
+            )
+            isFillViewport = false
+        }
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 8, 36, 8)

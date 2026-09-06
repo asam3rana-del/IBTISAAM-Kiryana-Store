@@ -319,7 +319,18 @@ class HistoryActivity : AppCompatActivity() {
                 Triple(item, product?.name ?: item.barcode, item.unit.ifBlank { product?.unit ?: "" })
             }
 
-            val scroll = ScrollView(this@HistoryActivity)
+            // FIX (dialog buttons hidden off-screen): with many items, the item list used to
+            // grow to its full wrap_content height, pushing the Return/Cancel buttons below
+            // the bottom of the screen with no way to reach them. Capping the list's height
+            // keeps it independently scrollable while guaranteeing the button row stays visible.
+            val maxListHeightPx = (resources.displayMetrics.heightPixels * 0.42).toInt()
+            val scroll = ScrollView(this@HistoryActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    maxListHeightPx
+                )
+                isFillViewport = false
+            }
             val container = LinearLayout(this@HistoryActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(36, 8, 36, 8)
