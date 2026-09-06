@@ -313,24 +313,20 @@ class PurchaseHistoryActivity : ThemedActivity() {
     private data class ReturnRow(val item: PurchaseItem, val productName: String, val unit: String)
 
     private fun openReturnPurchaseDialog(billNo: String, rows: List<ReturnRow>) {
-        // FIX (dialog buttons hidden off-screen): with many items, the item list used to
-        // grow to its full wrap_content height, pushing the AlertDialog's Return/Cancel
-        // buttons below the bottom of the screen with no way to reach them. Capping the
-        // list's height keeps it independently scrollable while guaranteeing the button
-        // row always stays visible.
-        val maxListHeightPx = (resources.displayMetrics.heightPixels * 0.42).toInt()
-        val scroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                maxListHeightPx
-            )
-            isFillViewport = false
-        }
-        val container = LinearLayout(this).apply {
+        // FIX (dialog buttons hidden off-screen): capping just the item list's height
+        // wasn't enough — on some devices the AlertDialog's own title+message chrome plus
+        // an uncapped list could still add up to taller than the screen, pushing the
+        // Return/Cancel buttons out of view with no way to reach them. Now the ENTIRE
+        // dialog (title, message, list, buttons) is one custom layout whose total height
+        // is hard-capped to a share of the screen — the item list is the only part that
+        // flexes/scrolls, so the button row at the bottom is always on-screen.
+        val fields = LinkedHashMap<Long, EditText>()
+        val itemsById = rows.associateBy { it.item.id }
+
+        val itemsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 8, 36, 8)
         }
-        val fields = LinkedHashMap<Long, EditText>()
         for (r in rows) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -362,60 +358,119 @@ class PurchaseHistoryActivity : ThemedActivity() {
             }
             fields[r.item.id] = input
             row.addView(input)
-            container.addView(row)
+            itemsContainer.addView(row)
         }
-        scroll.addView(container)
 
-        val itemsById = rows.associateBy { it.item.id }
+        val itemsScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            addView(itemsContainer)
+        }
 
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Return items", "آئٹمز واپس کریں"))
-            .setMessage(com.grocerypos.v11.util.Loc.t(
-                this,
+        val titleView = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Return items", "آئٹمز واپس کریں")
+            textSize = 18f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+            setPadding(40, 32, 40, 8)
+        }
+        val messageView = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(
+                this@PurchaseHistoryActivity,
                 "Enter how many units of each item are being returned. Stock and supplier balance will be adjusted only for those quantities.",
                 "ہر آئٹم کی کتنی مقدار واپس ہو رہی ہے درج کریں۔ صرف انہی مقداروں کے مطابق اسٹاک اور سپلائر بیلنس ایڈجسٹ ہو گا۔"
-            ))
-            .setView(scroll)
-            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Return", "واپسی"), null)
-            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            )
+            textSize = 13f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(40, 0, 40, 8)
+        }
+
+        val cancelBtn = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Cancel", "منسوخ کریں")
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(textMuted))
+            background = strokedBg(border, fieldFill, 12)
+            setPadding(0, 20, 0, 20)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val returnBtn = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Return", "واپسی")
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            background = roundedBg(gold, 12)
+            setPadding(0, 20, 0, 20)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val spacer = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams((12 * resources.displayMetrics.density).toInt(), 1)
+        }
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(40, 16, 40, 32)
+            addView(cancelBtn)
+            addView(spacer)
+            addView(returnBtn)
+        }
+
+        val maxDialogHeightPx = (resources.displayMetrics.heightPixels * 0.82).toInt()
+        val root = object : LinearLayout(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val mode = android.view.View.MeasureSpec.getMode(heightMeasureSpec)
+                val size = android.view.View.MeasureSpec.getSize(heightMeasureSpec)
+                val cappedSize = if (mode == android.view.View.MeasureSpec.UNSPECIFIED) maxDialogHeightPx else size.coerceAtMost(maxDialogHeightPx)
+                val newMode = if (mode == android.view.View.MeasureSpec.UNSPECIFIED) android.view.View.MeasureSpec.AT_MOST else mode
+                super.onMeasure(widthMeasureSpec, android.view.View.MeasureSpec.makeMeasureSpec(cappedSize, newMode))
+            }
+        }.apply {
+            orientation = LinearLayout.VERTICAL
+            addView(titleView)
+            addView(messageView)
+            addView(itemsScroll)
+            addView(footer)
+        }
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setView(root)
             .create()
 
-        dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val requested = LinkedHashMap<Long, Double>()
-                var errorMsg: String? = null
-                for ((id, field) in fields) {
-                    val text = field.text.toString().trim()
-                    if (text.isEmpty()) continue
-                    val qty = text.toDoubleOrNull()
-                    val row = itemsById[id] ?: continue
-                    when {
-                        qty == null || qty < 0 -> {
-                            errorMsg = com.grocerypos.v11.util.Loc.t(this, "Enter a valid quantity for \"${row.productName}\"", "\"${row.productName}\" کے لیے درست مقدار درج کریں")
-                        }
-                        qty == 0.0 -> { /* treated as skip */ }
-                        qty > row.item.qty + 0.0001 -> {
-                            errorMsg = com.grocerypos.v11.util.Loc.t(
-                                this,
-                                "Return qty for \"${row.productName}\" can't exceed purchased qty (${formatQty(row.item.qty)})",
-                                "\"${row.productName}\" کی واپسی مقدار خریدی گئی مقدار (${formatQty(row.item.qty)}) سے زیادہ نہیں ہو سکتی"
-                            )
-                        }
-                        else -> requested[id] = qty
+        cancelBtn.setOnClickListener { dialog.dismiss() }
+        returnBtn.setOnClickListener {
+            val requested = LinkedHashMap<Long, Double>()
+            var errorMsg: String? = null
+            for ((id, field) in fields) {
+                val text = field.text.toString().trim()
+                if (text.isEmpty()) continue
+                val qty = text.toDoubleOrNull()
+                val row = itemsById[id] ?: continue
+                when {
+                    qty == null || qty < 0 -> {
+                        errorMsg = com.grocerypos.v11.util.Loc.t(this, "Enter a valid quantity for \"${row.productName}\"", "\"${row.productName}\" کے لیے درست مقدار درج کریں")
                     }
-                    if (errorMsg != null) break
+                    qty == 0.0 -> { /* treated as skip */ }
+                    qty > row.item.qty + 0.0001 -> {
+                        errorMsg = com.grocerypos.v11.util.Loc.t(
+                            this,
+                            "Return qty for \"${row.productName}\" can't exceed purchased qty (${formatQty(row.item.qty)})",
+                            "\"${row.productName}\" کی واپسی مقدار خریدی گئی مقدار (${formatQty(row.item.qty)}) سے زیادہ نہیں ہو سکتی"
+                        )
+                    }
+                    else -> requested[id] = qty
                 }
-                if (errorMsg != null) {
-                    Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show()
-                    return@setOnClickListener
-                }
-                if (requested.isEmpty()) {
-                    Toast.makeText(this, com.grocerypos.v11.util.Loc.t(this, "Enter a return quantity for at least one item", "کم از کم ایک آئٹم کے لیے واپسی مقدار درج کریں"), Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                dialog.dismiss()
-                processPartialReturn(billNo, requested)
+                if (errorMsg != null) break
             }
+            if (errorMsg != null) {
+                Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (requested.isEmpty()) {
+                Toast.makeText(this, com.grocerypos.v11.util.Loc.t(this, "Enter a return quantity for at least one item", "کم از کم ایک آئٹم کے لیے واپسی مقدار درج کریں"), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            processPartialReturn(billNo, requested)
         }
         dialog.show()
     }
