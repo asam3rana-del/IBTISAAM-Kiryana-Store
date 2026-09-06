@@ -14,7 +14,9 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
 import com.grocerypos.v11.*
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.CancellationException
@@ -258,7 +260,142 @@ class PurchaseHistoryActivity : ThemedActivity() {
                 setPadding(14, 5, 14, 5)
             })
             card.addView(bottomRow)
+
+            if (row.status == "active") {
+                val actionsRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.END
+                    setPadding(0, 10, 0, 0)
+                }
+                actionsRow.addView(TextView(this).apply {
+                    text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "↩ Return", "↩ واپسی")
+                    textSize = 12.5f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(teal))
+                    setPadding(14, 6, 14, 6)
+                    setOnClickListener { confirmReturnPurchase(row.billNo) }
+                })
+                actionsRow.addView(TextView(this).apply {
+                    text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "🗑 Delete", "🗑 حذف کریں")
+                    textSize = 12.5f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(red))
+                    setPadding(14, 6, 0, 6)
+                    setOnClickListener { confirmDeletePurchase(row.billNo) }
+                })
+                card.addView(actionsRow)
+            }
+
             listContainer.addView(card)
+        }
+    }
+
+    private fun confirmReturnPurchase(billNo: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Return purchase", "خریداری واپس کریں"))
+            .setMessage(com.grocerypos.v11.util.Loc.t(
+                this,
+                "Return this purchase? Stock added by it will be reversed and any outstanding supplier balance will be adjusted.",
+                "یہ خریداری واپس کریں؟ اس سے آنے والا اسٹاک واپس ہو جائے گا اور سپلائر کا باقی بیلنس ایڈجسٹ ہو جائے گا۔"
+            ))
+            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Return", "واپسی")) { _, _ -> returnPurchase(billNo) }
+            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    private fun confirmDeletePurchase(billNo: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Delete purchase", "خریداری حذف کریں"))
+            .setMessage(com.grocerypos.v11.util.Loc.t(
+                this,
+                "Delete this purchase? This will reverse its stock and cost changes. This can't be undone.",
+                "یہ خریداری حذف کریں؟ اس سے اسٹاک اور لاگت واپس ہو جائے گی۔ اسے واپس نہیں لیا جا سکتا۔"
+            ))
+            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Delete", "حذف کریں")) { _, _ -> deletePurchase(billNo) }
+            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    // Mirrors HistoryActivity.reverseStockAndCostForPurchaseItems() — same negative-stock
+    // guard (refuses the whole return/delete if any line can't be reversed cleanly) and same
+    // weighted-average cost reversal math, kept in sync so all three history entry points
+    // (this screen, SaleHistoryActivity's purchase-side twin doesn't exist, and HistoryActivity)
+    // behave identically.
+    private suspend fun reverseStockAndCostForPurchaseItems(db: PosDatabase, items: List<PurchaseItem>) {
+        items.forEach { pi ->
+            val product = db.productDao().find(pi.barcode) ?: return@forEach
+            val smallestQty = pi.smallestQty(product)
+            if (smallestQty > 0 && smallestQty > product.stock) {
+                throw IllegalStateException(
+                    "\"${product.name}\" ka stock is purchase ke baad already kam ho chuka hai " +
+                    "(sale ya doosri entry se) — is purchase ko edit/delete karna cost ko galat kar dega. " +
+                    "Iski jagah stock adjustment karen."
+                )
+            }
+        }
+        for (pi in items) {
+            val product = db.productDao().find(pi.barcode) ?: continue
+            val factor = product.smallestUnitFactor()
+            val smallestQty = pi.smallestQty(product)
+            if (smallestQty <= 0) continue
+
+            val currentCostPerSmallest = if (factor > 0) product.cost / factor else product.cost
+            val currentStock = product.stock
+            val newStock = currentStock - smallestQty
+
+            val totalValueBefore = currentStock * currentCostPerSmallest
+            val totalValueAfterRemoval = (totalValueBefore - pi.amount).coerceAtLeast(0.0)
+            val newCostPerSmallest = if (newStock > 0) totalValueAfterRemoval / newStock else 0.0
+            val newCost = newCostPerSmallest * factor
+
+            SyncQueueHelper.decreaseProductStockForce(db, pi.barcode, smallestQty, "PURCHASE_REVERSAL", pi.billNo, newCost)
+            SyncQueueHelper.updateProductCost(db, pi.barcode, newCost)
+        }
+    }
+
+    private fun returnPurchase(billNo: String) = safeLaunch("returnPurchase") {
+        val db = PosDatabase.get(this@PurchaseHistoryActivity)
+        val purchase = db.purchaseDao().findPurchase(billNo) ?: return@safeLaunch
+        if (purchase.status == "returned") return@safeLaunch
+        val items = db.purchaseDao().itemsForBill(billNo)
+        try {
+            db.withTransaction {
+                reverseStockAndCostForPurchaseItems(db, items)
+                for (item in items) {
+                    db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = item.qty, amount = item.amount))
+                }
+                if (purchase.supplierId != null && purchase.paid < purchase.total) {
+                    SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -(purchase.total - purchase.paid))
+                }
+                db.cashTransactionDao().deleteByReference(billNo)
+                db.purchaseDao().markReturned(billNo)
+            }
+            Toast.makeText(this@PurchaseHistoryActivity, "Purchase returned", Toast.LENGTH_SHORT).show()
+            loadPurchases()
+        } catch (e: IllegalStateException) {
+            Toast.makeText(this@PurchaseHistoryActivity, e.message ?: "Return nahi ho saka", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun deletePurchase(billNo: String) = safeLaunch("deletePurchase") {
+        val db = PosDatabase.get(this@PurchaseHistoryActivity)
+        val purchase = db.purchaseDao().findPurchase(billNo) ?: return@safeLaunch
+        val items = db.purchaseDao().itemsForBill(billNo)
+        try {
+            db.withTransaction {
+                reverseStockAndCostForPurchaseItems(db, items)
+                if (purchase.supplierId != null && purchase.paid < purchase.total) {
+                    SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -(purchase.total - purchase.paid))
+                }
+                db.cashTransactionDao().deleteByReference(billNo)
+                db.paymentDao().deleteByReference(billNo)
+                db.purchaseDao().deleteItems(billNo)
+                db.purchaseDao().deletePurchase(billNo)
+            }
+            Toast.makeText(this@PurchaseHistoryActivity, "Purchase deleted", Toast.LENGTH_SHORT).show()
+            loadPurchases()
+        } catch (e: IllegalStateException) {
+            Toast.makeText(this@PurchaseHistoryActivity, e.message ?: "Delete nahi ho saka", Toast.LENGTH_LONG).show()
         }
     }
 
