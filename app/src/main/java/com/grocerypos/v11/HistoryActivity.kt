@@ -247,7 +247,7 @@ class HistoryActivity : AppCompatActivity() {
                     startActivity(Intent(this@HistoryActivity, PurchaseActivity::class.java).putExtra(PurchaseActivity.EXTRA_BILL_NO, billNo))
                 })
                 footer.addView(spacerH(8))
-                footer.addView(filledButton(Loc.t(this@HistoryActivity, "Return", "واپس"), amber) { returnPurchase(billNo); dialog.dismiss() })
+                footer.addView(filledButton(Loc.t(this@HistoryActivity, "Return", "واپس"), amber) { dialog.dismiss(); openReturnPurchaseDialog(billNo, items) })
                 footer.addView(spacerH(8))
                 footer.addView(filledButton(Loc.t(this@HistoryActivity, "Delete", "حذف کریں"), red) { deletePurchase(billNo); dialog.dismiss() })
             }
@@ -303,29 +303,250 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    // FIX (Phase 1 - Data Safety): stock/cost reversal + return-row inserts + balance
-    // reversal + markReturned now run as one atomic transaction.
-    // FIX (item #23): reverseStockAndCostForPurchaseItems() can now throw IllegalStateException
-    // (negative-stock guard) — catch it here and show the reason instead of letting it crash
-    // the app, so the return is cleanly refused with an explanation.
-    private fun returnPurchase(billNo: String) {
+    // FIX (partial purchase return): "Return" used to only offer returning the ENTIRE
+    // bill in one shot, even when the actual issue was e.g. 3 of 10 units of one line
+    // being faulty/short — there was no way to send back just those 3. This now opens a
+    // per-line quantity picker so only the lines/quantities actually being sent back get
+    // reversed — see processPartialReturn() below (mirrors
+    // PurchaseHistoryActivity's identically-named fix). Returning the full qty on every
+    // line still behaves exactly like the old whole-bill return.
+    private fun openReturnPurchaseDialog(billNo: String, items: List<com.grocerypos.v11.PurchaseItem>) {
         lifecycleScope.launch {
-            val db = PosDatabase.get(this@HistoryActivity); val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch; if (purchase.status == "returned") return@launch
-            val items = db.purchaseDao().itemsForBill(billNo)
+            val db = PosDatabase.get(this@HistoryActivity)
+            if (items.isEmpty()) return@launch
+            val rowMeta = items.map { item ->
+                val product = db.productDao().find(item.barcode)
+                Triple(item, product?.name ?: item.barcode, item.unit.ifBlank { product?.unit ?: "" })
+            }
+
+            val scroll = ScrollView(this@HistoryActivity)
+            val container = LinearLayout(this@HistoryActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(36, 8, 36, 8)
+            }
+            val fields = LinkedHashMap<Long, EditText>()
+            for ((item, name, unit) in rowMeta) {
+                val row = LinearLayout(this@HistoryActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(0, 14, 0, 14)
+                }
+                row.addView(TextView(this@HistoryActivity).apply {
+                    text = name
+                    textSize = 14f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor(textDark))
+                })
+                row.addView(TextView(this@HistoryActivity).apply {
+                    text = Loc.t(this@HistoryActivity, "Purchased: ${formatQty(item.qty)} $unit", "خریدی گئی مقدار: ${formatQty(item.qty)} $unit")
+                    textSize = 12f
+                    setTextColor(Color.parseColor(textGray))
+                    setPadding(0, 2, 0, 8)
+                })
+                val input = EditText(this@HistoryActivity).apply {
+                    hint = Loc.t(this@HistoryActivity, "Return qty (leave blank to skip)", "واپسی مقدار (چھوڑنے کے لیے خالی رکھیں)")
+                    setHintTextColor(Color.parseColor(textGray))
+                    setTextColor(Color.parseColor(textDark))
+                    inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    background = strokedBg(border, cardBg, 10)
+                    setPadding(22, 16, 22, 16)
+                }
+                fields[item.id] = input
+                row.addView(input)
+                container.addView(row)
+            }
+            scroll.addView(container)
+
+            val itemsById = rowMeta.associateBy({ it.first.id }, { it.first to it.second })
+
+            val dialog = AlertDialog.Builder(this@HistoryActivity)
+                .setTitle(Loc.t(this@HistoryActivity, "Return items", "آئٹمز واپس کریں"))
+                .setMessage(Loc.t(
+                    this@HistoryActivity,
+                    "Enter how many units of each item are being returned. Stock and supplier balance will be adjusted only for those quantities.",
+                    "ہر آئٹم کی کتنی مقدار واپس ہو رہی ہے درج کریں۔ صرف انہی مقداروں کے مطابق اسٹاک اور سپلائر بیلنس ایڈجسٹ ہو گا۔"
+                ))
+                .setView(scroll)
+                .setPositiveButton(Loc.t(this@HistoryActivity, "Return", "واپسی"), null)
+                .setNegativeButton(Loc.t(this@HistoryActivity, "Cancel", "منسوخ کریں"), null)
+                .create()
+
+            dialog.setOnShowListener {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    val requested = LinkedHashMap<Long, Double>()
+                    var errorMsg: String? = null
+                    for ((id, field) in fields) {
+                        val text = field.text.toString().trim()
+                        if (text.isEmpty()) continue
+                        val qty = text.toDoubleOrNull()
+                        val (item, name) = itemsById[id] ?: continue
+                        when {
+                            qty == null || qty < 0 -> {
+                                errorMsg = Loc.t(this@HistoryActivity, "Enter a valid quantity for \"$name\"", "\"$name\" کے لیے درست مقدار درج کریں")
+                            }
+                            qty == 0.0 -> { /* treated as skip */ }
+                            qty > item.qty + 0.0001 -> {
+                                errorMsg = Loc.t(
+                                    this@HistoryActivity,
+                                    "Return qty for \"$name\" can't exceed purchased qty (${formatQty(item.qty)})",
+                                    "\"$name\" کی واپسی مقدار خریدی گئی مقدار (${formatQty(item.qty)}) سے زیادہ نہیں ہو سکتی"
+                                )
+                            }
+                            else -> requested[id] = qty
+                        }
+                        if (errorMsg != null) break
+                    }
+                    if (errorMsg != null) {
+                        Toast.makeText(this@HistoryActivity, errorMsg, Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    if (requested.isEmpty()) {
+                        Toast.makeText(this@HistoryActivity, Loc.t(this@HistoryActivity, "Enter a return quantity for at least one item", "کم از کم ایک آئٹم کے لیے واپسی مقدار درج کریں"), Toast.LENGTH_SHORT).show()
+                        return@setOnClickListener
+                    }
+                    dialog.dismiss()
+                    processPartialReturn(billNo, requested)
+                }
+            }
+            dialog.show()
+        }
+    }
+
+    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+
+    // Does the actual line-level return picked in openReturnPurchaseDialog() — see
+    // PurchaseHistoryActivity.processPartialReturn() for the full reasoning (identical
+    // logic, kept in sync so both entry points to Purchase History behave the same way).
+    private fun processPartialReturn(billNo: String, requested: Map<Long, Double>) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@HistoryActivity)
             try {
                 db.withTransaction {
-                    reverseStockAndCostForPurchaseItems(db, items)
-                    for (item in items) {
-                        db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = item.qty, amount = item.amount))
+                    val purchase = db.purchaseDao().findPurchase(billNo) ?: return@withTransaction
+                    if (purchase.status == "returned") return@withTransaction
+
+                    var totalReturnedAmount = 0.0
+
+                    for ((itemId, returnQty) in requested) {
+                        if (returnQty <= 0.0) continue
+                        val item = db.purchaseDao().findItem(itemId) ?: continue
+                        val clampedQty = returnQty.coerceAtMost(item.qty)
+                        if (clampedQty <= 0.0) continue
+
+                        val product = db.productDao().find(item.barcode)
+                        val smallestQtyToRemove = partialSmallestQty(item, product, clampedQty)
+                        val returnedAmount = if (item.qty > 0) item.amount * (clampedQty / item.qty) else item.unitCost * clampedQty
+
+                        if (product != null && smallestQtyToRemove > 0) {
+                            if (smallestQtyToRemove > product.stock) {
+                                throw IllegalStateException(
+                                    "\"${product.name}\" ka stock is purchase ke baad already kam ho chuka hai " +
+                                    "(sale ya doosri entry se) — itni miqdaar wapas karna cost ko galat kar dega."
+                                )
+                            }
+                            val newCost = reversePurchaseLineCostPartial(product, smallestQtyToRemove, returnedAmount)
+                            SyncQueueHelper.decreaseProductStockForce(db, item.barcode, smallestQtyToRemove, "PURCHASE_RETURN", billNo, newCost)
+                            SyncQueueHelper.updateProductCost(db, item.barcode, newCost)
+                            db.productDao().find(item.barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
+                        }
+
+                        db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = clampedQty, amount = returnedAmount))
+
+                        val remainingQty = item.qty - clampedQty
+                        if (remainingQty <= 0.0001) {
+                            db.purchaseDao().deleteItemById(item.id)
+                        } else {
+                            db.purchaseDao().updateItemRow(item.copy(qty = remainingQty, amount = item.amount - returnedAmount))
+                        }
+
+                        totalReturnedAmount += returnedAmount
                     }
-                    if (purchase.supplierId != null && purchase.paid < purchase.total) SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -(purchase.total - purchase.paid))
-                    db.cashTransactionDao().deleteByReference(billNo); db.purchaseDao().markReturned(billNo)
+
+                    if (totalReturnedAmount <= 0.0) return@withTransaction
+
+                    val remainingItemCount = db.purchaseDao().itemCountForBill(billNo)
+                    val oldOutstanding = purchase.total - purchase.paid
+
+                    if (remainingItemCount == 0) {
+                        // Every line on the bill ended up fully returned — same end state
+                        // as the old whole-bill returnPurchase().
+                        if (purchase.supplierId != null && oldOutstanding > 0) {
+                            SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -oldOutstanding)
+                        }
+                        db.cashTransactionDao().deleteByReference(billNo)
+                        db.paymentDao().deleteByReference(billNo)
+                        db.purchaseDao().markReturned(billNo)
+                        val updatedPurchase = purchase.copy(
+                            subtotal = (purchase.subtotal - totalReturnedAmount).coerceAtLeast(0.0),
+                            total = (purchase.total - totalReturnedAmount).coerceAtLeast(0.0)
+                        )
+                        db.purchaseDao().updatePurchase(updatedPurchase)
+                        SyncQueueHelper.enqueuePurchase(db, updatedPurchase)
+                    } else {
+                        val newTotal = (purchase.total - totalReturnedAmount).coerceAtLeast(0.0)
+                        val newPaid = reconcilePaidAfterReturn(db, billNo, purchase.paid, newTotal)
+                        val updatedPurchase = purchase.copy(
+                            subtotal = (purchase.subtotal - totalReturnedAmount).coerceAtLeast(0.0),
+                            total = newTotal,
+                            paid = newPaid
+                        )
+                        db.purchaseDao().updatePurchase(updatedPurchase)
+                        if (purchase.supplierId != null) {
+                            val newOutstanding = newTotal - newPaid
+                            val delta = newOutstanding - oldOutstanding
+                            if (delta != 0.0) SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, delta)
+                        }
+                        SyncQueueHelper.enqueuePurchase(db, updatedPurchase)
+                    }
                 }
                 loadPurchases()
             } catch (e: IllegalStateException) {
                 Toast.makeText(this@HistoryActivity, e.message ?: "Return nahi ho saka", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    // Same frozen-conversionFactor reasoning as PurchaseItem.smallestQty(product) in
+    // Database.kt, but for a QUANTITY BEING RETURNED (which may be less than the
+    // line's full qty) instead of the whole line.
+    private fun partialSmallestQty(item: com.grocerypos.v11.PurchaseItem, product: com.grocerypos.v11.Product?, returnQty: Double): Double =
+        if (item.conversionFactor > 0) returnQty * item.conversionFactor
+        else product?.toSmallestUnits(returnQty, item.unit.ifBlank { product.unit }) ?: returnQty
+
+    // Same weighted-average reversal math as reverseStockAndCostForPurchaseItems()
+    // above, but taking the qty/amount to remove as parameters so it can be used for a
+    // PARTIAL line return instead of always reversing the whole line.
+    private fun reversePurchaseLineCostPartial(product: com.grocerypos.v11.Product, smallestQtyToRemove: Double, amountToRemove: Double): Double {
+        if (smallestQtyToRemove <= 0) return product.cost
+        val factor = product.smallestUnitFactor()
+        val currentCostPerSmallest = if (factor > 0) product.cost / factor else product.cost
+        val currentStock = product.stock
+        val newStock = currentStock - smallestQtyToRemove
+        val totalValueBefore = currentStock * currentCostPerSmallest
+        val totalValueAfterRemoval = (totalValueBefore - amountToRemove).coerceAtLeast(0.0)
+        val newCostPerSmallest = if (newStock > 0) totalValueAfterRemoval / newStock else 0.0
+        return newCostPerSmallest * factor
+    }
+
+    // Same "cap paid at the new (smaller) total and shrink the linked cash/payment
+    // record by the same amount" reasoning as PartyTransactionActivity's
+    // reconcilePaidAndCashRecords(), scoped here to purchases only and to the
+    // paid-can-only-go-down direction a return implies.
+    private suspend fun reconcilePaidAfterReturn(db: PosDatabase, reference: String, oldPaid: Double, newTotal: Double): Double {
+        val newPaid = oldPaid.coerceIn(0.0, newTotal.coerceAtLeast(0.0))
+        val paidDelta = newPaid - oldPaid
+        if (paidDelta == 0.0) return newPaid
+
+        db.cashTransactionDao().findByReference(reference)?.let { tx ->
+            val updatedTx = tx.copy(amount = (tx.amount + paidDelta).coerceAtLeast(0.0), updatedAt = System.currentTimeMillis(), dirty = true)
+            db.cashTransactionDao().update(updatedTx)
+            SyncQueueHelper.enqueueCashTransaction(db, updatedTx)
+        }
+        db.paymentDao().findByReference(reference)?.let { pay ->
+            val updatedPay = pay.copy(amount = (pay.amount + paidDelta).coerceAtLeast(0.0), updatedAt = System.currentTimeMillis(), dirty = true)
+            db.paymentDao().update(updatedPay)
+            SyncQueueHelper.enqueuePayment(db, updatedPay)
+        }
+        return newPaid
     }
 
     // FIX (Phase 1 - Data Safety): same atomic-transaction treatment as returnPurchase() above.
