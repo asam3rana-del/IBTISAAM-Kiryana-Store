@@ -645,6 +645,8 @@ class PartyDashboardActivity : AppCompatActivity() {
         val options = arrayOf(
             Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
             Loc.t(this, "Add Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
+            "  \u21A9  " + Loc.t(this, "Sale Return", "\u0633\u06CC\u0644 \u0648\u0627\u067E\u0633\u06CC"),
+            "  \u21A9  " + Loc.t(this, "Purchase Return", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0648\u0627\u067E\u0633\u06CC"),
             Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC"),
             "  \uD83D\uDCB0  " + Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
             "  \uD83D\uDCB8  " + Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC")
@@ -654,9 +656,15 @@ class PartyDashboardActivity : AppCompatActivity() {
                 when (which) {
                     0 -> startActivity(Intent(this, SaleActivity::class.java))
                     1 -> startActivity(Intent(this, PurchaseActivity::class.java))
-                    2 -> startActivity(Intent(this, PartyActivity::class.java))
-                    3 -> showPartyPickerForPayment(forCustomer = true)
-                    4 -> showPartyPickerForPayment(forCustomer = false)
+                    // Sale/Purchase Return need a specific invoice/bill picked first — route
+                    // to the matching history list, which already has a ↩ Return action on
+                    // each row (see SaleHistoryActivity.saleRow() / PurchaseHistoryActivity's
+                    // per-card actions row), instead of duplicating that picker+logic here.
+                    2 -> startActivity(Intent(this, SaleHistoryActivity::class.java))
+                    3 -> startActivity(Intent(this, PurchaseHistoryActivity::class.java))
+                    4 -> startActivity(Intent(this, PartyActivity::class.java))
+                    5 -> showPartyPickerForPayment(forCustomer = true)
+                    6 -> showPartyPickerForPayment(forCustomer = false)
                 }
             }
             .show()
