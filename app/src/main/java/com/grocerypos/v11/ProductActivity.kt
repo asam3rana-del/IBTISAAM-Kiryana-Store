@@ -441,11 +441,7 @@ class ProductActivity : ThemedActivity() {
         )
         ratesCard.addView(spacer(12))
 
-        // ---- NEW: auto-fill Wholesale/Retail from Purchase Rate using the
-        // shop's saved Markup % (see RateMarkupSettings, set from the Dashboard's
-        // Items tab). Only ever fills a field the shopkeeper hasn't personally
-        // typed into and that doesn't already have a saved rate — see
-        // autoFillRatesFromCost(). ----
+        // Auto-markup feature removed; autoFillRatesFromCost() is now a no-op.
         salePrice.addTextChangedListener(simpleWatcher { if (!isAutoFillingRates) retailManuallyEdited = true })
         wholesalePrice.addTextChangedListener(simpleWatcher { if (!isAutoFillingRates) wholesaleManuallyEdited = true })
         cost.addTextChangedListener(simpleWatcher {
@@ -2035,29 +2031,11 @@ class ProductActivity : ThemedActivity() {
     }
 
     /**
-     * NEW: same auto-markup behaviour as PartyDashboardActivity's quick "Edit
-     * Rates" dialog — see RateMarkupSettings. Fills Wholesale/Retail Sale Rate
-     * from Purchase Rate using the shop's saved markup %, but ONLY for a field
-     * that hasn't been manually typed into during this form AND doesn't already
-     * carry a saved rate (see loadProductForEdit()/clearForm() for how the two
-     * flags get set). That's what lets a shopkeeper pin one item's price so it
-     * stays put even when its Purchase Rate goes up later — they just leave the
-     * field as-is, nothing here will touch it.
+     * Auto-markup feature removed — this is now a no-op kept only so its
+     * existing call sites don't need to change. Rates are entered manually.
      */
     private fun autoFillRatesFromCost(costValue: Double) {
-        if (costValue <= 0.0) return
-        val retailPct = RateMarkupSettings.getRetailMarkupPercent(this)
-        val wholesalePct = RateMarkupSettings.getWholesaleMarkupPercent(this)
-        isAutoFillingRates = true
-        if (!retailManuallyEdited && retailPct > 0.0) {
-            val computed = RateMarkupSettings.computeFromCost(costValue, retailPct)
-            if (computed > 0.0) salePrice.setText("%.2f".format(computed))
-        }
-        if (!wholesaleManuallyEdited && wholesalePct > 0.0) {
-            val computed = RateMarkupSettings.computeFromCost(costValue, wholesalePct)
-            if (computed > 0.0) wholesalePrice.setText("%.2f".format(computed))
-        }
-        isAutoFillingRates = false
+        return
     }
 
     private fun clearForm() {
