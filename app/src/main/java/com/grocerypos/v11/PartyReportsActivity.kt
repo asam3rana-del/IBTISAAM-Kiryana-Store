@@ -909,18 +909,4 @@ class PartyReportsActivity : AppCompatActivity() {
         }
     }
 
-    // ================= SHARED UI HELPERS (matches Reports/Stock Report exactly) =================
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER
-        background = ovalBg(colorHex)
-        val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
 }

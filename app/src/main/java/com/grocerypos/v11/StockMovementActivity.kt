@@ -318,20 +318,4 @@ class StockMovementActivity : AppCompatActivity() {
         return if (rounded == Math.floor(rounded)) rounded.toLong().toString() else rounded.toString()
     }
 
-    // ================= PREMIUM HEADER (matches Items/Categories/Reports) =================
-
-    // ================= SHARED UI HELPERS (matches Items/Categories/Reports) =================
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER
-        background = ovalBg(colorHex)
-        val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
 }

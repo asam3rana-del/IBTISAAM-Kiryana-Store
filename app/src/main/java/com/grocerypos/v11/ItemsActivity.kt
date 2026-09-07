@@ -4,14 +4,12 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.text.Editable
 import android.text.TextWatcher
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewOutlineProvider
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -105,39 +103,8 @@ class ItemsActivity : ThemedActivity() {
             setPadding(24, 48, 24, 130)
         }
 
-        // ================= HEADER =================
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 18) }
-            applyElevation(this, 10f)
-        }
-        header.addView(circleIcon("🗃️", "#5C4DFF", 42))
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = "Items"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        headerCol.addView(TextView(this).apply {
-            text = "Products, Categories & Units"
-            textSize = 11.5f
-            setTextColor(Color.parseColor("#D8D3FF"))
-            setPadding(0, 4, 0, 0)
-        })
-        header.addView(headerCol)
+        // ================= HEADER (matches Items/Categories/Reports) =================
+        val header = premiumHeader("🗃️", "Items", "Products, Categories & Units", primary, primaryDark)
 
         // ---- NEW: "Translate" pill button — launches BulkTranslateActivity so Urdu
         // category/unit values already saved can be renamed to English once each,
@@ -795,15 +762,6 @@ class ItemsActivity : ThemedActivity() {
         setPadding(0, 20, 0, 20)
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         setOnClickListener { onClick() }
-    }
-
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER
-        background = ovalBg(colorHex)
-        val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
     }
 
     private fun EditText.addTextChangedListener(onChanged: (String) -> Unit) {
