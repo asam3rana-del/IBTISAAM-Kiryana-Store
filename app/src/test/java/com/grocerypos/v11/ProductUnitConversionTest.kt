@@ -102,8 +102,9 @@ class ProductUnitConversionTest {
     @Test
     fun `toSmallestUnits is case and whitespace insensitive`() {
         val p = product(unit = "Carton", secondaryUnit = "Box", secondaryUnitQty = 10.0)
-        assertEquals(20.0, p.toSmallestUnits(2.0, "  box "), 0.0)
-        assertEquals(20.0, p.toSmallestUnits(2.0, "BOX"), 0.0)
+        // Box is the smallest tier here (no tertiary), so 2 Box = 2 smallest units.
+        assertEquals(2.0, p.toSmallestUnits(2.0, "  box "), 0.0)
+        assertEquals(2.0, p.toSmallestUnits(2.0, "BOX"), 0.0)
     }
 
     @Test
