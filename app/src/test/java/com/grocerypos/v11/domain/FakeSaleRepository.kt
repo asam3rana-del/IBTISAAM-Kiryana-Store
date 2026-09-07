@@ -126,7 +126,12 @@ class FakeSaleRepository(
             isUpdate = original != null
         )
         saveSaleThrows?.let { throw it }
-        return saveSaleResult
+        // Mirror RoomSaleRepository: the resolved customer (existing match, if
+        // any) flows into the result unless a test has explicitly overridden
+        // saveSaleResult with its own customer.
+        return if (saveSaleResult.customer == null && existingCustomer != null)
+            saveSaleResult.copy(customer = existingCustomer)
+        else saveSaleResult
     }
 
     override suspend fun deleteSale(invoice: String, original: Sale?, originalItems: List<SaleItem>) {
