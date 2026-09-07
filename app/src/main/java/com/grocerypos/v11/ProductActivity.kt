@@ -18,10 +18,12 @@ import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.*
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Category
+import com.grocerypos.v11.R
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.SyncQueueHelper
@@ -170,13 +172,14 @@ class ProductActivity : ThemedActivity() {
         }
 
         saveButton = Button(this).apply {
-            text = "💾  " + Loc.t(this@ProductActivity, "SAVE PRODUCT", "پروڈکٹ محفوظ کریں")
+            text = Loc.t(this@ProductActivity, "SAVE PRODUCT", "پروڈکٹ محفوظ کریں")
             setTextColor(Color.WHITE)
             textSize = 15.5f
             isAllCaps = false
             setTypeface(typeface, Typeface.BOLD)
             background = gradientBg(navy, navyLight, cornerTop = 16, cornerBottom = 16)
             setPadding(0, 26, 0, 26)
+            setLeadingIcon(R.drawable.ic_save, "#FFFFFF", 18, 8)
             setOnClickListener { saveProduct() }
             applyElevation(this, 5f)
         }
@@ -237,10 +240,9 @@ class ProductActivity : ThemedActivity() {
         // (Reports, History, Party Reports, etc.) — previously this header was just
         // text + action pills with no icon, so it read as visually inconsistent
         // next to the rest of the app.
-        header.addView(TextView(this).apply {
-            text = "\uD83D\uDCE6"
-            textSize = 19f
-            gravity = Gravity.CENTER
+        header.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_box, "#FFFFFF", 20))
+            scaleType = ImageView.ScaleType.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor(headerBadgeOverlay))
@@ -274,9 +276,10 @@ class ProductActivity : ThemedActivity() {
 
         header.addView(col)
 
-        header.addView(TextView(this).apply {
-            text = if (isDarkMode) "☀️" else "🌙"
-            textSize = 15f
+        header.addView(ImageView(this).apply {
+            setImageDrawable(
+                tintedDrawable(if (isDarkMode) R.drawable.ic_sun else R.drawable.ic_moon, "#FFFFFF", 18)
+            )
             setPadding(14, 12, 14, 12)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor(headerBadgeOverlay))
@@ -291,7 +294,7 @@ class ProductActivity : ThemedActivity() {
         })
 
         header.addView(TextView(this).apply {
-            text = "📋 " + Loc.t(this@ProductActivity, "View List", "فہرست دیکھیں")
+            text = Loc.t(this@ProductActivity, "View List", "فہرست دیکھیں")
             textSize = 11.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
@@ -301,6 +304,7 @@ class ProductActivity : ThemedActivity() {
             }
             setPadding(20, 12, 20, 12)
             applyElevation(this, 2f)
+            setLeadingIcon(R.drawable.ic_list, "#FFFFFF", 14, 6)
             setOnClickListener { toggleProductsList() }
         })
 
@@ -314,7 +318,7 @@ class ProductActivity : ThemedActivity() {
         }
 
         formCardTitle = TextView(this).apply {
-            text = "✚  " + Loc.t(this@ProductActivity, "New Product", "نئی پروڈکٹ")
+            text = Loc.t(this@ProductActivity, "New Product", "نئی پروڈکٹ")
             textSize = 12.5f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, Typeface.BOLD)
@@ -322,10 +326,11 @@ class ProductActivity : ThemedActivity() {
             background = roundedBg(fadeHex(teal), 30)
             setPadding(20, 10, 20, 10)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            setLeadingIcon(R.drawable.ic_add, teal, 14, 6)
         }
 
         deleteFormButton = TextView(this).apply {
-            text = "🗑️  " + Loc.t(this@ProductActivity, "Delete", "حذف کریں")
+            text = Loc.t(this@ProductActivity, "Delete", "حذف کریں")
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
@@ -333,17 +338,19 @@ class ProductActivity : ThemedActivity() {
             setPadding(22, 12, 22, 12)
             visibility = View.GONE
             applyElevation(this, 2f)
+            setLeadingIcon(R.drawable.ic_delete, "#FFFFFF", 14, 6)
             setOnClickListener { editingProduct?.let { confirmDeleteProduct(it) } }
         }
 
         cancelEditChip = TextView(this).apply {
-            text = "✕  " + Loc.t(this@ProductActivity, "Cancel Edit", "ترمیم منسوخ کریں")
+            text = Loc.t(this@ProductActivity, "Cancel Edit", "ترمیم منسوخ کریں")
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(textMuted, 30)
             setPadding(24, 12, 24, 12)
             visibility = View.GONE
+            setLeadingIcon(R.drawable.ic_close, "#FFFFFF", 14, 6)
             setOnClickListener { clearForm() }
         }
 
@@ -358,7 +365,7 @@ class ProductActivity : ThemedActivity() {
 
         // ================= PRODUCT NAME CARD =================
         val nameCard = premiumCard(accentTopHex = teal)
-        nameCard.addView(sectionLabel("🏷️", Loc.t(this, "Product Name", "پروڈکٹ کا نام"), teal))
+        nameCard.addView(sectionLabel(R.drawable.ic_tag, Loc.t(this, "Product Name", "پروڈکٹ کا نام"), teal))
 
         val nameBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -380,13 +387,14 @@ class ProductActivity : ThemedActivity() {
         }
 
         selectUnitBtn = TextView(this).apply {
-            text = "📏 " + Loc.t(this@ProductActivity, "Select Unit", "یونٹ منتخب کریں")
+            text = Loc.t(this@ProductActivity, "Select Unit", "یونٹ منتخب کریں")
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = gradientBg(teal, "#0C8F8A", cornerTop = 30, cornerBottom = 30)
             setPadding(26, 15, 26, 15)
             applyElevation(this, 3f)
+            setLeadingIcon(R.drawable.ic_ruler, "#FFFFFF", 14, 6)
             setOnClickListener { openUnitDialog() }
         }
 
@@ -397,7 +405,7 @@ class ProductActivity : ThemedActivity() {
 
         // ================= CATEGORY CARD =================
         val categoryCard = premiumCard(accentTopHex = purple)
-        categoryCard.addView(sectionLabel("🗂️", Loc.t(this, "Category", "کیٹیگری"), purple))
+        categoryCard.addView(sectionLabel(R.drawable.ic_category, Loc.t(this, "Category", "کیٹیگری"), purple))
 
         val categoryBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -420,7 +428,7 @@ class ProductActivity : ThemedActivity() {
         categoryCard.addView(categoryBox)
         categoryCard.addView(spacer(10))
         categoryCard.addView(
-            pillLink("✚  " + Loc.t(this, "Add New Category", "نئی کیٹیگری شامل کریں")) {
+            pillLink(Loc.t(this, "Add New Category", "نئی کیٹیگری شامل کریں"), R.drawable.ic_add) {
                 promptAddCategory()
             }
         )
@@ -428,12 +436,12 @@ class ProductActivity : ThemedActivity() {
 
         // ================= PRICING CARD (premium: persistent labels + colored badges) =================
         val ratesCard = premiumCard(accentTopHex = amber)
-        ratesCard.addView(sectionLabel("💰", Loc.t(this, "Pricing", "قیمتیں"), amber))
+        ratesCard.addView(sectionLabel(R.drawable.ic_wallet, Loc.t(this, "Pricing", "قیمتیں"), amber))
 
         cost = rateField()
         ratesCard.addView(
             premiumLabeledField(
-                cost, "🛒",
+                cost, R.drawable.ic_cart,
                 Loc.t(this, "Purchase Rate", "خریداری کی قیمت"),
                 amber
             )
@@ -443,7 +451,7 @@ class ProductActivity : ThemedActivity() {
         wholesalePrice = rateField()
         ratesCard.addView(
             premiumLabeledField(
-                wholesalePrice, "📦",
+                wholesalePrice, R.drawable.ic_box,
                 Loc.t(this, "Wholesale Sale Rate", "تھوک فروخت کی قیمت"),
                 blue
             )
@@ -453,7 +461,7 @@ class ProductActivity : ThemedActivity() {
         salePrice = rateField()
         ratesCard.addView(
             premiumLabeledField(
-                salePrice, "🏪",
+                salePrice, R.drawable.ic_store,
                 Loc.t(this, "Retail Sale Rate", "پرچون فروخت کی قیمت"),
                 teal
             )
@@ -481,7 +489,7 @@ class ProductActivity : ThemedActivity() {
             background = strokedBg(border, fieldFill, 16)
             setPadding(14, 8, 8, 8)
         }
-        stockRow.addView(badgeIcon("🔢", navy))
+        stockRow.addView(badgeIcon(R.drawable.ic_number, navy))
         stockRow.addView(spacer(14).apply {
             layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
         })
@@ -546,7 +554,7 @@ class ProductActivity : ThemedActivity() {
         ratesCard.addView(spacer(12))
         ratesCard.addView(
             premiumLabeledField(
-                reorderLevel, "⚠️",
+                reorderLevel, R.drawable.ic_warning,
                 Loc.t(this, "Reorder Level (smallest unit)", "ری آرڈر لیول (سب سے چھوٹی یونٹ)"),
                 red
             )
@@ -628,7 +636,7 @@ class ProductActivity : ThemedActivity() {
 
     private fun buildProductsSection(root: LinearLayout) {
         root.addView(spacer(4))
-        productsSectionAnchor = sectionLabel("🗃️", Loc.t(this, "Products", "پروڈکٹس"), navy)
+        productsSectionAnchor = sectionLabel(R.drawable.ic_archive, Loc.t(this, "Products", "پروڈکٹس"), navy)
         root.addView(productsSectionAnchor)
         root.addView(spacer(10))
 
@@ -648,9 +656,9 @@ class ProductActivity : ThemedActivity() {
             applyElevation(this, 1.5f)
         }
 
-        searchBox.addView(TextView(this).apply {
-            text = "🔍  "
-            textSize = 15f
+        searchBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textMuted, 17))
+            setPadding(0, 0, 10, 0)
         })
 
         searchField = EditText(this).apply {
@@ -668,11 +676,8 @@ class ProductActivity : ThemedActivity() {
         }
         searchBox.addView(searchField)
 
-        val clearSearchBtn = TextView(this).apply {
-            text = "✕"
-            textSize = 14f
-            setTextColor(Color.parseColor(textMuted))
-            setTypeface(typeface, Typeface.BOLD)
+        val clearSearchBtn = ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_close, textMuted, 15))
             setPadding(14, 10, 6, 10)
             visibility = View.GONE
             setOnClickListener { searchField.text.clear() }
@@ -704,10 +709,9 @@ class ProductActivity : ThemedActivity() {
             background = strokedBg(border, cardWhite, 14)
             visibility = View.GONE
 
-            addView(TextView(this@ProductActivity).apply {
-                text = "🔍"
-                textSize = 26f
-                gravity = Gravity.CENTER
+            addView(ImageView(this@ProductActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_search, textMuted, 30))
+                scaleType = ImageView.ScaleType.CENTER
             })
             addView(TextView(this@ProductActivity).apply {
                 text = Loc.t(
@@ -777,14 +781,29 @@ class ProductActivity : ThemedActivity() {
         }
     }
 
+    // ---- Vector-icon helpers (replace emoji throughout this screen with tinted
+    // drawables from res/drawable, per the item-6 UI improvement pass). tintedDrawable()
+    // loads+tints+sizes a vector; setLeadingIcon() puts one as a TextView/Button's compound
+    // drawable so button/label text keeps working exactly as before, just without an emoji
+    // prefix in the string itself. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16) =
+        ContextCompat.getDrawable(this, iconRes)?.mutate()?.apply {
+            setTint(Color.parseColor(tintHex))
+            val px = sizeDp.dp()
+            setBounds(0, 0, px, px)
+        }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = paddingDp.dp()
+    }
+
     // ---- Small round colored icon badge, reused by sectionLabel() and premiumLabeledField()
     // so every icon across the form reads as a consistent "premium" chip instead of a plain
     // emoji floating in text. Now carries its own soft elevation so badges lift off the card. ----
-    private fun badgeIcon(icon: String, accentHex: String, sizeDp: Int = 30) = TextView(this).apply {
-        text = icon
-        textSize = 14f
-        gravity = Gravity.CENTER
-        setTextColor(Color.WHITE)
+    private fun badgeIcon(iconRes: Int, accentHex: String, sizeDp: Int = 30) = ImageView(this).apply {
+        setImageDrawable(tintedDrawable(iconRes, "#FFFFFF", (sizeDp * 0.55).toInt()))
+        scaleType = ImageView.ScaleType.CENTER
         background = gradientBg(accentHex, fadeHexDark(accentHex), cornerTop = sizeDp, cornerBottom = sizeDp)
         val px = sizeDp.dp()
         width = px
@@ -810,11 +829,11 @@ class ProductActivity : ThemedActivity() {
     // already used inside the Add Item Unit dialog) instead of a plain emoji, and now takes
     // an accent color so each card (Name=teal, Category=purple, Pricing=amber, Products=navy)
     // reads as visually distinct at a glance. ----
-    private fun sectionLabel(icon: String, label: String, accentHex: String = teal) = LinearLayout(this).apply {
+    private fun sectionLabel(iconRes: Int, label: String, accentHex: String = teal) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, 0, 0, 14)
-        addView(badgeIcon(icon, accentHex))
+        addView(badgeIcon(iconRes, accentHex))
         addView(View(this@ProductActivity).apply {
             layoutParams = LinearLayout.LayoutParams(10.dp(), 1)
         })
@@ -831,14 +850,14 @@ class ProductActivity : ThemedActivity() {
     // the input, so the field's meaning stays visible even once it's filled with a number —
     // fixes the old fieldBox() where the hint (and therefore the field's identity) disappeared
     // the moment a value was typed in, which is what made the Pricing card confusing. ----
-    private fun premiumLabeledField(field: EditText, icon: String, label: String, accentHex: String) =
+    private fun premiumLabeledField(field: EditText, iconRes: Int, label: String, accentHex: String) =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = strokedBg(border, fieldFill, 16)
             setPadding(14, 10, 18, 10)
 
-            addView(badgeIcon(icon, accentHex, 38))
+            addView(badgeIcon(iconRes, accentHex, 38))
             addView(View(this@ProductActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
             })
@@ -877,15 +896,13 @@ class ProductActivity : ThemedActivity() {
 
     // ---- Premium section label with a colored round icon badge instead of a plain emoji —
     // used inside the Add Item Unit dialog to visually separate Primary/Secondary/Tertiary. ----
-    private fun badgedSectionLabel(icon: String, label: String, accentHex: String) = LinearLayout(this).apply {
+    private fun badgedSectionLabel(iconRes: Int, label: String, accentHex: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, 0, 0, 14)
-        addView(TextView(this@ProductActivity).apply {
-            text = icon
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
+        addView(ImageView(this@ProductActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, "#FFFFFF", 16))
+            scaleType = ImageView.ScaleType.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor(accentHex))
@@ -909,18 +926,19 @@ class ProductActivity : ThemedActivity() {
 
     // ---- Small capsule showing one price figure with its own icon + label, used three times
     // per product card (Purchase/Wholesale/Retail) instead of one plain bullet-separated line. ----
-    private fun priceChip(icon: String, label: String, value: Double, accentHex: String) =
+    private fun priceChip(iconRes: Int, label: String, value: Double, accentHex: String) =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = strokedBg(border, fieldFill, 12)
             setPadding(12, 10, 12, 10)
 
             addView(TextView(this@ProductActivity).apply {
-                text = "$icon $label"
+                text = label
                 textSize = 9.5f
                 setTextColor(Color.parseColor(textMuted))
                 setTypeface(typeface, Typeface.BOLD)
                 letterSpacing = 0.01f
+                setLeadingIcon(iconRes, textMuted, 11, 5)
             })
             addView(TextView(this@ProductActivity).apply {
                 text = "%.2f".format(value)
@@ -933,7 +951,7 @@ class ProductActivity : ThemedActivity() {
 
     // ---- Gradient pill button with a round icon badge, used for Edit/Delete on each product
     // card so they match the premium Save/Cancel button treatment used elsewhere. ----
-    private fun actionButton(icon: String, label: String, startHex: String, endHex: String, onClick: () -> Unit) =
+    private fun actionButton(iconRes: Int, label: String, startHex: String, endHex: String, onClick: () -> Unit) =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -941,9 +959,8 @@ class ProductActivity : ThemedActivity() {
             setPadding(0, 12, 0, 12)
             applyElevation(this, 2f)
 
-            addView(TextView(this@ProductActivity).apply {
-                text = icon
-                textSize = 13f
+            addView(ImageView(this@ProductActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, "#FFFFFF", 15))
             })
             addView(View(this@ProductActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(6.dp(), 1)
@@ -958,12 +975,13 @@ class ProductActivity : ThemedActivity() {
             setOnClickListener { onClick() }
         }
 
-    private fun pillLink(label: String, onClick: () -> Unit) = TextView(this).apply {
+    private fun pillLink(label: String, iconRes: Int? = null, onClick: () -> Unit) = TextView(this).apply {
         text = label
         textSize = 12.5f
         setTextColor(Color.parseColor(teal))
         setTypeface(typeface, Typeface.BOLD)
         setPadding(4, 4, 4, 4)
+        if (iconRes != null) setLeadingIcon(iconRes, teal, 14, 6)
         setOnClickListener { onClick() }
     }
 
@@ -1318,10 +1336,9 @@ class ProductActivity : ThemedActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        headerTop.addView(TextView(this).apply {
-            text = "📏"
-            textSize = 20f
-            gravity = Gravity.CENTER
+        headerTop.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_ruler, "#FFFFFF", 21))
+            scaleType = ImageView.ScaleType.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor(headerBadgeOverlay))
@@ -1369,11 +1386,11 @@ class ProductActivity : ThemedActivity() {
 
         // Primary — teal accent badge
         val primaryCard = premiumUnitCard()
-        primaryCard.addView(badgedSectionLabel("📏", Loc.t(this, "Primary Unit", "بنیادی یونٹ"), teal))
+        primaryCard.addView(badgedSectionLabel(R.drawable.ic_ruler, Loc.t(this, "Primary Unit", "بنیادی یونٹ"), teal))
         val primaryField = unitAutoCompleteField(
             Loc.t(this, "Type or pick unit, e.g. pcs, kg, box", "یونٹ لکھیں یا منتخب کریں، مثلاً pcs, kg, box")
         )
-        primaryCard.addView(premiumFieldBox(primaryField, "🔤", teal))
+        primaryCard.addView(premiumFieldBox(primaryField, R.drawable.ic_text, teal))
         body.addView(primaryCard)
         body.addView(spacer(16))
 
@@ -1381,7 +1398,7 @@ class ProductActivity : ThemedActivity() {
         val secondaryCard = premiumUnitCard()
         secondaryCard.addView(
             badgedSectionLabel(
-                "🔹",
+                R.drawable.ic_ruler,
                 Loc.t(this, "Secondary Unit (smaller quantity, optional)", "ثانوی یونٹ (چھوٹی مقدار، اختیاری)"),
                 blue
             )
@@ -1389,7 +1406,7 @@ class ProductActivity : ThemedActivity() {
         val secondaryField = unitAutoCompleteField(
             Loc.t(this, "Leave blank if not needed", "اگر ضرورت نہیں تو خالی چھوڑ دیں")
         )
-        secondaryCard.addView(premiumFieldBox(secondaryField, "🔤", blue))
+        secondaryCard.addView(premiumFieldBox(secondaryField, R.drawable.ic_text, blue))
         secondaryCard.addView(spacer(12))
 
         val secondaryQtyField = numberDialogField(
@@ -1401,7 +1418,7 @@ class ProductActivity : ThemedActivity() {
             selectedSecondaryQty,
             EditorInfo.IME_ACTION_NEXT
         )
-        secondaryCard.addView(premiumFieldBox(secondaryQtyField, "🔁", blue))
+        secondaryCard.addView(premiumFieldBox(secondaryQtyField, R.drawable.ic_repeat, blue))
         body.addView(secondaryCard)
         body.addView(spacer(16))
 
@@ -1409,7 +1426,7 @@ class ProductActivity : ThemedActivity() {
         val tertiaryCard = premiumUnitCard()
         tertiaryCard.addView(
             badgedSectionLabel(
-                "🔸",
+                R.drawable.ic_ruler,
                 Loc.t(this, "Tertiary Unit (smallest quantity, optional)", "تیسرا یونٹ (سب سے چھوٹی مقدار، اختیاری)"),
                 orange
             )
@@ -1417,7 +1434,7 @@ class ProductActivity : ThemedActivity() {
         val tertiaryField = unitAutoCompleteField(
             Loc.t(this, "Leave blank if not needed", "اگر ضرورت نہیں تو خالی چھوڑ دیں")
         )
-        tertiaryCard.addView(premiumFieldBox(tertiaryField, "🔤", orange))
+        tertiaryCard.addView(premiumFieldBox(tertiaryField, R.drawable.ic_text, orange))
         tertiaryCard.addView(spacer(12))
 
         val tertiaryQtyField = numberDialogField(
@@ -1429,7 +1446,7 @@ class ProductActivity : ThemedActivity() {
             selectedTertiaryQty,
             EditorInfo.IME_ACTION_DONE
         )
-        tertiaryCard.addView(premiumFieldBox(tertiaryQtyField, "🔁", orange))
+        tertiaryCard.addView(premiumFieldBox(tertiaryQtyField, R.drawable.ic_repeat, orange))
         body.addView(tertiaryCard)
         body.addView(spacer(6))
 
@@ -1565,7 +1582,7 @@ class ProductActivity : ThemedActivity() {
             }
 
             selectUnitBtn.text = buildString {
-                append("📏 $selectedPrimaryUnit")
+                append(selectedPrimaryUnit)
                 if (selectedSecondaryUnit != "None") {
                     append(" / $selectedSecondaryUnit")
                 }
@@ -1644,7 +1661,7 @@ class ProductActivity : ThemedActivity() {
         })
 
         footer.addView(TextView(this).apply {
-            text = "✓  " + Loc.t(this@ProductActivity, "Save", "محفوظ کریں")
+            text = Loc.t(this@ProductActivity, "Save", "محفوظ کریں")
             gravity = Gravity.CENTER
             textSize = 14f
             setTextColor(Color.WHITE)
@@ -1655,6 +1672,7 @@ class ProductActivity : ThemedActivity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
                 setMargins(8, 0, 0, 0)
             }
+            setLeadingIcon(R.drawable.ic_check, "#FFFFFF", 15, 6)
             setOnClickListener { trySaveUnitSelection() }
         })
 
@@ -1676,16 +1694,14 @@ class ProductActivity : ThemedActivity() {
 
     // ---- Field box variant with a colored icon chip (instead of a plain emoji) matching the
     // accent color of its parent card (teal/blue/orange) for Primary/Secondary/Tertiary. ----
-    private fun premiumFieldBox(field: EditText, icon: String, accentHex: String) = LinearLayout(this).apply {
+    private fun premiumFieldBox(field: EditText, iconRes: Int, accentHex: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         background = strokedBg(border, fieldFill, 12)
         setPadding(10, 8, 16, 8)
-        addView(TextView(this@ProductActivity).apply {
-            text = icon
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
+        addView(ImageView(this@ProductActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, "#FFFFFF", 16))
+            scaleType = ImageView.ScaleType.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor(accentHex))
@@ -1744,7 +1760,7 @@ class ProductActivity : ThemedActivity() {
         selectedOpeningStockUnit = selectedPrimaryUnit
 
         selectUnitBtn.text = buildString {
-            append("📏 $selectedPrimaryUnit")
+            append(selectedPrimaryUnit)
             if (selectedSecondaryUnit != "None") append(" / $selectedSecondaryUnit")
             if (selectedTertiaryUnit != "None") append(" / $selectedTertiaryUnit")
         }
@@ -1772,12 +1788,14 @@ class ProductActivity : ThemedActivity() {
         )
 
         formCardTitle.text =
-            "✏️  " + Loc.t(this, "Editing", "ترمیم ہو رہی ہے") + ": ${product.name}"
+            Loc.t(this, "Editing", "ترمیم ہو رہی ہے") + ": ${product.name}"
+        formCardTitle.setLeadingIcon(R.drawable.ic_edit, teal, 14, 6)
 
         deleteFormButton.visibility = View.VISIBLE
         cancelEditChip.visibility = View.VISIBLE
         saveButton.text =
-            "💾  " + Loc.t(this, "UPDATE PRODUCT", "پروڈکٹ اپ ڈیٹ کریں")
+            Loc.t(this, "UPDATE PRODUCT", "پروڈکٹ اپ ڈیٹ کریں")
+        saveButton.setLeadingIcon(R.drawable.ic_save, "#FFFFFF", 18, 8)
 
         scrollView.post { scrollView.smoothScrollTo(0, 0) }
     }
@@ -2032,17 +2050,19 @@ class ProductActivity : ThemedActivity() {
         selectedOpeningStockUnit = "pcs"
 
         selectUnitBtn.text =
-            "📏 " + Loc.t(this, "Select Unit", "یونٹ منتخب کریں")
+            Loc.t(this, "Select Unit", "یونٹ منتخب کریں")
 
         refreshStockUnitAdapter()
 
         editingProduct = null
         formCardTitle.text =
-            "✚  " + Loc.t(this, "New Product", "نئی پروڈکٹ")
+            Loc.t(this, "New Product", "نئی پروڈکٹ")
+        formCardTitle.setLeadingIcon(R.drawable.ic_add, teal, 14, 6)
         deleteFormButton.visibility = View.GONE
         cancelEditChip.visibility = View.GONE
         saveButton.text =
-            "💾  " + Loc.t(this, "SAVE PRODUCT", "پروڈکٹ محفوظ کریں")
+            Loc.t(this, "SAVE PRODUCT", "پروڈکٹ محفوظ کریں")
+        saveButton.setLeadingIcon(R.drawable.ic_save, "#FFFFFF", 18, 8)
 
         categoryField.setText("")
 
@@ -2133,10 +2153,11 @@ class ProductActivity : ThemedActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
             nameCol.addView(TextView(this).apply {
-                text = if (isJustSaved) "✓ ${product.name}" else product.name
+                text = product.name
                 textSize = 15f
                 setTextColor(Color.parseColor(if (isJustSaved) teal else textDark))
                 setTypeface(typeface, Typeface.BOLD)
+                if (isJustSaved) setLeadingIcon(R.drawable.ic_check, teal, 15, 5)
             })
             nameCol.addView(TextView(this).apply {
                 text = product.category
@@ -2147,12 +2168,13 @@ class ProductActivity : ThemedActivity() {
             top.addView(nameCol)
 
             top.addView(TextView(this).apply {
-                text = "📊 ${product.formatStockBreakdown()}"
+                text = product.formatStockBreakdown()
                 setTextColor(Color.WHITE)
                 textSize = 10.5f
                 setTypeface(typeface, Typeface.BOLD)
                 background = gradientBg(teal, "#0C8F8A", cornerTop = 30, cornerBottom = 30)
                 setPadding(18, 8, 18, 8)
+                setLeadingIcon(R.drawable.ic_chart, "#FFFFFF", 12, 5)
             })
 
             card.addView(top)
@@ -2172,7 +2194,7 @@ class ProductActivity : ThemedActivity() {
             }
             priceRow.addView(
                 priceChip(
-                    "🛒",
+                    R.drawable.ic_cart,
                     Loc.t(this@ProductActivity, "Purchase", "خریداری"),
                     product.cost,
                     textMuted
@@ -2181,7 +2203,7 @@ class ProductActivity : ThemedActivity() {
             )
             priceRow.addView(
                 priceChip(
-                    "📦",
+                    R.drawable.ic_box,
                     Loc.t(this@ProductActivity, "Wholesale", "تھوک"),
                     product.wholesalePrice,
                     blue
@@ -2190,7 +2212,7 @@ class ProductActivity : ThemedActivity() {
             )
             priceRow.addView(
                 priceChip(
-                    "🏪",
+                    R.drawable.ic_store,
                     Loc.t(this@ProductActivity, "Retail", "پرچون"),
                     product.salePrice,
                     teal
@@ -2204,7 +2226,7 @@ class ProductActivity : ThemedActivity() {
                 card.addView(TextView(this).apply {
                     text = buildString {
                         append(
-                            "📏 1 ${product.unit} = " +
+                            "1 ${product.unit} = " +
                                 "${trimNum(product.secondaryUnitQty)} ${product.secondaryUnit}"
                         )
 
@@ -2222,6 +2244,7 @@ class ProductActivity : ThemedActivity() {
                     setTextColor(Color.parseColor(textMuted))
                     background = strokedBg(border, fieldFill, 10)
                     setPadding(14, 10, 14, 10)
+                    setLeadingIcon(R.drawable.ic_ruler, textMuted, 13, 6)
                 })
             }
 
@@ -2234,14 +2257,14 @@ class ProductActivity : ThemedActivity() {
             }
 
             actions.addView(
-                actionButton("✏️", Loc.t(this@ProductActivity, "Edit", "ترمیم کریں"), navy, navyLight) {
+                actionButton(R.drawable.ic_edit, Loc.t(this@ProductActivity, "Edit", "ترمیم کریں"), navy, navyLight) {
                     loadProductForEdit(product)
                 },
                 LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, 6, 0) }
             )
 
             actions.addView(
-                actionButton("🗑️", Loc.t(this@ProductActivity, "Delete", "حذف کریں"), red, "#C93B40") {
+                actionButton(R.drawable.ic_delete, Loc.t(this@ProductActivity, "Delete", "حذف کریں"), red, "#C93B40") {
                     confirmDeleteProduct(product)
                 },
                 LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(6, 0, 0, 0) }
