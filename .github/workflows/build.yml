@@ -3,11 +3,20 @@ name: Build APK
 on:
   push:
     branches: [ "main", "New-structure" ]
+  pull_request:
+    branches: [ "main", "New-structure" ]
   workflow_dispatch:
+
+# If a new push/PR update comes in while a run is still going, cancel the
+# older run for that same branch/PR instead of letting both finish.
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,15 +30,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
-
       - name: Decode debug keystore
         run: |
           echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
 
+      - name: Run lint
+        run: gradle lintDebug
+
+      - name: Upload lint results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-results
+          path: app/build/reports/lint-results-debug.html
+          retention-days: 5
+
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest
+        run: gradle testDebugUnitTest
 
       - name: Upload test results
         if: always()
@@ -40,11 +57,11 @@ jobs:
           retention-days: 5
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: app-debug-${{ github.run_number }}
           path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 1
+          retention-days: 7
