@@ -58,12 +58,15 @@ class PurchaseActivity : ThemedActivity() {
     private var red = "#E5484D"
     private var fieldFill = "#FAFBFD"
 
-    private val navy = "#101B33"
-    private val navyLight = "#1C2C4F"
-    private val teal = "#0EA5A0"
-    private val gold = "#C9A24B"
-    private val amberBadge = "#F4F1E8"
-    private val successGreen = "#1E9E6B"
+    // Reports-style flat design: Purchase = flatCoral everywhere, per ThemeManager's
+    // documented category convention (Reports uses the same flatCoralFg for its
+    // Purchase-related rows/icons). navy/navyLight kept as flat (no gradient).
+    private var navy = "#993C1D"       // header/brand accent — flatCoralFg
+    private var navyLight = "#993C1D" // flat design, no gradient — same as navy
+    private var teal = "#085041"       // flatTealFg
+    private var gold = "#854F0B"       // flatAmberFg — "best price" badge
+    private var amberBadge = "#FAEEDA" // flatAmberBg
+    private var successGreen = "#085041" // flatTealFg — unified with Reports' "positive" color
 
     private fun loadThemePrefs() {
         val p = ThemeManager.palette(this)
@@ -74,6 +77,12 @@ class PurchaseActivity : ThemedActivity() {
         border = p.border
         red = p.red
         fieldFill = p.fieldFill
+        navy = p.flatCoralFg
+        navyLight = p.flatCoralFg
+        teal = p.flatTealFg
+        gold = p.flatAmberFg
+        amberBadge = p.flatAmberBg
+        successGreen = p.flatTealFg
     }
 
     private fun toggleTheme() {
@@ -221,7 +230,7 @@ class PurchaseActivity : ThemedActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(26, 30, 22, 26)
-            background = gradientBg(navy, navyLight, cornerBottom = 26)
+            background = gradientBg(navy, navy, cornerBottom = 26)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(-24, 0, -24, 16) }
             applyElevation(this, 8f)
         }
@@ -443,7 +452,7 @@ class PurchaseActivity : ThemedActivity() {
             textSize = 14.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = gradientBg(teal, "#0C8F8A", cornerBottom = 14, cornerTop = 14)
+            background = gradientBg(teal, teal, cornerBottom = 14, cornerTop = 14)
             setPadding(0, 26, 0, 26)
             applyElevation(this, 3f)
         }
@@ -472,7 +481,7 @@ class PurchaseActivity : ThemedActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(22, 16, 22, 16)
-            background = gradientBg(navy, navyLight, cornerBottom = 14, cornerTop = 14)
+            background = gradientBg(navy, navy, cornerBottom = 14, cornerTop = 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 4, 0, 0) }
             visibility = View.GONE
             applyElevation(this, 2f)
@@ -562,7 +571,7 @@ class PurchaseActivity : ThemedActivity() {
             textSize = 15.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = gradientBg(navy, navyLight, cornerBottom = 16, cornerTop = 16)
+            background = gradientBg(navy, navy, cornerBottom = 16, cornerTop = 16)
             setPadding(0, 30, 0, 30)
             applyElevation(this, 5f)
         }
@@ -1296,7 +1305,7 @@ class PurchaseActivity : ThemedActivity() {
     }
     private fun openAddProductDialog(prefillName: String) {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.parseColor(cardWhite)) }
-        val dialogHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(28, 26, 28, 26); background = gradientBg(navy, navyLight) }
+        val dialogHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(28, 26, 28, 26); background = gradientBg(navy, navy) }
         dialogHeader.addView(TextView(this).apply { text = "\u2795  Add New Product"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) })
         content.addView(dialogHeader)
         val scrollableBody = ScrollView(this); val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 26, 28, 8) }; scrollableBody.addView(body)
@@ -1359,7 +1368,7 @@ class PurchaseActivity : ThemedActivity() {
         val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
         footer.addView(TextView(this).apply { text = "Cancel"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, fieldFill, 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }; setOnClickListener { dialog.dismiss() } })
         footer.addView(TextView(this).apply {
-            text = "Save"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); background = gradientBg(teal, "#0C8F8A", cornerBottom = 14, cornerTop = 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
+            text = "Save"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); background = gradientBg(teal, teal, cornerBottom = 14, cornerTop = 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener {
                 val pname = nameField.text.toString().trim(); if (pname.isEmpty()) { nameField.error = "Required"; return@setOnClickListener }
                 val primaryUnit = primarySpinner.selectedItem?.toString() ?: "pcs"; var secondaryUnit = secondarySpinner.selectedItem?.toString() ?: "None"; val secondaryQty = secQtyField.text.toString().toDoubleOrNull() ?: 0.0; var tertiaryUnit = tertiarySpinner.selectedItem?.toString() ?: "None"; var tertiaryQty = terQtyField.text.toString().toDoubleOrNull() ?: 0.0

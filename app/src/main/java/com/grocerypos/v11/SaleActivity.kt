@@ -50,21 +50,41 @@ class SaleActivity : AppCompatActivity() {
         private const val BEVERAGE_CATEGORY = "Beverages"
     }
 
-    // ---------- Palette (same colors as before, Purchase-style card vocabulary) ----------
-    private val bg = "#F4F6F8"
-    private val cardBg = "#FFFFFF"
-    private val fieldFill = "#FAFBFD"
-    private val navy = "#0B2545"
-    private val navyLight = "#123C6B"
-    private val teal = "#0F9B8E"
-    private val green = "#1FA971"
-    private val greenDark = "#158A5A"
-    private val red = "#E5484D"
-    private val redDark = "#C93A3E"
-    private val amber = "#F5A524"
-    private val textDark = "#0B2545"
-    private val textGray = "#7C8798"
-    private val border = "#E3E8EE"
+    // ---------- Palette (Reports-style flat design — pulled from ThemeManager so this
+    // screen also respects dark mode and stays in sync with the rest of the app).
+    // Sale = flatPurple everywhere, per ThemeManager's documented category convention
+    // (Reports uses the same flatPurpleFg for its Sale-related rows/icons). ----------
+    private var bg = "#F4F6F8"
+    private var cardBg = "#FFFFFF"
+    private var fieldFill = "#FAFBFD"
+    private var navy = "#534AB7"       // header/brand accent — flatPurpleFg
+    private var navyLight = "#534AB7"  // flat design, no gradient — same as navy
+    private var teal = "#085041"       // flatTealFg — secondary accent / positive amounts
+    private var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
+    private var greenDark = "#085041"  // flat design, no gradient — same as green
+    private var red = "#D32F4A"
+    private var redDark = "#A81F39"
+    private var amber = "#854F0B"      // flatAmberFg
+    private var textDark = "#0B2545"
+    private var textGray = "#7C8798"
+    private var border = "#E3E8EE"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        fieldFill = p.fieldFill
+        navy = p.flatPurpleFg
+        navyLight = p.flatPurpleFg
+        teal = p.flatTealFg
+        green = p.flatTealFg
+        greenDark = p.flatTealFg
+        red = p.red
+        amber = p.flatAmberFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var dateValueText: TextView
     private lateinit var firmNameText: TextView
@@ -144,6 +164,7 @@ class SaleActivity : AppCompatActivity() {
         }
 
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -151,12 +172,12 @@ class SaleActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ---------- Header (Purchase-style bleeding gradient header) ----------
+        // ---------- Header (Reports-style flat header — flatPurple, no gradient) ----------
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(26, 30, 22, 26)
-            background = gradientBg(navy, navyLight, cornerBottom = 26)
+            background = gradientBg(navy, navy, cornerBottom = 26)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(-24, 0, -24, 16) }
             applyElevation(this, 8f)
         }
@@ -411,7 +432,7 @@ class SaleActivity : AppCompatActivity() {
             textSize = 14.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = gradientBg(teal, greenDark, cornerBottom = 14, cornerTop = 14)
+            background = gradientBg(teal, teal, cornerBottom = 14, cornerTop = 14)
             setPadding(0, 26, 0, 26)
             applyElevation(this, 3f)
             setOnClickListener { addItem() }
@@ -423,7 +444,7 @@ class SaleActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(22, 16, 22, 16)
-            background = gradientBg(navy, navyLight, cornerBottom = 14, cornerTop = 14)
+            background = gradientBg(navy, navy, cornerBottom = 14, cornerTop = 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 4, 0, 0) }
             applyElevation(this, 2f)
             setOnClickListener { openBilledItemsDialog() }
@@ -569,7 +590,7 @@ class SaleActivity : AppCompatActivity() {
             textSize = 15.5f
             isAllCaps = false
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = gradientBg(navy, navyLight, cornerBottom = 16, cornerTop = 16)
+            background = gradientBg(navy, navy, cornerBottom = 16, cornerTop = 16)
             setPadding(0, 30, 0, 30)
             applyElevation(this, 5f)
             setOnClickListener { saveSale() }
