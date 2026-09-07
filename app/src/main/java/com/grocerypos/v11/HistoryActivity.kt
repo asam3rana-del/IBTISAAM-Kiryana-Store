@@ -53,6 +53,8 @@ class HistoryActivity : AppCompatActivity() {
     private val primaryDark = "#3527D6"
     private val amber = "#F5A524"
     private val teal = "#0F9B8E"
+    private val gold = "#C9A24B"
+    private val goldDark = "#A47F32"
     private val red = "#E5484D"
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
@@ -63,29 +65,61 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var purchasesTab: TextView
     private lateinit var listContainer: LinearLayout
     private var showingSales = true
+    private var singleMode: String? = null
+    private lateinit var headerBox: LinearLayout
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        singleMode = intent.getStringExtra(EXTRA_MODE)
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 48, 24, 24)
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("🧾", Loc.t(this, "Sale / Purchase History", "سیل / خریداری کی تاریخ"), Loc.t(this, "Tap any entry to view details", "تفصیل دیکھنے کے لیے کسی بھی اندراج پر ٹیپ کریں")))
-
-        tabRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            background = strokedBg(border, cardBg, 14)
-            setPadding(6, 6, 6, 6)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(0, 0, 0, 16) }
+        // CHANGE (dedicated Sale History / Purchase History screens): when opened from
+        // the Reports "Sale History" or "Purchase History" tile, this is now a true
+        // single-purpose screen — its own icon/title/gradient, no SALES/PURCHASES tab
+        // switcher at all, so tapping one tile can never end up showing the other
+        // list. The old combined tabbed view (both lists, switchable) is kept as the
+        // fallback only for any code path that opens this Activity with no mode extra.
+        headerBox = when (singleMode) {
+            MODE_SALES -> premiumHeader(
+                "🧾",
+                Loc.t(this, "Sale History", "سیل کی تاریخ"),
+                Loc.t(this, "View all sale transactions", "تمام سیل لین دین دیکھیں"),
+                primary, primaryDark
+            )
+            MODE_PURCHASES -> premiumHeader(
+                "🛒",
+                Loc.t(this, "Purchase History", "خریداری کی تاریخ"),
+                Loc.t(this, "View all purchase transactions", "تمام خریداری لین دین دیکھیں"),
+                gold, goldDark
+            )
+            else -> premiumHeader(
+                "🧾",
+                Loc.t(this, "Sale / Purchase History", "سیل / خریداری کی تاریخ"),
+                Loc.t(this, "Tap any entry to view details", "تفصیل دیکھنے کے لیے کسی بھی اندراج پر ٹیپ کریں"),
+                primary, primaryDark
+            )
         }
-        salesTab = filterPill(Loc.t(this, "SALES", "سیلز")) { showSales() }
-        purchasesTab = filterPill(Loc.t(this, "PURCHASES", "خریداریاں")) { showPurchases() }
-        tabRow.addView(salesTab)
-        tabRow.addView(purchasesTab)
-        root.addView(tabRow)
+        root.addView(headerBox)
+
+        if (singleMode == null) {
+            tabRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background = strokedBg(border, cardBg, 14)
+                setPadding(6, 6, 6, 6)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { setMargins(0, 0, 0, 16) }
+            }
+            salesTab = filterPill(Loc.t(this, "SALES", "سیلز")) { showSales() }
+            purchasesTab = filterPill(Loc.t(this, "PURCHASES", "خریداریاں")) { showPurchases() }
+            tabRow.addView(salesTab)
+            tabRow.addView(purchasesTab)
+            root.addView(tabRow)
+        }
 
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
@@ -97,15 +131,16 @@ class HistoryActivity : AppCompatActivity() {
         }
         setContentView(scroll)
 
-        refreshTabs()
+        if (singleMode == null) refreshTabs()
         // Land directly on the requested list (Sale History vs Purchase History) —
         // no extra tap on the tabs needed when opened from the new separate Reports tiles.
-        if (intent.getStringExtra(EXTRA_MODE) == MODE_PURCHASES) showPurchases() else showSales()
+        if (singleMode == MODE_PURCHASES) showPurchases() else showSales()
     }
 
     override fun onResume() { super.onResume(); if (showingSales) loadSales() else loadPurchases() }
 
     private fun refreshTabs() {
+        if (singleMode != null) return
         if (showingSales) {
             salesTab.background = roundedBg(primary, 10)
             salesTab.setTextColor(Color.WHITE)
@@ -141,7 +176,7 @@ class HistoryActivity : AppCompatActivity() {
             if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی"))); return@launch }
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             for (p in list) listContainer.addView(
-                row("📦", p.billNo, p.supplierName, p.total, fmt.format(Date(p.createdAt)), teal, "#E0F2F1", p.status == "returned") { openPurchaseDetail(p.billNo) }
+                row("📦", p.billNo, p.supplierName, p.total, fmt.format(Date(p.createdAt)), gold, "#F6EFDD", p.status == "returned") { openPurchaseDetail(p.billNo) }
             )
         }
     }
@@ -230,7 +265,7 @@ class HistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@HistoryActivity)
             val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
-            val content = detailContainer("📦", teal, "#E0F2F1", Loc.t(this@HistoryActivity, "Purchase", "خریداری"), billNo)
+            val content = detailContainer("📦", gold, "#F6EFDD", Loc.t(this@HistoryActivity, "Purchase", "خریداری"), billNo)
             val body = content.getChildAt(1) as LinearLayout
             if (purchase.status == "returned") body.addView(returnedBanner())
             body.addView(kv(Loc.t(this@HistoryActivity, "Total", "کل"), "Rs %.2f".format(purchase.total)))
@@ -814,12 +849,26 @@ class HistoryActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { setMargins(0, 8, 0, 0) }
     }
 
-    private fun emptyText(t: String) = TextView(this).apply {
-        text = t
-        setTextColor(Color.parseColor(textGray))
-        textSize = 13f
-        gravity = Gravity.CENTER
-        setPadding(0, 40, 0, 0)
+    // CHANGE (ultimate premium look): replaced the plain gray placeholder text with an
+    // icon-badge empty-state card matching the rest of the app's premium style.
+    private fun emptyText(t: String): LinearLayout {
+        val accentHex = if (showingSales) primary else gold
+        val tintHex = if (showingSales) "#E9E6FF" else "#F6EFDD"
+        val icon = if (showingSales) "🧾" else "📦"
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(24, 60, 24, 40)
+            addView(circleIcon(icon, tintHex, 64).apply { setTextColor(Color.parseColor(accentHex)); textSize = 26f })
+            addView(TextView(this@HistoryActivity).apply {
+                text = t
+                setTextColor(Color.parseColor(textDark))
+                setTypeface(typeface, Typeface.BOLD)
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(0, 22, 0, 0)
+            })
+        }
     }
 
     private fun outlineButton(label: String, onClick: () -> Unit): TextView {
@@ -867,14 +916,14 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     // ================= PREMIUM HEADER (matches Reports/Stock/Balance Sheet/Party Reports) =================
-    private fun premiumHeader(icon: String, title: String, subtitle: String): LinearLayout {
+    private fun premiumHeader(icon: String, title: String, subtitle: String, gradStart: String = primary, gradEnd: String = primaryDark): LinearLayout {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(26, 22, 26, 22)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+                intArrayOf(Color.parseColor(gradStart), Color.parseColor(gradEnd))
             ).apply { cornerRadius = 22f }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -893,7 +942,7 @@ class HistoryActivity : AppCompatActivity() {
             setOnClickListener { finish() }
         })
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-        header.addView(circleIcon(icon, "#5C4DFF", 42))
+        header.addView(circleIcon(icon, "#33FFFFFF", 42))
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -908,7 +957,7 @@ class HistoryActivity : AppCompatActivity() {
         headerCol.addView(TextView(this).apply {
             text = subtitle
             textSize = 11f
-            setTextColor(Color.parseColor("#D8D3FF"))
+            setTextColor(Color.parseColor("#EDEAFF"))
             setPadding(0, 4, 0, 0)
         })
         header.addView(headerCol)
