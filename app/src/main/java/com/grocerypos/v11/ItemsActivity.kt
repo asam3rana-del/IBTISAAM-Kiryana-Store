@@ -423,14 +423,14 @@ class ItemsActivity : ThemedActivity() {
         val notCategorized = counts[""] ?: 0
 
         // name to (count, isSpecialUncategorizedBucket)
-        val rows = mutableListOf<Triple<String, Int, Boolean>>()
-        rows.add(Triple("Items Not in Any Category", notCategorized, true))
+        val categoryRows = mutableListOf<Triple<String, Int, Boolean>>()
+        categoryRows.add(Triple("Items Not in Any Category", notCategorized, true))
         for (c in allCategories) {
-            rows.add(Triple(c.name, counts[c.name] ?: 0, false))
+            categoryRows.add(Triple(c.name, counts[c.name] ?: 0, false))
         }
 
-        val filtered = if (searchQuery.isEmpty()) rows
-        else rows.filter { it.first.contains(searchQuery, ignoreCase = true) }
+        val filtered = if (searchQuery.isEmpty()) categoryRows
+        else categoryRows.filter { it.first.contains(searchQuery, ignoreCase = true) }
 
         val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
