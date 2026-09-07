@@ -85,11 +85,6 @@ class PurchaseActivity : ThemedActivity() {
         successGreen = p.flatTealFg
     }
 
-    private fun toggleTheme() {
-        ThemeManager.toggleDarkMode(this)
-        recreate()
-    }
-
     private lateinit var dateValueText: TextView
     private lateinit var firmNameText: TextView
     private lateinit var supplierBalanceText: TextView
@@ -256,15 +251,6 @@ class PurchaseActivity : ThemedActivity() {
         header.addView(headerCol)
         header.addView(pillChip("History") {
             startActivity(Intent(this@PurchaseActivity, PurchaseHistoryActivity::class.java))
-        })
-        header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
-        header.addView(TextView(this).apply {
-            text = if (ThemeManager.isDarkMode(this@PurchaseActivity)) "☀️" else "🌙"
-            textSize = 15f
-            gravity = Gravity.CENTER
-            background = ovalBg("#22FFFFFF")
-            val px = (34 * resources.displayMetrics.density).toInt(); width = px; height = px
-            setOnClickListener { toggleTheme() }
         })
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1) })
         overflowButton = TextView(this).apply {

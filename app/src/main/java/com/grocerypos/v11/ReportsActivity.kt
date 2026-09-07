@@ -19,18 +19,38 @@ import java.util.Calendar
 class ReportsActivity : AppCompatActivity() {
 
     // ================= FLAT PALETTE (aligned with ThemeManager's app-wide flat design tokens) =================
-    private val bg = "#F4F6F8"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#534AB7"       // flatPurpleFg
-    private val primaryDark = "#534AB7"
-    private val purple = "#534AB7"        // flatPurpleFg (merged with primary — one purple everywhere)
-    private val amber = "#854F0B"         // flatAmberFg
-    private val teal = "#085041"          // flatTealFg
-    private val gold = "#854F0B"          // Zakat only — reuses amber (financial)
-    private val red = "#D32F4A"           // matches MainActivity's danger/logout red
-    private val textDark = "#0B2545"
-    private val textGray = "#7C8798"
-    private val border = "#E3E8EE"
+    // Pulled from ThemeManager so this screen respects dark mode, same as Stock Report,
+    // History, Party Reports and Balance Sheet.
+    private var bg = "#F4F6F8"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#534AB7"       // flatPurpleFg
+    private var primaryDark = "#534AB7"
+    private var purple = "#534AB7"        // flatPurpleFg (merged with primary — one purple everywhere)
+    private var amber = "#854F0B"         // flatAmberFg
+    private var teal = "#085041"          // flatTealFg
+    private var gold = "#854F0B"          // Zakat only — reuses amber (financial)
+    private var red = "#D32F4A"           // matches MainActivity's danger/logout red
+    private var textDark = "#0B2545"
+    private var textGray = "#7C8798"
+    private var border = "#E3E8EE"
+    private var headerIconTint = "#EEEDFE" // flatPurpleBg — header badge behind the 📊 icon
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        gold = p.flatAmberFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        headerIconTint = p.flatPurpleBg
+    }
 
     private lateinit var resultsBox: LinearLayout
     private var periodLabel: TextView? = null
@@ -51,6 +71,8 @@ class ReportsActivity : AppCompatActivity() {
             finish()
             return
         }
+
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -397,7 +419,7 @@ class ReportsActivity : AppCompatActivity() {
             setOnClickListener { finish() }
         })
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-        header.addView(circleIcon(icon, "#EEEDFE", 42))
+        header.addView(circleIcon(icon, headerIconTint, 42))
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
