@@ -3,13 +3,16 @@ package com.grocerypos.v11.ui
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -96,6 +99,13 @@ class PartyDashboardActivity : AppCompatActivity() {
     private val cardWhite = "#FFFFFF"
     private val cardBorder = "#EEF0F7"
     private val labelGray = "#9AA0B4"
+    // ADDED for the premium quick-menu sheets (showMainMenu / showQuickAddDialog):
+    // a couple more accent hues so each row gets its own distinct icon-badge color,
+    // matching the icon-badge nav-row style used in ReportsActivity/HistoryActivity.
+    private val purple = "#7B61FF"
+    private val teal = "#0F9B8E"
+    private val gold = "#C9A24B"
+    private val textDark = "#2E3242"
 
     private lateinit var youllGetValue: TextView
     private lateinit var youllGiveValue: TextView
@@ -271,27 +281,41 @@ class PartyDashboardActivity : AppCompatActivity() {
     }
 
     // ================= MAIN MENU =================
+    // CHANGE (luxury premium UI pass): replaced the plain AlertDialog.setItems() text
+    // list with the same icon-badge nav-row card style used across Reports/History/
+    // Stock screens — colored circular icon, bold title + gray subtitle, chevron.
     private fun showMainMenu() {
-        val options = mutableListOf(
-            Loc.t(this, "Products", "\u067E\u0631\u0648\u0688\u06A9\u0679\u0633"),
-            Loc.t(this, "Reports", "\u0631\u067E\u0648\u0631\u0679\u0633"),
-            Loc.t(this, "Cash In/Out", "\u06A9\u06CC\u0634 \u0627\u0646/\u0622\u0624\u0679"),
-            Loc.t(this, "Item Rate Search", "\u0622\u0626\u0679\u0645 \u0631\u06CC\u0679 \u0633\u0631\u0686"),
-            Loc.t(this, "Settings", "\u0633\u06CC\u0679\u0646\u06AF\u0632"),
-            Loc.t(this, "Logout", "\u0644\u0627\u06AF \u0622\u0624\u0679")
+        showPremiumMenuSheet(
+            headerIcon = "\u2630",
+            headerTitle = Loc.t(this, "Menu", "\u0645\u06CC\u0646\u0648"),
+            headerSubtitle = Loc.t(this, "Jump to any section", "\u06A9\u0633\u06CC \u0628\u06BE\u06CC \u0633\u06CC\u06A9\u0634\u0646 \u067E\u0631 \u062C\u0627\u0626\u06CC\u06BA"),
+            items = listOf(
+                QuickMenuItem("\uD83D\uDCE6", blue, "#EAF0FF",
+                    Loc.t(this, "Products", "\u067E\u0631\u0648\u0688\u06A9\u0679\u0633"),
+                    Loc.t(this, "Manage your inventory items", "اپنے انوینٹری آئٹمز کا انتظام کریں")
+                ) { startActivity(Intent(this, ProductActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDCCA", purple, "#F1EEFF",
+                    Loc.t(this, "Reports", "\u0631\u067E\u0648\u0631\u0679\u0633"),
+                    Loc.t(this, "Sales, stock & financial overview", "سیل، اسٹاک اور مالیاتی جائزہ")
+                ) { startActivity(Intent(this, ReportsActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDCB5", green, "#EAF7EC",
+                    Loc.t(this, "Cash In/Out", "\u06A9\u06CC\u0634 \u0627\u0646/\u0622\u0624\u0679"),
+                    Loc.t(this, "Record cash movements", "کیش کی آمد و رفت درج کریں")
+                ) { startActivity(Intent(this, CashActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDD0E", teal, "#E6F7F5",
+                    Loc.t(this, "Item Rate Search", "\u0622\u0626\u0679\u0645 \u0631\u06CC\u0679 \u0633\u0631\u0686"),
+                    Loc.t(this, "Look up any item's price", "کسی بھی آئٹم کی قیمت دیکھیں")
+                ) { startActivity(Intent(this, ItemSearchActivity::class.java)) },
+                QuickMenuItem("\u2699", orange, "#FFF3E7",
+                    Loc.t(this, "Settings", "\u0633\u06CC\u0679\u0646\u06AF\u0632"),
+                    Loc.t(this, "App preferences & account", "ایپ کی ترتیبات اور اکاؤنٹ")
+                ) { startActivity(Intent(this, SettingsActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDEAA", red, "#FDEDED",
+                    Loc.t(this, "Logout", "\u0644\u0627\u06AF \u0622\u0624\u0679"),
+                    Loc.t(this, "Sign out of this session", "اس سیشن سے سائن آؤٹ کریں")
+                ) { doLogout() }
+            )
         )
-        AlertDialog.Builder(this)
-            .setItems(options.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> startActivity(Intent(this, ProductActivity::class.java))
-                    1 -> startActivity(Intent(this, ReportsActivity::class.java))
-                    2 -> startActivity(Intent(this, CashActivity::class.java))
-                    3 -> startActivity(Intent(this, ItemSearchActivity::class.java))
-                    4 -> startActivity(Intent(this, SettingsActivity::class.java))
-                    5 -> doLogout()
-                }
-            }
-            .show()
     }
 
     private fun doLogout() {
@@ -641,33 +665,198 @@ class PartyDashboardActivity : AppCompatActivity() {
         return bar
     }
 
+    // CHANGE (luxury premium UI pass): replaced the plain AlertDialog.setItems() text
+    // list with the same icon-badge nav-row card style used across Reports/History/
+    // Stock screens — colored circular icon, bold title + gray subtitle, chevron.
     private fun showQuickAddDialog() {
-        val options = arrayOf(
-            Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
-            Loc.t(this, "Add Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
-            "  \u21A9  " + Loc.t(this, "Sale Return", "\u0633\u06CC\u0644 \u0648\u0627\u067E\u0633\u06CC"),
-            "  \u21A9  " + Loc.t(this, "Purchase Return", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0648\u0627\u067E\u0633\u06CC"),
-            Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC"),
-            "  \uD83D\uDCB0  " + Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
-            "  \uD83D\uDCB8  " + Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC")
+        showPremiumMenuSheet(
+            headerIcon = "\u2795",
+            headerTitle = Loc.t(this, "Quick Add", "\u0641\u0648\u0631\u06CC \u0627\u0646\u062F\u0631\u0627\u062C"),
+            headerSubtitle = Loc.t(this, "Choose an action", "\u0627\u06CC\u06A9 \u0639\u0645\u0644 \u0645\u0646\u062A\u062E\u0628 \u06A9\u0631\u06CC\u06BA"),
+            items = listOf(
+                QuickMenuItem("\uD83E\uDDFE", red, "#FDEDED",
+                    Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
+                    Loc.t(this, "Create a new sale invoice", "نیا سیل انوائس بنائیں")
+                ) { startActivity(Intent(this, SaleActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDED2", blue, "#EAF0FF",
+                    Loc.t(this, "Add Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
+                    Loc.t(this, "Create a new purchase bill", "نیا خریداری بل بنائیں")
+                ) { startActivity(Intent(this, PurchaseActivity::class.java)) },
+                // Sale/Purchase Return need a specific invoice/bill picked first — route
+                // to the matching history list, which already has a ↩ Return action on
+                // each row (see SaleHistoryActivity.saleRow() / PurchaseHistoryActivity's
+                // per-card actions row), instead of duplicating that picker+logic here.
+                QuickMenuItem("\u21A9", orange, "#FFF3E7",
+                    Loc.t(this, "Sale Return", "\u0633\u06CC\u0644 \u0648\u0627\u067E\u0633\u06CC"),
+                    Loc.t(this, "Return items from a past sale", "پچھلی سیل سے آئٹمز واپس کریں")
+                ) { startActivity(Intent(this, SaleHistoryActivity::class.java)) },
+                QuickMenuItem("\u21A9", teal, "#E6F7F5",
+                    Loc.t(this, "Purchase Return", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0648\u0627\u067E\u0633\u06CC"),
+                    Loc.t(this, "Return items from a past purchase", "پچھلی خریداری سے آئٹمز واپس کریں")
+                ) { startActivity(Intent(this, PurchaseHistoryActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDC64", purple, "#F1EEFF",
+                    Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC"),
+                    Loc.t(this, "Add a customer or supplier", "کسٹمر یا سپلائر شامل کریں")
+                ) { startActivity(Intent(this, PartyActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDCB0", green, "#EAF7EC",
+                    Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
+                    Loc.t(this, "Record money received", "موصول ہونے والی رقم درج کریں")
+                ) { showPartyPickerForPayment(forCustomer = true) },
+                QuickMenuItem("\uD83D\uDCB8", gold, "#FBF3E3",
+                    Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC"),
+                    Loc.t(this, "Record money paid out", "ادا کی گئی رقم درج کریں")
+                ) { showPartyPickerForPayment(forCustomer = false) }
+            )
         )
-        AlertDialog.Builder(this)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> startActivity(Intent(this, SaleActivity::class.java))
-                    1 -> startActivity(Intent(this, PurchaseActivity::class.java))
-                    // Sale/Purchase Return need a specific invoice/bill picked first — route
-                    // to the matching history list, which already has a ↩ Return action on
-                    // each row (see SaleHistoryActivity.saleRow() / PurchaseHistoryActivity's
-                    // per-card actions row), instead of duplicating that picker+logic here.
-                    2 -> startActivity(Intent(this, SaleHistoryActivity::class.java))
-                    3 -> startActivity(Intent(this, PurchaseHistoryActivity::class.java))
-                    4 -> startActivity(Intent(this, PartyActivity::class.java))
-                    5 -> showPartyPickerForPayment(forCustomer = true)
-                    6 -> showPartyPickerForPayment(forCustomer = false)
-                }
+    }
+
+    // ================= Shared premium menu-sheet builder =================
+    // One card matching the icon-badge nav-row style used in ReportsActivity/
+    // HistoryActivity: colored circular icon badge, bold title, gray subtitle,
+    // chevron, divider between rows. Height is hard-capped so on a tall list the
+    // rows scroll internally instead of ever pushing content off-screen.
+    private data class QuickMenuItem(
+        val icon: String,
+        val accentHex: String,
+        val tintHex: String,
+        val title: String,
+        val subtitle: String,
+        val onClick: () -> Unit
+    )
+
+    private fun showPremiumMenuSheet(headerIcon: String, headerTitle: String, headerSubtitle: String, items: List<QuickMenuItem>) {
+        val itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(28, 26, 28, 18)
+            addView(TextView(this@PartyDashboardActivity).apply {
+                text = headerIcon
+                textSize = 20f
+                gravity = Gravity.CENTER
+                background = ovalBg("#EEF0F7")
+                layoutParams = LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (44 * resources.displayMetrics.density).toInt())
+                    .apply { setMargins(0, 0, 24, 0) }
+            })
+            addView(LinearLayout(this@PartyDashboardActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@PartyDashboardActivity).apply {
+                    text = headerTitle
+                    textSize = 17f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor(textDark))
+                })
+                addView(TextView(this@PartyDashboardActivity).apply {
+                    text = headerSubtitle
+                    textSize = 12.5f
+                    setTextColor(Color.parseColor(labelGray))
+                    setPadding(0, 2, 0, 0)
+                })
+            })
+        }
+        itemsContainer.addView(header)
+        itemsContainer.addView(View(this).apply {
+            setBackgroundColor(Color.parseColor(cardBorder))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2)
+        })
+
+        lateinit var dialog: AlertDialog
+
+        items.forEachIndexed { index, item ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                isClickable = true
+                isFocusable = true
+                setPadding(28, 20, 28, 20)
+                val outValue = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
+                setBackgroundResource(outValue.resourceId)
+                setOnClickListener { dialog.dismiss(); item.onClick() }
             }
-            .show()
+            row.addView(TextView(this).apply {
+                text = item.icon
+                textSize = 17f
+                gravity = Gravity.CENTER
+                setTextColor(Color.parseColor(item.accentHex))
+                background = ovalBg(item.tintHex)
+                layoutParams = LinearLayout.LayoutParams((40 * resources.displayMetrics.density).toInt(), (40 * resources.displayMetrics.density).toInt())
+                    .apply { setMargins(0, 0, 22, 0) }
+            })
+            row.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@PartyDashboardActivity).apply {
+                    text = item.title
+                    textSize = 14.5f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor(textDark))
+                })
+                addView(TextView(this@PartyDashboardActivity).apply {
+                    text = item.subtitle
+                    textSize = 12f
+                    setTextColor(Color.parseColor(labelGray))
+                    setPadding(0, 2, 0, 0)
+                })
+            })
+            row.addView(TextView(this).apply {
+                text = "\u203A"
+                textSize = 18f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.parseColor(item.accentHex))
+            })
+            itemsContainer.addView(row)
+            if (index != items.lastIndex) {
+                itemsContainer.addView(View(this).apply {
+                    setBackgroundColor(Color.parseColor(cardBorder))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+                        .apply { setMargins((28 * resources.displayMetrics.density).toInt(), 0, 0, 0) }
+                })
+            }
+        }
+
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            addView(itemsContainer)
+        }
+
+        val maxHeightPx = (resources.displayMetrics.heightPixels * 0.78).toInt()
+        val root = object : LinearLayout(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val mode = View.MeasureSpec.getMode(heightMeasureSpec)
+                val size = View.MeasureSpec.getSize(heightMeasureSpec)
+                val cappedSize = if (mode == View.MeasureSpec.UNSPECIFIED) maxHeightPx else size.coerceAtMost(maxHeightPx)
+                val newMode = if (mode == View.MeasureSpec.UNSPECIFIED) View.MeasureSpec.AT_MOST else mode
+                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(cappedSize, newMode))
+            }
+        }.apply {
+            orientation = LinearLayout.VERTICAL
+            background = strokedBg(cardBorder, cardWhite, 22)
+            clipToOutline = true
+            addView(scroll)
+        }
+        applyElevation(root, 6f)
+
+        dialog = AlertDialog.Builder(this)
+            .setView(root)
+            .create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+    }
+
+    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
+        setColor(Color.parseColor(fillHex))
+        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
+        cornerRadius = radius.toFloat()
+    }
+
+    private fun applyElevation(view: View, dp: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            view.elevation = dp * resources.displayMetrics.density
+            view.outlineProvider = ViewOutlineProvider.BACKGROUND
+        }
     }
 
     // ---------------- NEW: quick "Payment Received" / "Payment Made" from the "+" menu ----------------
