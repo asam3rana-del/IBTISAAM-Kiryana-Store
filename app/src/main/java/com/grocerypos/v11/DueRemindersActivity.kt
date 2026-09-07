@@ -30,22 +30,39 @@ import java.util.Locale
 // was set for it yet.
 class DueRemindersActivity : AppCompatActivity() {
 
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val amber = "#F5A524"
-    private val red = "#E5484D"
-    private val teal = "#0F9B8E"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a
+    // primary→primaryDark gradient; now flat like the rest of the app.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var amber = "#F5A524"
+    private var red = "#E5484D"
+    private var teal = "#0F9B8E"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        amber = p.flatAmberFg
+        red = p.red
+        teal = p.flatTealFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var resultsBox: LinearLayout
     private lateinit var summaryBox: LinearLayout
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

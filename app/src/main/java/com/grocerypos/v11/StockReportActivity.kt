@@ -24,17 +24,34 @@ import kotlinx.coroutines.launch
 class StockReportActivity : AppCompatActivity() {
 
     // ================= PREMIUM PALETTE (shared with Items / Categories / Reports) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val purple = "#8B5CF6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a
+    // primary→primaryDark gradient; now flat like the rest of the app.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var purple = "#8B5CF6"
+    private var amber = "#F5A524"
+    private var teal = "#0F9B8E"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var resultsBox: LinearLayout
     private lateinit var searchField: EditText
@@ -46,6 +63,7 @@ class StockReportActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

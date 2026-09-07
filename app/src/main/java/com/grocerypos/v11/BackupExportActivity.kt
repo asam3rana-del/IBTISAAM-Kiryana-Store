@@ -90,14 +90,29 @@ import java.util.Locale
  */
 class BackupExportActivity : AppCompatActivity() {
 
-    private val bg = "#F3F4F9"
-    private val cardWhite = "#FFFFFF"
-    private val cardBorder = "#EEF0F7"
-    private val textDark = "#2E3242"
-    private val labelGray = "#9AA0B4"
-    private val teal = "#0F9B8E"
-    private val blue = "#5B6EE8"
-    private val green = "#4CAF50"
+    // ---- Pulled from ThemeManager so the on-screen UI respects dark mode. The PDF export
+    // itself (PdfExporter's Paint colors further below) is intentionally left FIXED — it's a
+    // printed document, always white-bg/dark-text regardless of the app's current theme. ----
+    private var bg = "#F3F4F9"
+    private var cardWhite = "#FFFFFF"
+    private var cardBorder = "#EEF0F7"
+    private var textDark = "#2E3242"
+    private var labelGray = "#9AA0B4"
+    private var teal = "#0F9B8E"
+    private var blue = "#5B6EE8"
+    private var green = "#4CAF50"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        cardBorder = p.border
+        textDark = p.textDark
+        labelGray = p.textMuted
+        teal = p.flatTealFg
+        blue = p.flatBlueFg
+        green = p.flatTealFg
+    }
 
     private lateinit var statusText: TextView
     private lateinit var actionsRow: LinearLayout
@@ -109,6 +124,7 @@ class BackupExportActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

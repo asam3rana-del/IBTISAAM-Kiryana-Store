@@ -47,18 +47,36 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     // ================= PREMIUM PALETTE (shared with Reports / Stock / Balance Sheet) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val gold = "#C9A24B"
-    private val goldDark = "#A47F32"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Headers were two-tone
+    // gradients (primary/primaryDark, gold/goldDark); now flat like the rest of the app.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var amber = "#F5A524"
+    private var teal = "#0F9B8E"
+    private var gold = "#C9A24B"
+    private var goldDark = "#C9A24B"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        gold = p.flatAmberFg
+        goldDark = p.flatAmberFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var tabRow: LinearLayout
     private lateinit var salesTab: TextView
@@ -70,6 +88,7 @@ class HistoryActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
         singleMode = intent.getStringExtra(EXTRA_MODE)
 
         val root = LinearLayout(this).apply {

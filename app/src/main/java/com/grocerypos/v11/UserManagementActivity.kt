@@ -26,18 +26,36 @@ import kotlinx.coroutines.launch
 
 class UserManagementActivity : AppCompatActivity() {
 
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val green = "#1FA971"
-    private val red = "#E5484D"
-    private val redDark = "#C93A3E"
-    private val blue = "#2F6FED"
-    private val amber = "#F5A524"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header/button
+    // gradients were two-tone (primary/primaryDark, green/#158A5C); now flat.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var green = "#1FA971"
+    private var red = "#E5484D"
+    private var redDark = "#E5484D"
+    private var blue = "#2F6FED"
+    private var amber = "#F5A524"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        green = p.flatTealFg
+        red = p.red
+        redDark = p.red
+        blue = p.flatBlueFg
+        amber = p.flatAmberFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var listContainer: LinearLayout
     private lateinit var usernameField: EditText
@@ -49,6 +67,7 @@ class UserManagementActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val session = getSharedPreferences("session", MODE_PRIVATE)
         val myRole = session.getString("role", "cashier") ?: "cashier"
@@ -148,7 +167,7 @@ class UserManagementActivity : AppCompatActivity() {
         card.addView(lockErrorText)
         card.addView(spacer(8))
 
-        card.addView(primaryButton("🔓  UNLOCK", green, "#158A5C") {
+        card.addView(primaryButton("🔓  UNLOCK", green, green) {
             verifyLockPassword(myUsername)
         })
 

@@ -43,17 +43,34 @@ import java.util.Locale
 class SettingsActivity : AppCompatActivity() {
 
     // ================= PALETTE (matches Product/Purchase/Sale premium look) =================
-    private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"
-    private val navyLight = "#1C2C4F"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val amber = "#F5A524"
-    private val badgeRed = "#E53950"
-    private val textDark = "#0B2545"
-    private val textGray = "#7C8798"
-    private val border = "#E3E8EE"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a navy→navyLight
+    // gradient; now flat (navyLight = navy) like the rest of the app's flattened headers.
+    private var bg = "#F4F6F8"
+    private var cardWhite = "#FFFFFF"
+    private var navy = "#0B2545"
+    private var navyLight = "#0B2545"
+    private var teal = "#0F9B8E"
+    private var red = "#E5484D"
+    private var amber = "#F5A524"
+    private var badgeRed = "#E5484D"
+    private var textDark = "#0B2545"
+    private var textGray = "#7C8798"
+    private var border = "#E3E8EE"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        navy = p.navy
+        navyLight = p.navy
+        teal = p.flatTealFg
+        red = p.red
+        amber = p.flatAmberFg
+        badgeRed = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var currentUsernameField: EditText
     private lateinit var newUsernameField: EditText
@@ -95,6 +112,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         setTheme(R.style.Theme_SettingsSheet)
         super.onCreate(b)
+        loadThemeColors()
 
         importBackupLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { confirmRestoreFromUri(it) }
