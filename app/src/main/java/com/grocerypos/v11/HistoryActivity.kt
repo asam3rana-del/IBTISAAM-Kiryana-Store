@@ -319,18 +319,13 @@ class HistoryActivity : AppCompatActivity() {
                 Triple(item, product?.name ?: item.barcode, item.unit.ifBlank { product?.unit ?: "" })
             }
 
-            // FIX (dialog buttons hidden off-screen): with many items, the item list used to
-            // grow to its full wrap_content height, pushing the Return/Cancel buttons below
-            // the bottom of the screen with no way to reach them. Capping the list's height
-            // keeps it independently scrollable while guaranteeing the button row stays visible.
-            val maxListHeightPx = (resources.displayMetrics.heightPixels * 0.42).toInt()
-            val scroll = ScrollView(this@HistoryActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    maxListHeightPx
-                )
-                isFillViewport = false
-            }
+            // FIX (dialog buttons hidden off-screen): capping just the item list's height
+            // wasn't enough — on some devices the dialog's own title+message chrome plus an
+            // uncapped list could still add up to taller than the screen, pushing the
+            // Return/Cancel buttons out of view with no way to reach them. Now the ENTIRE
+            // dialog (title, message, list, buttons) is one custom layout whose total height
+            // is hard-capped to a share of the screen — the item list is the only part that
+            // flexes/scrolls, so the button row at the bottom is always on-screen.
             val container = LinearLayout(this@HistoryActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(36, 8, 36, 8)
@@ -365,58 +360,98 @@ class HistoryActivity : AppCompatActivity() {
                 row.addView(input)
                 container.addView(row)
             }
-            scroll.addView(container)
+
+            val itemsScroll = ScrollView(this@HistoryActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                addView(container)
+            }
 
             val itemsById = rowMeta.associateBy({ it.first.id }, { it.first to it.second })
 
-            val dialog = AlertDialog.Builder(this@HistoryActivity)
-                .setTitle(Loc.t(this@HistoryActivity, "Return items", "آئٹمز واپس کریں"))
-                .setMessage(Loc.t(
+            val titleView = TextView(this@HistoryActivity).apply {
+                text = Loc.t(this@HistoryActivity, "Return items", "آئٹمز واپس کریں")
+                textSize = 18f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.parseColor(textDark))
+                setPadding(40, 32, 40, 8)
+            }
+            val messageView = TextView(this@HistoryActivity).apply {
+                text = Loc.t(
                     this@HistoryActivity,
                     "Enter how many units of each item are being returned. Stock and supplier balance will be adjusted only for those quantities.",
                     "ہر آئٹم کی کتنی مقدار واپس ہو رہی ہے درج کریں۔ صرف انہی مقداروں کے مطابق اسٹاک اور سپلائر بیلنس ایڈجسٹ ہو گا۔"
-                ))
-                .setView(scroll)
-                .setPositiveButton(Loc.t(this@HistoryActivity, "Return", "واپسی"), null)
-                .setNegativeButton(Loc.t(this@HistoryActivity, "Cancel", "منسوخ کریں"), null)
+                )
+                textSize = 13f
+                setTextColor(Color.parseColor(textGray))
+                setPadding(40, 0, 40, 8)
+            }
+
+            val cancelBtn = outlineButton(Loc.t(this@HistoryActivity, "Cancel", "منسوخ کریں")) {}
+            val returnBtn = filledButton(Loc.t(this@HistoryActivity, "Return", "واپسی"), amber) {}
+            val footer = LinearLayout(this@HistoryActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(40, 16, 40, 32)
+                addView(cancelBtn)
+                addView(spacerH(12))
+                addView(returnBtn)
+            }
+
+            val maxDialogHeightPx = (resources.displayMetrics.heightPixels * 0.82).toInt()
+            val root = object : LinearLayout(this@HistoryActivity) {
+                override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                    val mode = View.MeasureSpec.getMode(heightMeasureSpec)
+                    val size = View.MeasureSpec.getSize(heightMeasureSpec)
+                    val cappedSize = if (mode == View.MeasureSpec.UNSPECIFIED) maxDialogHeightPx else size.coerceAtMost(maxDialogHeightPx)
+                    val newMode = if (mode == View.MeasureSpec.UNSPECIFIED) View.MeasureSpec.AT_MOST else mode
+                    super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(cappedSize, newMode))
+                }
+            }.apply {
+                orientation = LinearLayout.VERTICAL
+                addView(titleView)
+                addView(messageView)
+                addView(itemsScroll)
+                addView(footer)
+            }
+
+            val dialog = AlertDialog.Builder(this@HistoryActivity)
+                .setView(root)
                 .create()
 
-            dialog.setOnShowListener {
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                    val requested = LinkedHashMap<Long, Double>()
-                    var errorMsg: String? = null
-                    for ((id, field) in fields) {
-                        val text = field.text.toString().trim()
-                        if (text.isEmpty()) continue
-                        val qty = text.toDoubleOrNull()
-                        val (item, name) = itemsById[id] ?: continue
-                        when {
-                            qty == null || qty < 0 -> {
-                                errorMsg = Loc.t(this@HistoryActivity, "Enter a valid quantity for \"$name\"", "\"$name\" کے لیے درست مقدار درج کریں")
-                            }
-                            qty == 0.0 -> { /* treated as skip */ }
-                            qty > item.qty + 0.0001 -> {
-                                errorMsg = Loc.t(
-                                    this@HistoryActivity,
-                                    "Return qty for \"$name\" can't exceed purchased qty (${formatQty(item.qty)})",
-                                    "\"$name\" کی واپسی مقدار خریدی گئی مقدار (${formatQty(item.qty)}) سے زیادہ نہیں ہو سکتی"
-                                )
-                            }
-                            else -> requested[id] = qty
+            cancelBtn.setOnClickListener { dialog.dismiss() }
+            returnBtn.setOnClickListener {
+                val requested = LinkedHashMap<Long, Double>()
+                var errorMsg: String? = null
+                for ((id, field) in fields) {
+                    val text = field.text.toString().trim()
+                    if (text.isEmpty()) continue
+                    val qty = text.toDoubleOrNull()
+                    val (item, name) = itemsById[id] ?: continue
+                    when {
+                        qty == null || qty < 0 -> {
+                            errorMsg = Loc.t(this@HistoryActivity, "Enter a valid quantity for \"$name\"", "\"$name\" کے لیے درست مقدار درج کریں")
                         }
-                        if (errorMsg != null) break
+                        qty == 0.0 -> { /* treated as skip */ }
+                        qty > item.qty + 0.0001 -> {
+                            errorMsg = Loc.t(
+                                this@HistoryActivity,
+                                "Return qty for \"$name\" can't exceed purchased qty (${formatQty(item.qty)})",
+                                "\"$name\" کی واپسی مقدار خریدی گئی مقدار (${formatQty(item.qty)}) سے زیادہ نہیں ہو سکتی"
+                            )
+                        }
+                        else -> requested[id] = qty
                     }
-                    if (errorMsg != null) {
-                        Toast.makeText(this@HistoryActivity, errorMsg, Toast.LENGTH_LONG).show()
-                        return@setOnClickListener
-                    }
-                    if (requested.isEmpty()) {
-                        Toast.makeText(this@HistoryActivity, Loc.t(this@HistoryActivity, "Enter a return quantity for at least one item", "کم از کم ایک آئٹم کے لیے واپسی مقدار درج کریں"), Toast.LENGTH_SHORT).show()
-                        return@setOnClickListener
-                    }
-                    dialog.dismiss()
-                    processPartialReturn(billNo, requested)
+                    if (errorMsg != null) break
                 }
+                if (errorMsg != null) {
+                    Toast.makeText(this@HistoryActivity, errorMsg, Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                if (requested.isEmpty()) {
+                    Toast.makeText(this@HistoryActivity, Loc.t(this@HistoryActivity, "Enter a return quantity for at least one item", "کم از کم ایک آئٹم کے لیے واپسی مقدار درج کریں"), Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                processPartialReturn(billNo, requested)
             }
             dialog.show()
         }
