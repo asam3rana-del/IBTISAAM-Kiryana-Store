@@ -88,24 +88,39 @@ import java.util.Locale
  */
 class PartyDashboardActivity : AppCompatActivity() {
 
-    // ---- palette (kept consistent with PartyActivity.kt) ----
-    private val bg = "#F3F4F9"
-    private val gradientStart = "#7C86F5"
-    private val gradientEnd = "#A6ADFF"
-    private val blue = "#5B6EE8"
-    private val orange = "#F5A15C"
-    private val green = "#4CAF50"
-    private val red = "#E57373"
-    private val cardWhite = "#FFFFFF"
-    private val cardBorder = "#EEF0F7"
-    private val labelGray = "#9AA0B4"
-    // ADDED for the premium quick-menu sheets (showMainMenu / showQuickAddDialog):
-    // a couple more accent hues so each row gets its own distinct icon-badge color,
-    // matching the icon-badge nav-row style used in ReportsActivity/HistoryActivity.
-    private val purple = "#7B61FF"
-    private val teal = "#0F9B8E"
-    private val gold = "#C9A24B"
-    private val textDark = "#2E3242"
+    // ---- Reports-style flat design — pulled from ThemeManager so this screen stays
+    // in sync with the rest of the app and respects dark mode. Party = flatPink
+    // everywhere per ThemeManager's documented category convention; the extra accent
+    // hues below (purple/teal/gold) come straight from the same shared flat palette
+    // so each quick-menu row keeps its own distinct icon-badge color. ----
+    private var bg = "#F4F6F8"
+    private var blue = "#993556"       // primary chrome — flatPinkFg
+    private var orange = "#993C1D"     // flatCoralFg
+    private var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
+    private var red = "#D32F4A"
+    private var cardWhite = "#FFFFFF"
+    private var cardBorder = "#E3E8EE"
+    private var labelGray = "#7C8798"
+    private var purple = "#534AB7"     // flatPurpleFg
+    private var teal = "#085041"       // flatTealFg
+    private var gold = "#854F0B"       // flatAmberFg
+    private var textDark = "#0B2545"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        cardBorder = p.border
+        labelGray = p.textMuted
+        textDark = p.textDark
+        blue = p.flatPinkFg
+        orange = p.flatCoralFg
+        green = p.flatTealFg
+        red = p.red
+        purple = p.flatPurpleFg
+        teal = p.flatTealFg
+        gold = p.flatAmberFg
+    }
 
     private lateinit var youllGetValue: TextView
     private lateinit var youllGiveValue: TextView
@@ -168,6 +183,7 @@ class PartyDashboardActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val session = getSharedPreferences("session", MODE_PRIVATE)
         if (session.getString("username", null) == null) {
@@ -235,7 +251,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         if (activeTab == Tab.ITEMS) renderItemsList(forceReload = true)
     }
 
-    // ================= HEADER =================
+    // ================= HEADER (flat, Reports-style — no gradient) =================
     private fun buildHeader(): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -243,7 +259,7 @@ class PartyDashboardActivity : AppCompatActivity() {
             setPadding(28, 46, 24, 32)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(gradientStart), Color.parseColor(gradientEnd))
+                intArrayOf(Color.parseColor(blue), Color.parseColor(blue))
             )
 
             addView(TextView(this@PartyDashboardActivity).apply {
