@@ -12,6 +12,7 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Supplier
@@ -66,7 +67,12 @@ class PartyReportsActivity : AppCompatActivity() {
         border = p.border
     }
 
-    private lateinit var listContainer: LinearLayout
+    // ---- Item #2 (RecyclerView migration): was a LinearLayout that
+    // loadParties() addView()'d rows into directly; now a RecyclerView backed
+    // by the shared ViewListAdapter (see UiHelpers.kt), so only on-screen
+    // rows get inflated instead of the whole list living as permanent child
+    // views. ----
+    private lateinit var listContainer: RecyclerView
     private lateinit var customersTab: TextView
     private lateinit var suppliersTab: TextView
     private var showingCustomers = true
@@ -108,7 +114,7 @@ class PartyReportsActivity : AppCompatActivity() {
 
         root.addView(sectionHeader(Loc.t(this, "Tap a party to select a report", "رپورٹ منتخب کرنے کے لیے پارٹی پر ٹیپ کریں")))
 
-        listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        listContainer = recyclerListView()
         root.addView(listContainer)
         root.addView(spacer(30))
 
@@ -137,26 +143,27 @@ class PartyReportsActivity : AppCompatActivity() {
     }
 
     private fun loadParties() {
-        listContainer.removeAllViews()
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
+            val rows = mutableListOf<View>()
             if (showingCustomers) {
                 val customers = db.customerDao().all().first()
-                if (customers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
+                if (customers.isEmpty()) rows.add(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
                 customers.forEach { c ->
-                    listContainer.addView(partyRow(c.name, c.openingBalance + c.balance, isCustomer = true) {
+                    rows.add(partyRow(c.name, c.openingBalance + c.balance, isCustomer = true) {
                         showReportMenu(true, c.id, c.name, c.openingBalance)
                     })
                 }
             } else {
                 val suppliers = db.supplierDao().all().first()
-                if (suppliers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
+                if (suppliers.isEmpty()) rows.add(emptyText(Loc.t(this@PartyReportsActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
                 suppliers.forEach { s ->
-                    listContainer.addView(partyRow(s.name, s.openingBalance + s.balance, isCustomer = false) {
+                    rows.add(partyRow(s.name, s.openingBalance + s.balance, isCustomer = false) {
                         showReportMenu(false, s.id, s.name, s.openingBalance)
                     })
                 }
             }
+            listContainer.submitRows(rows)
         }
     }
 
@@ -909,4 +916,18 @@ class PartyReportsActivity : AppCompatActivity() {
         }
     }
 
+    // ================= SHARED UI HELPERS (matches Reports/Stock Report exactly) =================
+    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
+        text = label
+        textSize = 18f
+        gravity = Gravity.CENTER
+        background = ovalBg(colorHex)
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        width = px; height = px
+    }
+
+    private fun spacer(heightDp: Int) = View(this).apply {
+        val px = (heightDp * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
+    }
 }

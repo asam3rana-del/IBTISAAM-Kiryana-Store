@@ -4,12 +4,14 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.text.Editable
 import android.text.TextWatcher
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -19,6 +21,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
@@ -87,7 +90,12 @@ class ItemsActivity : ThemedActivity() {
     private lateinit var categoriesTabBtn: TextView
     private lateinit var unitsTabBtn: TextView
     private lateinit var searchField: EditText
-    private lateinit var listContainer: LinearLayout
+    // ---- Item #2 (RecyclerView migration): was a LinearLayout that render*()
+    // functions addView()'d rows into directly; now a RecyclerView backed by
+    // the shared ViewListAdapter (see UiHelpers.kt), so only on-screen rows
+    // across all three tabs get inflated instead of the whole list living as
+    // permanent child views. ----
+    private lateinit var listContainer: RecyclerView
     private lateinit var fab: TextView
 
     override fun onCreate(b: Bundle?) {
@@ -103,8 +111,39 @@ class ItemsActivity : ThemedActivity() {
             setPadding(24, 48, 24, 130)
         }
 
-        // ================= HEADER (matches Items/Categories/Reports) =================
-        val header = premiumHeader("🗃️", "Items", "Products, Categories & Units", primary, primaryDark)
+        // ================= HEADER =================
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(26, 22, 26, 22)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            ).apply { cornerRadius = 22f }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 18) }
+            applyElevation(this, 10f)
+        }
+        header.addView(circleIcon("🗃️", "#5C4DFF", 42))
+        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
+        val headerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headerCol.addView(TextView(this).apply {
+            text = "Items"
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        headerCol.addView(TextView(this).apply {
+            text = "Products, Categories & Units"
+            textSize = 11.5f
+            setTextColor(Color.parseColor("#D8D3FF"))
+            setPadding(0, 4, 0, 0)
+        })
+        header.addView(headerCol)
 
         // ---- NEW: "Translate" pill button — launches BulkTranslateActivity so Urdu
         // category/unit values already saved can be renamed to English once each,
@@ -168,7 +207,7 @@ class ItemsActivity : ThemedActivity() {
         searchBox.addView(searchField)
         root.addView(searchBox)
 
-        listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        listContainer = recyclerListView()
         root.addView(listContainer)
 
         val scroll = ScrollView(this).apply { addView(root) }
@@ -295,7 +334,6 @@ class ItemsActivity : ThemedActivity() {
     }
 
     private fun renderCurrentTab() {
-        listContainer.removeAllViews()
         when (currentTab) {
             Tab.PRODUCTS -> renderProducts()
             Tab.CATEGORIES -> {
@@ -312,12 +350,14 @@ class ItemsActivity : ThemedActivity() {
         else allProducts.filter {
             it.name.contains(searchQuery, ignoreCase = true) || it.barcode.contains(searchQuery, ignoreCase = true)
         }
+        val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
-            listContainer.addView(emptyState("Koi product nahi mila"))
+            rows.add(emptyState("Koi product nahi mila"))
+            listContainer.submitRows(rows)
             return
         }
         for (p in filtered) {
-            listContainer.addView(LinearLayout(this).apply {
+            rows.add(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(20, 16, 20, 16)
                 background = strokedBg(border, cardBg, 14)
@@ -359,6 +399,7 @@ class ItemsActivity : ThemedActivity() {
                 }
             })
         }
+        listContainer.submitRows(rows)
     }
 
     private fun priceCol(label: String, value: Double) = LinearLayout(this).apply {
@@ -391,13 +432,15 @@ class ItemsActivity : ThemedActivity() {
         val filtered = if (searchQuery.isEmpty()) rows
         else rows.filter { it.first.contains(searchQuery, ignoreCase = true) }
 
+        val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
-            listContainer.addView(emptyState("Koi category nahi mili"))
+            rows.add(emptyState("Koi category nahi mili"))
+            listContainer.submitRows(rows)
             return
         }
 
         for ((name, count, isUncategorized) in filtered) {
-            listContainer.addView(LinearLayout(this).apply {
+            rows.add(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(20, 18, 20, 18)
@@ -453,6 +496,7 @@ class ItemsActivity : ThemedActivity() {
                 }
             })
         }
+        listContainer.submitRows(rows)
     }
 
     private fun promptAddCategory() {
@@ -527,9 +571,10 @@ class ItemsActivity : ThemedActivity() {
     // ================= CATEGORIES TAB (drill-down: products inside one category) =================
     private fun renderCategoryDetail(categoryName: String) {
         val displayName = categoryName.ifBlank { "Items Not in Any Category" }
+        val rows = mutableListOf<View>()
 
         // ---- Back row + category title ----
-        listContainer.addView(LinearLayout(this).apply {
+        rows.add(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(4, 0, 4, 16)
@@ -542,7 +587,7 @@ class ItemsActivity : ThemedActivity() {
                 setOnClickListener { closeCategoryDetail() }
             })
         })
-        listContainer.addView(TextView(this).apply {
+        rows.add(TextView(this).apply {
             text = displayName
             textSize = 17f
             setTextColor(Color.parseColor(textDark))
@@ -555,13 +600,15 @@ class ItemsActivity : ThemedActivity() {
         else inCategory.filter { it.name.contains(searchQuery, ignoreCase = true) }
 
         if (filtered.isEmpty()) {
-            listContainer.addView(emptyState(if (inCategory.isEmpty()) "Is category mein koi item nahi" else "Koi matching item nahi mila"))
+            rows.add(emptyState(if (inCategory.isEmpty()) "Is category mein koi item nahi" else "Koi matching item nahi mila"))
+            listContainer.submitRows(rows)
             return
         }
 
         for (p in filtered) {
-            listContainer.addView(categoryProductRow(p))
+            rows.add(categoryProductRow(p))
         }
+        listContainer.submitRows(rows)
     }
 
     private fun categoryProductRow(p: Product) = LinearLayout(this).apply {
@@ -679,12 +726,14 @@ class ItemsActivity : ThemedActivity() {
         val filtered = if (searchQuery.isEmpty()) allUnits
         else allUnits.filter { it.name.contains(searchQuery, ignoreCase = true) }
 
+        val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
-            listContainer.addView(emptyState("Koi unit nahi mila"))
+            rows.add(emptyState("Koi unit nahi mila"))
+            listContainer.submitRows(rows)
             return
         }
         for (u in filtered) {
-            listContainer.addView(LinearLayout(this).apply {
+            rows.add(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(20, 18, 20, 18)
@@ -714,6 +763,7 @@ class ItemsActivity : ThemedActivity() {
                 })
             })
         }
+        listContainer.submitRows(rows)
     }
 
     private fun promptAddUnit() {
@@ -762,6 +812,15 @@ class ItemsActivity : ThemedActivity() {
         setPadding(0, 20, 0, 20)
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         setOnClickListener { onClick() }
+    }
+
+    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
+        text = label
+        textSize = 18f
+        gravity = Gravity.CENTER
+        background = ovalBg(colorHex)
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        width = px; height = px
     }
 
     private fun EditText.addTextChangedListener(onChanged: (String) -> Unit) {

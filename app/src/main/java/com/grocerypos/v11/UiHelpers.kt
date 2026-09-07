@@ -5,8 +5,12 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 
 /**
  * Shared "premium UI" building blocks (item #24 — architecture duplication).
@@ -95,4 +99,66 @@ fun lighten(hex: String, factor: Float): Int {
     val g = (Color.green(base) + (255 - Color.green(base)) * factor).toInt()
     val bl = (Color.blue(base) + (255 - Color.blue(base)) * factor).toInt()
     return Color.rgb(r.coerceIn(0, 255), g.coerceIn(0, 255), bl.coerceIn(0, 255))
+}
+
+/**
+ * Item #2 (RecyclerView migration — the 3 remaining list screens: Items,
+ * Stock Movement, Party Reports). These screens all shared the same
+ * addView()-into-a-LinearLayout-inside-a-ScrollView pattern that
+ * SaleHistoryActivity used to have: a render*() function builds each row as
+ * a plain View and pushes it straight into a container, so the whole list
+ * lives as permanent child views even when off-screen.
+ *
+ * Unlike SaleHistoryActivity (which has a handful of fixed row shapes and so
+ * got a sealed-class Row + when-expression adapter), these 3 screens each
+ * build fairly different, one-off row Views per call site. A generic
+ * "already-built View" adapter avoids re-deriving row types for each screen:
+ * callers keep building rows exactly as before, just appending to a
+ * `List<View>` instead of calling `container.addView(...)` directly, then
+ * hand the finished list to `submitRows()`. Recycling still works — only
+ * on-screen rows are bound to a holder — the difference from a "real" typed
+ * adapter is that a rebuild reconstructs every row View instead of rebinding
+ * data into reused ones, which is fine for these list sizes (products,
+ * movements, parties) and keeps the migration low-risk.
+ */
+class ViewListAdapter : RecyclerView.Adapter<ViewListAdapter.Holder>() {
+    class Holder(val container: FrameLayout) : RecyclerView.ViewHolder(container)
+
+    var rows: List<View> = emptyList()
+        private set
+
+    fun submit(newRows: List<View>) {
+        rows = newRows
+        notifyDataSetChanged()
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = Holder(
+        FrameLayout(parent.context).apply {
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+    )
+
+    override fun onBindViewHolder(holder: Holder, position: Int) {
+        val view = rows[position]
+        (view.parent as? ViewGroup)?.removeView(view)
+        holder.container.removeAllViews()
+        holder.container.addView(view)
+    }
+
+    override fun getItemCount() = rows.size
+}
+
+/** Drop-in replacement for `LinearLayout(this).apply { orientation = VERTICAL }`
+ * when that LinearLayout was only ever used as a list container inside a
+ * ScrollView. Nested-scrolling stays off since the outer ScrollView still owns
+ * scrolling, same as before. */
+fun Context.recyclerListView(): RecyclerView = RecyclerView(this).apply {
+    layoutManager = LinearLayoutManager(this@recyclerListView)
+    adapter = ViewListAdapter()
+    isNestedScrollingEnabled = false
+    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+}
+
+fun RecyclerView.submitRows(views: List<View>) {
+    (adapter as ViewListAdapter).submit(views)
 }

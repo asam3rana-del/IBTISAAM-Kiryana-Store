@@ -13,6 +13,7 @@ import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.StockMovement
@@ -74,7 +75,12 @@ class StockMovementActivity : AppCompatActivity() {
 
     private lateinit var headerBox: LinearLayout
     private lateinit var searchField: EditText
-    private lateinit var resultsBox: LinearLayout
+    // ---- Item #2 (RecyclerView migration): was a LinearLayout that
+    // renderProductList()/renderMovements() addView()'d rows into directly;
+    // now a RecyclerView backed by the shared ViewListAdapter (see
+    // UiHelpers.kt), so only on-screen rows get inflated instead of the
+    // whole list living as permanent child views. ----
+    private lateinit var resultsBox: RecyclerView
 
     private var allProducts: List<Product> = emptyList()
     private var selectedProduct: Product? = null
@@ -96,7 +102,7 @@ class StockMovementActivity : AppCompatActivity() {
         root.addView(headerBox)
 
         searchField = EditText(this)
-        resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        resultsBox = recyclerListView()
 
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -174,19 +180,20 @@ class StockMovementActivity : AppCompatActivity() {
     private fun renderProductList(query: String) {
         if (selectedProduct != null) return
         searchField.visibility = View.VISIBLE
-        resultsBox.removeAllViews()
         val q = query.trim().lowercase()
         val filtered = allProducts.filter { p ->
             q.isEmpty() || p.name.lowercase().contains(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
         }
+        val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
-            resultsBox.addView(TextView(this).apply {
+            rows.add(TextView(this).apply {
                 text = Loc.t(this@StockMovementActivity, "No items found", "کوئی آئٹم نہیں ملا")
                 setTextColor(Color.parseColor(textGray))
                 textSize = 13f
                 gravity = Gravity.CENTER
                 setPadding(0, 40, 0, 40)
             })
+            resultsBox.submitRows(rows)
             return
         }
         for (p in filtered) {
@@ -211,8 +218,9 @@ class StockMovementActivity : AppCompatActivity() {
             }
             row.addView(nameCol)
             row.addView(TextView(this).apply { text = "\u203A"; textSize = 18f; setTextColor(Color.parseColor(textGray)) })
-            resultsBox.addView(row)
+            rows.add(row)
         }
+        resultsBox.submitRows(rows)
     }
 
     private fun loadMovements(p: Product) = lifecycleScope.launch {
@@ -226,20 +234,22 @@ class StockMovementActivity : AppCompatActivity() {
     }
 
     private fun renderMovements(movements: List<StockMovement>) {
-        resultsBox.removeAllViews()
+        val rows = mutableListOf<View>()
         if (movements.isEmpty()) {
-            resultsBox.addView(TextView(this).apply {
+            rows.add(TextView(this).apply {
                 text = Loc.t(this@StockMovementActivity, "No movements recorded yet", "ابھی تک کوئی ریکارڈ نہیں")
                 setTextColor(Color.parseColor(textGray))
                 textSize = 13f
                 gravity = Gravity.CENTER
                 setPadding(0, 40, 0, 40)
             })
+            resultsBox.submitRows(rows)
             return
         }
         for (m in movements) {
-            resultsBox.addView(movementCard(m))
+            rows.add(movementCard(m))
         }
+        resultsBox.submitRows(rows)
     }
 
     private fun typeLabel(type: String): Pair<String, String> = when (type) {
@@ -318,4 +328,20 @@ class StockMovementActivity : AppCompatActivity() {
         return if (rounded == Math.floor(rounded)) rounded.toLong().toString() else rounded.toString()
     }
 
+    // ================= PREMIUM HEADER (matches Items/Categories/Reports) =================
+
+    // ================= SHARED UI HELPERS (matches Items/Categories/Reports) =================
+    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
+        text = label
+        textSize = 18f
+        gravity = Gravity.CENTER
+        background = ovalBg(colorHex)
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        width = px; height = px
+    }
+
+    private fun spacer(heightDp: Int) = View(this).apply {
+        val px = (heightDp * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
+    }
 }
