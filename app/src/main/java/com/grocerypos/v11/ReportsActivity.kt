@@ -70,9 +70,25 @@ class ReportsActivity : AppCompatActivity() {
         }
         navCard.addView(navRow(
             icon = "🧾", accentHex = primary, tintHex = "#E9E6FF",
-            title = Loc.t(this, "Sale / Purchase History", "سیل / خریداری کی تاریخ"),
-            subtitle = Loc.t(this, "View all transactions", "تمام لین دین دیکھیں")
-        ) { startActivity(android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)) })
+            title = Loc.t(this, "Sale History", "سیل کی تاریخ"),
+            subtitle = Loc.t(this, "View all sale transactions", "تمام سیل لین دین دیکھیں")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)
+            i.putExtra(HistoryActivity.EXTRA_MODE, HistoryActivity.MODE_SALES)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            icon = "🛒", accentHex = gold, tintHex = "#F6EFDD",
+            title = Loc.t(this, "Purchase History", "خریداری کی تاریخ"),
+            subtitle = Loc.t(this, "View all purchase transactions", "تمام خریداری لین دین دیکھیں")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)
+            i.putExtra(HistoryActivity.EXTRA_MODE, HistoryActivity.MODE_PURCHASES)
+            startActivity(i)
+        })
 
         navCard.addView(navDivider())
 

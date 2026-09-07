@@ -38,6 +38,14 @@ import java.util.Locale
  */
 class HistoryActivity : AppCompatActivity() {
 
+    companion object {
+        // ADDED: lets Reports link straight into Sale History or Purchase History
+        // without an extra tap on the in-screen SALES/PURCHASES tabs.
+        const val EXTRA_MODE = "history_mode"
+        const val MODE_SALES = "sales"
+        const val MODE_PURCHASES = "purchases"
+    }
+
     // ================= PREMIUM PALETTE (shared with Reports / Stock / Balance Sheet) =================
     private val bg = "#F3F2FA"
     private val cardBg = "#FFFFFF"
@@ -90,7 +98,9 @@ class HistoryActivity : AppCompatActivity() {
         setContentView(scroll)
 
         refreshTabs()
-        showSales()
+        // Land directly on the requested list (Sale History vs Purchase History) —
+        // no extra tap on the tabs needed when opened from the new separate Reports tiles.
+        if (intent.getStringExtra(EXTRA_MODE) == MODE_PURCHASES) showPurchases() else showSales()
     }
 
     override fun onResume() { super.onResume(); if (showingSales) loadSales() else loadPurchases() }
