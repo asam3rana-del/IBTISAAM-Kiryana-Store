@@ -28,6 +28,7 @@ import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.formatStockBreakdown
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import com.grocerypos.v11.ui.components.*
 
 /**
  * "Items" hub — three tabs: Products, Categories, Units.
@@ -37,21 +38,38 @@ import kotlinx.coroutines.launch
  * every product inside it, with per-product Edit / Change Category / Delete
  * actions, plus Edit (rename) and Delete on the category row itself.
  */
-class ItemsActivity : AppCompatActivity() {
+class ItemsActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE (matches Settings / Product) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val red = "#E5484D"
-    private val redDark = "#C93A3E"
-    private val purple = "#8B5CF6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#3527D6"
+    private var red = "#E5484D"
+    private var redDark = "#E5484D"
+    private var purple = "#8B5CF6"
+    private var amber = "#F5A524"
+    private var teal = "#0F9B8E"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        red = p.red
+        redDark = p.red
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private enum class Tab { PRODUCTS, CATEGORIES, UNITS }
     private var currentTab = Tab.PRODUCTS
@@ -76,6 +94,7 @@ class ItemsActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val outer = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor(bg))
@@ -785,29 +804,6 @@ class ItemsActivity : AppCompatActivity() {
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         width = px; height = px
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
     }
 
     private fun EditText.addTextChangedListener(onChanged: (String) -> Unit) {

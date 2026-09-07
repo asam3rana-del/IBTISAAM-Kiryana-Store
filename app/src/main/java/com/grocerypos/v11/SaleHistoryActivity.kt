@@ -2,39 +2,101 @@ package com.grocerypos.v11.ui
 
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.*
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.room.withTransaction
 import com.grocerypos.v11.*
 import kotlinx.coroutines.launch
+import com.grocerypos.v11.ui.components.*
 
-class SaleHistoryActivity : AppCompatActivity() {
+class SaleHistoryActivity : ThemedActivity() {
 
     // ---- Same navy + teal palette as PurchaseActivity / SaleActivity ----
-    private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"
-    private val teal = "#0F9B8E"
-    private val textDark = "#0B2545"
-    private val textMuted = "#7C8798"
-    private val border = "#E3E8EE"
-    private val red = "#E5484D"
+    // Pulled from ThemeManager so this screen respects dark mode.
+    private var bg = "#F4F6F8"
+    private var cardWhite = "#FFFFFF"
+    private var navy = "#0B2545"
+    private var teal = "#0F9B8E"
+    private var textDark = "#0B2545"
+    private var textMuted = "#7C8798"
+    private var border = "#E3E8EE"
+    private var red = "#E5484D"
 
-    private lateinit var listContainer: LinearLayout
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        navy = p.navy
+        teal = p.teal
+        textDark = p.textDark
+        textMuted = p.textMuted
+        border = p.border
+        red = p.red
+    }
+
+    // ---- Item #2 (RecyclerView migration): the header/sale/expanded-item rows
+    // that used to be addView()'d into a LinearLayout inside a ScrollView are now
+    // a flat list of Row values bound to a RecyclerView, so only on-screen rows
+    // get inflated instead of the whole history living as permanent child views.
+    private sealed class Row {
+        data class Header(val name: String, val count: Int, val total: Double) : Row()
+        data class SaleRow(val sale: SaleWithCustomer) : Row()
+        data class ItemRow(val invoice: String, val text: String) : Row()
+        data class ItemsEmpty(val invoice: String) : Row()
+    }
+
+    private inner class RowAdapter : RecyclerView.Adapter<RowAdapter.Holder>() {
+        inner class Holder(val container: FrameLayout) : RecyclerView.ViewHolder(container)
+
+        var rows: List<Row> = emptyList()
+            private set
+
+        fun submit(newRows: List<Row>) {
+            rows = newRows
+            notifyDataSetChanged()
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = Holder(
+            FrameLayout(parent.context).apply {
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+        )
+
+        override fun onBindViewHolder(holder: Holder, position: Int) {
+            val view = when (val row = rows[position]) {
+                is Row.Header -> customerHeader(row.name, row.count, row.total)
+                is Row.SaleRow -> saleRow(row.sale)
+                is Row.ItemRow -> itemLine(row.text, muted = false)
+                is Row.ItemsEmpty -> itemLine("No items on this sale.", muted = true)
+            }
+            holder.container.removeAllViews()
+            holder.container.addView(view)
+        }
+
+        override fun getItemCount() = rows.size
+    }
+
+    private lateinit var recyclerView: RecyclerView
+    private val adapter = RowAdapter()
     private lateinit var emptyText: TextView
 
     // invoice -> whether its item breakdown is currently expanded
     private val expandedSales = mutableSetOf<String>()
-    // invoice -> the container view holding its expanded item rows, so we can rebuild just that
-    private val saleBodyViews = mutableMapOf<String, LinearLayout>()
+    // invoice -> cached items once loaded, so re-collapsing/expanding doesn't re-hit the DB
+    private val loadedItems = mutableMapOf<String, List<SaleItem>>()
+    // last grouped-by-customer sales fetched from the DB, so toggling expand/collapse
+    // can rebuild the flat row list without a fresh query
+    private var groupedSales: List<Pair<String, List<SaleWithCustomer>>> = emptyList()
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -64,8 +126,13 @@ class SaleHistoryActivity : AppCompatActivity() {
             })
         })
 
-        listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(listContainer)
+        recyclerView = RecyclerView(this).apply {
+            layoutManager = LinearLayoutManager(this@SaleHistoryActivity)
+            adapter = this@SaleHistoryActivity.adapter
+            isNestedScrollingEnabled = false
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        root.addView(recyclerView)
 
         emptyText = TextView(this).apply {
             text = "No sales yet."
@@ -92,30 +159,40 @@ class SaleHistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@SaleHistoryActivity)
             val allSales = db.saleDao().allSales() // invoice, customerName, total, paymentMethod, createdAt, status
             // ---- Party-wise: grouped by customer, most recently active customer first ----
-            val grouped = allSales.groupBy { it.customerName }
+            groupedSales = allSales.groupBy { it.customerName }
                 .toList()
                 .sortedByDescending { (_, sales) -> sales.maxOf { it.createdAt } }
 
-            listContainer.removeAllViews()
-            saleBodyViews.clear()
+            loadedItems.clear()
             emptyText.visibility = if (allSales.isEmpty()) View.VISIBLE else View.GONE
+            rebuildRows()
+        }
+    }
 
-            grouped.forEach { (customerName, sales) ->
-                val customerTotal = sales.sumOf { it.total }
-                listContainer.addView(customerHeader(customerName, sales.size, customerTotal))
-                sales.sortedByDescending { it.createdAt }.forEach { sale ->
-                    listContainer.addView(saleRow(sale))
-                    val body = LinearLayout(this@SaleHistoryActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(24, 0, 0, 8)
-                        visibility = if (expandedSales.contains(sale.invoice)) View.VISIBLE else View.GONE
+    // Rebuilds the flat row list from the last-fetched groupedSales + current
+    // expand/collapse state + whatever item rows are already cached — no DB hit.
+    private fun rebuildRows() {
+        val rows = mutableListOf<Row>()
+        groupedSales.forEach { (customerName, sales) ->
+            val customerTotal = sales.sumOf { it.total }
+            rows.add(Row.Header(customerName, sales.size, customerTotal))
+            sales.sortedByDescending { it.createdAt }.forEach { sale ->
+                rows.add(Row.SaleRow(sale))
+                if (expandedSales.contains(sale.invoice)) {
+                    val items = loadedItems[sale.invoice]
+                    if (items != null) {
+                        if (items.isEmpty()) {
+                            rows.add(Row.ItemsEmpty(sale.invoice))
+                        } else {
+                            items.forEach { si ->
+                                rows.add(Row.ItemRow(sale.invoice, "${si.product}  —  ${si.qty} ${si.unit} × Rs ${si.unitPrice} = Rs %.2f".format(si.amount)))
+                            }
+                        }
                     }
-                    saleBodyViews[sale.invoice] = body
-                    listContainer.addView(body)
-                    if (expandedSales.contains(sale.invoice)) loadSaleItems(sale.invoice, body)
                 }
             }
         }
+        adapter.submit(rows)
     }
 
     private fun customerHeader(name: String, count: Int, total: Double) = LinearLayout(this).apply {
@@ -181,39 +258,30 @@ class SaleHistoryActivity : AppCompatActivity() {
         })
     }
 
+    private fun itemLine(text: String, muted: Boolean) = TextView(this).apply {
+        this.text = text
+        textSize = 12f
+        setTextColor(Color.parseColor(if (muted) textMuted else textDark))
+        setPadding(28, 6, 4, 6)
+    }
+
     private fun toggleSale(invoice: String) {
-        val body = saleBodyViews[invoice] ?: return
         if (expandedSales.contains(invoice)) {
             expandedSales.remove(invoice)
-            body.visibility = View.GONE
+            rebuildRows()
         } else {
             expandedSales.add(invoice)
-            body.visibility = View.VISIBLE
-            loadSaleItems(invoice, body)
+            rebuildRows() // shows the row expanded immediately; item rows fill in once loaded
+            if (!loadedItems.containsKey(invoice)) loadSaleItems(invoice)
         }
     }
 
-    private fun loadSaleItems(invoice: String, body: LinearLayout) {
+    private fun loadSaleItems(invoice: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleHistoryActivity)
             val items = db.saleDao().itemsForInvoice(invoice)
-            body.removeAllViews()
-            items.forEach { si ->
-                body.addView(TextView(this@SaleHistoryActivity).apply {
-                    text = "${si.product}  —  ${si.qty} ${si.unit} × Rs ${si.unitPrice} = Rs %.2f".format(si.amount)
-                    textSize = 12f
-                    setTextColor(Color.parseColor(textDark))
-                    setPadding(4, 6, 4, 6)
-                })
-            }
-            if (items.isEmpty()) {
-                body.addView(TextView(this@SaleHistoryActivity).apply {
-                    text = "No items on this sale."
-                    textSize = 12f
-                    setTextColor(Color.parseColor(textMuted))
-                    setPadding(4, 6, 4, 6)
-                })
-            }
+            loadedItems[invoice] = items
+            if (expandedSales.contains(invoice)) rebuildRows()
         }
     }
 
@@ -297,7 +365,7 @@ class SaleHistoryActivity : AppCompatActivity() {
             }
 
             expandedSales.remove(invoice)
-            saleBodyViews.remove(invoice)
+            loadedItems.remove(invoice)
             Toast.makeText(this@SaleHistoryActivity, "Sale deleted", Toast.LENGTH_SHORT).show()
             refresh()
         }
@@ -309,12 +377,6 @@ class SaleHistoryActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, 0, 0, 8) }
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
     }
 
     private fun formatDate(millis: Long) =

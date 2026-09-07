@@ -23,6 +23,7 @@ import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import com.grocerypos.v11.ui.components.*
 
 /**
  * Shows every Category, and inside each category, every Product that belongs to it —
@@ -30,25 +31,41 @@ import kotlinx.coroutines.launch
  * (1 Primary = X Secondary, 1 Secondary = X Tertiary).
  * Each product row also offers Edit (deep-links into ProductActivity's edit form) and Delete.
  */
-class CategoriesUnitsActivity : AppCompatActivity() {
+class CategoriesUnitsActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE (matches Settings / Product) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val purple = "#8B5CF6"
-    private val amber = "#F5A524"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#3527D6"
+    private var purple = "#8B5CF6"
+    private var amber = "#F5A524"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var listContainer: LinearLayout
     private lateinit var emptyText: TextView
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -299,29 +316,6 @@ class CategoriesUnitsActivity : AppCompatActivity() {
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         width = px; height = px
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {

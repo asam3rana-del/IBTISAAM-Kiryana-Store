@@ -17,28 +17,43 @@ import android.widget.LinearLayout
  * `strokedBg(border, cardBg, 18)` after `import com.grocerypos.v11.ui.components.*`
  * instead of declaring its own private copy.
  *
- * NOTE ON DIVERGENCE: while auditing the duplicates, HistoryActivity.kt's
- * copy of strokedBg used a 1.4dp stroke width where every other file used
- * 1.2dp. That's almost certainly an accidental drift from copy-pasting
- * rather than an intentional design choice, so this shared version keeps
- * 1.2dp (the majority/original value) — worth a quick visual check on
- * History's cards after migrating that file, since the border will get
- * very slightly thinner.
+ * CORRECTION (re-audit while doing the full migration): this file previously
+ * claimed HistoryActivity was the lone 1.4dp outlier against a 1.2dp majority
+ * and kept 1.2dp on that basis. A full sweep of all 28 strokedBg copies shows
+ * the opposite — 15 files used 1.4dp (BalanceSheet, BillPreview,
+ * CategoriesUnits, DueReminders, History, InventoryInsights, Items, Login,
+ * PartyReports, Reports, StockAdjustment, StockMovement, StockReport,
+ * UserManagement, Zakat) vs. 13 at 1.2dp. 1.4dp is the true majority, so the
+ * shared version below now uses that value; the 13 minority screens will get
+ * a ~0.2dp thicker border after migrating, which is intentionally the
+ * majority look rather than a regression — worth a quick visual sanity check
+ * but not a bug.
+ *
+ * `radius` defaults to 12 on strokedBg / 14 on roundedBg to match the one
+ * screen (BillScan) that always called these with a fixed corner radius
+ * baked in instead of passing one — everywhere else still passes radius
+ * explicitly, so the default only ever applies there.
  */
 
-fun Context.strokedBg(strokeHex: String, fillHex: String, radius: Int): GradientDrawable =
+fun Context.strokedBg(strokeHex: String, fillHex: String, radius: Int = 12): GradientDrawable =
     GradientDrawable().apply {
         setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
+        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
         cornerRadius = radius.toFloat()
     }
 
-fun ovalBg(colorHex: String): GradientDrawable = GradientDrawable().apply {
+/**
+ * [strokeHex] is optional — PartyDashboardActivity was the one screen that
+ * needed an outlined oval (e.g. a white circle with a subtle border) rather
+ * than a flat-fill one; every other caller omits it and gets the plain fill.
+ */
+fun ovalBg(colorHex: String, strokeHex: String? = null): GradientDrawable = GradientDrawable().apply {
     shape = GradientDrawable.OVAL
     setColor(Color.parseColor(colorHex))
+    if (strokeHex != null) setStroke(2, Color.parseColor(strokeHex))
 }
 
-fun roundedBg(colorHex: String, radius: Int): GradientDrawable = GradientDrawable().apply {
+fun roundedBg(colorHex: String, radius: Int = 14): GradientDrawable = GradientDrawable().apply {
     setColor(Color.parseColor(colorHex))
     cornerRadius = radius.toFloat()
 }

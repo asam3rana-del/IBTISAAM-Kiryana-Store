@@ -23,6 +23,7 @@ import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import com.grocerypos.v11.ui.components.*
 
 class UserManagementActivity : AppCompatActivity() {
 
@@ -694,24 +695,6 @@ class UserManagementActivity : AppCompatActivity() {
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         width = px; height = px
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {

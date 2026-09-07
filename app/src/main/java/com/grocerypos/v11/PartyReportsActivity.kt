@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * ---- CHANGE (ultra-premium UI pass) ----
@@ -818,53 +819,6 @@ class PartyReportsActivity : AppCompatActivity() {
     private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
     // ================= PREMIUM HEADER (matches Reports/Stock Report exactly) =================
-    private fun premiumHeader(icon: String, title: String, subtitle: String): LinearLayout {
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 20) }
-            applyElevation(this, 10f)
-        }
-        header.addView(TextView(this).apply {
-            text = "‹"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = ovalBg("#33FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt()
-            width = px; height = px
-            setOnClickListener { finish() }
-        })
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-        header.addView(circleIcon(icon, "#5C4DFF", 42))
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = title
-            textSize = 19f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        headerCol.addView(TextView(this).apply {
-            text = subtitle
-            textSize = 11f
-            setTextColor(Color.parseColor("#D8D3FF"))
-            setPadding(0, 4, 0, 0)
-        })
-        header.addView(headerCol)
-        return header
-    }
 
     // ---- Nav row (matches Reports' navRow used for Sale History / Party Reports / etc.) ----
     private fun navRow(
@@ -963,29 +917,6 @@ class PartyReportsActivity : AppCompatActivity() {
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         width = px; height = px
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {

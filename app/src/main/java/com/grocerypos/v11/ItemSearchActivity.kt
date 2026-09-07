@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * Standalone "check the rate" screen: search for any item and see every sale
@@ -29,17 +30,30 @@ import java.util.Locale
  *  2) With extras "product_id" / "product_name" (from Dashboard search result
  *     tap) — skips the typing step and shows that item's history directly.
  */
-class ItemSearchActivity : AppCompatActivity() {
+class ItemSearchActivity : ThemedActivity() {
 
     // ---- Same navy + teal palette as PurchaseActivity / SaleActivity ----
-    private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"
-    private val teal = "#0F9B8E"
-    private val orange = "#F5A15C"
-    private val textDark = "#0B2545"
-    private val textMuted = "#7C8798"
-    private val border = "#E3E8EE"
+    // Pulled from ThemeManager so this screen respects dark mode.
+    private var bg = "#F4F6F8"
+    private var cardWhite = "#FFFFFF"
+    private var navy = "#0B2545"
+    private var teal = "#0F9B8E"
+    private var orange = "#F5A15C"
+    private var textDark = "#0B2545"
+    private var textMuted = "#7C8798"
+    private var border = "#E3E8EE"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        navy = p.navy
+        teal = p.teal
+        orange = p.amber
+        textDark = p.textDark
+        textMuted = p.textMuted
+        border = p.border
+    }
 
     private lateinit var searchInput: EditText
     private lateinit var resultsContainer: LinearLayout
@@ -54,6 +68,7 @@ class ItemSearchActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         preselectProductBarcode = intent.getStringExtra("product_barcode")
         preselectProductName = intent.getStringExtra("product_name")
@@ -404,17 +419,6 @@ class ItemSearchActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, 0, 0, 10) }
         elevation = 2f
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {

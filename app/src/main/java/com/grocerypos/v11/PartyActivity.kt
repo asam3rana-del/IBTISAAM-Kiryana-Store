@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * UI layer only — this Activity builds views and forwards user actions to
@@ -836,11 +837,6 @@ class PartyActivity : AppCompatActivity() {
         setColor(Color.parseColor(cardWhite))
         cornerRadius = 16f
         setStroke(1, Color.parseColor(cardBorder))
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
     }
 
     private fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {

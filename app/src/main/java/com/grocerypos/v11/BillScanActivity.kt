@@ -25,6 +25,7 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.json.JSONArray
 import org.json.JSONObject
+import com.grocerypos.v11.ui.components.*
 
 /** One OCR-detected (or manually added) row on the review screen, before it becomes
  *  a real PurchaseLine back in PurchaseActivity. Everything here is editable — OCR
@@ -52,21 +53,34 @@ data class ScannedLine(
  *  read accuracy. It also has its own built-in camera, so the CAMERA permission
  *  dance that used to be here is no longer needed. "Gallery" stays as a fallback for
  *  an already-taken photo and skips the auto-crop/enhance step. */
-class BillScanActivity : AppCompatActivity() {
+class BillScanActivity : ThemedActivity() {
 
     companion object {
         const val RESULT_ITEMS_JSON = "scanned_items_json"
     }
 
     // Same palette as PurchaseActivity, kept consistent
-    private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
-    private val navy = "#0F9B8E"
-    private val teal = "#0B2545"
-    private val textDark = "#0B2545"
-    private val textMuted = "#7C8798"
-    private val border = "#E3E8EE"
-    private val red = "#E5484D"
+    // Pulled from ThemeManager so this screen respects dark mode.
+    private var bg = "#F4F6F8"
+    private var cardWhite = "#FFFFFF"
+    private var navy = "#0F9B8E"
+    private var teal = "#0B2545"
+    private var textDark = "#0B2545"
+    private var textMuted = "#7C8798"
+    private var border = "#E3E8EE"
+    private var red = "#E5484D"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        navy = p.teal
+        teal = p.navy
+        textDark = p.textDark
+        textMuted = p.textMuted
+        border = p.border
+        red = p.red
+    }
 
     private lateinit var statusText: TextView
     private lateinit var imagePreview: ImageView
@@ -112,6 +126,7 @@ class BillScanActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -458,17 +473,6 @@ class BillScanActivity : AppCompatActivity() {
         background = roundedBg(teal)
         setPadding(0, 22, 0, 22)
         setOnClickListener { onClick() }
-    }
-
-    private fun roundedBg(colorHex: String) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = 14f
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = 12f
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {

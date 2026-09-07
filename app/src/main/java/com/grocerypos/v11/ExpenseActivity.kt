@@ -19,15 +19,34 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 class ExpenseActivity : AppCompatActivity() {
 
-    private val bg = "#F3F4F9"
-    private val cardWhite = "#FFFFFF"
-    private val textDark = "#1A1D2E"
-    private val textMuted = "#8A8FA3"
-    private val red = "#C62828"
-    private val teal = "#0F9B8E"
+    // ---- Pulled from ThemeManager so this screen respects dark mode and stays in sync
+    // with the rest of the app. Red/negative logic untouched, only the hex source changed. ----
+    private var bg = "#F3F4F9"
+    private var cardWhite = "#FFFFFF"
+    private var textDark = "#1A1D2E"
+    private var textMuted = "#8A8FA3"
+    private var red = "#C62828"
+    private var teal = "#0F9B8E"
+    private var border = "#E6E8F0"
+    private var fieldFill = "#FFFFFF"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        textDark = p.textDark
+        textMuted = p.textMuted
+        red = p.red
+        teal = p.teal
+        border = p.border
+        fieldFill = p.fieldFill
+    }
+
+    private fun lightenHex(hex: String): String = String.format("#%06X", 0xFFFFFF and lighten(hex, 0.88f))
 
     private val expenseCategories = listOf(
         "Food Authority License Fees",
@@ -55,6 +74,7 @@ class ExpenseActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -73,8 +93,8 @@ class ExpenseActivity : AppCompatActivity() {
         // ---- Totals: premium white cards ----
         val totalsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val todayCard = statCard("💸", Loc.t(this, "Today's Expense", "آج کا خرچہ"), red, "#FFEBEE")
-        val monthCard = statCard("📅", Loc.t(this, "This Month", "اس مہینے"), red, "#FFEBEE")
+        val todayCard = statCard("💸", Loc.t(this, "Today's Expense", "آج کا خرچہ"), red, lightenHex(red))
+        val monthCard = statCard("📅", Loc.t(this, "This Month", "اس مہینے"), red, lightenHex(red))
         todayTotalText = todayCard.second
         monthTotalText = monthCard.second
 
@@ -197,7 +217,7 @@ class ExpenseActivity : AppCompatActivity() {
     private fun outlinedBox() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(20, 14, 20, 14)
-        background = strokedBg("#E6E8F0", "#FFFFFF", 14)
+        background = strokedBg(border, fieldFill, 14)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, 0, 0, 14) }
@@ -255,17 +275,6 @@ class ExpenseActivity : AppCompatActivity() {
         }
         card.addView(valueText)
         return Pair(card, valueText)
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
     }
 
     private fun lighten(hex: String, factor: Float): Int {

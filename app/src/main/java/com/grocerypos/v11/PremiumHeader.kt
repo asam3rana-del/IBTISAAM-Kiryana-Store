@@ -16,16 +16,20 @@ import com.grocerypos.v11.ui.theme.AppColors
  * BalanceSheetActivity, PartyReportsActivity, ReportsActivity, and
  * StockReportActivity (item #24 — architecture duplication).
  *
- * Back-button behaviour is unchanged (calls finish()). [primaryHex]/[primaryDarkHex]
+ * Back-button behaviour defaults to finish(). [primaryHex]/[primaryDarkHex]
  * default to the shared AppColors palette but can be overridden if a screen
- * ever needs a different gradient.
+ * ever needs a different gradient. [onBack] is optional — StockMovementActivity
+ * needed the back chevron to pop out of a drill-down (product detail) rather
+ * than always finishing the Activity, so it passes a custom lambda; every
+ * other caller omits it and keeps the plain finish() behaviour.
  */
 fun AppCompatActivity.premiumHeader(
     icon: String,
     title: String,
     subtitle: String,
     primaryHex: String = AppColors.primary,
-    primaryDarkHex: String = AppColors.primaryDark
+    primaryDarkHex: String = AppColors.primaryDark,
+    onBack: (() -> Unit)? = null
 ): LinearLayout {
     val header = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -49,7 +53,7 @@ fun AppCompatActivity.premiumHeader(
         background = ovalBg("#33FFFFFF")
         val px = (36 * resources.displayMetrics.density).toInt()
         width = px; height = px
-        setOnClickListener { finish() }
+        setOnClickListener { onBack?.invoke() ?: finish() }
     })
     header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
     header.addView(circleIcon(icon, "#5C4DFF", 42))

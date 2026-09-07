@@ -15,6 +15,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import com.grocerypos.v11.ui.components.*
 
 class ReportsActivity : AppCompatActivity() {
 
@@ -709,22 +710,6 @@ class ReportsActivity : AppCompatActivity() {
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         width = px; height = px
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
     }
 
     // ---- Flat design has no shadows/elevation — kept as a no-op so existing call sites

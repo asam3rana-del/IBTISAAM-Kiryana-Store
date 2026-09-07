@@ -29,20 +29,33 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.User
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
+import com.grocerypos.v11.ui.components.*
 
-class LoginActivity : AppCompatActivity() {
+class LoginActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE =================
+    // Splash gradient stays fixed brand colors (shown before login, same for everyone).
+    // Card surface below it now follows ThemeManager so the login card isn't stuck in
+    // light mode if dark mode was already on (e.g. after logging out).
     private val gradientTop = "#1A237E"
     private val gradientBottom = "#3949AB"
-    private val cardBg = "#FFFFFF"
+    private var cardBg = "#FFFFFF"
     private val primary = "#4A3AFF"
     private val primaryDark = "#3527D6"
     private val green = "#1FA971"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        cardBg = p.cardWhite
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var loggedInUser: User
 
@@ -64,6 +77,7 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         // FIX (crash-catcher coverage): MainActivity used to be the only screen that checked
         // for a saved crash log, but when there's no session, MainActivity redirects to
@@ -787,24 +801,6 @@ class LoginActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         })
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {

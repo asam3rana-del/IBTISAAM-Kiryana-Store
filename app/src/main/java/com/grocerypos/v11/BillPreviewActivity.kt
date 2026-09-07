@@ -28,8 +28,9 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
-class BillPreviewActivity : AppCompatActivity() {
+class BillPreviewActivity : ThemedActivity() {
 
     companion object {
         const val EXTRA_TYPE = "type"
@@ -46,7 +47,11 @@ class BillPreviewActivity : AppCompatActivity() {
         const val EXTRA_ITEMS_ENCODED = "items_encoded"
     }
 
-    private val bg = "#F3F2FA"
+    // NOTE: cardBg/textDark/textGray/border/primary stay fixed — they're the printed
+    // receipt paper's own colors (must always look like white paper with dark ink,
+    // same as what actually prints/shares via WhatsApp, regardless of app theme).
+    // Only the screen's own background (around the paper) follows dark mode.
+    private var bg = "#F3F2FA"
     private val cardBg = "#FFFFFF"
     private val primary = "#4A3AFF"
     private val primaryDark = "#3527D6"
@@ -58,6 +63,10 @@ class BillPreviewActivity : AppCompatActivity() {
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
     private val border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        bg = com.grocerypos.v11.util.ThemeManager.palette(this).bg
+    }
 
     private data class PreviewLine(val name: String, val qty: String, val unit: String, val rate: Double, val amount: Double)
 
@@ -74,6 +83,7 @@ class BillPreviewActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val type = intent.getStringExtra(EXTRA_TYPE) ?: "sale"
         val reference = intent.getStringExtra(EXTRA_REFERENCE) ?: ""
@@ -603,19 +613,6 @@ class BillPreviewActivity : AppCompatActivity() {
         setBackgroundColor(Color.parseColor(border))
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
             setMargins(0, 12, 0, 12)
-        }
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
         }
     }
 

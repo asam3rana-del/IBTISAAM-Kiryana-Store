@@ -35,6 +35,7 @@ import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import com.grocerypos.v11.ui.components.*
 
 class ProductActivity : ThemedActivity() {
 
@@ -980,21 +981,6 @@ class ProductActivity : ThemedActivity() {
         imeOptions = EditorInfo.IME_ACTION_NEXT
     }
 
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) =
-        GradientDrawable().apply {
-            setColor(Color.parseColor(fillHex))
-            setStroke(
-                (1.2 * resources.displayMetrics.density).toInt(),
-                Color.parseColor(strokeHex)
-            )
-            cornerRadius = radius.toFloat()
-        }
-
     // ---- Diagonal gradient background, matching PurchaseActivity's premium header/button
     // treatment (navy header, teal buttons, etc.) so this screen and the dialog feel consistent
     // with the rest of the app instead of using flat single-color fills everywhere. ----
@@ -1011,13 +997,6 @@ class ProductActivity : ThemedActivity() {
                 cornerBottom * density, cornerBottom * density
             )
         }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
 
     private fun spacer(heightDp: Int) = View(this).apply {
         layoutParams = LinearLayout.LayoutParams(-1, heightDp.dp())

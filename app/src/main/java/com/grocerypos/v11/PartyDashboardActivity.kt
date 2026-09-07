@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * Home-screen style dashboard: "You'll Get / You'll Give" summary cards + Parties /
@@ -862,19 +863,6 @@ class PartyDashboardActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-
     // ---------------- NEW: quick "Payment Received" / "Payment Made" from the "+" menu ----------------
     // Previously the only way to record a standalone payment (money changing hands with no
     // new sale/purchase bill) was to open a specific party's ledger first, then tap the
@@ -1480,12 +1468,6 @@ class PartyDashboardActivity : AppCompatActivity() {
         setColor(Color.parseColor(cardWhite))
         cornerRadius = 16f
         setStroke(1, Color.parseColor(cardBorder))
-    }
-
-    private fun ovalBg(colorHex: String, strokeHex: String? = null) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-        if (strokeHex != null) setStroke(2, Color.parseColor(strokeHex))
     }
 
     private fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
