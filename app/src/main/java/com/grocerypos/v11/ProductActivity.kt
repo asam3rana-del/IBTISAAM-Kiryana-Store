@@ -222,7 +222,7 @@ class ProductActivity : ThemedActivity() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 22, 22)
+            setPadding(24, 22, 22, 22)
             background = gradientBg(navy, navyLight, cornerTop = 20, cornerBottom = 20)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -230,6 +230,27 @@ class ProductActivity : ThemedActivity() {
             ).apply { setMargins(0, 0, 0, 18) }
             applyElevation(this, 6f)
         }
+
+        // ADDED (ultra premium pass): a leading circular icon badge, matching the
+        // icon + title/subtitle header pattern used everywhere else in the app
+        // (Reports, History, Party Reports, etc.) — previously this header was just
+        // text + action pills with no icon, so it read as visually inconsistent
+        // next to the rest of the app.
+        header.addView(TextView(this).apply {
+            text = "\uD83D\uDCE6"
+            textSize = 19f
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(headerBadgeOverlay))
+            }
+            val px = 44.dp()
+            width = px; height = px
+            applyElevation(this, 2f)
+        })
+        header.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
+        })
 
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -260,6 +281,7 @@ class ProductActivity : ThemedActivity() {
                 setColor(Color.parseColor(headerBadgeOverlay))
                 cornerRadius = 30f
             }
+            applyElevation(this, 2f)
             setOnClickListener { toggleTheme() }
         })
 
@@ -277,6 +299,7 @@ class ProductActivity : ThemedActivity() {
                 cornerRadius = 30f
             }
             setPadding(20, 12, 20, 12)
+            applyElevation(this, 2f)
             setOnClickListener { toggleProductsList() }
         })
 
@@ -291,9 +314,12 @@ class ProductActivity : ThemedActivity() {
 
         formCardTitle = TextView(this).apply {
             text = "✚  " + Loc.t(this@ProductActivity, "New Product", "نئی پروڈکٹ")
-            textSize = 14.5f
+            textSize = 12.5f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, Typeface.BOLD)
+            letterSpacing = 0.01f
+            background = roundedBg(fadeHex(teal), 30)
+            setPadding(20, 10, 20, 10)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
