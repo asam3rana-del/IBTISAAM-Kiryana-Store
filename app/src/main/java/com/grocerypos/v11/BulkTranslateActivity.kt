@@ -12,7 +12,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
@@ -46,18 +45,32 @@ import kotlinx.coroutines.launch
  * "Box\nBox", "Box Box") and collapses it to the single clean word, using
  * the same rename* functions this screen already uses above.
  */
-class BulkTranslateActivity : AppCompatActivity() {
+class BulkTranslateActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE (matches rest of app) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
-    private val teal = "#0F9B8E"
-    private val tealDark = "#0C7C71"
+    // Pulled from ThemeManager so this screen respects dark mode (item #1).
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#3527D6"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+    private var teal = "#0F9B8E"
+    private var tealDark = "#0C7C71"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        teal = p.flatTealFg
+        tealDark = p.flatTealFg
+    }
 
     companion object {
         private const val TAG = "BulkTranslate"
@@ -76,6 +89,7 @@ class BulkTranslateActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
