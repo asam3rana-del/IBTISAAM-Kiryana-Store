@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.ItemMovement
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.smallestUnitName
@@ -137,10 +138,10 @@ class InventoryInsightsActivity : AppCompatActivity() {
     private fun onModeChanged() {
         headerBox.removeAllViews()
         headerBox.addView(when (mode) {
-            MODE_REORDER -> premiumHeader("\uD83D\uDECD\uFE0F", Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"), Loc.t(this, "Items at or below their reorder level", "آئٹمز جو دوبارہ آرڈر کی سطح پر یا نیچے ہیں"))
-            MODE_DAMAGE -> premiumHeader("\uD83D\uDCA5", Loc.t(this, "Damage / Loss Report", "نقصان کی رپورٹ"), Loc.t(this, "Stock logged as damaged or lost", "خراب یا ضائع ہونے والا اسٹاک"))
-            MODE_PROFIT -> premiumHeader("\uD83D\uDCC8", Loc.t(this, "Profit Margin per Item", "فی آئٹم منافع"), Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت"))
-            else -> premiumHeader("\u23F1\uFE0F", Loc.t(this, "Fast / Slow Movers", "تیز / سست چلنے والے"), Loc.t(this, "Which items sell, and which sit on the shelf", "کون سے آئٹم بکتے ہیں"))
+            MODE_REORDER -> premiumHeader(R.drawable.ic_shopping_bag, Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"), Loc.t(this, "Items at or below their reorder level", "آئٹمز جو دوبارہ آرڈر کی سطح پر یا نیچے ہیں"))
+            MODE_DAMAGE -> premiumHeader(R.drawable.ic_warning, Loc.t(this, "Damage / Loss Report", "نقصان کی رپورٹ"), Loc.t(this, "Stock logged as damaged or lost", "خراب یا ضائع ہونے والا اسٹاک"))
+            MODE_PROFIT -> premiumHeader(R.drawable.ic_trending, Loc.t(this, "Profit Margin per Item", "فی آئٹم منافع"), Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت"))
+            else -> premiumHeader(R.drawable.ic_stopwatch, Loc.t(this, "Fast / Slow Movers", "تیز / سست چلنے والے"), Loc.t(this, "Which items sell, and which sit on the shelf", "کون سے آئٹم بکتے ہیں"))
         })
         highlightTab()
         periodRow.visibility = if (mode == MODE_DAMAGE || mode == MODE_MOVERS) View.VISIBLE else View.GONE

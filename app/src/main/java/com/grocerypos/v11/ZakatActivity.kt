@@ -24,6 +24,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.ZakatYear
 import com.grocerypos.v11.smallestUnitFactor
@@ -103,7 +104,7 @@ class ZakatActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("\u262A", Loc.t(this, "Zakat", "زکوٰۃ"), Loc.t(this, "Ramadan to Ramadan \u2022 auto-calculated", "رمضان تا رمضان \u2022 خودکار حساب")))
+        root.addView(premiumHeader(R.drawable.ic_zakat, Loc.t(this, "Zakat", "زکوٰۃ"), Loc.t(this, "Ramadan to Ramadan \u2022 auto-calculated", "رمضان تا رمضان \u2022 خودکار حساب")))
 
         resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(resultsBox)

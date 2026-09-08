@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -101,7 +102,7 @@ class BalanceSheetActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("⚖️", Loc.t(this, "Balance Sheet", "بیلنس شیٹ"), Loc.t(this, "As of today • all-time figures", "آج تک • تمام وقت کے اعداد و شمار")))
+        root.addView(premiumHeader(R.drawable.ic_bank, Loc.t(this, "Balance Sheet", "بیلنس شیٹ"), Loc.t(this, "As of today • all-time figures", "آج تک • تمام وقت کے اعداد و شمار")))
 
         resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(resultsBox)

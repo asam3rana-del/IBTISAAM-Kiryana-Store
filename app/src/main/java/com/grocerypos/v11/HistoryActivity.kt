@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.ReturnLine
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.smallestUnitFactor
@@ -106,19 +107,19 @@ class HistoryActivity : AppCompatActivity() {
         // fallback only for any code path that opens this Activity with no mode extra.
         headerBox = when (singleMode) {
             MODE_SALES -> premiumHeader(
-                "🧾",
+                R.drawable.ic_receipt,
                 Loc.t(this, "Sale History", "سیل کی تاریخ"),
                 Loc.t(this, "View all sale transactions", "تمام سیل لین دین دیکھیں"),
                 primary, primaryDark
             )
             MODE_PURCHASES -> premiumHeader(
-                "🛒",
+                R.drawable.ic_cart,
                 Loc.t(this, "Purchase History", "خریداری کی تاریخ"),
                 Loc.t(this, "View all purchase transactions", "تمام خریداری لین دین دیکھیں"),
                 gold, goldDark
             )
             else -> premiumHeader(
-                "🧾",
+                R.drawable.ic_receipt,
                 Loc.t(this, "Sale / Purchase History", "سیل / خریداری کی تاریخ"),
                 Loc.t(this, "Tap any entry to view details", "تفصیل دیکھنے کے لیے کسی بھی اندراج پر ٹیپ کریں"),
                 primary, primaryDark

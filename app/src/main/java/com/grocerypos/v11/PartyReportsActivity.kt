@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -96,7 +97,7 @@ class PartyReportsActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("👥", Loc.t(this, "Party Reports", "پارٹی رپورٹس"), Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس")))
+        root.addView(premiumHeader(R.drawable.ic_people, Loc.t(this, "Party Reports", "پارٹی رپورٹس"), Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس")))
 
         // ================= TAB PILLS (matches Reports' period-filter row) =================
         val tabRow = LinearLayout(this).apply {

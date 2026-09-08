@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.R
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.util.Loc
@@ -72,7 +73,7 @@ class StockReportActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("📦", Loc.t(this, "Stock Report", "اسٹاک رپورٹ"), Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")))
+        root.addView(premiumHeader(R.drawable.ic_box, Loc.t(this, "Stock Report", "اسٹاک رپورٹ"), Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")))
 
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL

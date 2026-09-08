@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PasswordHasher
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import kotlinx.coroutines.flow.collectLatest
@@ -277,7 +278,7 @@ class UserManagementActivity : AppCompatActivity() {
             ).apply { setMargins(0, 0, 0, 20) }
             applyElevation(this, 10f)
         }
-        header.addView(circleIcon("👥", "#5C4DFF", 42))
+        header.addView(circleIconDrawable(R.drawable.ic_people, "#5C4DFF", 42))
         header.addView(spacerH(16))
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

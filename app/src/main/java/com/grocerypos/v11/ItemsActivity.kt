@@ -23,6 +23,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.R
 import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.formatStockBreakdown
 import kotlinx.coroutines.flow.collectLatest
@@ -110,7 +111,7 @@ class ItemsActivity : ThemedActivity() {
         }
 
         // ================= HEADER (matches Items/Categories/Reports) =================
-        val header = premiumHeader("🗃️", "Items", "Products, Categories & Units", primary, primaryDark)
+        val header = premiumHeader(R.drawable.ic_box, "Items", "Products, Categories & Units", primary, primaryDark)
 
         // ---- NEW: "Translate" pill button — launches BulkTranslateActivity so Urdu
         // category/unit values already saved can be renamed to English once each,

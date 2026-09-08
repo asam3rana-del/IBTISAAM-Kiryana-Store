@@ -18,6 +18,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.util.Loc
@@ -87,7 +88,7 @@ class CategoriesUnitsActivity : ThemedActivity() {
             ).apply { setMargins(0, 0, 0, 20) }
             applyElevation(this, 10f)
         }
-        header.addView(circleIcon("🗂️", "#5C4DFF", 42))
+        header.addView(circleIconDrawable(R.drawable.ic_category, "#5C4DFF", 42))
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

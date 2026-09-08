@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.smallestUnitName
@@ -71,7 +72,7 @@ class StockAdjustmentActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("\uD83D\uDD27",
+        root.addView(premiumHeader(R.drawable.ic_wrench,
             Loc.t(this, "Stock Adjustment", "اسٹاک ایڈجسٹمنٹ"),
             Loc.t(this, "Log damage, loss, or a manual correction", "نقصان یا خودکار درستگی درج کریں")))
 

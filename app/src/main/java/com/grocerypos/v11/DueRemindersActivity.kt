@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.DueSale
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -71,7 +72,7 @@ class DueRemindersActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("\u23F0", Loc.t(this, "Due Date Reminders", "ادائیگی کی یاد دہانی"), Loc.t(this, "Credit sales still owed, by due date", "ادھار سیلز جو ابھی واجب الادا ہیں")))
+        root.addView(premiumHeader(R.drawable.ic_alarm, Loc.t(this, "Due Date Reminders", "ادائیگی کی یاد دہانی"), Loc.t(this, "Credit sales still owed, by due date", "ادھار سیلز جو ابھی واجب الادا ہیں")))
 
         summaryBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(summaryBox)
