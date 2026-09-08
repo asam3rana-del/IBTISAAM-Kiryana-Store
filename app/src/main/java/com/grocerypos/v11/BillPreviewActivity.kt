@@ -68,6 +68,19 @@ class BillPreviewActivity : ThemedActivity() {
         bg = com.grocerypos.v11.util.ThemeManager.palette(this).bg
     }
 
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
     private data class PreviewLine(val name: String, val qty: String, val unit: String, val rate: Double, val amount: Double)
 
     private var shopName = "IBTISAAM Kiryana Store"
@@ -126,10 +139,9 @@ class BillPreviewActivity : ThemedActivity() {
             ).apply { setMargins(0, 0, 0, 18) }
             applyElevation(this, 10f)
         }
-        header.addView(TextView(this).apply {
-            text = "✅"
-            textSize = 32f
-            gravity = Gravity.CENTER
+        header.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_check, "#FFFFFF", 32))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER }
         })
         header.addView(TextView(this).apply {
             text = if (isSale) "Sale Saved" else "Purchase Saved"
@@ -260,7 +272,8 @@ class BillPreviewActivity : ThemedActivity() {
 
         // ---- WhatsApp share button (full width, above Print/Done) ----
         root.addView(Button(this).apply {
-            text = "📤  WhatsApp par bhejein"
+            text = "WhatsApp par bhejein"
+            setLeadingIcon(R.drawable.ic_send, "#FFFFFF", 18, 8)
             setTextColor(Color.WHITE)
             textSize = 14.5f
             isAllCaps = false
@@ -277,7 +290,8 @@ class BillPreviewActivity : ThemedActivity() {
 
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
-            text = "🖨️  PRINT"
+            text = "PRINT"
+            setLeadingIcon(R.drawable.ic_printer, "#FFFFFF", 17, 6)
             setTextColor(Color.WHITE)
             textSize = 14.5f
             isAllCaps = false
@@ -292,7 +306,8 @@ class BillPreviewActivity : ThemedActivity() {
             setOnClickListener { printReceipt(type, reference, partyName, partyLabel, dateMillis, lines, subtotal, discount, total, paid, paymentMethod) }
         })
         btnRow.addView(Button(this).apply {
-            text = "✓  DONE"
+            text = "DONE"
+            setLeadingIcon(R.drawable.ic_check, "#FFFFFF", 17, 6)
             setTextColor(Color.WHITE)
             textSize = 14.5f
             isAllCaps = false

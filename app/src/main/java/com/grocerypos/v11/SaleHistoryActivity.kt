@@ -28,6 +28,14 @@ class SaleHistoryActivity : ThemedActivity() {
     private var border = "#E3E8EE"
     private var red = "#E5484D"
 
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
@@ -249,10 +257,8 @@ class SaleHistoryActivity : ThemedActivity() {
                 setOnClickListener { confirmReturn(sale.invoice) }
             })
         }
-        addView(TextView(this@SaleHistoryActivity).apply {
-            text = "🗑"
-            textSize = 15f
-            setTextColor(Color.parseColor(red))
+        addView(ImageView(this@SaleHistoryActivity).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_delete, red, 16))
             setPadding(10, 0, 4, 0)
             setOnClickListener { confirmDelete(sale.invoice) }
         })

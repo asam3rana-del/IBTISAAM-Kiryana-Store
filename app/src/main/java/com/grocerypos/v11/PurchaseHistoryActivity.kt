@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -49,6 +50,19 @@ class PurchaseHistoryActivity : ThemedActivity() {
     private val gold = "#C9A24B"
     private val amberBadge = "#F4F1E8"
     private val successGreen = "#1E9E6B"
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
 
     private fun loadThemePrefs() {
         val p = ThemeManager.palette(this)
@@ -151,7 +165,10 @@ class PurchaseHistoryActivity : ThemedActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 16) }
             applyElevation(this, 2f)
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f })
+        searchBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textMuted, 15))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         searchField = EditText(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Search bill no. or supplier…", "بل نمبر یا سپلائر تلاش کریں…")
             setHintTextColor(Color.parseColor(textMuted))
@@ -277,7 +294,8 @@ class PurchaseHistoryActivity : ThemedActivity() {
                     setOnClickListener { confirmReturnPurchase(row.billNo) }
                 })
                 actionsRow.addView(TextView(this).apply {
-                    text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "🗑 Delete", "🗑 حذف کریں")
+                    text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Delete", "حذف کریں")
+                    setLeadingIcon(R.drawable.ic_delete, red, 13, 5)
                     textSize = 12.5f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                     setTextColor(Color.parseColor(red))

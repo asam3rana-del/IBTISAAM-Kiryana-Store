@@ -111,7 +111,7 @@ class DueRemindersActivity : AppCompatActivity() {
         val overdue = sales.count { it.dueDate in 1 until today }
         val totalDue = sales.sumOf { it.total - it.paid }
         summaryBox.addView(summaryCard("\u26A0\uFE0F", Loc.t(this, "Overdue", "میعاد گزری"), "$overdue", red, "#FDE8E8"))
-        summaryBox.addView(summaryCard("\uD83D\uDCB0", Loc.t(this, "Total outstanding", "کل بقایا"), "Rs %.2f".format(totalDue), amber, "#FFF3E0"))
+        summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Total outstanding", "کل بقایا"), "Rs %.2f".format(totalDue), amber, "#FFF3E0"))
     }
 
     private fun startOfToday(): Long {
@@ -176,9 +176,8 @@ class DueRemindersActivity : AppCompatActivity() {
             bottomRow.addView(leftInfo)
 
             if (s.customerPhone.isNotBlank()) {
-                bottomRow.addView(TextView(this).apply {
-                    text = "\uD83D\uDCDE"
-                    textSize = 16f
+                bottomRow.addView(ImageView(this).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_phone, primary, 18))
                     setPadding(20, 10, 20, 10)
                     background = ovalBg("#E9E6FF")
                     setOnClickListener {
@@ -238,7 +237,7 @@ class DueRemindersActivity : AppCompatActivity() {
         return header
     }
 
-    private fun summaryCard(emoji: String, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
+    private fun summaryCard(iconRes: Int, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -250,9 +249,9 @@ class DueRemindersActivity : AppCompatActivity() {
                 val size = (40 * resources.displayMetrics.density).toInt()
                 layoutParams = LinearLayout.LayoutParams(size, size)
                 background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(tintHex)) }
-                addView(TextView(this@DueRemindersActivity).apply {
-                    text = emoji; textSize = 16f; gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                addView(ImageView(this@DueRemindersActivity).apply {
+                    setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
+                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER }
                 })
             })
             val textCol = LinearLayout(this@DueRemindersActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(18, 0, 0, 0) }
@@ -260,6 +259,14 @@ class DueRemindersActivity : AppCompatActivity() {
             textCol.addView(TextView(this@DueRemindersActivity).apply { text = value; setTextColor(Color.parseColor(accentHex)); textSize = 18f; setTypeface(typeface, Typeface.BOLD); setPadding(0, 4, 0, 0) })
             addView(textCol)
         }
+    }
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {

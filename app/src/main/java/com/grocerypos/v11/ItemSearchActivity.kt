@@ -43,6 +43,14 @@ class ItemSearchActivity : ThemedActivity() {
     private var textMuted = "#7C8798"
     private var border = "#E3E8EE"
 
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
@@ -102,9 +110,8 @@ class ItemSearchActivity : ThemedActivity() {
         // ================= SEARCH BOX =================
         val searchBox = card()
         val searchRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        searchRow.addView(TextView(this).apply {
-            text = "🔍"
-            textSize = 16f
+        searchRow.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textMuted, 16))
             setPadding(0, 0, 12, 0)
         })
         searchInput = EditText(this).apply {

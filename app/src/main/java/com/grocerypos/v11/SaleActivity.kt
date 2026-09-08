@@ -3,6 +3,7 @@ package com.grocerypos.v11.ui
 import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
+import com.grocerypos.v11.R
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -265,7 +266,10 @@ class SaleActivity : AppCompatActivity() {
             applyElevation(this, 1.5f)
             setOnClickListener { openDatePicker() }
         }
-        dateChip.addView(TextView(this).apply { text = "\uD83D\uDCC5  "; textSize = 13f })
+        dateChip.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_calendar, textDark, 14))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (6 * resources.displayMetrics.density).toInt() }
+        })
         dateValueText = TextView(this).apply {
             text = formatDate(saleDateMillis)
             textSize = 13f
@@ -349,7 +353,7 @@ class SaleActivity : AppCompatActivity() {
         itemEntrySection.addView(addItemHeaderRow)
 
         val itemBox = innerField()
-        itemBox.addView(labelRow("\uD83D\uDCE6 " + com.grocerypos.v11.util.Loc.t(this, "Item Name", "آئٹم کا نام")))
+        itemBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Item Name", "آئٹم کا نام")).apply { setLeadingIcon(R.drawable.ic_box, textGray, 11, 5) })
         itemName = AutoCompleteTextView(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Type to search…", "تلاش کے لیے لکھیں…")
             setHintTextColor(Color.parseColor(textGray))
@@ -391,7 +395,7 @@ class SaleActivity : AppCompatActivity() {
         itemEntrySection.addView(spacer(10))
 
         val rateBox = innerField()
-        rateBox.addView(labelRow("\uD83D\uDCB0 " + com.grocerypos.v11.util.Loc.t(this, "Rate", "ریٹ")))
+        rateBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Rate", "ریٹ")).apply { setLeadingIcon(R.drawable.ic_wallet, textGray, 11, 5) })
         unitPrice = EditText(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Auto-filled, editable", "خودکار، قابل ترمیم")
             setHintTextColor(Color.parseColor(textGray))
@@ -451,7 +455,8 @@ class SaleActivity : AppCompatActivity() {
             setOnClickListener { openBilledItemsDialog() }
         }
         billedItemsTrigger = TextView(this).apply {
-            text = "\uD83E\uDDFE  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Billed Items (0)", "بل کردہ آئٹمز (0)")
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Billed Items (0)", "بل کردہ آئٹمز (0)")
+            setLeadingIcon(R.drawable.ic_receipt, "#FFFFFF", 15, 8)
             textSize = 13.5f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -559,7 +564,8 @@ class SaleActivity : AppCompatActivity() {
         }
         paymentSection.addView(paymentMethodSpinner)
         paidWarningText = TextView(this).apply {
-            text = "⚠️ Paid khali hai - Ye Udhaar me jayega"
+            text = "Paid khali hai - Ye Udhaar me jayega"
+            setLeadingIcon(R.drawable.ic_warning, red, 12, 5)
             textSize = 11f
             setTextColor(Color.parseColor(red))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -935,6 +941,19 @@ class SaleActivity : AppCompatActivity() {
 
     private fun labelRow(label: String) = TextView(this).apply {
         text = label.uppercase(); textSize = 10.5f; setTextColor(Color.parseColor(textGray)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 6); letterSpacing = 0.05f
+    }
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
     }
 
     private fun pillChip(label: String, textSizeSp: Float = 12.5f, hPad: Int = 22, vPad: Int = 12, onClick: () -> Unit) = TextView(this).apply {

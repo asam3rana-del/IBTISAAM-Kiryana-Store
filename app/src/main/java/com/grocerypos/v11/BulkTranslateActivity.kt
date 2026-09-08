@@ -8,6 +8,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -15,6 +16,7 @@ import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.util.DuplicateUnitFix
@@ -58,6 +60,19 @@ class BulkTranslateActivity : ThemedActivity() {
     private var border = "#E7E5F3"
     private var teal = "#0F9B8E"
     private var tealDark = "#0C7C71"
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -110,7 +125,8 @@ class BulkTranslateActivity : ThemedActivity() {
             ).apply { setMargins(0, 0, 0, 20) }
         }
         header.addView(TextView(this).apply {
-            text = "🌐 Bulk Translate"
+            text = "Bulk Translate"
+            setLeadingIcon(R.drawable.ic_globe, "#FFFFFF", 18, 8)
             textSize = 19f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
@@ -140,7 +156,8 @@ class BulkTranslateActivity : ThemedActivity() {
             ).apply { setMargins(0, 0, 0, 20) }
         }
         fixCard.addView(TextView(this).apply {
-            text = "🔧 Fix Duplicate Unit Names"
+            text = "Fix Duplicate Unit Names"
+            setLeadingIcon(R.drawable.ic_wrench, teal, 15, 6)
             textSize = 14.5f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.parseColor(textDark))
@@ -177,7 +194,9 @@ class BulkTranslateActivity : ThemedActivity() {
         root.addView(loadingText)
 
         emptyText = TextView(this).apply {
-            text = "Nothing left to translate 🎉"
+            text = "Nothing left to translate"
+            setCompoundDrawablesRelative(null, null, tintedDrawable(R.drawable.ic_check, teal, 16), null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             textSize = 14f
             setTextColor(Color.parseColor(textGray))
             gravity = Gravity.CENTER
@@ -197,7 +216,8 @@ class BulkTranslateActivity : ThemedActivity() {
         root.addView(spacer(30))
 
         saveBtn = TextView(this).apply {
-            text = "💾  SAVE TRANSLATIONS"
+            text = "SAVE TRANSLATIONS"
+            setLeadingIcon(R.drawable.ic_save, "#FFFFFF", 16, 8)
             textSize = 14.5f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)

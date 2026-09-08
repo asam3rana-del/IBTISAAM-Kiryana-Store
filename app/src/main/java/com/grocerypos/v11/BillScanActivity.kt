@@ -25,6 +25,7 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.json.JSONArray
 import org.json.JSONObject
+import com.grocerypos.v11.R
 import com.grocerypos.v11.ui.components.*
 
 /** One OCR-detected (or manually added) row on the review screen, before it becomes
@@ -169,11 +170,11 @@ class BillScanActivity : ThemedActivity() {
         // ---------------- Scan Document / Gallery buttons ----------------
         val scanButtonsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         scanButtonsRow.addView(
-            actionButton("\uD83D\uDCF7  Scan Document") { launchDocumentScanner() },
+            actionButton("Scan Document", R.drawable.ic_document) { launchDocumentScanner() },
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
         )
         scanButtonsRow.addView(
-            actionButton("\uD83D\uDDBC  Gallery") { galleryLauncher.launch("image/*") },
+            actionButton("Gallery", R.drawable.ic_image) { galleryLauncher.launch("image/*") },
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
         )
         body.addView(scanButtonsRow)
@@ -464,7 +465,15 @@ class BillScanActivity : ThemedActivity() {
     }
 
     // ---------------- UI helpers ----------------
-    private fun actionButton(label: String, onClick: () -> Unit) = Button(this).apply {
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun actionButton(label: String, iconRes: Int? = null, onClick: () -> Unit) = Button(this).apply {
         text = label
         setTextColor(Color.WHITE)
         textSize = 13.5f
@@ -472,6 +481,10 @@ class BillScanActivity : ThemedActivity() {
         setTypeface(typeface, android.graphics.Typeface.BOLD)
         background = roundedBg(teal)
         setPadding(0, 22, 0, 22)
+        if (iconRes != null) {
+            setCompoundDrawablesRelative(tintedDrawable(iconRes, "#FFFFFF", 17), null, null, null)
+            compoundDrawablePadding = (8 * resources.displayMetrics.density).toInt()
+        }
         setOnClickListener { onClick() }
     }
 

@@ -82,7 +82,10 @@ class StockReportActivity : AppCompatActivity() {
             background = strokedBg(border, "#FAFAFF", 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f })
+        searchBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textGray, 15))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         searchField = EditText(this).apply {
             hint = Loc.t(this@StockReportActivity, "Search item or category…", "آئٹم یا کیٹیگری تلاش کریں…")
             setHintTextColor(Color.parseColor(textGray))
@@ -95,7 +98,8 @@ class StockReportActivity : AppCompatActivity() {
         root.addView(searchBox)
 
         lowStockToggle = TextView(this).apply {
-            text = "⚠️  " + Loc.t(this@StockReportActivity, "LOW STOCK ONLY", "صرف کم اسٹاک")
+            text = Loc.t(this@StockReportActivity, "LOW STOCK ONLY", "صرف کم اسٹاک")
+            setLeadingIcon(R.drawable.ic_warning, red, 13, 6)
             textSize = 11.5f
             setTypeface(typeface, Typeface.BOLD)
             setPadding(24, 14, 24, 14)
@@ -136,9 +140,11 @@ class StockReportActivity : AppCompatActivity() {
         if (lowStockOnly) {
             lowStockToggle.background = roundedBg(red, 14)
             lowStockToggle.setTextColor(Color.WHITE)
+            lowStockToggle.setLeadingIcon(R.drawable.ic_warning, "#FFFFFF", 13, 6)
         } else {
             lowStockToggle.background = strokedBg(border, cardBg, 14)
             lowStockToggle.setTextColor(Color.parseColor(textGray))
+            lowStockToggle.setLeadingIcon(R.drawable.ic_warning, red, 13, 6)
         }
     }
 
@@ -171,10 +177,10 @@ class StockReportActivity : AppCompatActivity() {
         val totalStockValue = allProducts.sumOf { it.stock * costPerSmallestUnit(it) }
         val totalSaleValue = allProducts.sumOf { it.stock * salePerSmallestUnit(it) }
 
-        summaryBox.addView(summaryCard("\uD83D\uDCE6", Loc.t(this, "Total Products", "کل آئٹمز"), "$totalProducts", primary, "#E9E6FF"))
-        summaryBox.addView(summaryCard("\u26A0\uFE0F", Loc.t(this, "Low Stock Items", "کم اسٹاک آئٹمز"), "$lowStockCount", red, "#FDE8E8"))
-        summaryBox.addView(summaryCard("\uD83D\uDCB0", Loc.t(this, "Stock Value (Cost)", "اسٹاک ویلیو (لاگت)"), "Rs %.2f".format(totalStockValue), amber, "#FFF3E0"))
-        summaryBox.addView(summaryCard("\uD83D\uDCC8", Loc.t(this, "Stock Value (Sale)", "اسٹاک ویلیو (سیل)"), "Rs %.2f".format(totalSaleValue), teal, "#E0F2F1"))
+        summaryBox.addView(summaryCard(R.drawable.ic_box, Loc.t(this, "Total Products", "کل آئٹمز"), "$totalProducts", primary, "#E9E6FF"))
+        summaryBox.addView(summaryCard(R.drawable.ic_warning, Loc.t(this, "Low Stock Items", "کم اسٹاک آئٹمز"), "$lowStockCount", red, "#FDE8E8"))
+        summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Stock Value (Cost)", "اسٹاک ویلیو (لاگت)"), "Rs %.2f".format(totalStockValue), amber, "#FFF3E0"))
+        summaryBox.addView(summaryCard(R.drawable.ic_trending, Loc.t(this, "Stock Value (Sale)", "اسٹاک ویلیو (سیل)"), "Rs %.2f".format(totalSaleValue), teal, "#E0F2F1"))
     }
 
     private fun renderList(query: String) {
@@ -246,7 +252,20 @@ class StockReportActivity : AppCompatActivity() {
 
     // ================= PREMIUM HEADER (matches Items/Categories/Reports) =================
 
-    private fun summaryCard(emoji: String, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun summaryCard(iconRes: Int, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -262,9 +281,9 @@ class StockReportActivity : AppCompatActivity() {
                     shape = GradientDrawable.OVAL
                     setColor(Color.parseColor(tintHex))
                 }
-                addView(TextView(this@StockReportActivity).apply {
-                    text = emoji; textSize = 16f; gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                addView(ImageView(this@StockReportActivity).apply {
+                    setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
+                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER }
                 })
             })
 

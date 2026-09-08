@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
@@ -93,8 +94,8 @@ class ExpenseActivity : AppCompatActivity() {
         // ---- Totals: premium white cards ----
         val totalsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val todayCard = statCard("💸", Loc.t(this, "Today's Expense", "آج کا خرچہ"), red, lightenHex(red))
-        val monthCard = statCard("📅", Loc.t(this, "This Month", "اس مہینے"), red, lightenHex(red))
+        val todayCard = statCard(R.drawable.ic_trending_down, Loc.t(this, "Today's Expense", "آج کا خرچہ"), red, lightenHex(red))
+        val monthCard = statCard(R.drawable.ic_calendar, Loc.t(this, "This Month", "اس مہینے"), red, lightenHex(red))
         todayTotalText = todayCard.second
         monthTotalText = monthCard.second
 
@@ -129,7 +130,8 @@ class ExpenseActivity : AppCompatActivity() {
 
         // ---- Miscellaneous description: collapsed by default, expands on tap ----
         miscToggle = TextView(this).apply {
-            text = "📝  " + Loc.t(this@ExpenseActivity, "Add description", "تفصیل شامل کریں")
+            text = Loc.t(this@ExpenseActivity, "Add description", "تفصیل شامل کریں")
+            setLeadingIcon(R.drawable.ic_text, teal, 13, 6)
             textSize = 12f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -239,7 +241,20 @@ class ExpenseActivity : AppCompatActivity() {
         setPadding(4, 0, 0, 0)
     }
 
-    private fun statCard(emoji: String, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun statCard(iconRes: Int, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 20, 22, 20)
@@ -256,9 +271,11 @@ class ExpenseActivity : AppCompatActivity() {
                 gradientType = GradientDrawable.LINEAR_GRADIENT
                 orientation = GradientDrawable.Orientation.TL_BR
             }
-            addView(TextView(this@ExpenseActivity).apply {
-                text = emoji; textSize = 15f; gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            addView(ImageView(this@ExpenseActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, "#FFFFFF", 18))
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.CENTER
+                }
             })
         })
         topRow.addView(TextView(this).apply {

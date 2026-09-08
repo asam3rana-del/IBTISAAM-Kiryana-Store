@@ -70,6 +70,19 @@ class ZakatActivity : AppCompatActivity() {
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
 
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
@@ -437,7 +450,14 @@ class ZakatActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, 6, 0, 6)
                 addView(TextView(this@ZakatActivity).apply {
-                    text = (if (covered) "\u2705" else if (isCurrentMonth) "\uD83D\uDD5A" else "\u2B1C") + "  " + Loc.t(this@ZakatActivity, "Month $m", "ماہ $m")
+                    text = Loc.t(this@ZakatActivity, "Month $m", "ماہ $m")
+                    if (covered) {
+                        setLeadingIcon(R.drawable.ic_check, teal, 13, 6)
+                    } else if (isCurrentMonth) {
+                        setLeadingIcon(R.drawable.ic_stopwatch, gold, 13, 6)
+                    } else {
+                        setCompoundDrawablesRelative(null, null, null, null)
+                    }
                     textSize = 13f
                     setTextColor(Color.parseColor(if (covered) textDark else textGray))
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)

@@ -45,6 +45,19 @@ class StockAdjustmentActivity : AppCompatActivity() {
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
 
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
@@ -83,7 +96,10 @@ class StockAdjustmentActivity : AppCompatActivity() {
             background = strokedBg(border, "#FAFAFF", 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 16) }
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f })
+        searchBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textGray, 15))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         searchField = EditText(this).apply {
             hint = Loc.t(this@StockAdjustmentActivity, "Search item or category…", "آئٹم یا کیٹیگری تلاش کریں…")
             setHintTextColor(Color.parseColor(textGray))
@@ -193,12 +209,14 @@ class StockAdjustmentActivity : AppCompatActivity() {
         // Reason chips: Damage/Loss vs Correction
         val reasonRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 16) } }
         val damageChip = TextView(this).apply {
-            text = "  \uD83D\uDCA5  " + Loc.t(this@StockAdjustmentActivity, "Damage / Loss", "نقصان")
+            text = Loc.t(this@StockAdjustmentActivity, "Damage / Loss", "نقصان")
+            setLeadingIcon(R.drawable.ic_warning, red, 14, 6)
             textSize = 13f; setTypeface(typeface, Typeface.BOLD); setPadding(20, 16, 20, 16)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = 8 }
         }
         val correctionChip = TextView(this).apply {
-            text = "  \u2696\uFE0F  " + Loc.t(this@StockAdjustmentActivity, "Correction", "درستگی")
+            text = Loc.t(this@StockAdjustmentActivity, "Correction", "درستگی")
+            setLeadingIcon(R.drawable.ic_edit, amber, 14, 6)
             textSize = 13f; setTypeface(typeface, Typeface.BOLD); setPadding(20, 16, 20, 16)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = 8 }
         }

@@ -262,7 +262,7 @@ internal fun SaleActivity.updateBilledItemsTrigger() {
     if (!isBilledItemsTriggerReady()) return
     val count = lines.size
     val total = lines.sumOf { it.amount }
-    billedItemsTrigger.text = "\uD83E\uDDFE  " + com.grocerypos.v11.util.Loc.t(
+    billedItemsTrigger.text = com.grocerypos.v11.util.Loc.t(
         this,
         "Billed Items",
         "بل کردہ آئٹمز"
@@ -345,7 +345,7 @@ internal fun SaleActivity.refreshDue() {
     if (isPaidWarningTextReady()) {
         if (enteredPaid <= 0.009 && total > 0) {
             paidWarningText.visibility = View.VISIBLE
-            paidWarningText.text = "⚠️ Paid khali hai - Rs %.2f Udhaar jayega".format(due)
+            paidWarningText.text = "Paid khali hai - Rs %.2f Udhaar jayega".format(due)
         } else {
             paidWarningText.visibility = View.GONE
         }
