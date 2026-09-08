@@ -158,10 +158,9 @@ class MainActivity : ThemedActivity() {
                 android.content.res.ColorStateList.valueOf(Color.parseColor(flatPurpleFg)).withAlpha(40),
                 chipBg, null
             )
-            addView(TextView(this@MainActivity).apply {
-                text = "⚙️"
-                textSize = 17f
-                gravity = Gravity.CENTER
+            addView(ImageView(this@MainActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_settings, flatPurpleFg, 17))
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
             // Products & Reports live in Settings — reached via this gear icon, since they're
@@ -175,7 +174,7 @@ class MainActivity : ThemedActivity() {
         })
 
         // ---- Day/night toggle — shows the icon for the mode you'd switch TO. ----
-        topRow.addView(premiumIconBadge(if (ThemeManager.isDarkMode(this)) "☀️" else "🌙", flatAmberBg, flatAmberFg, 40, 17f).apply {
+        topRow.addView(premiumIconBadge(if (ThemeManager.isDarkMode(this)) R.drawable.ic_sun else R.drawable.ic_moon, flatAmberBg, flatAmberFg, 40, 17).apply {
             isClickable = true
             setOnClickListener { toggleTheme() }
         })
@@ -188,7 +187,7 @@ class MainActivity : ThemedActivity() {
         // (Admin/Manager/Cashier); tapping a name verifies fingerprint first (falls
         // back to that user's password) and switches the session instantly, without
         // going through the full Login screen / OTP flow. ----
-        topRow.addView(premiumIconBadge("🔀", flatTealBg, flatTealFg, 40, 16f).apply {
+        topRow.addView(premiumIconBadge(R.drawable.ic_sync, flatTealBg, flatTealFg, 40, 16).apply {
             isClickable = true
             setOnClickListener { openQuickSwitchDialog() }
         })
@@ -277,10 +276,10 @@ class MainActivity : ThemedActivity() {
         // are intentionally not in this list — they're setup/review actions, reachable from
         // the ⚙️ Settings icon in the header instead.
         val quickActions = mutableListOf(
-            QuickAction("Sale", "Start a new sale", "🛒", flatPurpleBg, flatPurpleFg) {
+            QuickAction("Sale", "Start a new sale", R.drawable.ic_cart, flatPurpleBg, flatPurpleFg) {
                 startActivity(Intent(this@MainActivity, SaleActivity::class.java))
             },
-            QuickAction("Cash", "Cash in / cash out", "💵", flatAmberBg, flatAmberFg) {
+            QuickAction("Cash", "Cash in / cash out", R.drawable.ic_wallet, flatAmberBg, flatAmberFg) {
                 startActivity(Intent(this@MainActivity, CashActivity::class.java))
             }
         )
@@ -289,13 +288,13 @@ class MainActivity : ThemedActivity() {
         // too, matching the enforcement inside PurchaseActivity itself.
         if (role == "admin") {
             quickActions.add(
-                QuickAction("Purchase", "Record a purchase", "🚚", flatCoralBg, flatCoralFg) {
+                QuickAction("Purchase", "Record a purchase", R.drawable.ic_box, flatCoralBg, flatCoralFg) {
                     startActivity(Intent(this@MainActivity, PurchaseActivity::class.java))
                 }
             )
         }
         quickActions.add(
-            QuickAction("Day book", "View daily ledger", "📒", flatTealBg, flatTealFg) {
+            QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
                 startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
             }
         )
@@ -304,19 +303,19 @@ class MainActivity : ThemedActivity() {
         // access level as Purchase above.
         if (role == "admin" || role == "manager") {
             quickActions.add(
-                QuickAction("Backup", "Export data (CSV + PDF)", "💾", flatBlueBg, flatBlueFg) {
+                QuickAction("Backup", "Export data (CSV + PDF)", R.drawable.ic_save, flatBlueBg, flatBlueFg) {
                     startActivity(Intent(this@MainActivity, BackupExportActivity::class.java))
                 }
             )
         }
         quickActions.add(
-            QuickAction("Customers &\nSuppliers", "Manage ledgers & dues", "🤝", flatPinkBg, flatPinkFg) {
+            QuickAction("Customers &\nSuppliers", "Manage ledgers & dues", R.drawable.ic_people, flatPinkBg, flatPinkFg) {
                 startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java))
             }
         )
         if (role == "manager" || role == "cashier") {
             quickActions.add(
-                QuickAction("Logout", "Sign out of this session", "🚪", partyRedBg, partyRed) { doLogout() }
+                QuickAction("Logout", "Sign out of this session", R.drawable.ic_logout, partyRedBg, partyRed) { doLogout() }
             )
         }
 
@@ -372,7 +371,15 @@ class MainActivity : ThemedActivity() {
 
     // ---- flat circular icon badge — soft tint background, no gradient/elevation — reused
     // everywhere for a consistent flat-minimal look across the dashboard. ----
-    private fun premiumIconBadge(emoji: String, bgHex: String, fgHex: String, sizeDp: Int, textSizeSp: Float): FrameLayout {
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun premiumIconBadge(iconRes: Int, bgHex: String, fgHex: String, sizeDp: Int, iconSizeDp: Int): FrameLayout {
         val size = (sizeDp * resources.displayMetrics.density).toInt()
         return FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(size, size)
@@ -380,10 +387,9 @@ class MainActivity : ThemedActivity() {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor(bgHex))
             }
-            addView(TextView(this@MainActivity).apply {
-                text = emoji
-                textSize = textSizeSp
-                gravity = Gravity.CENTER
+            addView(ImageView(this@MainActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, fgHex, iconSizeDp))
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
         }
@@ -432,7 +438,7 @@ class MainActivity : ThemedActivity() {
             elevation = 8f
             background = roundedBackgroundBordered(cardWhite, 30)
 
-            addView(premiumIconBadge("🔎", flatTealBg, flatTealFg, 36, 16f).apply {
+            addView(premiumIconBadge(R.drawable.ic_search, flatTealBg, flatTealFg, 36, 16).apply {
                 (layoutParams as LinearLayout.LayoutParams).setMargins(0, 0, 14, 0)
             })
             addView(input)
@@ -592,10 +598,9 @@ class MainActivity : ThemedActivity() {
                     shape = GradientDrawable.OVAL
                     setColor(Color.parseColor(action.bgHex))
                 }
-                addView(TextView(this@MainActivity).apply {
-                    text = action.emoji
-                    textSize = 16f
-                    gravity = Gravity.CENTER
+                addView(ImageView(this@MainActivity).apply {
+                    setImageDrawable(tintedDrawable(action.iconRes, action.fgHex, 16))
+                    scaleType = ImageView.ScaleType.CENTER
                     layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
                 })
             })
@@ -877,7 +882,7 @@ class MainActivity : ThemedActivity() {
         recreate()
     }
 
-    private data class QuickAction(val title: String, val subtitle: String, val emoji: String, val bgHex: String, val fgHex: String, val onClick: () -> Unit)
+    private data class QuickAction(val title: String, val subtitle: String, val iconRes: Int, val bgHex: String, val fgHex: String, val onClick: () -> Unit)
 
     private fun premiumStatCard(label: String, tintBgHex: String, tintFgHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {

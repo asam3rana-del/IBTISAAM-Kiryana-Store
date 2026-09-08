@@ -185,7 +185,7 @@ class HistoryActivity : AppCompatActivity() {
             if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No sales yet", "کوئی سیل نہیں ہوئی"))); return@launch }
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             for (s in list) listContainer.addView(
-                row("🧾", s.invoice, s.customerName, s.total, fmt.format(Date(s.createdAt)), primary, "#E9E6FF", s.status == "returned") { openSaleDetail(s.invoice) }
+                row(R.drawable.ic_receipt, s.invoice, s.customerName, s.total, fmt.format(Date(s.createdAt)), primary, "#E9E6FF", s.status == "returned") { openSaleDetail(s.invoice) }
             )
         }
     }
@@ -197,7 +197,7 @@ class HistoryActivity : AppCompatActivity() {
             if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی"))); return@launch }
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             for (p in list) listContainer.addView(
-                row("📦", p.billNo, p.supplierName, p.total, fmt.format(Date(p.createdAt)), gold, "#F6EFDD", p.status == "returned") { openPurchaseDetail(p.billNo) }
+                row(R.drawable.ic_cart, p.billNo, p.supplierName, p.total, fmt.format(Date(p.createdAt)), gold, "#F6EFDD", p.status == "returned") { openPurchaseDetail(p.billNo) }
             )
         }
     }
@@ -207,7 +207,7 @@ class HistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@HistoryActivity)
             val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
-            val content = detailContainer("🧾", primary, "#E9E6FF", Loc.t(this@HistoryActivity, "Sale", "سیل"), invoice)
+            val content = detailContainer(R.drawable.ic_receipt, primary, "#E9E6FF", Loc.t(this@HistoryActivity, "Sale", "سیل"), invoice)
             val body = content.getChildAt(1) as LinearLayout
             if (sale.status == "returned") body.addView(returnedBanner())
             body.addView(kv(Loc.t(this@HistoryActivity, "Total", "کل"), "Rs %.2f".format(sale.total)))
@@ -286,7 +286,7 @@ class HistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@HistoryActivity)
             val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
-            val content = detailContainer("📦", gold, "#F6EFDD", Loc.t(this@HistoryActivity, "Purchase", "خریداری"), billNo)
+            val content = detailContainer(R.drawable.ic_cart, gold, "#F6EFDD", Loc.t(this@HistoryActivity, "Purchase", "خریداری"), billNo)
             val body = content.getChildAt(1) as LinearLayout
             if (purchase.status == "returned") body.addView(returnedBanner())
             body.addView(kv(Loc.t(this@HistoryActivity, "Total", "کل"), "Rs %.2f".format(purchase.total)))
@@ -681,7 +681,15 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     // ================= List row (matches summaryCard/navRow icon-badge treatment) =================
-    private fun row(icon: String, reference: String, subtitle: String, amount: Double, date: String, accentHex: String, tintHex: String, returned: Boolean, onClick: () -> Unit): LinearLayout {
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun row(iconRes: Int, reference: String, subtitle: String, amount: Double, date: String, accentHex: String, tintHex: String, returned: Boolean, onClick: () -> Unit): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -697,8 +705,9 @@ class HistoryActivity : AppCompatActivity() {
                 val size = (38 * resources.displayMetrics.density).toInt()
                 layoutParams = LinearLayout.LayoutParams(size, size)
                 background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(tintHex)) }
-                addView(TextView(this@HistoryActivity).apply {
-                    text = icon; textSize = 15f; gravity = Gravity.CENTER
+                addView(ImageView(this@HistoryActivity).apply {
+                    setImageDrawable(tintedDrawable(iconRes, accentHex, 17))
+                    scaleType = ImageView.ScaleType.CENTER
                     layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
                 })
             })
@@ -754,7 +763,7 @@ class HistoryActivity : AppCompatActivity() {
     // Keeps the same 3-child shape callers rely on: index 0 = header, index 1 = body
     // (plain LinearLayout — callers do body.addView(...) directly), index 2 = footer
     // (horizontal LinearLayout for the action buttons).
-    private fun detailContainer(icon: String, accentHex: String, tintHex: String, kind: String, reference: String): LinearLayout {
+    private fun detailContainer(iconRes: Int, accentHex: String, tintHex: String, kind: String, reference: String): LinearLayout {
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val header = LinearLayout(this).apply {
@@ -766,8 +775,9 @@ class HistoryActivity : AppCompatActivity() {
             val size = (40 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(size, size)
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(tintHex)) }
-            addView(TextView(this@HistoryActivity).apply {
-                text = icon; textSize = 16f; gravity = Gravity.CENTER
+            addView(ImageView(this@HistoryActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
         })
@@ -875,12 +885,12 @@ class HistoryActivity : AppCompatActivity() {
     private fun emptyText(t: String): LinearLayout {
         val accentHex = if (showingSales) primary else gold
         val tintHex = if (showingSales) "#E9E6FF" else "#F6EFDD"
-        val icon = if (showingSales) "🧾" else "📦"
+        val iconRes = if (showingSales) R.drawable.ic_receipt else R.drawable.ic_cart
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(24, 60, 24, 40)
-            addView(circleIcon(icon, tintHex, 64).apply { setTextColor(Color.parseColor(accentHex)); textSize = 26f })
+            addView(circleIconDrawable(iconRes, accentHex, tintHex, 64))
             addView(TextView(this@HistoryActivity).apply {
                 text = t
                 setTextColor(Color.parseColor(textDark))
@@ -943,6 +953,17 @@ class HistoryActivity : AppCompatActivity() {
         text = label
         textSize = 18f
         gravity = Gravity.CENTER
+        background = ovalBg(colorHex)
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
+    }
+
+    // ---- Drawable-resource overload of circleIcon(), added alongside the original
+    // emoji-string version so this one call site (empty-state badge) can move to a
+    // vector icon without touching circleIcon()'s other behavior. ----
+    private fun circleIconDrawable(iconRes: Int, tintHex: String, colorHex: String, sizeDp: Int) = ImageView(this).apply {
+        setImageDrawable(tintedDrawable(iconRes, tintHex, (sizeDp * 0.4).toInt()))
+        scaleType = ImageView.ScaleType.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         layoutParams = android.view.ViewGroup.LayoutParams(px, px)

@@ -102,13 +102,11 @@ class UserManagementActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        outer.addView(TextView(this).apply {
-            text = "🔒"
-            textSize = 44f
-            gravity = Gravity.CENTER
+        outer.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_lock, "#FFFFFF", 36))
+            scaleType = ImageView.ScaleType.CENTER
             background = ovalBg(primary)
             val px = (86 * resources.displayMetrics.density).toInt()
-            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             layoutParams = LinearLayout.LayoutParams(px, px).apply { gravity = Gravity.CENTER_HORIZONTAL }
         })
         outer.addView(spacer(22))
@@ -138,7 +136,7 @@ class UserManagementActivity : AppCompatActivity() {
             applyElevation(this, 4f)
         }
 
-        card.addView(primaryButton("👆  FINGERPRINT SE VERIFY KAREIN", primary, primaryDark) {
+        card.addView(primaryButton("FINGERPRINT SE VERIFY KAREIN", primary, primaryDark, R.drawable.ic_fingerprint) {
             tryLockFingerprint(myUsername)
         })
         card.addView(spacer(18))
@@ -157,7 +155,7 @@ class UserManagementActivity : AppCompatActivity() {
             background = null
             inputType = 0x81 // text | password
         }
-        card.addView(fieldBox("🔑", lockPasswordField))
+        card.addView(fieldBox(R.drawable.ic_key, lockPasswordField))
         card.addView(spacer(10))
 
         lockErrorText = TextView(this).apply {
@@ -169,7 +167,7 @@ class UserManagementActivity : AppCompatActivity() {
         card.addView(lockErrorText)
         card.addView(spacer(8))
 
-        card.addView(primaryButton("🔓  UNLOCK", green, green) {
+        card.addView(primaryButton("UNLOCK", green, green, R.drawable.ic_lock_open) {
             verifyLockPassword(myUsername)
         })
 
@@ -299,7 +297,7 @@ class UserManagementActivity : AppCompatActivity() {
         header.addView(headerCol)
         root.addView(header)
 
-        val formCard = sectionCard("➕", "Add / Update User")
+        val formCard = sectionCard(R.drawable.ic_add, "Add / Update User")
 
         usernameField = EditText(this).apply {
             hint = "Username"
@@ -328,13 +326,13 @@ class UserManagementActivity : AppCompatActivity() {
             inputType = 0x81
         }
 
-        formCard.addView(fieldBox("👤", usernameField))
+        formCard.addView(fieldBox(R.drawable.ic_person, usernameField))
         formCard.addView(spacer(10))
-        formCard.addView(fieldBox("🪪", displayNameField))
+        formCard.addView(fieldBox(R.drawable.ic_tag, displayNameField))
         formCard.addView(spacer(10))
-        formCard.addView(fieldBox("📱", phoneField))
+        formCard.addView(fieldBox(R.drawable.ic_phone, phoneField))
         formCard.addView(spacer(10))
-        formCard.addView(fieldBox("🔒", passwordField))
+        formCard.addView(fieldBox(R.drawable.ic_lock, passwordField))
         formCard.addView(spacer(10))
 
         formCard.addView(TextView(this).apply {
@@ -350,11 +348,11 @@ class UserManagementActivity : AppCompatActivity() {
         }
         formCard.addView(roleSpinner)
         formCard.addView(spacer(14))
-        formCard.addView(primaryButton("✓  ADD / UPDATE USER", primary, primaryDark) { saveUser() })
+        formCard.addView(primaryButton("ADD / UPDATE USER", primary, primaryDark, R.drawable.ic_check) { saveUser() })
         root.addView(formCard)
         root.addView(spacer(18))
 
-        val listCard = sectionCard("📋", "All Users")
+        val listCard = sectionCard(R.drawable.ic_list, "All Users")
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         listCard.addView(listContainer)
         root.addView(listCard)
@@ -475,10 +473,12 @@ class UserManagementActivity : AppCompatActivity() {
             })
             if (user.phone.isNotBlank()) {
                 info.addView(TextView(this@UserManagementActivity).apply {
-                    text = "📱 ${user.phone}"
+                    text = user.phone
                     textSize = 11.5f
                     setTextColor(Color.parseColor(textGray))
                     setPadding(0, 2, 0, 0)
+                    setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_phone, textGray, 12), null, null, null)
+                    compoundDrawablePadding = (5 * resources.displayMetrics.density).toInt()
                 })
             }
             val badgeRow = LinearLayout(this@UserManagementActivity).apply { orientation = LinearLayout.HORIZONTAL }
@@ -498,19 +498,20 @@ class UserManagementActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
             }
             val weighted = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            actionRow.addView(secondaryButton("🔑 Reset PW", blue) { openResetPasswordDialog(user) }, weighted)
+            actionRow.addView(secondaryButton("Reset PW", blue, R.drawable.ic_key) { openResetPasswordDialog(user) }, weighted)
             actionRow.addView(spacerH(8))
             if (user.username != myUsername) {
                 actionRow.addView(
                     secondaryButton(
-                        if (user.active) "⏸ Deactivate" else "▶ Activate",
-                        if (user.active) amber else green
+                        if (user.active) "Deactivate" else "Activate",
+                        if (user.active) amber else green,
+                        if (user.active) R.drawable.ic_lock else R.drawable.ic_lock_open
                     ) { toggleActive(user) },
                     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 )
                 actionRow.addView(spacerH(8))
                 actionRow.addView(
-                    secondaryButton("🗑 DELETE", red) { confirmDelete(user) },
+                    secondaryButton("DELETE", red, R.drawable.ic_delete) { confirmDelete(user) },
                     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 )
             }
@@ -626,7 +627,18 @@ class UserManagementActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun sectionCard(icon: String, title: String) = LinearLayout(this).apply {
+    // ---- Icons throughout this screen used to be raw emoji strings; now every icon slot
+    // takes a R.drawable.ic_* resource and gets tinted/sized here, same pattern as
+    // ProductActivity/PartyReportsActivity's icon migration. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun sectionCard(iconRes: Int, title: String) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(24, 22, 24, 22)
         background = strokedBg(border, cardBg, 18)
@@ -634,15 +646,19 @@ class UserManagementActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         )
         applyElevation(this, 3f)
-        addView(sectionLabel(icon, title))
+        addView(sectionLabel(iconRes, title))
         addView(spacer(4))
     }
 
-    private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
+    private fun sectionLabel(iconRes: Int, label: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, 0, 0, 12)
-        addView(TextView(this@UserManagementActivity).apply { text = "$icon  "; textSize = 15f })
+        addView(ImageView(this@UserManagementActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, primary, 17))
+            val px = (17 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         addView(TextView(this@UserManagementActivity).apply {
             text = label
             textSize = 14.5f
@@ -651,17 +667,21 @@ class UserManagementActivity : AppCompatActivity() {
         })
     }
 
-    private fun fieldBox(icon: String, field: EditText) = LinearLayout(this).apply {
+    private fun fieldBox(iconRes: Int, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         background = strokedBg(border, "#FAFAFF", 12)
         setPadding(18, 4, 18, 4)
-        addView(TextView(this@UserManagementActivity).apply { text = "$icon  "; textSize = 14f })
+        addView(ImageView(this@UserManagementActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textGray, 16))
+            val px = (16 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (10 * resources.displayMetrics.density).toInt() }
+        })
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         addView(field)
     }
 
-    private fun primaryButton(label: String, colorHex: String, colorDarkHex: String, onClick: () -> Unit) = Button(this).apply {
+    private fun primaryButton(label: String, colorHex: String, colorDarkHex: String, iconRes: Int? = null, onClick: () -> Unit) = Button(this).apply {
         text = label
         setTextColor(Color.WHITE)
         textSize = 14.5f
@@ -672,11 +692,15 @@ class UserManagementActivity : AppCompatActivity() {
             intArrayOf(Color.parseColor(colorHex), Color.parseColor(colorDarkHex))
         ).apply { cornerRadius = 16f }
         setPadding(0, 24, 0, 24)
+        if (iconRes != null) {
+            setCompoundDrawablesRelative(tintedDrawable(iconRes, "#FFFFFF", 17), null, null, null)
+            compoundDrawablePadding = (8 * resources.displayMetrics.density).toInt()
+        }
         setOnClickListener { onClick() }
         applyElevation(this, 4f)
     }
 
-    private fun secondaryButton(label: String, colorHex: String, onClick: () -> Unit) = Button(this).apply {
+    private fun secondaryButton(label: String, colorHex: String, iconRes: Int? = null, onClick: () -> Unit) = Button(this).apply {
         text = label
         setTextColor(Color.parseColor(colorHex))
         textSize = 11.5f
@@ -686,6 +710,10 @@ class UserManagementActivity : AppCompatActivity() {
         setPadding(20, 14, 20, 14)
         minWidth = 0
         minimumWidth = 0
+        if (iconRes != null) {
+            setCompoundDrawablesRelative(tintedDrawable(iconRes, colorHex, 14), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
+        }
         setOnClickListener { onClick() }
     }
 

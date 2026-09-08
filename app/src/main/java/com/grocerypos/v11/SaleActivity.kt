@@ -559,12 +559,13 @@ class SaleActivity : AppCompatActivity() {
         }
         paymentSection.addView(paymentMethodSpinner)
         paidWarningText = TextView(this).apply {
-            text = "⚠️ Paid khali hai - Ye Udhaar me jayega"
+            text = "Paid khali hai - Ye Udhaar me jayega"
             textSize = 11f
             setTextColor(Color.parseColor(red))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(0, 8, 0, 0)
             visibility = View.GONE
+            setLeadingIcon(R.drawable.ic_warning, red, 12, 5)
         }
         paymentSection.addView(paidWarningText)
         root.addView(paymentSection)
@@ -947,6 +948,22 @@ class SaleActivity : AppCompatActivity() {
             cornerBottom * density, cornerBottom * density,
             cornerBottom * density, cornerBottom * density
         )
+    }
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    // ---- Small field-label helper: replaces the raw-emoji-prefixed TextView labels used
+    // in the Quick Sale dialog with a tinted vector compound drawable, same migration
+    // pattern as ItemsActivity/CategoriesUnitsActivity. ----
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 13, paddingDp: Int = 6) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {
@@ -1427,7 +1444,7 @@ class SaleActivity : AppCompatActivity() {
         if (::paidWarningText.isInitialized) {
             if (enteredPaid <= 0.009 && total > 0) {
                 paidWarningText.visibility = View.VISIBLE
-                paidWarningText.text = "⚠️ Paid khali hai - Rs %.2f Udhaar jayega".format(due)
+                paidWarningText.text = "Paid khali hai - Rs %.2f Udhaar jayega".format(due)
             } else {
                 paidWarningText.visibility = View.GONE
             }
@@ -1469,10 +1486,11 @@ class SaleActivity : AppCompatActivity() {
         }
 
         container.addView(TextView(this).apply {
-            text = "📦  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Item Name", "آئٹم کا نام")
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Item Name", "آئٹم کا نام")
             textSize = 11f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 0, 0, 6)
+            setLeadingIcon(R.drawable.ic_box, textGray)
         })
         val qsItemName = AutoCompleteTextView(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Type to search…", "تلاش کے لیے لکھیں…")
@@ -1501,10 +1519,11 @@ class SaleActivity : AppCompatActivity() {
         container.addView(spacer(8))
 
         container.addView(TextView(this).apply {
-            text = "📏  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Unit", "یونٹ")
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Unit", "یونٹ")
             textSize = 11f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 0, 0, 6)
+            setLeadingIcon(R.drawable.ic_ruler, textGray)
         })
         val qsUnitSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
@@ -1515,10 +1534,11 @@ class SaleActivity : AppCompatActivity() {
         container.addView(spacer(12))
 
         container.addView(TextView(this).apply {
-            text = "🔢  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Quantity", "مقدار")
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Quantity", "مقدار")
             textSize = 11f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 0, 0, 6)
+            setLeadingIcon(R.drawable.ic_number, textGray)
         })
         val qsQty = EditText(this).apply {
             hint = "1"
@@ -1543,10 +1563,11 @@ class SaleActivity : AppCompatActivity() {
         container.addView(spacer(12))
 
         container.addView(TextView(this).apply {
-            text = "💰  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Rate", "ریٹ")
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Rate", "ریٹ")
             textSize = 11f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 0, 0, 6)
+            setLeadingIcon(R.drawable.ic_wallet, textGray)
         })
         val qsPrice = EditText(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Auto-filled, editable", "خودکار، قابل ترمیم")
@@ -1561,10 +1582,11 @@ class SaleActivity : AppCompatActivity() {
         container.addView(spacer(12))
 
         container.addView(TextView(this).apply {
-            text = "👤  " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Customer (blank = Cash Sale)", "کسٹمر (خالی = کیش سیل)")
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Customer (blank = Cash Sale)", "کسٹمر (خالی = کیش سیل)")
             textSize = 11f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 0, 0, 6)
+            setLeadingIcon(R.drawable.ic_person, textGray)
         })
         val qsCustomer = AutoCompleteTextView(this).apply {
             hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Blank = Cash, Name = Credit", "خالی = کیش، نام = ادھار")

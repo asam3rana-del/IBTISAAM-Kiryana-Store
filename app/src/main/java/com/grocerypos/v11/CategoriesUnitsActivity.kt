@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -112,7 +113,7 @@ class CategoriesUnitsActivity : ThemedActivity() {
         // category/unit values already saved can be renamed to English once each,
         // instead of editing every product individually. ----
         header.addView(TextView(this).apply {
-            text = "🌐 " + Loc.t(this@CategoriesUnitsActivity, "Translate", "ترجمہ کریں")
+            text = Loc.t(this@CategoriesUnitsActivity, "Translate", "ترجمہ کریں")
             textSize = 11.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
@@ -121,6 +122,8 @@ class CategoriesUnitsActivity : ThemedActivity() {
                 cornerRadius = 30f
             }
             setPadding(20, 12, 20, 12)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_globe, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener {
                 startActivity(Intent(this@CategoriesUnitsActivity, BulkTranslateActivity::class.java))
             }
@@ -187,7 +190,11 @@ class CategoriesUnitsActivity : ThemedActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, 14)
         }
-        head.addView(TextView(this@CategoriesUnitsActivity).apply { text = "🗂️  "; textSize = 15f })
+        head.addView(ImageView(this@CategoriesUnitsActivity).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_category, textDark, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         head.addView(TextView(this@CategoriesUnitsActivity).apply {
             text = category
             textSize = 15f
@@ -228,11 +235,11 @@ class CategoriesUnitsActivity : ThemedActivity() {
         // (smallest quantity, e.g. grams/ml) — instead of stopping at Secondary.
         // Chain: 1 Primary = secondaryUnitQty Secondary; 1 Secondary = tertiaryUnitQty Tertiary.
         val unitLine = buildString {
-            append("📏 " + Loc.t(this@CategoriesUnitsActivity, "Unit", "یونٹ") + ": ${p.unit}")
+            append(Loc.t(this@CategoriesUnitsActivity, "Unit", "یونٹ") + ": ${p.unit}")
             if (p.secondaryUnit.isNotBlank() && p.secondaryUnitQty > 0) {
-                append("  •  🔁 1 ${p.unit} = ${formatQty(p.secondaryUnitQty)} ${p.secondaryUnit}")
+                append("  •  1 ${p.unit} = ${formatQty(p.secondaryUnitQty)} ${p.secondaryUnit}")
                 if (p.tertiaryUnit.isNotBlank() && p.tertiaryUnitQty > 0) {
-                    append("  •  🔁 1 ${p.secondaryUnit} = ${formatQty(p.tertiaryUnitQty)} ${p.tertiaryUnit}")
+                    append("  •  1 ${p.secondaryUnit} = ${formatQty(p.tertiaryUnitQty)} ${p.tertiaryUnit}")
                 }
             }
         }
@@ -243,6 +250,8 @@ class CategoriesUnitsActivity : ThemedActivity() {
             setTextColor(Color.parseColor(amber))
             setTypeface(typeface, Typeface.BOLD)
             setPadding(0, 6, 0, 4)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_ruler, amber, 12), null, null, null)
+            compoundDrawablePadding = (5 * resources.displayMetrics.density).toInt()
         })
 
         // ---- FIX: Product.stock is a SMALLEST-unit count, not a primary-unit count, so it
@@ -250,9 +259,11 @@ class CategoriesUnitsActivity : ThemedActivity() {
         // 500 was actually dabbi count). formatStockBreakdown() is the same helper Product/
         // Purchase/Sale/Dashboard screens use, so this now always agrees with the rest of the app.
         addView(TextView(this@CategoriesUnitsActivity).apply {
-            text = "📊 " + Loc.t(this@CategoriesUnitsActivity, "Stock", "اسٹاک") + ": ${p.formatStockBreakdown()}"
+            text = Loc.t(this@CategoriesUnitsActivity, "Stock", "اسٹاک") + ": ${p.formatStockBreakdown()}"
             textSize = 12f
             setTextColor(Color.parseColor(textGray))
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_chart, textGray, 12), null, null, null)
+            compoundDrawablePadding = (5 * resources.displayMetrics.density).toInt()
         })
 
         // ---- Edit / Delete actions ----
@@ -261,12 +272,14 @@ class CategoriesUnitsActivity : ThemedActivity() {
             setPadding(0, 10, 0, 0)
         }
         actionsRow.addView(TextView(this@CategoriesUnitsActivity).apply {
-            text = "✏️  " + Loc.t(this@CategoriesUnitsActivity, "Edit", "ترمیم کریں")
+            text = Loc.t(this@CategoriesUnitsActivity, "Edit", "ترمیم کریں")
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(primary, 30)
             setPadding(24, 10, 24, 10)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_edit, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener {
                 startActivity(Intent(this@CategoriesUnitsActivity, ProductActivity::class.java).apply {
                     putExtra(ProductActivity.EXTRA_EDIT_BARCODE, p.barcode)
@@ -275,12 +288,14 @@ class CategoriesUnitsActivity : ThemedActivity() {
         })
         actionsRow.addView(View(this@CategoriesUnitsActivity).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
         actionsRow.addView(TextView(this@CategoriesUnitsActivity).apply {
-            text = "🗑️  " + Loc.t(this@CategoriesUnitsActivity, "Delete", "حذف کریں")
+            text = Loc.t(this@CategoriesUnitsActivity, "Delete", "حذف کریں")
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(red, 30)
             setPadding(24, 10, 24, 10)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_delete, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener { confirmDeleteProduct(p) }
         })
         addView(actionsRow)
@@ -310,6 +325,16 @@ class CategoriesUnitsActivity : ThemedActivity() {
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
     // ================= UI HELPERS =================
+    // ---- Icon migration helper (matches ProductActivity/ItemsActivity pattern): tints and
+    // sizes a R.drawable.ic_* vector so it can replace a raw emoji as a compound drawable. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
     private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
         text = label
         textSize = 18f

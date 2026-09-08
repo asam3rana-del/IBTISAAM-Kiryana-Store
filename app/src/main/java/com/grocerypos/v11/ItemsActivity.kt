@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -117,7 +118,7 @@ class ItemsActivity : ThemedActivity() {
         // category/unit values already saved can be renamed to English once each,
         // instead of editing every product individually. ----
         header.addView(TextView(this).apply {
-            text = "🌐 Translate"
+            text = "Translate"
             textSize = 11f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
@@ -126,6 +127,8 @@ class ItemsActivity : ThemedActivity() {
                 cornerRadius = 30f
             }
             setPadding(18, 12, 18, 12)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_globe, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener {
                 startActivity(Intent(this@ItemsActivity, BulkTranslateActivity::class.java))
             }
@@ -160,7 +163,11 @@ class ItemsActivity : ThemedActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 18) }
         }
-        searchBox.addView(TextView(this).apply { text = "🔍  "; textSize = 14f })
+        searchBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         searchField = EditText(this).apply {
             hint = "Search..."
             setHintTextColor(Color.parseColor(textGray))
@@ -449,15 +456,13 @@ class ItemsActivity : ThemedActivity() {
                 if (!isUncategorized) {
                     val category = allCategories.first { it.name == name }
                     addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-                    addView(TextView(this@ItemsActivity).apply {
-                        text = "✏️"
-                        textSize = 15f
+                    addView(ImageView(this@ItemsActivity).apply {
+                        setImageDrawable(tintedDrawable(R.drawable.ic_edit, textGray, 16))
                         setPadding(14, 8, 14, 8)
                         setOnClickListener { promptEditCategory(category) }
                     })
-                    addView(TextView(this@ItemsActivity).apply {
-                        text = "🗑️"
-                        textSize = 15f
+                    addView(ImageView(this@ItemsActivity).apply {
+                        setImageDrawable(tintedDrawable(R.drawable.ic_delete, textGray, 16))
                         setPadding(14, 8, 14, 8)
                         setOnClickListener { confirmDeleteCategory(category, count) }
                     })
@@ -546,13 +551,23 @@ class ItemsActivity : ThemedActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(4, 0, 4, 16)
-            addView(TextView(this@ItemsActivity).apply {
-                text = "←  Categories"
-                textSize = 13f
-                setTextColor(Color.parseColor(primary))
-                setTypeface(typeface, Typeface.BOLD)
+            addView(LinearLayout(this@ItemsActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 setPadding(10, 10, 20, 10)
                 setOnClickListener { closeCategoryDetail() }
+                addView(ImageView(this@ItemsActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_chevron_down, primary, 13))
+                    rotation = 90f
+                    val px = (13 * resources.displayMetrics.density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (6 * resources.displayMetrics.density).toInt() }
+                })
+                addView(TextView(this@ItemsActivity).apply {
+                    text = "Categories"
+                    textSize = 13f
+                    setTextColor(Color.parseColor(primary))
+                    setTypeface(typeface, Typeface.BOLD)
+                })
             })
         })
         rows.add(TextView(this).apply {
@@ -595,10 +610,12 @@ class ItemsActivity : ThemedActivity() {
         })
 
         addView(TextView(this@ItemsActivity).apply {
-            text = "📊 Stock: ${p.formatStockBreakdown()}"
+            text = "Stock: ${p.formatStockBreakdown()}"
             textSize = 12f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 6, 0, 0)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_chart, textGray, 12), null, null, null)
+            compoundDrawablePadding = (5 * resources.displayMetrics.density).toInt()
         })
 
         val priceRow = LinearLayout(this@ItemsActivity).apply {
@@ -614,12 +631,14 @@ class ItemsActivity : ThemedActivity() {
             setPadding(0, 12, 0, 0)
         }
         actionsRow.addView(TextView(this@ItemsActivity).apply {
-            text = "✏️  Edit"
+            text = "Edit"
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(primary, 30)
             setPadding(20, 10, 20, 10)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_edit, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener {
                 startActivity(Intent(this@ItemsActivity, ProductActivity::class.java).apply {
                     putExtra(ProductActivity.EXTRA_EDIT_BARCODE, p.barcode)
@@ -628,22 +647,26 @@ class ItemsActivity : ThemedActivity() {
         })
         actionsRow.addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
         actionsRow.addView(TextView(this@ItemsActivity).apply {
-            text = "🔀  Change Category"
+            text = "Change Category"
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(teal, 30)
             setPadding(20, 10, 20, 10)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_repeat, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener { promptChangeProductCategory(p) }
         })
         actionsRow.addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
         actionsRow.addView(TextView(this@ItemsActivity).apply {
-            text = "🗑️  Delete"
+            text = "Delete"
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(red, 30)
             setPadding(20, 10, 20, 10)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_delete, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener { confirmDeleteProduct(p) }
         })
         addView(actionsRow)
@@ -710,7 +733,11 @@ class ItemsActivity : ThemedActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 10) }
 
-                addView(TextView(this@ItemsActivity).apply { text = "📏  "; textSize = 15f })
+                addView(ImageView(this@ItemsActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_ruler, textGray, 15))
+                    val px = (15 * resources.displayMetrics.density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+                })
                 addView(TextView(this@ItemsActivity).apply {
                     text = u.name
                     textSize = 14f
@@ -721,12 +748,14 @@ class ItemsActivity : ThemedActivity() {
 
                 // ---- Delete button for this unit ----
                 addView(TextView(this@ItemsActivity).apply {
-                    text = "🗑️  Delete"
+                    text = "Delete"
                     textSize = 12f
                     setTextColor(Color.WHITE)
                     setTypeface(typeface, Typeface.BOLD)
                     background = roundedBg(red, 30)
                     setPadding(22, 10, 22, 10)
+                    setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_delete, "#FFFFFF", 13), null, null, null)
+                    compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
                     setOnClickListener { confirmDeleteUnit(u) }
                 })
             })
@@ -770,6 +799,17 @@ class ItemsActivity : ThemedActivity() {
         setTextColor(Color.parseColor(textGray))
         gravity = Gravity.CENTER
         setPadding(0, 60, 0, 0)
+    }
+
+    // ---- Icon migration helper (matches ProductActivity/PartyReportsActivity pattern):
+    // tints and sizes a R.drawable.ic_* vector so it can replace a raw emoji, either as a
+    // standalone ImageView or as a TextView/Button's compound drawable. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
     }
 
     private fun tabButton(label: String, onClick: () -> Unit) = TextView(this).apply {

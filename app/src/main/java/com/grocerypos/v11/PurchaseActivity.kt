@@ -528,12 +528,13 @@ class PurchaseActivity : ThemedActivity() {
         paidRow.addView(paidInput)
         paymentSection.addView(paidRow)
         paidWarningText = TextView(this).apply {
-            text = "⚠️ Paid khali hai - Ye Udhaar me jayega"
+            text = "Paid khali hai - Ye Udhaar me jayega"
             textSize = 11f
             setTextColor(Color.parseColor(red))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(0, 8, 0, 0)
             visibility = View.GONE
+            setLeadingIcon(R.drawable.ic_warning, red, 12, 5)
         }
         paymentSection.addView(paidWarningText)
         root.addView(paymentSection)
@@ -928,6 +929,19 @@ class PurchaseActivity : ThemedActivity() {
             cornerBottom * density, cornerBottom * density
         )
     }
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 13, paddingDp: Int = 6) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
     private fun spacer(heightDp: Int) = View(this).apply { val px = (heightDp * resources.displayMetrics.density).toInt(); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px) }
     private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -1274,7 +1288,7 @@ class PurchaseActivity : ThemedActivity() {
         val due = (total - paid).coerceAtLeast(0.0)
         dueAmountText.text = "Rs %.0f".format(due)
         dueAmountText.setTextColor(Color.parseColor(if (due > 0) red else successGreen))
-        if (paid == 0.0 && total > 0) { paidWarningText.visibility = View.VISIBLE; paidWarningText.text = "⚠️ Paid khali hai - Ye Rs %.0f Udhaar jayega".format(due) }
+        if (paid == 0.0 && total > 0) { paidWarningText.visibility = View.VISIBLE; paidWarningText.text = "Paid khali hai - Ye Rs %.0f Udhaar jayega".format(due) }
         else { paidWarningText.visibility = View.GONE }
     }
     private fun promptAddSupplier() {
