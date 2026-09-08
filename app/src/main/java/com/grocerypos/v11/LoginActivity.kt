@@ -26,6 +26,7 @@ import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.MainActivity
 import com.grocerypos.v11.PasswordHasher
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.User
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
@@ -167,7 +168,7 @@ class LoginActivity : ThemedActivity() {
             )
         }
 
-        outer.addView(circleIcon("🔐", "#FFFFFF", "#3949AB", 84))
+        outer.addView(circleIcon(R.drawable.ic_lock, "#FFFFFF", "#3949AB", 84))
         outer.addView(spacer(20))
         outer.addView(TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
@@ -214,7 +215,7 @@ class LoginActivity : ThemedActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
-        card.addView(fieldBox("🙍", displayNameField))
+        card.addView(fieldBox(R.drawable.ic_person, displayNameField))
         card.addView(spacer(14))
 
         val usernameField = EditText(this).apply {
@@ -223,7 +224,7 @@ class LoginActivity : ThemedActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
-        card.addView(fieldBox("👤", usernameField))
+        card.addView(fieldBox(R.drawable.ic_person, usernameField))
         card.addView(spacer(14))
 
         val passwordField = EditText(this).apply {
@@ -256,7 +257,7 @@ class LoginActivity : ThemedActivity() {
         card.addView(spacer(10))
 
         val createBtn = Button(this).apply {
-            text = "✅  ADMIN ACCOUNT BANAYEIN"
+            text = "ADMIN ACCOUNT BANAYEIN"
             setTextColor(Color.WHITE)
             textSize = 14.5f
             isAllCaps = false
@@ -267,6 +268,7 @@ class LoginActivity : ThemedActivity() {
             ).apply { cornerRadius = 16f }
             setPadding(0, 28, 0, 28)
             applyElevation(this, 6f)
+            setLeadingIcon(R.drawable.ic_check, "#FFFFFF", 17, 8)
         }
         card.addView(createBtn)
 
@@ -343,7 +345,7 @@ class LoginActivity : ThemedActivity() {
         }
 
         // ================= LOGO / APP TITLE =================
-        outer.addView(circleIcon("🏪", "#FFFFFF", "#3949AB", 84))
+        outer.addView(circleIcon(R.drawable.ic_store, "#FFFFFF", "#3949AB", 84))
         outer.addView(spacer(20))
         outer.addView(TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
@@ -391,7 +393,7 @@ class LoginActivity : ThemedActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
-        card.addView(fieldBox("👤", u))
+        card.addView(fieldBox(R.drawable.ic_person, u))
         card.addView(spacer(14))
 
         p = EditText(this).apply {
@@ -405,7 +407,7 @@ class LoginActivity : ThemedActivity() {
         card.addView(spacer(22))
 
         btn = Button(this).apply {
-            text = "🔓  LOGIN"
+            text = "LOGIN"
             setTextColor(Color.WHITE)
             textSize = 15f
             isAllCaps = false
@@ -416,6 +418,7 @@ class LoginActivity : ThemedActivity() {
             ).apply { cornerRadius = 16f }
             setPadding(0, 28, 0, 28)
             applyElevation(this, 6f)
+            setLeadingIcon(R.drawable.ic_lock_open, "#FFFFFF", 17, 8)
         }
         card.addView(btn)
         card.addView(spacer(14))
@@ -424,7 +427,7 @@ class LoginActivity : ThemedActivity() {
         // active so the person always has a manual way to re-open the prompt if the
         // auto-triggered one is dismissed, cancelled, or fails.
         fingerprintBtn = Button(this).apply {
-            text = "🔓  UNLOCK WITH FINGERPRINT"
+            text = "UNLOCK WITH FINGERPRINT"
             setTextColor(Color.parseColor(green))
             textSize = 13.5f
             isAllCaps = false
@@ -432,6 +435,7 @@ class LoginActivity : ThemedActivity() {
             background = strokedBg(green, "#FFFFFF", 16)
             setPadding(0, 24, 0, 24)
             visibility = View.GONE
+            setLeadingIcon(R.drawable.ic_lock_open, green, 15, 6)
         }
         card.addView(fingerprintBtn)
 
@@ -448,11 +452,11 @@ class LoginActivity : ThemedActivity() {
             background = null
             inputType = InputType.TYPE_CLASS_PHONE
         }
-        otpSection.addView(fieldBox("📱", otpPhoneField))
+        otpSection.addView(fieldBox(R.drawable.ic_phone, otpPhoneField))
         otpSection.addView(spacer(14))
 
         sendOtpBtn = Button(this).apply {
-            text = "📩  SEND OTP"
+            text = "SEND OTP"
             setTextColor(Color.WHITE)
             textSize = 14f
             isAllCaps = false
@@ -462,6 +466,7 @@ class LoginActivity : ThemedActivity() {
                 intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
             ).apply { cornerRadius = 16f }
             setPadding(0, 24, 0, 24)
+            setLeadingIcon(R.drawable.ic_send, "#FFFFFF", 16, 8)
         }
         otpSection.addView(sendOtpBtn)
         otpSection.addView(spacer(14))
@@ -473,12 +478,12 @@ class LoginActivity : ThemedActivity() {
             background = null
             inputType = InputType.TYPE_CLASS_NUMBER
         }
-        otpCodeBox = fieldBox("🔢", otpCodeField).apply { visibility = View.GONE }
+        otpCodeBox = fieldBox(R.drawable.ic_number, otpCodeField).apply { visibility = View.GONE }
         otpSection.addView(otpCodeBox)
         otpSection.addView(spacer(14))
 
         verifyOtpBtn = Button(this).apply {
-            text = "✅  VERIFY & LOGIN"
+            text = "VERIFY & LOGIN"
             setTextColor(Color.WHITE)
             textSize = 14f
             isAllCaps = false
@@ -488,6 +493,7 @@ class LoginActivity : ThemedActivity() {
             }
             setPadding(0, 24, 0, 24)
             visibility = View.GONE
+            setLeadingIcon(R.drawable.ic_check, "#FFFFFF", 16, 8)
         }
         otpSection.addView(verifyOtpBtn)
 
@@ -747,12 +753,31 @@ class LoginActivity : ThemedActivity() {
     }
 
     // ================= UI HELPERS =================
-    private fun fieldBox(icon: String, field: EditText) = LinearLayout(this).apply {
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun fieldBox(iconRes: Int, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         background = strokedBg(border, "#FAFAFF", 12)
         setPadding(18, 4, 18, 4)
-        addView(TextView(this@LoginActivity).apply { text = "$icon  "; textSize = 14f })
+        addView(ImageView(this@LoginActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         addView(field)
@@ -764,14 +789,19 @@ class LoginActivity : ThemedActivity() {
         gravity = Gravity.CENTER_VERTICAL
         background = strokedBg(border, "#FAFAFF", 12)
         setPadding(18, 4, 18, 4)
-        addView(TextView(this@LoginActivity).apply { text = "🔒  "; textSize = 14f })
+        addView(ImageView(this@LoginActivity).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_lock, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         addView(field)
 
-        val toggle = TextView(this@LoginActivity).apply {
-            text = "👁"
-            textSize = 16f
+        val toggle = ImageView(this@LoginActivity).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_eye, textGray, 18))
             setPadding(16, 0, 8, 0)
             var visible = false
             setOnClickListener {
@@ -781,13 +811,13 @@ class LoginActivity : ThemedActivity() {
                 else
                     InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 field.setSelection(field.text.length)
-                text = if (visible) "🙈" else "👁"
+                setImageDrawable(tintedDrawable(if (visible) R.drawable.ic_eye_off else R.drawable.ic_eye, textGray, 18))
             }
         }
         addView(toggle)
     }
 
-    private fun circleIcon(label: String, colorHex: String, textColorHex: String, sizeDp: Int) = FrameLayout(this).apply {
+    private fun circleIcon(iconRes: Int, colorHex: String, textColorHex: String, sizeDp: Int) = FrameLayout(this).apply {
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(px, px).apply { gravity = Gravity.CENTER_HORIZONTAL }
         background = GradientDrawable().apply {
@@ -795,10 +825,9 @@ class LoginActivity : ThemedActivity() {
             setColor(Color.parseColor(colorHex))
         }
         applyElevation(this, 10f)
-        addView(TextView(this@LoginActivity).apply {
-            text = label
-            textSize = 32f
-            gravity = Gravity.CENTER
+        addView(ImageView(this@LoginActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textColorHex, (sizeDp * 0.42).toInt()))
+            scaleType = ImageView.ScaleType.CENTER
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         })
     }
