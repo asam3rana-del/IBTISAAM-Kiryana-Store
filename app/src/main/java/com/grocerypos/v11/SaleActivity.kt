@@ -39,7 +39,7 @@ import com.grocerypos.v11.ui.components.*
 
 class SaleActivity : AppCompatActivity() {
 
-    private val viewModel: SaleViewModel by viewModels { SaleViewModelFactory(applicationContext) }
+    internal val viewModel: SaleViewModel by viewModels { SaleViewModelFactory(applicationContext) }
 
     companion object {
         const val EXTRA_INVOICE = "invoice"
@@ -48,27 +48,27 @@ class SaleActivity : AppCompatActivity() {
 
         // ---- CHANGED (category-based unit auto-select): category name compared
         // case-insensitively against Product.category for 2-tier products. ----
-        private const val BEVERAGE_CATEGORY = "Beverages"
+        internal const val BEVERAGE_CATEGORY = "Beverages"
     }
 
     // ---------- Palette (Reports-style flat design — pulled from ThemeManager so this
     // screen also respects dark mode and stays in sync with the rest of the app).
     // Sale = flatPurple everywhere, per ThemeManager's documented category convention
     // (Reports uses the same flatPurpleFg for its Sale-related rows/icons). ----------
-    private var bg = "#F4F6F8"
-    private var cardBg = "#FFFFFF"
-    private var fieldFill = "#FAFBFD"
-    private var navy = "#534AB7"       // header/brand accent — flatPurpleFg
-    private var navyLight = "#534AB7"  // flat design, no gradient — same as navy
-    private var teal = "#085041"       // flatTealFg — secondary accent / positive amounts
-    private var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
-    private var greenDark = "#085041"  // flat design, no gradient — same as green
-    private var red = "#D32F4A"
-    private var redDark = "#A81F39"
-    private var amber = "#854F0B"      // flatAmberFg
-    private var textDark = "#0B2545"
-    private var textGray = "#7C8798"
-    private var border = "#E3E8EE"
+    internal var bg = "#F4F6F8"
+    internal var cardBg = "#FFFFFF"
+    internal var fieldFill = "#FAFBFD"
+    internal var navy = "#534AB7"       // header/brand accent — flatPurpleFg
+    internal var navyLight = "#534AB7"  // flat design, no gradient — same as navy
+    internal var teal = "#085041"       // flatTealFg — secondary accent / positive amounts
+    internal var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
+    internal var greenDark = "#085041"  // flat design, no gradient — same as green
+    internal var red = "#D32F4A"
+    internal var redDark = "#A81F39"
+    internal var amber = "#854F0B"      // flatAmberFg
+    internal var textDark = "#0B2545"
+    internal var textGray = "#7C8798"
+    internal var border = "#E3E8EE"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -87,49 +87,49 @@ class SaleActivity : AppCompatActivity() {
         border = p.border
     }
 
-    private lateinit var dateValueText: TextView
+    internal lateinit var dateValueText: TextView
     private lateinit var firmNameText: TextView
     private lateinit var customerBox: LinearLayout
-    private lateinit var customerName: AutoCompleteTextView
-    private lateinit var saleTypeSpinner: Spinner
+    internal lateinit var customerName: AutoCompleteTextView
+    internal lateinit var saleTypeSpinner: Spinner
     private lateinit var itemEntrySection: LinearLayout
-    private lateinit var itemName: AutoCompleteTextView
-    private lateinit var qty: EditText
-    private lateinit var unitSpinner: Spinner
-    private lateinit var unitToggleRow: LinearLayout
-    private lateinit var unitPrice: EditText
-    private lateinit var conversionInfo: TextView
-    private lateinit var itemLineTotalText: TextView
-    private lateinit var itemsContainer: LinearLayout
+    internal lateinit var itemName: AutoCompleteTextView
+    internal lateinit var qty: EditText
+    internal lateinit var unitSpinner: Spinner
+    internal lateinit var unitToggleRow: LinearLayout
+    internal lateinit var unitPrice: EditText
+    internal lateinit var conversionInfo: TextView
+    internal lateinit var itemLineTotalText: TextView
+    internal lateinit var itemsContainer: LinearLayout
     private lateinit var billedItemsHeader: LinearLayout
-    private lateinit var billedItemsTrigger: TextView
+    internal lateinit var billedItemsTrigger: TextView
     private lateinit var billedItemsChevron: TextView
-    private var billedItemsDialog: AlertDialog? = null
-    private lateinit var subtotalText: TextView
-    private lateinit var discountInput: EditText
-    private lateinit var totalText: TextView
-    private lateinit var paymentSection: LinearLayout
-    private lateinit var paidInput: EditText
-    private lateinit var paidWarningText: TextView
-    private lateinit var paymentMethodSpinner: Spinner
-    private lateinit var dueAmountText: TextView
+    internal var billedItemsDialog: AlertDialog? = null
+    internal lateinit var subtotalText: TextView
+    internal lateinit var discountInput: EditText
+    internal lateinit var totalText: TextView
+    internal lateinit var paymentSection: LinearLayout
+    internal lateinit var paidInput: EditText
+    internal lateinit var paidWarningText: TextView
+    internal lateinit var paymentMethodSpinner: Spinner
+    internal lateinit var dueAmountText: TextView
     private lateinit var saveButton: Button
     private lateinit var deleteButton: Button
     private lateinit var overflowButton: TextView
-    private lateinit var scrollView: ScrollView
+    internal lateinit var scrollView: ScrollView
 
-    private var customers = listOf<Customer>()
-    private var products = listOf<Product>()
-    private val lines = mutableListOf<SaleLine>()
-    private var selectedProduct: Product? = null
-    private var isCashSale = true
-    private var saleDateMillis = System.currentTimeMillis()
+    internal var customers = listOf<Customer>()
+    internal var products = listOf<Product>()
+    internal val lines = mutableListOf<SaleLine>()
+    internal var selectedProduct: Product? = null
+    internal var isCashSale = true
+    internal var saleDateMillis = System.currentTimeMillis()
 
-    private var editInvoice: String? = null
+    internal var editInvoice: String? = null
     private var originalSale: Sale? = null
     private var originalItems: List<SaleItem> = emptyList()
 
-    private var lastMainPrice: Double = 0.0
+    internal var lastMainPrice: Double = 0.0
     // FIX (sale-type keyboard-scroll bug): hasFocus() was unreliable right after a
     // touch-driven Spinner selection on some OEM keyboards (e.g. Samsung), so the
     // scroll-to-top / focus-Item-Name step below would silently skip. This flag is
@@ -137,7 +137,7 @@ class SaleActivity : AppCompatActivity() {
     // longer depends on focus state — it fires on every real user selection, but not
     // on the automatic first-item callback Android fires when the adapter is set.
     private var saleTypeUserInteracted = false
-    private var suppressPriceWatcher = false
+    internal var suppressPriceWatcher = false
     private var suppressPaidWatcher = false
 
     private var suppressDraftSave = false
@@ -559,13 +559,12 @@ class SaleActivity : AppCompatActivity() {
         }
         paymentSection.addView(paymentMethodSpinner)
         paidWarningText = TextView(this).apply {
-            text = "Paid khali hai - Ye Udhaar me jayega"
+            text = "⚠️ Paid khali hai - Ye Udhaar me jayega"
             textSize = 11f
             setTextColor(Color.parseColor(red))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(0, 8, 0, 0)
             visibility = View.GONE
-            setLeadingIcon(R.drawable.ic_warning, red, 12, 5)
         }
         paymentSection.addView(paidWarningText)
         root.addView(paymentSection)
@@ -752,7 +751,15 @@ class SaleActivity : AppCompatActivity() {
 
     private fun draftPrefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private fun saveDraft() {
+    // ---- isInitialized checks on a lateinit var only compile when written
+    // lexically inside the declaring class/file, so SaleCart.kt (which now owns
+    // updateBilledItemsTrigger()/refreshDue()) can't write `::billedItemsTrigger
+    // .isInitialized` directly. These two tiny accessors stay here for that
+    // reason and are called from there instead. ----
+    internal fun isBilledItemsTriggerReady() = ::billedItemsTrigger.isInitialized
+    internal fun isPaidWarningTextReady() = ::paidWarningText.isInitialized
+
+    internal fun saveDraft() {
         val hasContent = lines.isNotEmpty() ||
             customerName.text.toString().isNotBlank() ||
             itemName.text.toString().isNotBlank() ||
@@ -797,7 +804,7 @@ class SaleActivity : AppCompatActivity() {
         draftPrefs().edit().putString(KEY_DRAFT, draft.toString()).apply()
     }
 
-    private fun clearDraft() {
+    internal fun clearDraft() {
         draftPrefs().edit().remove(KEY_DRAFT).apply()
     }
 
@@ -934,52 +941,21 @@ class SaleActivity : AppCompatActivity() {
         this.text = label; textSize = textSizeSp; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = roundedBg(cardBg, 30); setPadding(hPad, vPad, hPad, vPad); setOnClickListener { onClick() }
     }
 
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int, onClick: (() -> Unit)? = null) = TextView(this).apply {
+    internal fun circleIcon(label: String, colorHex: String, sizeDp: Int, onClick: (() -> Unit)? = null) = TextView(this).apply {
         this.text = label; textSize = 15f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = ovalBg(colorHex); val px = (sizeDp * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px); if (onClick != null) setOnClickListener { onClick() }
     }
 
-    private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) = GradientDrawable(
-        GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(startHex), Color.parseColor(endHex))
-    ).apply {
-        val density = resources.displayMetrics.density
-        cornerRadii = floatArrayOf(
-            cornerTop * density, cornerTop * density,
-            cornerTop * density, cornerTop * density,
-            cornerBottom * density, cornerBottom * density,
-            cornerBottom * density, cornerBottom * density
-        )
-    }
 
-    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
-        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
-        d.setTint(Color.parseColor(tintHex))
-        val px = (sizeDp * resources.displayMetrics.density).toInt()
-        d.setBounds(0, 0, px, px)
-        return d
-    }
 
-    // ---- Small field-label helper: replaces the raw-emoji-prefixed TextView labels used
-    // in the Quick Sale dialog with a tinted vector compound drawable, same migration
-    // pattern as ItemsActivity/CategoriesUnitsActivity. ----
-    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 13, paddingDp: Int = 6) {
-        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
-        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
-    }
+    internal fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-
-    private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
+    internal fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun afterTextChanged(s: Editable?) = onChange()
     }
 
-    private fun formatDate(millis: Long) = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(millis))
+    internal fun formatDate(millis: Long) = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(millis))
 
     private fun openDatePicker() {
         val cal = Calendar.getInstance().apply { timeInMillis = saleDateMillis }
@@ -1126,631 +1102,9 @@ class SaleActivity : AppCompatActivity() {
     // (no tertiary) defaulted to index 0 regardless of category. Now Beverages keep
     // defaulting to the 1st unit, while every other 2-tier category defaults to the
     // 2nd unit instead — matching how those items are actually sold day to day. ----
-    private fun defaultUnitIndexFor(product: Product): Int {
-        val hasSecondary = product.secondaryUnit.isNotEmpty()
-        val hasTertiary = hasSecondary && product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0
-
-        if (!hasSecondary) return 0          // 1-tier: only one unit exists
-        if (hasTertiary) return 1            // 3-tier: always default to the 2nd unit
-
-        // 2-tier: Beverages keep the 1st (primary) unit; everything else defaults
-        // to the 2nd (secondary) unit.
-        val isBeverage = product.category.equals(BEVERAGE_CATEGORY, ignoreCase = true)
-        return if (isBeverage) 0 else 1
-    }
-
-    private fun onItemPicked(name: String) {
-        val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
-        selectedProduct = product
-        val unitChoices = mutableListOf(product.unit)
-        if (product.secondaryUnit.isNotEmpty()) {
-            unitChoices.add(product.secondaryUnit)
-            if (product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0) {
-                unitChoices.add(product.tertiaryUnit)
-            }
-        }
-        val defaultIndex = defaultUnitIndexFor(product)
-        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
-        unitSpinner.setSelection(defaultIndex)
-        buildUnitChips(unitChoices, unitChoices[defaultIndex])
-        conversionInfo.text = buildString {
-            if (unitChoices.size > 1 && product.secondaryUnitQty > 0) append("1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}")
-            if (unitChoices.size > 2 && product.tertiaryUnitQty > 0) { if (isNotEmpty()) append("   •   "); append("1 ${product.secondaryUnit} = ${product.tertiaryUnitQty} ${product.tertiaryUnit}") }
-        }
-        conversionInfo.visibility = if (conversionInfo.text.isNotEmpty()) View.VISIBLE else View.GONE
-        lastMainPrice = 0.0
-        refillAutoPrice()
-        qty.requestFocus()
-        qty.selectAll()
-        qty.post {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.showSoftInput(qty, InputMethodManager.SHOW_IMPLICIT)
-        }
-    }
-
-    private fun buildUnitChips(options: List<String>, selected: String) {
-        unitToggleRow.removeAllViews()
-        if (options.size < 2) { unitToggleRow.visibility = View.GONE; return }
-        unitToggleRow.visibility = View.VISIBLE
-        options.forEachIndexed { index, unitLabel ->
-            val isSelected = unitLabel == selected
-            val chip = TextView(this).apply {
-                text = unitLabel; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(28, 13, 28, 13)
-                setTextColor(if (isSelected) Color.WHITE else Color.parseColor(teal))
-                background = if (isSelected) roundedBg(teal, 30) else strokedBg(teal, cardBg, 30)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(if (index == 0) 0 else 8, 0, 0, 0) }
-                setOnClickListener { unitSpinner.setSelection(options.indexOf(unitLabel)); buildUnitChips(options, unitLabel) }
-            }
-            unitToggleRow.addView(chip)
-        }
-    }
-
-    // ---- delegated to Database.kt's toPrimaryUnitRate()/fromPrimaryUnitRate() —
-    // the same central unitLadder() that backs toSmallestUnits()/fromSmallestUnits() —
-    // instead of a duplicated inline formula (was previously copy-pasted separately in
-    // PurchaseActivity too — any future fix now only needs to happen in one place). ----
-    private fun toMainUnitPrice(entered: Double): Double {
-        val product = selectedProduct ?: return entered
-        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        return product.toPrimaryUnitRate(entered, chosenUnit)
-    }
-
-    private fun fromMainUnitPrice(mainPrice: Double, chosenUnit: String): Double {
-        val product = selectedProduct ?: return mainPrice
-        return product.fromPrimaryUnitRate(mainPrice, chosenUnit)
-    }
-
-    private fun refillAutoPrice() {
-        val product = selectedProduct ?: return
-        val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
-        val basePrice = if (isWholesale) product.wholesalePrice else product.salePrice
-        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-        val base = if (lastMainPrice > 0) lastMainPrice else basePrice
-        val price = fromMainUnitPrice(base, chosenUnit)
-        suppressPriceWatcher = true
-        unitPrice.setText(if (price > 0) "%.2f".format(price) else "")
-        suppressPriceWatcher = false
-        updateItemLineTotal()
-    }
-
-    private fun updateItemLineTotal() {
-        val q = qty.text.toString().toDoubleOrNull() ?: 0.0
-        val p = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
-        itemLineTotalText.text = "Total Amount: Rs %.0f".format(Math.round(q * p).toDouble())
-    }
-
-    // ================= Add item to bill =================
-    private fun addItem() {
-        val n = itemName.text.toString().trim()
-        val q = qty.text.toString().toDoubleOrNull() ?: 0.0
-        val price = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
-        val product = products.find { it.name.equals(n, ignoreCase = true) }
-
-        if (product == null) {
-            Toast.makeText(this, "Ye item product list mein nahi hai", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (q <= 0) {
-            Toast.makeText(this, "Quantity theek se likhen", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-
-        val alreadyInCartSmallest = lines.filter { it.barcode == product.barcode }
-            .sumOf { product.toSmallestUnits(it.qty, it.unit) }
-        val neededSmallest = product.toSmallestUnits(q, chosenUnit)
-
-        // FIX (fraction control): reject a cart-add whose qty doesn't resolve to a
-        // whole smallest-unit for non-fractional items (Piece/Dabbi/Bottle etc.) —
-        // catches the bad entry here instead of at save time.
-        if (!product.isValidSmallestQty(neededSmallest)) {
-            Toast.makeText(this, "Qty ($q $chosenUnit) whole ${product.smallestUnitName()} mein convert nahi hoti", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val availableForThisAdd = product.stock - alreadyInCartSmallest
-
-        if (availableForThisAdd < neededSmallest) {
-            Toast.makeText(
-                this,
-                "Stock kam hai (available: ${formatQty(availableForThisAdd.coerceAtLeast(0.0))} ${product.smallestUnitName()})",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-
-        val amount = q * price
-        val smallestQtyForCost = product.toSmallestUnits(q, chosenUnit)
-        val factor = product.smallestUnitFactor()
-        val costPerSmallest = if (factor > 0) product.cost / factor else product.cost
-        val lineCost = smallestQtyForCost * costPerSmallest
-
-        lines.add(
-            SaleLine(
-                barcode = product.barcode,
-                itemName = product.name,
-                qty = q,
-                unit = chosenUnit,
-                unitPrice = price,
-                cost = lineCost,
-                amount = amount,
-                mainUnit = product.unit,
-                secondaryUnit = product.secondaryUnit,
-                secondaryUnitQty = product.secondaryUnitQty,
-                tertiaryUnit = product.tertiaryUnit,
-                tertiaryUnitQty = product.tertiaryUnitQty
-            )
-        )
-        renderItemsList()
-        updateTotals()
-
-        // FIX (UX): after adding an item, jump the ScrollView back to the very top so
-        // the rest of the form (Billed Items / Subtotal / Total / Payment / Save) is
-        // visible right away instead of staying wherever the keyboard had scrolled to.
-        scrollView.post { scrollView.smoothScrollTo(0, 0) }
-
-        itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
-        selectedProduct = null
-        lastMainPrice = 0.0
-        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
-        conversionInfo.visibility = View.GONE
-        unitToggleRow.visibility = View.GONE
-        itemLineTotalText.text = "Total Amount: Rs 0"
-        itemName.requestFocus()
-
-        if (editInvoice == null) saveDraft()
-        if (lines.isNotEmpty() && paidInput.text.toString().isBlank()) {
-            paymentSection.background = strokedBg("#FF9800", "#FFF8E1", 18)
-            paymentSection.postDelayed({ paymentSection.background = strokedBg(border, cardBg, 18) }, 2000)
-        }
-    }
-
-    private fun renderItemsList() {
-        itemsContainer.removeAllViews()
-        lines.forEachIndexed { index, line ->
-            itemsContainer.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(20, 16, 20, 16)
-                background = strokedBg(border, cardBg, 18)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(0, 0, 0, 10) }
-                applyElevation(this, 2f)
-
-                val top = LinearLayout(this@SaleActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-                top.addView(TextView(this@SaleActivity).apply {
-                    text = line.itemName; textSize = 15f
-                    setTextColor(Color.parseColor(textDark))
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                })
-                top.addView(TextView(this@SaleActivity).apply {
-                    text = "Rs %.2f".format(line.amount)
-                    setTextColor(Color.parseColor(teal))
-                    textSize = 15f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                })
-                addView(top)
-                addView(TextView(this@SaleActivity).apply {
-                    text = "Qty: ${line.qty} ${line.unit}   •   Rate: ${line.unitPrice}"
-                    textSize = 12.5f
-                    setTextColor(Color.parseColor(textGray))
-                    setPadding(0, 6, 0, 0)
-                })
-                addView(TextView(this@SaleActivity).apply {
-                    text = "\u2715 " + com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Remove", "ہٹائیں")
-                    textSize = 12f
-                    setTextColor(Color.parseColor(red))
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setPadding(0, 10, 0, 0)
-                    setOnClickListener {
-                        lines.removeAt(index)
-                        renderItemsList()
-                        updateTotals()
-                        if (editInvoice == null) saveDraft()
-                        if (lines.isEmpty()) billedItemsDialog?.dismiss()
-                    }
-                })
-            })
-        }
-        updateBilledItemsTrigger()
-    }
-
-    private fun updateBilledItemsTrigger() {
-        if (!::billedItemsTrigger.isInitialized) return
-        val count = lines.size
-        val total = lines.sumOf { it.amount }
-        billedItemsTrigger.text = "\uD83E\uDDFE  " + com.grocerypos.v11.util.Loc.t(
-            this,
-            "Billed Items",
-            "بل کردہ آئٹمز"
-        ) + "  ($count)  ·  Rs %.0f".format(total)
-    }
-
-    // ---- Purchase-style billed items dialog: a plain AlertDialog with a Close
-    // button, restoring focus to the Paid field on dismiss.
-    // ---- CHANGED (billed items -> paid amount flow): the ScrollView now also scrolls
-    // down to the Payment section on dismiss (in addition to focusing paidInput), so
-    // the field the keyboard is about to fill is actually visible on screen. ----
-    private fun openBilledItemsDialog() {
-        if (lines.isEmpty()) {
-            Toast.makeText(
-                this,
-                com.grocerypos.v11.util.Loc.t(this, "No items added yet", "ابھی تک کوئی آئٹم شامل نہیں"),
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-
-        (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
-        renderItemsList()
-        val wrapper = ScrollView(this).apply {
-            setPadding(20, 10, 20, 4)
-            addView(itemsContainer)
-        }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Billed Items", "بل کردہ آئٹمز"))
-            .setView(wrapper)
-            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Close", "بند کریں"), null)
-            .setOnDismissListener {
-                (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
-                billedItemsDialog = null
-                scrollView.post { scrollView.smoothScrollTo(0, paymentSection.top) }
-                paidInput.requestFocus()
-                paidInput.post {
-                    paidInput.selectAll()
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                    imm?.showSoftInput(paidInput, InputMethodManager.SHOW_IMPLICIT)
-                }
-            }
-            .create()
-        billedItemsDialog = dialog
-        dialog.show()
-    }
-
-    // ---- Purchase-style live totals: subtotal/discount/total mirror what the save
-    // path will actually persist, computed through the same DiscountCalculator. ----
-    private fun recomputeAmounts(): Double {
-        val subtotal = lines.sumOf { it.amount }
-        val enteredDiscount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
-        val totals = DiscountCalculator.compute(subtotal, enteredDiscount, 0.0)
-        subtotalText.text = "Rs %.2f".format(subtotal)
-        totalText.text = "Rs %.2f".format(totals.total)
-        return totals.total
-    }
-
-    // FIX (Paid amount bug): this used to auto-fill Paid = Total whenever Paid was
-    // blank. That meant Paid silently got stamped with whatever the *first* item's
-    // total happened to be (since Paid was blank right after the first add), and then
-    // stayed stuck at that stale number as more items were added — while also fighting
-    // with the "Paid khali hai - Udhaar jayega" warning below, which assumes Paid
-    // starts blank. Paid is now left exactly as the user typed it; nothing auto-fills it.
-    private fun updateTotals() {
-        recomputeAmounts()
-        refreshDue()
-        updateBilledItemsTrigger()
-    }
-
-    private fun refreshDue() {
-        val total = recomputeAmounts()
-        val enteredPaid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
-        val paidClamped = enteredPaid.coerceIn(0.0, total)
-        val due = (total - paidClamped).coerceAtLeast(0.0)
-        dueAmountText.text = "Rs %.2f".format(due)
-        dueAmountText.setTextColor(Color.parseColor(if (due > 0.009) red else green))
-        isCashSale = due <= 0.009
-        if (::paidWarningText.isInitialized) {
-            if (enteredPaid <= 0.009 && total > 0) {
-                paidWarningText.visibility = View.VISIBLE
-                paidWarningText.text = "Paid khali hai - Rs %.2f Udhaar jayega".format(due)
-            } else {
-                paidWarningText.visibility = View.GONE
-            }
-        }
-    }
 
     // ================= QUICK SALE =================
-    private fun quickSaleDialog() {
-        lifecycleScope.launch {
-            showQuickSaleDialog(viewModel.topSellingProducts())
-        }
-    }
 
-    private fun showQuickSaleDialog(topNames: List<String>) {
-        var qsSelectedProduct: Product? = null
-        var qsLastMainPrice: Double = 0.0
-
-        // ---- helpers scoped to this dialog ----
-        fun qsUnitsFor(p: Product): List<String> {
-            val list = mutableListOf(p.unit)
-            if (p.secondaryUnit.isNotEmpty()) {
-                list.add(p.secondaryUnit)
-                if (p.tertiaryUnit.isNotEmpty() && p.tertiaryUnitQty > 0) list.add(p.tertiaryUnit)
-            }
-            return list
-        }
-        fun qsToMainPrice(p: Product, entered: Double, unit: String): Double =
-            p.toPrimaryUnitRate(entered, unit)
-        fun qsFromMainPrice(p: Product, mainPrice: Double, unit: String): Double =
-            p.fromPrimaryUnitRate(mainPrice, unit)
-        fun qsAvailableInUnit(p: Product, unit: String): Double {
-            val perUnitFactor = p.toSmallestUnits(1.0, unit)
-            return if (perUnitFactor > 0) p.stock / perUnitFactor else p.stock.toDouble()
-        }
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(20), dp(24), dp(4))
-        }
-
-        container.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Item Name", "آئٹم کا نام")
-            textSize = 11f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(0, 0, 0, 6)
-            setLeadingIcon(R.drawable.ic_box, textGray)
-        })
-        val qsItemName = AutoCompleteTextView(this).apply {
-            hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Type to search…", "تلاش کے لیے لکھیں…")
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = strokedBg(border, cardBg, 12)
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            threshold = 0
-            textSize = 15f
-            imeOptions = EditorInfo.IME_ACTION_NEXT
-        }
-        val topAvailable = topNames.filter { name -> products.any { it.name == name } }
-        val remaining = products.map { it.name }.filter { it !in topAvailable }
-        val orderedNames = (topAvailable + remaining).distinct()
-        qsItemName.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, orderedNames))
-        container.addView(qsItemName)
-        container.addView(spacer(4))
-
-        val qsStockText = TextView(this).apply {
-            text = ""
-            textSize = 12f
-            setTextColor(Color.parseColor(teal))
-            setPadding(2, 0, 0, 0)
-        }
-        container.addView(qsStockText)
-        container.addView(spacer(8))
-
-        container.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Unit", "یونٹ")
-            textSize = 11f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(0, 0, 0, 6)
-            setLeadingIcon(R.drawable.ic_ruler, textGray)
-        })
-        val qsUnitSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
-            background = strokedBg(border, cardBg, 12)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-        }
-        container.addView(qsUnitSpinner)
-        container.addView(spacer(12))
-
-        container.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Quantity", "مقدار")
-            textSize = 11f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(0, 0, 0, 6)
-            setLeadingIcon(R.drawable.ic_number, textGray)
-        })
-        val qsQty = EditText(this).apply {
-            hint = "1"
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = strokedBg(border, cardBg, 12)
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            imeOptions = EditorInfo.IME_ACTION_NEXT
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val qsQtyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        qsQtyRow.addView(qsQty)
-        qsQtyRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(8), 1) })
-        qsQtyRow.addView(circleIcon("+", teal, 36) {
-            val current = qsQty.text.toString().toDoubleOrNull() ?: 0.0
-            val next = current + 1
-            qsQty.setText(if (next == next.toLong().toDouble()) next.toLong().toString() else next.toString())
-            qsQty.setSelection(qsQty.text.length)
-        })
-        container.addView(qsQtyRow)
-        container.addView(spacer(12))
-
-        container.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Rate", "ریٹ")
-            textSize = 11f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(0, 0, 0, 6)
-            setLeadingIcon(R.drawable.ic_wallet, textGray)
-        })
-        val qsPrice = EditText(this).apply {
-            hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Auto-filled, editable", "خودکار، قابل ترمیم")
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = strokedBg(border, cardBg, 12)
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            imeOptions = EditorInfo.IME_ACTION_NEXT
-        }
-        container.addView(qsPrice)
-        container.addView(spacer(12))
-
-        container.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Customer (blank = Cash Sale)", "کسٹمر (خالی = کیش سیل)")
-            textSize = 11f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(0, 0, 0, 6)
-            setLeadingIcon(R.drawable.ic_person, textGray)
-        })
-        val qsCustomer = AutoCompleteTextView(this).apply {
-            hint = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Blank = Cash, Name = Credit", "خالی = کیش، نام = ادھار")
-            setHintTextColor(Color.parseColor(textGray))
-            setTextColor(Color.parseColor(textDark))
-            background = strokedBg(border, cardBg, 12)
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            threshold = 1
-            textSize = 15f
-            imeOptions = EditorInfo.IME_ACTION_DONE
-        }
-        qsCustomer.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, customers.map { it.name }))
-        container.addView(qsCustomer)
-        container.addView(spacer(10))
-
-        val qsTotalText = TextView(this).apply {
-            text = "Total: Rs 0.00"
-            textSize = 15f
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(2, 0, 0, 4)
-        }
-        container.addView(qsTotalText)
-        container.addView(spacer(4))
-
-        fun qsRefreshTotal() {
-            val q = qsQty.text.toString().toDoubleOrNull() ?: 0.0
-            val price = qsPrice.text.toString().toDoubleOrNull() ?: 0.0
-            qsTotalText.text = "Total: Rs %.2f".format(q * price)
-        }
-        fun qsRefreshStock() {
-            val p = qsSelectedProduct
-            if (p == null) { qsStockText.text = ""; return }
-            val unit = qsUnitSpinner.selectedItem?.toString() ?: p.unit
-            val avail = qsAvailableInUnit(p, unit)
-            qsStockText.text = com.grocerypos.v11.util.Loc.t(
-                this,
-                "Available: %s %s".format(formatQty(avail), unit),
-                "دستیاب: %s %s".format(formatQty(avail), unit)
-            )
-        }
-
-        qsQty.addTextChangedListener(simpleWatcher { qsRefreshTotal() })
-        qsPrice.addTextChangedListener(simpleWatcher { qsRefreshTotal() })
-
-        qsItemName.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_NEXT) {
-                val typed = qsItemName.text.toString().trim()
-                val match = products.find { it.name.equals(typed, ignoreCase = true) }
-                if (match != null) {
-                    qsSelectedProduct = match
-                    qsLastMainPrice = 0.0
-                    val qsUnits = qsUnitsFor(match)
-                    // FIX (unit auto-selection): same rule as normal Add Item flow —
-                    // see defaultUnitIndexFor(). 1-tier defaults to the only unit,
-                    // 2-tier defaults by category (Beverages -> 1st, others -> 2nd),
-                    // and 3-tier always defaults to the 2nd (secondary) unit.
-                    val qsDefaultIndex = defaultUnitIndexFor(match)
-                    qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnits)
-                    qsUnitSpinner.setSelection(qsDefaultIndex)
-                    if (qsQty.text.toString().isBlank()) qsQty.setText("1")
-                    val defaultUnit = qsUnits[qsDefaultIndex]
-                    val price = qsFromMainPrice(match, match.salePrice, defaultUnit)
-                    qsPrice.setText(if (price > 0) "%.2f".format(price) else "")
-                    qsRefreshStock(); qsRefreshTotal()
-                }
-                qsQty.requestFocus()
-                qsQty.setSelection(qsQty.text.length)
-                true
-            } else false
-        }
-        qsQty.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_NEXT) { qsPrice.requestFocus(); true } else false
-        }
-        qsPrice.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_NEXT) { qsCustomer.requestFocus(); true } else false
-        }
-
-        qsItemName.setOnItemClickListener { _, _, position, _ ->
-            val name = qsItemName.adapter.getItem(position).toString()
-            val p = products.find { it.name.equals(name, ignoreCase = true) }
-            qsSelectedProduct = p
-            qsLastMainPrice = 0.0
-            if (p != null) {
-                val qsUnits = qsUnitsFor(p)
-                // FIX (unit auto-selection): same rule as above — see defaultUnitIndexFor().
-                val qsDefaultIndex = defaultUnitIndexFor(p)
-                qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnits)
-                qsUnitSpinner.setSelection(qsDefaultIndex)
-                qsQty.setText(if (qsQty.text.toString().isBlank()) "1" else qsQty.text.toString())
-                val defaultUnit = qsUnits[qsDefaultIndex]
-                val price = qsFromMainPrice(p, p.salePrice, defaultUnit)
-                qsPrice.setText(if (price > 0) "%.2f".format(price) else "")
-                qsQty.requestFocus()
-                qsQty.setSelection(qsQty.text.length)
-                qsRefreshStock(); qsRefreshTotal()
-            }
-        }
-
-        qsUnitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                val p = qsSelectedProduct ?: return
-                val unit = qsUnitSpinner.selectedItem?.toString() ?: p.unit
-                val base = if (qsLastMainPrice > 0) qsLastMainPrice else p.salePrice
-                val price = qsFromMainPrice(p, base, unit)
-                qsPrice.setText(if (price > 0) "%.2f".format(price) else "")
-                qsRefreshStock(); qsRefreshTotal()
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-        qsPrice.addTextChangedListener(simpleWatcher {
-            val p = qsSelectedProduct ?: return@simpleWatcher
-            val unit = qsUnitSpinner.selectedItem?.toString() ?: p.unit
-            val entered = qsPrice.text.toString().toDoubleOrNull() ?: 0.0
-            qsLastMainPrice = qsToMainPrice(p, entered, unit)
-        })
-
-        val scroll = ScrollView(this).apply { addView(container) }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Quick Sale", "فوری سیل"))
-            .setView(scroll)
-            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "SAVE", "محفوظ کریں"), null)
-            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ"), null)
-            .create()
-
-        dialog.setOnShowListener {
-            qsItemName.post { qsItemName.showDropDown() }
-            val positiveBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            positiveBtn.setOnClickListener {
-                val typedName = qsItemName.text.toString().trim()
-                val product = qsSelectedProduct?.takeIf { it.name.equals(typedName, ignoreCase = true) }
-                    ?: products.find { it.name.equals(typedName, ignoreCase = true) }
-                if (product == null) {
-                    Toast.makeText(this, "Ye item product list mein nahi hai", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                val q = qsQty.text.toString().toDoubleOrNull() ?: 0.0
-                if (q <= 0) {
-                    Toast.makeText(this, "Quantity theek se likhen", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                val chosenUnit = qsUnitSpinner.selectedItem?.toString() ?: product.unit
-                val price = qsPrice.text.toString().toDoubleOrNull() ?: product.salePrice
-                val neededSmallest = product.toSmallestUnits(q, chosenUnit)
-                if (product.stock < neededSmallest) {
-                    Toast.makeText(
-                        this,
-                        "Stock kam hai (available: ${formatQty(product.stock.toDouble())} ${product.smallestUnitName()})",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setOnClickListener
-                }
-                val custName = qsCustomer.text.toString().trim()
-                saveQuickSale(product, q, price, chosenUnit, custName)
-                dialog.dismiss()
-            }
-        }
-        dialog.show()
-    }
-
-    private fun saveQuickSale(product: Product, q: Double, price: Double, unit: String, custName: String) {
-        viewModel.saveQuickSale(product, q, price, unit, custName)
-    }
 
     private fun vibrateShort() {
         try {
@@ -1847,197 +1201,10 @@ class SaleActivity : AppCompatActivity() {
         viewModel.deleteSale(invoice, originalSale, originalItems)
     }
 
-    private fun formatQty(v: Double): String =
+    internal fun formatQty(v: Double): String =
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
-    private fun holdBill() {
-        if (lines.isEmpty()) {
-            Toast.makeText(this, "Add items pehle, phir hold karen", Toast.LENGTH_SHORT).show()
-            return
-        }
-        viewModel.holdBill(encodeHold())
-    }
 
-    private fun encodeHold(): String {
-        val header = listOf(
-            customerName.text.toString(),
-            saleTypeSpinner.selectedItem?.toString() ?: "Retail",
-            if (isCashSale) "CASH" else "CREDIT",
-            discountInput.text.toString()
-        ).joinToString("\u0001")
 
-        val itemsPart = lines.joinToString("\u0002") {
-            listOf(
-                it.barcode, it.itemName, it.qty, it.unit, it.unitPrice, it.cost, it.amount,
-                it.mainUnit, it.secondaryUnit, it.secondaryUnitQty, it.tertiaryUnit, it.tertiaryUnitQty
-            ).joinToString("\u0003")
-        }
-        return header + "\u0004" + itemsPart
-    }
 
-    private fun decodeHold(payload: String) {
-        val parts = payload.split("\u0004")
-        if (parts.isEmpty()) return
-        val header = parts[0].split("\u0001")
-        if (header.size >= 4) {
-            customerName.setText(header[0])
-            val saleTypeIndex = if (header[1] == "Wholesale") 1 else 0
-            saleTypeSpinner.setSelection(saleTypeIndex)
-            discountInput.setText(header[3])
-        }
-
-        lines.clear()
-        if (parts.size > 1 && parts[1].isNotEmpty()) {
-            parts[1].split("\u0002").forEach { row ->
-                val f = row.split("\u0003")
-                if (f.size >= 10) {
-                    lines.add(
-                        SaleLine(
-                            barcode = f[0],
-                            itemName = f[1],
-                            qty = f[2].toDoubleOrNull() ?: 0.0,
-                            unit = f[3],
-                            unitPrice = f[4].toDoubleOrNull() ?: 0.0,
-                            cost = f[5].toDoubleOrNull() ?: 0.0,
-                            amount = f[6].toDoubleOrNull() ?: 0.0,
-                            mainUnit = f[7],
-                            secondaryUnit = f[8],
-                            secondaryUnitQty = f[9].toDoubleOrNull() ?: 0.0,
-                            tertiaryUnit = f.getOrNull(10) ?: "",
-                            tertiaryUnitQty = f.getOrNull(11)?.toDoubleOrNull() ?: 0.0
-                        )
-                    )
-                }
-            }
-        }
-        renderItemsList()
-        updateTotals()
-        if (editInvoice == null) saveDraft()
-    }
-
-    private fun clearAll() {
-        lines.clear()
-        renderItemsList()
-        customerName.text.clear()
-        discountInput.text.clear()
-        itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
-        selectedProduct = null
-        lastMainPrice = 0.0
-        conversionInfo.visibility = View.GONE
-        unitToggleRow.visibility = View.GONE
-        itemLineTotalText.text = "Total Amount: Rs 0"
-        paidInput.text.clear()
-        updateTotals()
-        saleDateMillis = System.currentTimeMillis()
-        dateValueText.text = formatDate(saleDateMillis)
-        clearDraft()
-    }
-
-    private fun openRecallDialog() {
-        lifecycleScope.launch {
-            val held = viewModel.heldBills()
-
-            val content = LinearLayout(this@SaleActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                setBackgroundColor(Color.parseColor(cardBg))
-            }
-            val dialogHeader = LinearLayout(this@SaleActivity).apply {
-                setPadding(28, 26, 28, 26)
-                background = roundedBg(navy, 0)
-            }
-            dialogHeader.addView(TextView(this@SaleActivity).apply {
-                text = "Held Bills"
-                textSize = 18f
-                setTextColor(Color.WHITE)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-            })
-            content.addView(dialogHeader)
-
-            val list = LinearLayout(this@SaleActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(24, 18, 24, 16)
-            }
-
-            if (held.isEmpty()) {
-                list.addView(TextView(this@SaleActivity).apply {
-                    text = "Koi held bill nahi hai"
-                    setTextColor(Color.parseColor(textGray))
-                    setPadding(8, 20, 8, 20)
-                })
-            }
-
-            val dialog = AlertDialog.Builder(this@SaleActivity).setView(content).create()
-            val fmt = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
-
-            for (h in held) {
-                val itemCount = h.payload.split("\u0004").getOrNull(1)?.split("\u0002")?.filter { it.isNotEmpty() }?.size ?: 0
-                val row = LinearLayout(this@SaleActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(18, 16, 18, 16)
-                    background = strokedBg(border, "#F7F8FC", 14)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { setMargins(0, 0, 0, 10) }
-                }
-                row.addView(circleIcon("\u23F8", amber, 30))
-                row.addView(View(this@SaleActivity).apply { layoutParams = LinearLayout.LayoutParams(12, 1) })
-                val info = LinearLayout(this@SaleActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                }
-                info.addView(TextView(this@SaleActivity).apply {
-                    text = "$itemCount items"; textSize = 15f
-                    setTextColor(Color.parseColor(textDark))
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                })
-                info.addView(TextView(this@SaleActivity).apply {
-                    text = fmt.format(Date(h.createdAt))
-                    textSize = 12f
-                    setTextColor(Color.parseColor(textGray))
-                })
-                row.addView(info)
-                row.addView(TextView(this@SaleActivity).apply {
-                    text = "RECALL"
-                    textSize = 12f
-                    setTextColor(Color.WHITE)
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    background = roundedBg(teal, 20)
-                    setPadding(22, 10, 22, 10)
-                    setOnClickListener {
-                        decodeHold(h.payload)
-                        viewModel.deleteHeldBill(h)
-                        dialog.dismiss()
-                    }
-                })
-                row.addView(View(this@SaleActivity).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
-                row.addView(TextView(this@SaleActivity).apply {
-                    text = "\u2715"
-                    textSize = 14f
-                    setTextColor(Color.WHITE)
-                    background = ovalBg(red)
-                    gravity = Gravity.CENTER
-                    val px = (26 * resources.displayMetrics.density).toInt()
-                    layoutParams = android.view.ViewGroup.LayoutParams(px, px)
-                    setOnClickListener {
-                        viewModel.deleteHeldBill(h)
-                        Toast.makeText(this@SaleActivity, "Held bill hata di", Toast.LENGTH_SHORT).show()
-                        dialog.dismiss()
-                    }
-                })
-                list.addView(row)
-            }
-            content.addView(list)
-
-            content.addView(Button(this@SaleActivity).apply {
-                text = "Close"
-                isAllCaps = false
-                setTextColor(Color.parseColor(textGray))
-                setBackgroundColor(Color.TRANSPARENT)
-                setOnClickListener { dialog.dismiss() }
-            })
-
-            dialog.show()
-        }
-    }
 }
