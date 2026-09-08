@@ -1,5 +1,7 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.R
+
 /*
  * Product screen — "Add Item Unit" dialog: setting Primary/Secondary/Tertiary
  * units and how they convert into each other. Split out of ProductActivity.kt

@@ -1,5 +1,7 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.R
+
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle

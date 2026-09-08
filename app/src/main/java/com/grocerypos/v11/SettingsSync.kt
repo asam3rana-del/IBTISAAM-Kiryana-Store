@@ -1,5 +1,7 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.R
+
 /*
  * Settings screen — Cloud Sync subsystem: connectivity check, the "Sync Now"
  * row + its status dot, the resync-from-a-date-time long-press action, the

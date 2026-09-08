@@ -110,7 +110,7 @@ class DueRemindersActivity : AppCompatActivity() {
         val today = startOfToday()
         val overdue = sales.count { it.dueDate in 1 until today }
         val totalDue = sales.sumOf { it.total - it.paid }
-        summaryBox.addView(summaryCard("\u26A0\uFE0F", Loc.t(this, "Overdue", "میعاد گزری"), "$overdue", red, "#FDE8E8"))
+        summaryBox.addView(summaryCard(R.drawable.ic_warning, Loc.t(this, "Overdue", "میعاد گزری"), "$overdue", red, "#FDE8E8"))
         summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Total outstanding", "کل بقایا"), "Rs %.2f".format(totalDue), amber, "#FFF3E0"))
     }
 

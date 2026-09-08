@@ -1,5 +1,7 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.R
+
 /*
  * Sale screen — Quick Sale dialog (single-item fast checkout, launched from
  * the header pill). Split out of SaleActivity.kt as part of the "Oversized
