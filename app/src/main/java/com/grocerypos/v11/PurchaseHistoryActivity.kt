@@ -713,16 +713,6 @@ class PurchaseHistoryActivity : ThemedActivity() {
         }
     }
 
-    private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) = GradientDrawable(
-        GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(startHex), Color.parseColor(endHex))
-    ).apply {
-        val density = resources.displayMetrics.density
-        cornerRadii = floatArrayOf(
-            cornerTop * density, cornerTop * density,
-            cornerTop * density, cornerTop * density,
-            cornerBottom * density, cornerBottom * density,
-            cornerBottom * density, cornerBottom * density
-        )
-    }
-    private fun spacer(heightDp: Int) = View(this).apply { val px = (heightDp * resources.displayMetrics.density).toInt(); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px) }
+    // gradientBg() and spacer() now come from the shared UiHelpers.kt (item #24 dedup) —
+    // both were byte-identical private copies here before.
 }

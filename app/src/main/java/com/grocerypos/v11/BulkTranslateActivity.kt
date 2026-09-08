@@ -19,6 +19,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.UnitType
+import com.grocerypos.v11.ui.components.*
 import com.grocerypos.v11.util.DuplicateUnitFix
 import kotlinx.coroutines.launch
 
@@ -455,7 +456,6 @@ class BulkTranslateActivity : ThemedActivity() {
         setPadding(4, 0, 0, 10)
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(-1, (heightDp * resources.displayMetrics.density).toInt())
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before (functionally, -1 == LinearLayout.LayoutParams.MATCH_PARENT).
 }

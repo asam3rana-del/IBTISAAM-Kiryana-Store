@@ -110,7 +110,7 @@ class DueRemindersActivity : AppCompatActivity() {
         val today = startOfToday()
         val overdue = sales.count { it.dueDate in 1 until today }
         val totalDue = sales.sumOf { it.total - it.paid }
-        summaryBox.addView(summaryCard(R.drawable.ic_warning, Loc.t(this, "Overdue", "میعاد گزری"), "$overdue", red, "#FDE8E8"))
+        summaryBox.addView(summaryCard("\u26A0\uFE0F", Loc.t(this, "Overdue", "میعاد گزری"), "$overdue", red, "#FDE8E8"))
         summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Total outstanding", "کل بقایا"), "Rs %.2f".format(totalDue), amber, "#FFF3E0"))
     }
 
@@ -269,8 +269,6 @@ class DueRemindersActivity : AppCompatActivity() {
         return d
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

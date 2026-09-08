@@ -918,17 +918,8 @@ class PurchaseActivity : ThemedActivity() {
         }
         popup.show()
     }
-    private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) = GradientDrawable(
-        GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(startHex), Color.parseColor(endHex))
-    ).apply {
-        val density = resources.displayMetrics.density
-        cornerRadii = floatArrayOf(
-            cornerTop * density, cornerTop * density,
-            cornerTop * density, cornerTop * density,
-            cornerBottom * density, cornerBottom * density,
-            cornerBottom * density, cornerBottom * density
-        )
-    }
+    // gradientBg() and spacer() now come from the shared UiHelpers.kt (item #24 dedup) —
+    // both were byte-identical private copies here before.
     private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
         val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
         d.setTint(Color.parseColor(tintHex))
@@ -942,7 +933,6 @@ class PurchaseActivity : ThemedActivity() {
         compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply { val px = (heightDp * resources.displayMetrics.density).toInt(); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px) }
     private fun simpleWatcher(onChange: () -> Unit) = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}

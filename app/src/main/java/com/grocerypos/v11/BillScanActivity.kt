@@ -488,7 +488,6 @@ class BillScanActivity : ThemedActivity() {
         setOnClickListener { onClick() }
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (heightDp * resources.displayMetrics.density).toInt())
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

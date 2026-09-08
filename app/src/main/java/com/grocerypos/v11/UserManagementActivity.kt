@@ -726,10 +726,8 @@ class UserManagementActivity : AppCompatActivity() {
         layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 
     private fun spacerH(widthDp: Int) = View(this).apply {
         val px = (widthDp * resources.displayMetrics.density).toInt()

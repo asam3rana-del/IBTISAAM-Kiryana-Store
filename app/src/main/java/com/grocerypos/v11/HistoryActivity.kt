@@ -949,14 +949,10 @@ class HistoryActivity : AppCompatActivity() {
     // ================= PREMIUM HEADER (matches Reports/Stock/Balance Sheet/Party Reports) =================
 
     // ================= SHARED UI HELPERS (matches Reports/Stock/Balance Sheet/Party Reports) =================
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER
-        background = ovalBg(colorHex)
-        val px = (sizeDp * resources.displayMetrics.density).toInt()
-        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
-    }
+    // circleIcon() and spacer() now come from the shared PremiumHeader.kt/UiHelpers.kt
+    // (item #24 dedup) — both were byte-identical private copies here before.
+    // circleIconDrawable() below is a genuinely different overload (extra tintHex param)
+    // not present in the shared file, so it stays local.
 
     // ---- Drawable-resource overload of circleIcon(), added alongside the original
     // emoji-string version so this one call site (empty-state badge) can move to a
@@ -967,10 +963,5 @@ class HistoryActivity : AppCompatActivity() {
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         layoutParams = android.view.ViewGroup.LayoutParams(px, px)
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
     }
 }

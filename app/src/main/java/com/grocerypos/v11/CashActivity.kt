@@ -315,20 +315,9 @@ class CashActivity : AppCompatActivity() {
         return Pair(card, valueText)
     }
 
+    // spacer() and lighten() now come from the shared UiHelpers.kt (item #24 dedup) —
+    // both were byte-identical private copies here before.
     private fun lightenHex(hex: String): String = String.format("#%06X", 0xFFFFFF and lighten(hex, 0.88f))
-
-    private fun lighten(hex: String, factor: Float): Int {
-        val base = Color.parseColor(hex)
-        val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt()
-        val g = (Color.green(base) + (255 - Color.green(base)) * factor).toInt()
-        val bl = (Color.blue(base) + (255 - Color.blue(base)) * factor).toInt()
-        return Color.rgb(r.coerceIn(0,255), g.coerceIn(0,255), bl.coerceIn(0,255))
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
 
     // ---- logic: category now only applies to CASH OUT entries. CASH IN entries never carry an
     // expense category in the reason text, and the category/misc fields are hidden for CASH IN

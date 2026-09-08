@@ -434,9 +434,7 @@ class DayBookActivity : AppCompatActivity() {
     private fun gradientBg(startHex: String, endHex: String) = GradientDrawable(
         GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(startHex), Color.parseColor(endHex))
     )
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
     private fun formatDate(millis: Long) = SimpleDateFormat("dd MMM yyyy, EEEE", Locale.getDefault()).format(Date(millis))
 }

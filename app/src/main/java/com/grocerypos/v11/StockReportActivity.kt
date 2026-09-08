@@ -305,17 +305,6 @@ class StockReportActivity : AppCompatActivity() {
     }
 
     // ================= SHARED UI HELPERS (matches Items/Categories/Reports) =================
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER
-        background = ovalBg(colorHex)
-        val px = (sizeDp * resources.displayMetrics.density).toInt()
-        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // circleIcon() and spacer() now come from the shared PremiumHeader.kt/UiHelpers.kt
+    // (item #24 dedup) — both were byte-identical private copies here before.
 }

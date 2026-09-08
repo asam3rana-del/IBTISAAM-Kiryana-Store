@@ -21,7 +21,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
-import com.grocerypos.v11.R
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.launch
 import java.io.File
@@ -348,7 +347,7 @@ class BillPreviewActivity : ThemedActivity() {
             shopNameLine.text = shopName
             val subParts = listOfNotNull(
                 shopAddress.takeIf { it.isNotBlank() },
-                shopPhone.takeIf { it.isNotBlank() }?.let { it }
+                shopPhone.takeIf { it.isNotBlank() }?.let { "📞 $it" }
             )
             shopSubLine.text = subParts.joinToString("  •  ")
             footerLine.text = receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }
@@ -632,8 +631,6 @@ class BillPreviewActivity : ThemedActivity() {
         }
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }
