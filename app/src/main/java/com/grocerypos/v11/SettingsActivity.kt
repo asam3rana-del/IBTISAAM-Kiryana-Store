@@ -1,6 +1,5 @@
 package com.grocerypos.v11.ui
 
-import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Intent
 import android.graphics.Color
@@ -18,6 +17,7 @@ import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -136,37 +136,37 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ---- Parties (real) ----
-        list.addView(menuRow("👥", "Parties", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_people, "Parties", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, PartyDashboardActivity::class.java))
         })
 
         // ---- Items (real) ----
-        list.addView(menuRow("📋", "Items") {
+        list.addView(menuRow(R.drawable.ic_list, "Items") {
             startActivity(Intent(this@SettingsActivity, ItemsActivity::class.java))
         })
 
         // ---- Reports (real) ----
-        list.addView(menuRow("📈", "Reports") {
+        list.addView(menuRow(R.drawable.ic_trending, "Reports") {
             startActivity(Intent(this@SettingsActivity, ReportsActivity::class.java))
         })
 
         // ---- Sale (real) ----
-        list.addView(menuRow("🧾", "Sale", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_receipt, "Sale", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, SaleActivity::class.java))
         })
 
         // ---- Purchase (real) ----
-        list.addView(menuRow("🛒", "Purchase", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_cart, "Purchase", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, PurchaseActivity::class.java))
         })
 
         // ---- Expense (no screen yet — reflection fallback kept in case it's added later) ----
-        list.addView(menuRow("💼", "Expense", trailingText = "+") {
+        list.addView(menuRow(R.drawable.ic_briefcase, "Expense", trailingText = "+") {
             tryOpenActivity("com.grocerypos.v11.ui.ExpenseActivity", "Expense")
         })
 
         // ---- Cash & Bank (real) ----
-        list.addView(menuRow("🏦", "Cash & Bank", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_bank, "Cash & Bank", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, CashActivity::class.java))
         })
 
@@ -177,7 +177,7 @@ class SettingsActivity : AppCompatActivity() {
         // Firebase project instead of always using whatever this build shipped with —
         // see CloudConfigStore.kt for why. Sync Now above stays disabled/no-op until
         // this is filled in (or this build already has a usable default baked in).
-        list.addView(menuRow("☁️", "Cloud Sync Setup", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_cloud, "Cloud Sync Setup", showChevron = true) {
             openCloudSyncSetupDialog()
         })
 
@@ -185,7 +185,7 @@ class SettingsActivity : AppCompatActivity() {
         // mainly conflicts (two devices editing the same record while both offline) and
         // push failures, so if something looks wrong after a sync, there's a trail to
         // check instead of it being a silent mystery.
-        list.addView(menuRow("🧾", "Sync History", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_receipt, "Sync History", showChevron = true) {
             openSyncHistoryDialog()
         })
 
@@ -194,7 +194,7 @@ class SettingsActivity : AppCompatActivity() {
         // ---- Settings (expandable — holds all the real settings sections) ----
         val settingsContent = buildSettingsContent()
         settingsContent.visibility = View.GONE
-        val settingsRow = expandableMenuRow("⚙️", "Settings", target = settingsContent)
+        val settingsRow = expandableMenuRow(R.drawable.ic_settings, "Settings", target = settingsContent)
         list.addView(settingsRow)
         list.addView(settingsContent)
 
@@ -202,7 +202,7 @@ class SettingsActivity : AppCompatActivity() {
         val backupContent = buildBackupContent()
         backupContent.visibility = View.GONE
         val backupRow = expandableMenuRow(
-            "🗄️", "Backup/Restore",
+            R.drawable.ic_archive, "Backup/Restore",
             subtitle = "Auto backup not enabled.",
             target = backupContent
         )
@@ -212,7 +212,7 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(spacer(10))
 
         // ---- Logout ----
-        list.addView(menuRow("🚪", "Logout", textColorHex = red, iconBgHex = red) {
+        list.addView(menuRow(R.drawable.ic_logout, "Logout", textColorHex = red, iconBgHex = red) {
             doLogout()
         })
 
@@ -321,7 +321,7 @@ class SettingsActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
-        row.addView(iconBadge("🔄", teal))
+        row.addView(iconBadge(R.drawable.ic_sync, teal))
         row.addView(spacerH(16))
 
         val textCol = LinearLayout(this).apply {
@@ -482,19 +482,21 @@ class SettingsActivity : AppCompatActivity() {
                     ).apply { setMargins(0, 0, 0, 12) }
 
                     addView(TextView(this@SettingsActivity).apply {
-                        text = "⚠️ ${stuckItems.size} item(s) 10 baar fail hone ke baad rukk gaye"
+                        text = "${stuckItems.size} item(s) 10 baar fail hone ke baad rukk gaye"
                         textSize = 12f
                         setTextColor(Color.parseColor(amber))
                         setTypeface(typeface, Typeface.BOLD)
                         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        setLeadingIcon(R.drawable.ic_warning, amber, 14, 6)
                     })
                     addView(TextView(this@SettingsActivity).apply {
-                        text = "🔄 Retry Now"
+                        text = "Retry Now"
                         textSize = 12f
                         setTextColor(Color.WHITE)
                         setTypeface(typeface, Typeface.BOLD)
                         background = roundedBg(amber, 20)
                         setPadding(20, 10, 20, 10)
+                        setLeadingIcon(R.drawable.ic_sync, "#FFFFFF", 13, 5)
                         setOnClickListener {
                             lifecycleScope.launch {
                                 db.syncQueueDao().resetAllStuck()
@@ -534,13 +536,17 @@ class SettingsActivity : AppCompatActivity() {
 
                     addView(TextView(this@SettingsActivity).apply {
                         text = when (e.action) {
-                            "sync_conflict" -> "⚠️ Conflict — ${e.reference}"
-                            "sync_push_failed" -> "❌ Push failed — ${e.reference}"
+                            "sync_conflict" -> "Conflict — ${e.reference}"
+                            "sync_push_failed" -> "Push failed — ${e.reference}"
                             else -> e.reference
                         }
                         setTextColor(Color.parseColor(labelColor))
                         setTypeface(typeface, Typeface.BOLD)
                         textSize = 12.5f
+                        when (e.action) {
+                            "sync_conflict" -> setLeadingIcon(R.drawable.ic_warning, labelColor, 13, 5)
+                            "sync_push_failed" -> setLeadingIcon(R.drawable.ic_close, labelColor, 13, 5)
+                        }
                     })
                     if (e.details.isNotBlank()) {
                         addView(TextView(this@SettingsActivity).apply {
@@ -712,10 +718,9 @@ class SettingsActivity : AppCompatActivity() {
             }
             applyElevation(this, 3f)
         }
-        iconCircle.addView(TextView(this).apply {
-            text = "🏪"
-            textSize = 25f
-            gravity = Gravity.CENTER
+        iconCircle.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_store, navy, 26))
+            scaleType = ImageView.ScaleType.CENTER
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         })
         header.addView(iconCircle)
@@ -762,7 +767,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** A simple, non-expanding premium card row: icon-in-circle + label (+ optional chevron / trailing text). */
     private fun menuRow(
-        icon: String,
+        iconRes: Int,
         label: String,
         showChevron: Boolean = false,
         trailingText: String? = null,
@@ -777,7 +782,7 @@ class SettingsActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
-        row.addView(iconBadge(icon, iconBgHex))
+        row.addView(iconBadge(iconRes, iconBgHex))
         row.addView(spacerH(16))
         row.addView(TextView(this).apply {
             text = label
@@ -802,7 +807,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** A premium card row with an optional subtitle line that expands/collapses a target view when tapped. */
     private fun expandableMenuRow(
-        icon: String,
+        iconRes: Int,
         label: String,
         subtitle: String? = null,
         target: View
@@ -814,7 +819,7 @@ class SettingsActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
-        row.addView(iconBadge(icon, navy))
+        row.addView(iconBadge(iconRes, navy))
         row.addView(spacerH(16))
 
         val textCol = LinearLayout(this).apply {
@@ -843,15 +848,29 @@ class SettingsActivity : AppCompatActivity() {
         row.setOnClickListener {
             val expanding = target.visibility != View.VISIBLE
             target.visibility = if (expanding) View.VISIBLE else View.GONE
-            chevron.text = if (expanding) "⌃" else "⌄"
+            chevron.rotation = if (expanding) 180f else 0f
         }
         return row
     }
 
-    private fun iconBadge(icon: String, colorHex: String) = TextView(this).apply {
-        text = icon
-        textSize = 18f
-        gravity = Gravity.CENTER
+    // ---- Vector-icon helpers (replace emoji throughout this screen with tinted drawables
+    // from res/drawable, per the item-6 UI improvement pass) — same pattern as ProductActivity. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun iconBadge(iconRes: Int, colorHex: String) = ImageView(this).apply {
+        setImageDrawable(tintedDrawable(iconRes, colorHex, 20))
+        scaleType = ImageView.ScaleType.CENTER
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.parseColor(lightenTint(colorHex)))
@@ -860,11 +879,8 @@ class SettingsActivity : AppCompatActivity() {
         width = px; height = px
     }
 
-    private fun chevronText() = TextView(this).apply {
-        text = "⌄"
-        textSize = 16f
-        setTextColor(Color.parseColor(teal))
-        setTypeface(typeface, Typeface.BOLD)
+    private fun chevronText() = ImageView(this).apply {
+        setImageDrawable(tintedDrawable(R.drawable.ic_chevron_down, teal, 18))
     }
 
     private fun spacerH(widthDp: Int) = View(this).apply {
@@ -880,7 +896,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ---- Shop Info ----
-        val shopCard = premiumCard("🏪", "Shop Information")
+        val shopCard = premiumCard(R.drawable.ic_store, "Shop Information")
         shopNameField = plainField("Shop Name")
         phoneField = plainField("Phone")
         addressField = plainField("Address")
@@ -888,24 +904,24 @@ class SettingsActivity : AppCompatActivity() {
         currencyField = plainField("Currency")
         taxField = plainField("Tax %")
 
-        shopCard.addView(iconFieldBox("🏪", "Shop Name", shopNameField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_store, "Shop Name", shopNameField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("📞", "Phone", phoneField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_phone, "Phone", phoneField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("📍", "Address", addressField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_location, "Address", addressField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("🧾", "Receipt Footer", footerField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_receipt, "Receipt Footer", footerField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("💱", "Currency", currencyField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_wallet, "Currency", currencyField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("📊", "Tax %", taxField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_chart, "Tax %", taxField))
         shopCard.addView(spacer(12))
         shopCard.addView(primaryButton("SAVE SETTINGS", navy) { saveShopSettings() })
         container.addView(shopCard)
         loadShopSettings()
 
         // ---- Printer ----
-        val printerCard = premiumCard("🖨️", "Printer Setup (58mm Bluetooth)")
+        val printerCard = premiumCard(R.drawable.ic_printer, "Printer Setup (58mm Bluetooth)")
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -941,7 +957,7 @@ class SettingsActivity : AppCompatActivity() {
         container.addView(printerCard)
 
         // ---- Security (Login Method) ----
-        val securityCard = premiumCard("🔐", "Security — Login Method")
+        val securityCard = premiumCard(R.drawable.ic_lock, "Security — Login Method")
         loginMethodGroup = RadioGroup(this).apply { orientation = LinearLayout.VERTICAL }
         passwordOnlyRadio = radioOption("Password Only")
         fingerprintOnlyRadio = radioOption("Fingerprint Only")
@@ -978,7 +994,7 @@ class SettingsActivity : AppCompatActivity() {
         loadLoginMethodSetting()
 
         // ---- Change Username / Password ----
-        val loginCard = premiumCard("🔑", "Change Login (Username / Password)")
+        val loginCard = premiumCard(R.drawable.ic_key, "Change Login (Username / Password)")
         val session = getSharedPreferences("session", MODE_PRIVATE)
         val loggedInUsername = session.getString("username", "") ?: ""
 
@@ -992,17 +1008,17 @@ class SettingsActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
 
-        loginCard.addView(iconFieldBox("👤", "Current Username", currentUsernameField, muted = true))
+        loginCard.addView(iconFieldBox(R.drawable.ic_person, "Current Username", currentUsernameField, muted = true))
         loginCard.addView(spacer(10))
-        loginCard.addView(iconFieldBox("🆕", "New Username", newUsernameField))
+        loginCard.addView(iconFieldBox(R.drawable.ic_add, "New Username", newUsernameField))
         loginCard.addView(spacer(10))
-        loginCard.addView(passwordFieldBox("🔒", "New Password", newPasswordField))
+        loginCard.addView(passwordFieldBox(R.drawable.ic_lock, "New Password", newPasswordField))
         loginCard.addView(spacer(12))
         loginCard.addView(primaryButton("UPDATE LOGIN", navy) { updateLogin(loggedInUsername) })
         container.addView(loginCard)
 
         // ---- Language ----
-        val languageCard = premiumCard("🌐", "Language")
+        val languageCard = premiumCard(R.drawable.ic_globe, "Language")
         val langRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val englishBtn = pillToggleButton("English")
         val urduBtn = pillToggleButton("اردو")
@@ -1032,7 +1048,7 @@ class SettingsActivity : AppCompatActivity() {
         container.addView(languageCard)
 
         // ---- Users ----
-        val usersCard = premiumCard("👥", "Users & Account")
+        val usersCard = premiumCard(R.drawable.ic_people, "Users & Account")
         usersCard.addView(secondaryButton("MANAGE USERS", navy) {
             startActivity(Intent(this@SettingsActivity, UserManagementActivity::class.java))
         })
@@ -1047,7 +1063,7 @@ class SettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 4, 0, 8)
         }
-        val backupCard = premiumCard("🗄️", "Backup & Restore")
+        val backupCard = premiumCard(R.drawable.ic_archive, "Backup & Restore")
         backupCard.addView(primaryButton("BACKUP NOW", teal) { onBackupClicked() })
         backupCard.addView(spacer(10))
         backupCard.addView(primaryButton("RESTORE BACKUP", red) { onRestoreClicked() })
@@ -1072,7 +1088,13 @@ class SettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             background = strokedBg("#F4C9CB", "#FDEEEE", 12)
             setPadding(16, 12, 16, 12)
-            addView(TextView(this@SettingsActivity).apply { text = "⚠️  "; textSize = 13f })
+            addView(ImageView(this@SettingsActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_warning, red, 16))
+                val px = (16 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                    marginEnd = (8 * resources.displayMetrics.density).toInt()
+                }
+            })
             addView(TextView(this@SettingsActivity).apply {
                 text = "Restore purani backup laata hai aur is waqt ka sara naya data (jo backup ke baad add hua) permanently mita deta hai. Sirf tab use karein jab aapko waqai purani state par jaana ho."
                 textSize = 11.5f
@@ -1097,19 +1119,22 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /** Premium card with a small icon-badge section title inside — used for the Settings sub-sections. */
-    private fun premiumCard(icon: String, title: String) = premiumCard().apply {
+    private fun premiumCard(iconRes: Int, title: String) = premiumCard().apply {
         setPadding(20, 18, 20, 18)
-        addView(sectionLabel(icon, title))
+        addView(sectionLabel(iconRes, title))
         addView(spacer(4))
     }
 
-    private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
+    private fun sectionLabel(iconRes: Int, label: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, 0, 0, 14)
-        addView(TextView(this@SettingsActivity).apply {
-            text = "$icon  "
-            textSize = 14f
+        addView(ImageView(this@SettingsActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, teal, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
         })
         addView(TextView(this@SettingsActivity).apply {
             text = label
@@ -1138,26 +1163,38 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /** Icon-prefixed labeled field box — matches ProductActivity's fieldBox(icon) pattern. */
-    private fun iconFieldBox(icon: String, label: String, field: EditText, muted: Boolean = false) = LinearLayout(this).apply {
+    private fun iconFieldBox(iconRes: Int, label: String, field: EditText, muted: Boolean = false) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = strokedBg(border, if (muted) "#F1F3F5" else "#FAFBFC", 12)
         setPadding(16, 10, 16, 10)
         addView(microLabel(label))
         val row = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        row.addView(TextView(this@SettingsActivity).apply { text = "$icon  "; textSize = 14f })
+        row.addView(ImageView(this@SettingsActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         row.addView(field)
         addView(row)
     }
 
-    private fun passwordFieldBox(icon: String, label: String, field: EditText) = LinearLayout(this).apply {
+    private fun passwordFieldBox(iconRes: Int, label: String, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = strokedBg(border, "#FAFBFC", 12)
         setPadding(16, 10, 16, 10)
         addView(microLabel(label))
         val row = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        row.addView(TextView(this@SettingsActivity).apply { text = "$icon  "; textSize = 14f })
+        row.addView(ImageView(this@SettingsActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         row.addView(field)
@@ -1312,7 +1349,6 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    @SuppressLint("MissingPermission")
     private fun onSelectPrinterClicked() {
         if (!PrinterHelper.hasBluetoothPermission(this)) {
             PrinterHelper.requestBluetoothPermission(this, BT_PERMISSION_REQUEST_CODE)
