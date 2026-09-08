@@ -30,7 +30,7 @@ import com.grocerypos.v11.ui.components.*
 import kotlinx.coroutines.launch
 
 internal fun SettingsActivity.isNetworkConnected(): Boolean {
-    val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+    val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
     val network = cm.activeNetwork ?: return false
     val caps = cm.getNetworkCapabilities(network) ?: return false
     return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
