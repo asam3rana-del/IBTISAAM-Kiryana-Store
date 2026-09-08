@@ -876,7 +876,7 @@ class SettingsActivity : AppCompatActivity() {
             setColor(Color.parseColor(lightenTint(colorHex)))
         }
         val px = (44 * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
     private fun chevronText() = ImageView(this).apply {

@@ -52,7 +52,7 @@ fun AppCompatActivity.premiumHeader(
         gravity = Gravity.CENTER
         background = ovalBg("#33FFFFFF")
         val px = (36 * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
         setOnClickListener { onBack?.invoke() ?: finish() }
     })
     header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
@@ -85,7 +85,7 @@ fun AppCompatActivity.circleIcon(label: String, colorHex: String, sizeDp: Int): 
         gravity = Gravity.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
 // ---- Vector-icon variants (item-6 UI improvement pass): same header/badge, but takes a
@@ -122,7 +122,7 @@ fun AppCompatActivity.premiumHeader(
         gravity = Gravity.CENTER
         background = ovalBg("#33FFFFFF")
         val px = (36 * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
         setOnClickListener { onBack?.invoke() ?: finish() }
     })
     header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
@@ -156,5 +156,5 @@ fun AppCompatActivity.circleIconDrawable(iconRes: Int, colorHex: String, sizeDp:
         scaleType = android.widget.ImageView.ScaleType.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }

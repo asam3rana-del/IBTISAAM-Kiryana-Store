@@ -117,7 +117,7 @@ class PurchaseHistoryActivity : ThemedActivity() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = ovalBg("#22FFFFFF")
-            val px = (38 * resources.displayMetrics.density).toInt(); width = px; height = px
+            val px = (38 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { finish() }
         })
         header.addView(spacer(14).apply { layoutParams = LinearLayout.LayoutParams((14 * resources.displayMetrics.density).toInt(), 1) })

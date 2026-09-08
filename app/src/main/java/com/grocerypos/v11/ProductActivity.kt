@@ -248,7 +248,7 @@ class ProductActivity : ThemedActivity() {
                 setColor(Color.parseColor(headerBadgeOverlay))
             }
             val px = 44.dp()
-            width = px; height = px
+            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             applyElevation(this, 2f)
         })
         header.addView(View(this).apply {
@@ -806,8 +806,7 @@ class ProductActivity : ThemedActivity() {
         scaleType = ImageView.ScaleType.CENTER
         background = gradientBg(accentHex, fadeHexDark(accentHex), cornerTop = sizeDp, cornerBottom = sizeDp)
         val px = sizeDp.dp()
-        width = px
-        height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
         applyElevation(this, 2f)
     }
 
@@ -908,8 +907,7 @@ class ProductActivity : ThemedActivity() {
                 setColor(Color.parseColor(accentHex))
             }
             val px = 30.dp()
-            width = px
-            height = px
+            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
         })
         addView(View(this@ProductActivity).apply {
             layoutParams = LinearLayout.LayoutParams(10.dp(), 1)
@@ -1344,8 +1342,7 @@ class ProductActivity : ThemedActivity() {
                 setColor(Color.parseColor(headerBadgeOverlay))
             }
             val px = 46.dp()
-            width = px
-            height = px
+            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
         })
         headerTop.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
@@ -1708,8 +1705,7 @@ class ProductActivity : ThemedActivity() {
                 alpha = 210
             }
             val px = 30.dp()
-            width = px
-            height = px
+            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
         })
         addView(View(this@ProductActivity).apply {
             layoutParams = LinearLayout.LayoutParams(10.dp(), 1)
@@ -2140,8 +2136,7 @@ class ProductActivity : ThemedActivity() {
                     gradientBg(navy, navyLight, cornerTop = 30, cornerBottom = 30)
                 }
                 val px = 40.dp()
-                width = px
-                height = px
+                layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             })
 
             top.addView(View(this).apply {

@@ -212,7 +212,7 @@ class SaleActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = ovalBg("#22FFFFFF")
-            val px = (34 * resources.displayMetrics.density).toInt(); width = px; height = px
+            val px = (34 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { showOverflowMenu(it) }
         }
         header.addView(overflowButton)
@@ -934,7 +934,7 @@ class SaleActivity : AppCompatActivity() {
     }
 
     private fun circleIcon(label: String, colorHex: String, sizeDp: Int, onClick: (() -> Unit)? = null) = TextView(this).apply {
-        this.text = label; textSize = 15f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = ovalBg(colorHex); val px = (sizeDp * resources.displayMetrics.density).toInt(); width = px; height = px; if (onClick != null) setOnClickListener { onClick() }
+        this.text = label; textSize = 15f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = ovalBg(colorHex); val px = (sizeDp * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px); if (onClick != null) setOnClickListener { onClick() }
     }
 
     private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) = GradientDrawable(
@@ -1996,7 +1996,7 @@ class SaleActivity : AppCompatActivity() {
                     background = ovalBg(red)
                     gravity = Gravity.CENTER
                     val px = (26 * resources.displayMetrics.density).toInt()
-                    width = px; height = px
+                    layoutParams = android.view.ViewGroup.LayoutParams(px, px)
                     setOnClickListener {
                         viewModel.deleteHeldBill(h)
                         Toast.makeText(this@SaleActivity, "Held bill hata di", Toast.LENGTH_SHORT).show()

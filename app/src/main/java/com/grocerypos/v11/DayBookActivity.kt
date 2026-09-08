@@ -98,7 +98,7 @@ class DayBookActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = ovalBg(headerOverlay)
-            val px = (36 * resources.displayMetrics.density).toInt(); width = px; height = px
+            val px = (36 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { shiftDay(-1) }
         })
         header.addView(spacer(10).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
@@ -108,7 +108,7 @@ class DayBookActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = ovalBg(headerOverlay)
-            val px = (36 * resources.displayMetrics.density).toInt(); width = px; height = px
+            val px = (36 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { shiftDay(1) }
         })
         root.addView(header)
@@ -376,7 +376,7 @@ class DayBookActivity : AppCompatActivity() {
                     textSize = 18f
                     gravity = Gravity.CENTER
                     background = ovalBg(if (e.isInflow) lightenHex(green) else lightenHex(red))
-                    val px = (40 * resources.displayMetrics.density).toInt(); width = px; height = px
+                    val px = (40 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
                 })
 
                 val infoCol = LinearLayout(this@DayBookActivity).apply {

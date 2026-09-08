@@ -534,7 +534,7 @@ class ZakatActivity : AppCompatActivity() {
         gravity = Gravity.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {

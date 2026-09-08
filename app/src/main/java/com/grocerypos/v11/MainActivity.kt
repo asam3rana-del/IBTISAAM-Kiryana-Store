@@ -755,7 +755,7 @@ class MainActivity : ThemedActivity() {
                     setColor(Color.parseColor(roleColor))
                 }
                 val px = (38 * resources.displayMetrics.density).toInt()
-                width = px; height = px
+                layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             })
             addView(View(this@MainActivity).apply {
                 layoutParams = LinearLayout.LayoutParams((14 * resources.displayMetrics.density).toInt(), 1)

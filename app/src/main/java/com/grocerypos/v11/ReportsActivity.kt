@@ -94,7 +94,7 @@ class ReportsActivity : AppCompatActivity() {
             applyElevation(this, 3f)
         }
         navCard.addView(navRow(
-            icon = R.drawable.ic_receipt, accentHex = primary, tintHex = "#EEEDFE",
+            iconRes = R.drawable.ic_receipt, accentHex = primary, tintHex = "#EEEDFE",
             title = Loc.t(this, "Sale History", "سیل کی تاریخ"),
             subtitle = Loc.t(this, "View all sale transactions", "تمام سیل لین دین دیکھیں")
         ) {
@@ -106,7 +106,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_cart, accentHex = "#993C1D", tintHex = "#FAECE7",
+            iconRes = R.drawable.ic_cart, accentHex = "#993C1D", tintHex = "#FAECE7",
             title = Loc.t(this, "Purchase History", "خریداری کی تاریخ"),
             subtitle = Loc.t(this, "View all purchase transactions", "تمام خریداری لین دین دیکھیں")
         ) {
@@ -118,7 +118,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_people, accentHex = purple, tintHex = "#EEEDFE",
+            iconRes = R.drawable.ic_people, accentHex = purple, tintHex = "#EEEDFE",
             title = Loc.t(this, "Party Reports", "پارٹی رپورٹس"),
             subtitle = Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس")
         ) { startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java)) })
@@ -126,7 +126,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_box, accentHex = amber, tintHex = "#FAEEDA",
+            iconRes = R.drawable.ic_box, accentHex = amber, tintHex = "#FAEEDA",
             title = Loc.t(this, "Stock Report", "اسٹاک رپورٹ"),
             subtitle = Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")
         ) { startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java)) })
@@ -137,7 +137,7 @@ class ReportsActivity : AppCompatActivity() {
         // ledger of every purchase/sale/reversal/edit, and a cost-only view of the
         // same ledger — both backed by StockMovementActivity (see that file).
         navCard.addView(navRow(
-            icon = R.drawable.ic_history, accentHex = primary, tintHex = "#EEEDFE",
+            iconRes = R.drawable.ic_history, accentHex = primary, tintHex = "#EEEDFE",
             title = Loc.t(this, "Stock History", "اسٹاک کی تاریخ"),
             subtitle = Loc.t(this, "Every purchase, sale & adjustment per item", "ہر آئٹم کی خریداری، سیل اور ایڈجسٹمنٹ")
         ) {
@@ -149,7 +149,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_trending, accentHex = teal, tintHex = "#E1F5EE",
+            iconRes = R.drawable.ic_trending, accentHex = teal, tintHex = "#E1F5EE",
             title = Loc.t(this, "Cost History", "لاگت کی تاریخ"),
             subtitle = Loc.t(this, "How a product's cost changed over time", "پروڈکٹ کی لاگت وقت کے ساتھ کیسے بدلی")
         ) {
@@ -164,7 +164,7 @@ class ReportsActivity : AppCompatActivity() {
         // Inventory Insights tabs (Reorder Suggestions, Damage/Loss Report, Profit
         // Margin per Item, Fast/Slow Movers) and Due Date Reminders.
         navCard.addView(navRow(
-            icon = R.drawable.ic_wrench, accentHex = red, tintHex = "#FCEBEB",
+            iconRes = R.drawable.ic_wrench, accentHex = red, tintHex = "#FCEBEB",
             title = Loc.t(this, "Stock Adjustment", "اسٹاک ایڈجسٹمنٹ"),
             subtitle = Loc.t(this, "Log damage, loss, or a correction", "نقصان یا درستگی درج کریں")
         ) { startActivity(android.content.Intent(this@ReportsActivity, StockAdjustmentActivity::class.java)) })
@@ -172,7 +172,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_shopping_bag, accentHex = amber, tintHex = "#FAEEDA",
+            iconRes = R.drawable.ic_shopping_bag, accentHex = amber, tintHex = "#FAEEDA",
             title = Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"),
             subtitle = Loc.t(this, "Items at or below reorder level", "کم اسٹاک آئٹمز")
         ) {
@@ -184,7 +184,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_warning, accentHex = red, tintHex = "#FCEBEB",
+            iconRes = R.drawable.ic_warning, accentHex = red, tintHex = "#FCEBEB",
             title = Loc.t(this, "Damage / Loss Report", "نقصان کی رپورٹ"),
             subtitle = Loc.t(this, "Value of stock damaged or lost", "خراب یا ضائع اسٹاک کی مالیت")
         ) {
@@ -196,7 +196,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_trending, accentHex = teal, tintHex = "#E1F5EE",
+            iconRes = R.drawable.ic_trending, accentHex = teal, tintHex = "#E1F5EE",
             title = Loc.t(this, "Profit Margin per Item", "فی آئٹم منافع"),
             subtitle = Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت")
         ) {
@@ -208,7 +208,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_stopwatch, accentHex = purple, tintHex = "#EEEDFE",
+            iconRes = R.drawable.ic_stopwatch, accentHex = purple, tintHex = "#EEEDFE",
             title = Loc.t(this, "Fast / Slow Movers", "تیز / سست چلنے والے"),
             subtitle = Loc.t(this, "Which items sell, and which don't", "کون سے آئٹم بکتے ہیں")
         ) {
@@ -220,7 +220,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_alarm, accentHex = primary, tintHex = "#EEEDFE",
+            iconRes = R.drawable.ic_alarm, accentHex = primary, tintHex = "#EEEDFE",
             title = Loc.t(this, "Due Date Reminders", "ادائیگی کی یاد دہانی"),
             subtitle = Loc.t(this, "Credit sales still owed, by due date", "ادھار سیلز جو واجب الادا ہیں")
         ) { startActivity(android.content.Intent(this@ReportsActivity, DueRemindersActivity::class.java)) })
@@ -228,7 +228,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = R.drawable.ic_bank, accentHex = teal, tintHex = "#E1F5EE",
+            iconRes = R.drawable.ic_bank, accentHex = teal, tintHex = "#E1F5EE",
             title = Loc.t(this, "Balance Sheet", "بیلنس شیٹ"),
             subtitle = Loc.t(this, "Assets, liabilities & capital", "اثاثے، واجبات اور سرمایہ")
         ) { startActivity(android.content.Intent(this@ReportsActivity, BalanceSheetActivity::class.java)) })
@@ -238,7 +238,7 @@ class ReportsActivity : AppCompatActivity() {
         // NEW: Zakat tracker — Ramadan-to-Ramadan year, auto-calculated from the same
         // asset figures Balance Sheet uses, with monthly-installment support.
         navCard.addView(navRow(
-            icon = R.drawable.ic_zakat, accentHex = gold, tintHex = "#FAEEDA",
+            iconRes = R.drawable.ic_zakat, accentHex = gold, tintHex = "#FAEEDA",
             title = Loc.t(this, "Zakat", "زکوٰۃ"),
             subtitle = Loc.t(this, "Track & pay this year's Zakat", "اس سال کی زکوٰۃ ٹریک اور ادا کریں")
         ) { startActivity(android.content.Intent(this@ReportsActivity, ZakatActivity::class.java)) })
@@ -418,7 +418,7 @@ class ReportsActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             background = ovalBg(border)
             val px = (36 * resources.displayMetrics.density).toInt()
-            width = px; height = px
+            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { finish() }
         })
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
@@ -723,7 +723,7 @@ class ReportsActivity : AppCompatActivity() {
         scaleType = ImageView.ScaleType.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
     // ---- Flat design has no shadows/elevation — kept as a no-op so existing call sites

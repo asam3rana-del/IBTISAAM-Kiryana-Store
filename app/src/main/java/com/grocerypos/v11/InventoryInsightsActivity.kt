@@ -388,14 +388,14 @@ class InventoryInsightsActivity : AppCompatActivity() {
             text = "\u2039"; textSize = 20f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = ovalBg("#33FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt(); width = px; height = px
+            val px = (36 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { finish() }
         })
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
         header.addView(TextView(this).apply {
             text = icon; textSize = 18f; gravity = Gravity.CENTER
             background = ovalBg("#5C4DFF")
-            val px = (42 * resources.displayMetrics.density).toInt(); width = px; height = px
+            val px = (42 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
         })
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
         val headerCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }

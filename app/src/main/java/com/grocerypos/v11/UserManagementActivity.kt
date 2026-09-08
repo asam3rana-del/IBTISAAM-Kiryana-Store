@@ -107,7 +107,7 @@ class UserManagementActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             background = ovalBg(primary)
             val px = (86 * resources.displayMetrics.density).toInt()
-            width = px; height = px
+            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             layoutParams = LinearLayout.LayoutParams(px, px).apply { gravity = Gravity.CENTER_HORIZONTAL }
         })
         outer.addView(spacer(22))
@@ -458,7 +458,7 @@ class UserManagementActivity : AppCompatActivity() {
                 // obvious at a glance without having to read the badge text.
                 alpha = if (user.active) 1f else 0.4f
                 val px = (36 * resources.displayMetrics.density).toInt()
-                width = px; height = px
+                layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             })
             topRow.addView(spacerH(14))
 
@@ -694,7 +694,7 @@ class UserManagementActivity : AppCompatActivity() {
         gravity = Gravity.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
     private fun spacer(heightDp: Int) = View(this).apply {
