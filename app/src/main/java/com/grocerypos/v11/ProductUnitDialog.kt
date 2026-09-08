@@ -29,6 +29,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.grocerypos.v11.*
 import com.grocerypos.v11.ui.components.*
+import com.grocerypos.v11.util.Loc
 
 internal fun ProductActivity.badgedSectionLabel(iconRes: Int, label: String, accentHex: String) = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
