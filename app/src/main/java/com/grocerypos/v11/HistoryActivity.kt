@@ -18,6 +18,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.ReturnLine
 import com.grocerypos.v11.SyncQueueHelper
+import com.grocerypos.v11.data.PurchaseRepository
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.smallestQty
 import com.grocerypos.v11.toSmallestUnits
@@ -39,6 +40,18 @@ import com.grocerypos.v11.ui.components.*
  * before — only the view-building code changed.
  */
 class HistoryActivity : AppCompatActivity() {
+
+    // FIX (dedup, item #1): purchase delete now goes through PurchaseRepository —
+    // this activity used to keep its own byte-for-byte copy of
+    // reverseStockAndCostForItems()/deletePurchase() (see PurchaseRepository.kt),
+    // which had already drifted from the original: it was missing the
+    // SyncQueueHelper.enqueue()/trigger() calls after the transaction, so a
+    // purchase deleted from this screen never synced the deletion elsewhere.
+    // Routing through the repository's own deletePurchase() removes the copy
+    // and the bug at the same time — one implementation to keep correct.
+    private val purchaseRepository: PurchaseRepository by lazy {
+        PurchaseRepository(PosDatabase.get(this), applicationContext)
+    }
 
     companion object {
         // ADDED: lets Reports link straight into Sale History or Purchase History
@@ -321,54 +334,6 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    // ---- FIX: mirrors PurchaseActivity.reverseStockAndCostForItems() — converts item.qty via
-    // Product.toSmallestUnits() before touching stock (previously used the raw entered-unit qty,
-    // truncated with .toInt(), directly on decreaseForce — wrong for multi-unit products and lost
-    // fractional qty), and also reverses the weighted-average cost impact so product.cost isn't
-    // left distorted after a delete/return (previously not reversed at all). ----
-    // FIX (item #23, negative stock on delete): this was still using
-    // decreaseProductStockForce() with no pre-check, unlike PurchaseRepository's copy of
-    // this same logic which already got the item #7 guard. If stock had already been drawn
-    // down below this purchase's quantity (by a later sale, or another purchase edit/delete),
-    // the force-decrease would silently push stock negative and corrupt the cost math. Now
-    // validates every line FIRST — before any writes — and refuses the whole return/delete
-    // if any line can't be reversed cleanly, same as PurchaseRepository.reverseStockAndCostForItems().
-    private suspend fun reverseStockAndCostForPurchaseItems(db: PosDatabase, items: List<com.grocerypos.v11.PurchaseItem>) {
-        items.forEach { pi ->
-            val product = db.productDao().find(pi.barcode) ?: return@forEach
-            val smallestQty = pi.smallestQty(product)
-            if (smallestQty > 0 && smallestQty > product.stock) {
-                throw IllegalStateException(
-                    "\"${product.name}\" ka stock is purchase ke baad already kam ho chuka hai " +
-                    "(sale ya doosri entry se) — is purchase ko edit/delete karna cost ko galat kar dega. " +
-                    "Iski jagah stock adjustment karen."
-                )
-            }
-        }
-        for (pi in items) {
-            val product = db.productDao().find(pi.barcode) ?: continue
-            val factor = product.smallestUnitFactor()
-            // FIX (historical unit conversion bug): use pi.conversionFactor (frozen at
-            // purchase time) instead of the product's CURRENT unit config — see
-            // PurchaseRepository.reverseStockAndCostForItems() / Database.kt's
-            // PurchaseItem.smallestQty() comment for the full explanation.
-            val smallestQty = pi.smallestQty(product)
-            if (smallestQty <= 0) continue
-
-            val currentCostPerSmallest = if (factor > 0) product.cost / factor else product.cost
-            val currentStock = product.stock
-            val newStock = currentStock - smallestQty
-
-            val totalValueBefore = currentStock * currentCostPerSmallest
-            val totalValueAfterRemoval = (totalValueBefore - pi.amount).coerceAtLeast(0.0)
-            val newCostPerSmallest = if (newStock > 0) totalValueAfterRemoval / newStock else 0.0
-            val newCost = newCostPerSmallest * factor
-
-            SyncQueueHelper.decreaseProductStockForce(db, pi.barcode, smallestQty, "PURCHASE_REVERSAL", pi.billNo, newCost)
-            SyncQueueHelper.updateProductCost(db, pi.barcode, newCost)
-        }
-    }
-
     // FIX (partial purchase return): "Return" used to only offer returning the ENTIRE
     // bill in one shot, even when the actual issue was e.g. 3 of 10 units of one line
     // being faulty/short — there was no way to send back just those 3. This now opens a
@@ -624,9 +589,11 @@ class HistoryActivity : AppCompatActivity() {
         if (item.conversionFactor > 0) returnQty * item.conversionFactor
         else product?.toSmallestUnits(returnQty, item.unit.ifBlank { product.unit }) ?: returnQty
 
-    // Same weighted-average reversal math as reverseStockAndCostForPurchaseItems()
-    // above, but taking the qty/amount to remove as parameters so it can be used for a
-    // PARTIAL line return instead of always reversing the whole line.
+    // Same weighted-average reversal math as PurchaseRepository's private
+    // reverseStockAndCostForItems(), but taking the qty/amount to remove as
+    // parameters so it can be used for a PARTIAL line return instead of always
+    // reversing the whole line — no equivalent exists in PurchaseRepository since
+    // it doesn't support partial returns.
     private fun reversePurchaseLineCostPartial(product: com.grocerypos.v11.Product, smallestQtyToRemove: Double, amountToRemove: Double): Double {
         if (smallestQtyToRemove <= 0) return product.cost
         val factor = product.smallestUnitFactor()
@@ -661,18 +628,18 @@ class HistoryActivity : AppCompatActivity() {
         return newPaid
     }
 
-    // FIX (Phase 1 - Data Safety): same atomic-transaction treatment as returnPurchase() above.
-    // FIX (item #23): same negative-stock guard + Toast-on-refusal as returnPurchase() above.
+    // FIX (dedup, item #1): delegates to PurchaseRepository.deletePurchase() instead
+    // of reimplementing the reversal/delete transaction here — see the comment on
+    // purchaseRepository above for why. Same negative-stock guard + Toast-on-refusal
+    // as returnPurchase() above; PurchaseRepository throws the identical
+    // IllegalStateException on a line that can't be reversed cleanly.
     private fun deletePurchase(billNo: String) {
         lifecycleScope.launch {
-            val db = PosDatabase.get(this@HistoryActivity); val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
+            val db = PosDatabase.get(this@HistoryActivity)
+            val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
             try {
-                db.withTransaction {
-                    reverseStockAndCostForPurchaseItems(db, items)
-                    if (purchase.supplierId != null && purchase.paid < purchase.total) SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -(purchase.total - purchase.paid))
-                    db.cashTransactionDao().deleteByReference(billNo); db.paymentDao().deleteByReference(billNo); db.purchaseDao().deleteItems(billNo); db.purchaseDao().deletePurchase(billNo)
-                }
+                purchaseRepository.deletePurchase(billNo, purchase, items)
                 loadPurchases()
             } catch (e: IllegalStateException) {
                 Toast.makeText(this@HistoryActivity, e.message ?: "Delete nahi ho saka", Toast.LENGTH_LONG).show()

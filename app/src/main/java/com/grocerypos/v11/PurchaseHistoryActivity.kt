@@ -21,6 +21,7 @@ import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
 import com.grocerypos.v11.*
+import com.grocerypos.v11.data.PurchaseRepository
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -34,6 +35,18 @@ class PurchaseHistoryActivity : ThemedActivity() {
 
     companion object {
         private const val TAG = "PurchaseHistoryActivity"
+    }
+
+    // FIX (dedup, item #1): purchase delete now goes through PurchaseRepository —
+    // this activity used to keep its own byte-for-byte copy of
+    // reverseStockAndCostForItems()/deletePurchase() (see PurchaseRepository.kt and
+    // HistoryActivity.kt, which had the identical copy), which had already drifted
+    // from the original: it was missing the SyncQueueHelper.enqueue()/trigger()
+    // calls after the transaction, so a purchase deleted from this screen never
+    // synced the deletion elsewhere. Routing through the repository's own
+    // deletePurchase() removes the copy and the bug at the same time.
+    private val purchaseRepository: PurchaseRepository by lazy {
+        PurchaseRepository(PosDatabase.get(this), applicationContext)
     }
 
     // ---- Own inline copies of the premium styling helpers, mirroring how ProductActivity
@@ -511,48 +524,12 @@ class PurchaseHistoryActivity : ThemedActivity() {
             .show()
     }
 
-    // Mirrors HistoryActivity.reverseStockAndCostForPurchaseItems() — same negative-stock
-    // guard (refuses the whole return/delete if any line can't be reversed cleanly) and same
-    // weighted-average cost reversal math, kept in sync so all three history entry points
-    // (this screen, SaleHistoryActivity's purchase-side twin doesn't exist, and HistoryActivity)
-    // behave identically.
-    private suspend fun reverseStockAndCostForPurchaseItems(db: PosDatabase, items: List<PurchaseItem>) {
-        items.forEach { pi ->
-            val product = db.productDao().find(pi.barcode) ?: return@forEach
-            val smallestQty = pi.smallestQty(product)
-            if (smallestQty > 0 && smallestQty > product.stock) {
-                throw IllegalStateException(
-                    "\"${product.name}\" ka stock is purchase ke baad already kam ho chuka hai " +
-                    "(sale ya doosri entry se) — is purchase ko edit/delete karna cost ko galat kar dega. " +
-                    "Iski jagah stock adjustment karen."
-                )
-            }
-        }
-        for (pi in items) {
-            val product = db.productDao().find(pi.barcode) ?: continue
-            val factor = product.smallestUnitFactor()
-            val smallestQty = pi.smallestQty(product)
-            if (smallestQty <= 0) continue
-
-            val currentCostPerSmallest = if (factor > 0) product.cost / factor else product.cost
-            val currentStock = product.stock
-            val newStock = currentStock - smallestQty
-
-            val totalValueBefore = currentStock * currentCostPerSmallest
-            val totalValueAfterRemoval = (totalValueBefore - pi.amount).coerceAtLeast(0.0)
-            val newCostPerSmallest = if (newStock > 0) totalValueAfterRemoval / newStock else 0.0
-            val newCost = newCostPerSmallest * factor
-
-            SyncQueueHelper.decreaseProductStockForce(db, pi.barcode, smallestQty, "PURCHASE_REVERSAL", pi.billNo, newCost)
-            SyncQueueHelper.updateProductCost(db, pi.barcode, newCost)
-        }
-    }
-
     // FIX (partial purchase return): does the actual line-level return picked in
     // openReturnPurchaseDialog(). For each returned quantity: reverses ONLY that
     // portion of stock/cost (using the SAME weighted-average math as
-    // reverseStockAndCostForPurchaseItems()/PartyTransactionActivity's
-    // reversePurchaseLineCost(), just scaled to the returned qty instead of the whole
+    // PurchaseRepository's private reverseStockAndCostForItems()/
+    // PartyTransactionActivity's reversePurchaseLineCost(), just scaled to the
+    // returned qty instead of the whole
     // line), shrinks the purchase line by that qty (or removes it if fully returned),
     // logs a ReturnLine for exactly the returned qty/amount, and shrinks the bill's
     // total/paid/supplier-balance by the returned amount instead of reversing the
@@ -655,10 +632,11 @@ class PurchaseHistoryActivity : ThemedActivity() {
         if (item.conversionFactor > 0) returnQty * item.conversionFactor
         else product?.toSmallestUnits(returnQty, item.unit.ifBlank { product.unit }) ?: returnQty
 
-    // Same weighted-average reversal math as reverseStockAndCostForPurchaseItems()
-    // above (and PartyTransactionActivity.reversePurchaseLineCost()), but taking the
-    // qty/amount to remove as parameters so it can be used for a PARTIAL line return
-    // instead of always reversing the whole line.
+    // Same weighted-average reversal math as PurchaseRepository's private
+    // reverseStockAndCostForItems() (and PartyTransactionActivity.reversePurchaseLineCost()),
+    // but taking the qty/amount to remove as parameters so it can be used for a
+    // PARTIAL line return instead of always reversing the whole line — no
+    // equivalent exists in PurchaseRepository since it doesn't support partial returns.
     private fun reversePurchaseLineCostPartial(product: Product, smallestQtyToRemove: Double, amountToRemove: Double): Double {
         if (smallestQtyToRemove <= 0) return product.cost
         val factor = product.smallestUnitFactor()
@@ -693,21 +671,15 @@ class PurchaseHistoryActivity : ThemedActivity() {
         return newPaid
     }
 
+    // FIX (dedup, item #1): delegates to PurchaseRepository.deletePurchase() instead
+    // of reimplementing the reversal/delete transaction here — see the comment on
+    // purchaseRepository above for why.
     private fun deletePurchase(billNo: String) = safeLaunch("deletePurchase") {
         val db = PosDatabase.get(this@PurchaseHistoryActivity)
         val purchase = db.purchaseDao().findPurchase(billNo) ?: return@safeLaunch
         val items = db.purchaseDao().itemsForBill(billNo)
         try {
-            db.withTransaction {
-                reverseStockAndCostForPurchaseItems(db, items)
-                if (purchase.supplierId != null && purchase.paid < purchase.total) {
-                    SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -(purchase.total - purchase.paid))
-                }
-                db.cashTransactionDao().deleteByReference(billNo)
-                db.paymentDao().deleteByReference(billNo)
-                db.purchaseDao().deleteItems(billNo)
-                db.purchaseDao().deletePurchase(billNo)
-            }
+            purchaseRepository.deletePurchase(billNo, purchase, items)
             Toast.makeText(this@PurchaseHistoryActivity, "Purchase deleted", Toast.LENGTH_SHORT).show()
             loadPurchases()
         } catch (e: IllegalStateException) {
