@@ -30,6 +30,24 @@ import com.grocerypos.v11.*
 import com.grocerypos.v11.ui.components.*
 import kotlinx.coroutines.launch
 
+// Local copy of the tintedDrawable/setLeadingIcon pair used across the Activity
+// files for item #6 (emoji -> vector icon). This file is a set of extension
+// functions (not an Activity subclass), so it can't reach SaleActivity's
+// private copy — kept as a private top-level pair scoped to this file only,
+// same signature/behavior as everywhere else.
+private fun SaleActivity.tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+    val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+    d.setTint(Color.parseColor(tintHex))
+    val size = (sizeDp * resources.displayMetrics.density).toInt()
+    d.setBounds(0, 0, size, size)
+    return d
+}
+
+private fun TextView.setLeadingIcon(activity: SaleActivity, iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+    setCompoundDrawablesRelative(activity.tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+    compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+}
+
 internal fun SaleActivity.quickSaleDialog() {
     lifecycleScope.launch {
         showQuickSaleDialog(viewModel.topSellingProducts())
@@ -64,7 +82,8 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
     }
 
     container.addView(TextView(this).apply {
-        text = "📦  " + com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Item Name", "آئٹم کا نام")
+        text = com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Item Name", "آئٹم کا نام")
+        setLeadingIcon(this@showQuickSaleDialog, R.drawable.ic_box, textGray, 13, 6)
         textSize = 11f
         setTextColor(Color.parseColor(textGray))
         setPadding(0, 0, 0, 6)
@@ -96,7 +115,8 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
     container.addView(spacer(8))
 
     container.addView(TextView(this).apply {
-        text = "📏  " + com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Unit", "یونٹ")
+        text = com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Unit", "یونٹ")
+        setLeadingIcon(this@showQuickSaleDialog, R.drawable.ic_ruler, textGray, 13, 6)
         textSize = 11f
         setTextColor(Color.parseColor(textGray))
         setPadding(0, 0, 0, 6)
@@ -110,7 +130,8 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
     container.addView(spacer(12))
 
     container.addView(TextView(this).apply {
-        text = "🔢  " + com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Quantity", "مقدار")
+        text = com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Quantity", "مقدار")
+        setLeadingIcon(this@showQuickSaleDialog, R.drawable.ic_number, textGray, 13, 6)
         textSize = 11f
         setTextColor(Color.parseColor(textGray))
         setPadding(0, 0, 0, 6)
@@ -138,7 +159,8 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
     container.addView(spacer(12))
 
     container.addView(TextView(this).apply {
-        text = "💰  " + com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Rate", "ریٹ")
+        text = com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Rate", "ریٹ")
+        setLeadingIcon(this@showQuickSaleDialog, R.drawable.ic_wallet, textGray, 13, 6)
         textSize = 11f
         setTextColor(Color.parseColor(textGray))
         setPadding(0, 0, 0, 6)
@@ -156,7 +178,8 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
     container.addView(spacer(12))
 
     container.addView(TextView(this).apply {
-        text = "👤  " + com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Customer (blank = Cash Sale)", "کسٹمر (خالی = کیش سیل)")
+        text = com.grocerypos.v11.util.Loc.t(this@showQuickSaleDialog, "Customer (blank = Cash Sale)", "کسٹمر (خالی = کیش سیل)")
+        setLeadingIcon(this@showQuickSaleDialog, R.drawable.ic_person, textGray, 13, 6)
         textSize = 11f
         setTextColor(Color.parseColor(textGray))
         setPadding(0, 0, 0, 6)
