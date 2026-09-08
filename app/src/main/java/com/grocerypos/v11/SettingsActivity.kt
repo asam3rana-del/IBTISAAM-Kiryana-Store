@@ -1,5 +1,6 @@
 package com.grocerypos.v11.ui
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Intent
 import android.graphics.Color
@@ -1349,6 +1350,7 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun onSelectPrinterClicked() {
         if (!PrinterHelper.hasBluetoothPermission(this)) {
             PrinterHelper.requestBluetoothPermission(this, BT_PERMISSION_REQUEST_CODE)
