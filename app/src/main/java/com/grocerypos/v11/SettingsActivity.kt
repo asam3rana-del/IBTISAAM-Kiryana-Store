@@ -59,6 +59,8 @@ class SettingsActivity : AppCompatActivity() {
     internal var textDark = "#0B2545"
     internal var textGray = "#7C8798"
     internal var border = "#E3E8EE"
+    internal var fieldFill = "#FAFBFC"
+    private var headerSubtitleColor = "#9FB4CC"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -73,6 +75,8 @@ class SettingsActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
+        fieldFill = p.fieldFill
+        headerSubtitleColor = p.headerSubtitleColor
     }
 
     private lateinit var currentUsernameField: EditText
@@ -321,7 +325,7 @@ class SettingsActivity : AppCompatActivity() {
         textCol.addView(TextView(this).apply {
             text = "POINT OF SALE"
             textSize = 10.5f
-            setTextColor(Color.parseColor("#A7B4CC"))
+            setTextColor(Color.parseColor(headerSubtitleColor))
             setTypeface(typeface, Typeface.BOLD)
             letterSpacing = 0.12f
             setPadding(0, 6, 0, 0)
@@ -504,7 +508,7 @@ class SettingsActivity : AppCompatActivity() {
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, "#FAFBFC", 12)
+            background = strokedBg(border, fieldFill, 12)
             setPadding(16, 12, 16, 12)
         }
         printerStatusDot = TextView(this).apply {
@@ -603,9 +607,9 @@ class SettingsActivity : AppCompatActivity() {
         val urduBtn = pillToggleButton("اردو")
         fun refreshLanguageButtons() {
             val isUrdu = com.grocerypos.v11.util.Loc.isUrdu(this)
-            englishBtn.background = if (!isUrdu) roundedBg(navy, 30) else strokedBg(border, "#FAFBFC", 30)
+            englishBtn.background = if (!isUrdu) roundedBg(navy, 30) else strokedBg(border, fieldFill, 30)
             englishBtn.setTextColor(if (!isUrdu) Color.WHITE else Color.parseColor(textGray))
-            urduBtn.background = if (isUrdu) roundedBg(navy, 30) else strokedBg(border, "#FAFBFC", 30)
+            urduBtn.background = if (isUrdu) roundedBg(navy, 30) else strokedBg(border, fieldFill, 30)
             urduBtn.setTextColor(if (isUrdu) Color.WHITE else Color.parseColor(textGray))
         }
         englishBtn.setOnClickListener {
@@ -744,7 +748,7 @@ class SettingsActivity : AppCompatActivity() {
     /** Icon-prefixed labeled field box — matches ProductActivity's fieldBox(icon) pattern. */
     private fun iconFieldBox(iconRes: Int, label: String, field: EditText, muted: Boolean = false) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = strokedBg(border, if (muted) "#F1F3F5" else "#FAFBFC", 12)
+        background = strokedBg(border, if (muted) "#F1F3F5" else fieldFill, 12)
         setPadding(16, 10, 16, 10)
         addView(microLabel(label))
         val row = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -763,7 +767,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun passwordFieldBox(iconRes: Int, label: String, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = strokedBg(border, "#FAFBFC", 12)
+        background = strokedBg(border, fieldFill, 12)
         setPadding(16, 10, 16, 10)
         addView(microLabel(label))
         val row = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -826,7 +830,7 @@ class SettingsActivity : AppCompatActivity() {
         textSize = 12.5f
         isAllCaps = false
         setTypeface(typeface, Typeface.BOLD)
-        background = strokedBg(colorHex, "#FFFFFF", 14)
+        background = strokedBg(colorHex, cardWhite, 14)
         setPadding(0, 16, 0, 16)
         setOnClickListener { onClick() }
     }

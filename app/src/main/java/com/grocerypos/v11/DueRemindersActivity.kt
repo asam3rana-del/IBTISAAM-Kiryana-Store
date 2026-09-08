@@ -44,6 +44,8 @@ class DueRemindersActivity : AppCompatActivity() {
     private var textDark = "#1A1A2E"
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
+    private var purpleBg = "#E9E6FF"
+    private var amberBg = "#FFF3E0"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -57,6 +59,8 @@ class DueRemindersActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
+        purpleBg = p.flatPurpleBg
+        amberBg = p.flatAmberBg
     }
 
     private lateinit var resultsBox: LinearLayout
@@ -111,7 +115,7 @@ class DueRemindersActivity : AppCompatActivity() {
         val overdue = sales.count { it.dueDate in 1 until today }
         val totalDue = sales.sumOf { it.total - it.paid }
         summaryBox.addView(summaryCard(R.drawable.ic_warning, Loc.t(this, "Overdue", "میعاد گزری"), "$overdue", red, "#FDE8E8"))
-        summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Total outstanding", "کل بقایا"), "Rs %.2f".format(totalDue), amber, "#FFF3E0"))
+        summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Total outstanding", "کل بقایا"), "Rs %.2f".format(totalDue), amber, amberBg))
     }
 
     private fun startOfToday(): Long {
@@ -179,7 +183,7 @@ class DueRemindersActivity : AppCompatActivity() {
                 bottomRow.addView(ImageView(this).apply {
                     setImageDrawable(tintedDrawable(R.drawable.ic_phone, primary, 18))
                     setPadding(20, 10, 20, 10)
-                    background = ovalBg("#E9E6FF")
+                    background = ovalBg(purpleBg)
                     setOnClickListener {
                         startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${s.customerPhone}")))
                     }

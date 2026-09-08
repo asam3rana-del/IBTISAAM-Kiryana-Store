@@ -49,6 +49,8 @@ class InventoryInsightsActivity : AppCompatActivity() {
     private var textDark = "#1A1A2E"
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
+    private var amberBg = "#FFF3E0"
+    private var tealBg = "#E0F2F1"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -62,6 +64,8 @@ class InventoryInsightsActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
+        amberBg = p.flatAmberBg
+        tealBg = p.flatTealBg
     }
 
     private var mode: String = MODE_REORDER
@@ -226,7 +230,7 @@ class InventoryInsightsActivity : AppCompatActivity() {
         val products = db.productDao().all().first().associateBy { it.barcode }
         val totalLoss = movements.sumOf { m -> kotlin.math.abs(m.qty) * m.cost }
         summaryBox.addView(summaryCard("\uD83D\uDCB8", Loc.t(this, "Total loss value", "کل نقصان کی مالیت"), "Rs %.2f".format(totalLoss), red, "#FDE8E8"))
-        summaryBox.addView(summaryCard("\uD83D\uDCE6", Loc.t(this, "Entries logged", "درج اندراجات"), "${movements.size}", amber, "#FFF3E0"))
+        summaryBox.addView(summaryCard("\uD83D\uDCE6", Loc.t(this, "Entries logged", "درج اندراجات"), "${movements.size}", amber, amberBg))
         if (movements.isEmpty()) { showEmpty(Loc.t(this, "No damage/loss logged for this period", "اس مدت میں کوئی نقصان درج نہیں")); return }
         movements.forEach { m ->
             val p = products[m.barcode]
@@ -244,7 +248,7 @@ class InventoryInsightsActivity : AppCompatActivity() {
     private suspend fun loadProfit(db: PosDatabase) {
         val products = db.productDao().all().first().filter { it.salePrice > 0.0 }
         val avgMargin = if (products.isNotEmpty()) products.map { marginPercent(it) }.average() else 0.0
-        summaryBox.addView(summaryCard("\uD83D\uDCC8", Loc.t(this, "Average margin", "اوسط منافع"), "%.1f%%".format(avgMargin), teal, "#E0F2F1"))
+        summaryBox.addView(summaryCard("\uD83D\uDCC8", Loc.t(this, "Average margin", "اوسط منافع"), "%.1f%%".format(avgMargin), teal, tealBg))
         val lowMarginCount = products.count { marginPercent(it) < 10.0 }
         summaryBox.addView(summaryCard("\u26A0\uFE0F", Loc.t(this, "Under 10% margin", "10% سے کم منافع"), "$lowMarginCount", red, "#FDE8E8"))
         if (products.isEmpty()) { showEmpty(Loc.t(this, "No priced items yet", "ابھی کوئی قیمت والا آئٹم نہیں")); return }
@@ -273,7 +277,7 @@ class InventoryInsightsActivity : AppCompatActivity() {
             Row(p.name, p.barcode, m?.totalQty ?: 0.0, m?.totalAmount ?: 0.0)
         }
         val totalUnitsSold = rows.sumOf { it.qty }
-        summaryBox.addView(summaryCard("\uD83D\uDD25", Loc.t(this, "Units sold this period", "اس مدت میں فروخت شدہ یونٹس"), "%.0f".format(totalUnitsSold), teal, "#E0F2F1"))
+        summaryBox.addView(summaryCard("\uD83D\uDD25", Loc.t(this, "Units sold this period", "اس مدت میں فروخت شدہ یونٹس"), "%.0f".format(totalUnitsSold), teal, tealBg))
 
         resultsBox.addView(sectionLabel(Loc.t(this, "\uD83D\uDD25 FAST MOVERS", "\uD83D\uDD25 تیز چلنے والے")))
         val fast = rows.sortedByDescending { it.qty }.take(15).filter { it.qty > 0 }

@@ -3,7 +3,6 @@ package com.grocerypos.v11.ui
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.icu.util.IslamicCalendar
 import android.icu.util.Calendar as IcuCalendar
 import android.os.Build

@@ -2,7 +2,6 @@ package com.grocerypos.v11.ui
 
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.text.Editable
@@ -55,6 +54,7 @@ class StockMovementActivity : AppCompatActivity() {
     private var textDark = "#1A1A2E"
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
+    private var fieldFill = "#FAFAFF"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -69,6 +69,7 @@ class StockMovementActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
+        fieldFill = p.fieldFill
     }
 
     private var mode: String = MODE_STOCK
@@ -108,7 +109,7 @@ class StockMovementActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(18, 4, 18, 4)
-            background = strokedBg(border, "#FAFAFF", 14)
+            background = strokedBg(border, fieldFill, 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
         }
         searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f })

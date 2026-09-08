@@ -42,6 +42,7 @@ class UserManagementActivity : AppCompatActivity() {
     private var textDark = "#1A1A2E"
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
+    private var fieldFill = "#FAFAFF"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -57,6 +58,7 @@ class UserManagementActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
+        fieldFill = p.fieldFill
     }
 
     private lateinit var listContainer: LinearLayout
@@ -343,7 +345,7 @@ class UserManagementActivity : AppCompatActivity() {
         })
         roleSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@UserManagementActivity, android.R.layout.simple_spinner_dropdown_item, roles)
-            background = strokedBg(border, "#FAFAFF", 12)
+            background = strokedBg(border, fieldFill, 12)
             setPadding(18, 10, 18, 10)
         }
         formCard.addView(roleSpinner)
@@ -438,7 +440,7 @@ class UserManagementActivity : AppCompatActivity() {
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = strokedBg(border, "#FAFAFF", 14)
+            background = strokedBg(border, fieldFill, 14)
             setPadding(16, 14, 16, 14)
 
             val topRow = LinearLayout(this@UserManagementActivity).apply {
@@ -670,7 +672,7 @@ class UserManagementActivity : AppCompatActivity() {
     private fun fieldBox(iconRes: Int, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = strokedBg(border, "#FAFAFF", 12)
+        background = strokedBg(border, fieldFill, 12)
         setPadding(18, 4, 18, 4)
         addView(ImageView(this@UserManagementActivity).apply {
             setImageDrawable(tintedDrawable(iconRes, textGray, 16))
@@ -706,7 +708,7 @@ class UserManagementActivity : AppCompatActivity() {
         textSize = 11.5f
         isAllCaps = false
         setTypeface(typeface, Typeface.BOLD)
-        background = strokedBg(colorHex, "#FFFFFF", 14)
+        background = strokedBg(colorHex, cardBg, 14)
         setPadding(20, 14, 20, 14)
         minWidth = 0
         minimumWidth = 0

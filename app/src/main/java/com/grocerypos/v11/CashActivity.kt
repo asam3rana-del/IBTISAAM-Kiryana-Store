@@ -288,12 +288,10 @@ class CashActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(size, size)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                colors = intArrayOf(lighten(accentHex, 0.85f), Color.parseColor(tintHex))
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
+                setColor(Color.parseColor(tintHex))
             }
             addView(ImageView(this@CashActivity).apply {
-                setImageDrawable(tintedDrawable(iconRes, "#FFFFFF", 18))
+                setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = Gravity.CENTER
                 }

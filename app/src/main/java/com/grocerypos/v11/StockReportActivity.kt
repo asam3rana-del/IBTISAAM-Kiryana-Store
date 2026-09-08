@@ -39,6 +39,10 @@ class StockReportActivity : AppCompatActivity() {
     private var textDark = "#1A1A2E"
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
+    private var fieldFill = "#FAFAFF"
+    private var purpleBg = "#E9E6FF"
+    private var amberBg = "#FFF3E0"
+    private var tealBg = "#E0F2F1"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -53,6 +57,10 @@ class StockReportActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
+        fieldFill = p.fieldFill
+        purpleBg = p.flatPurpleBg
+        amberBg = p.flatAmberBg
+        tealBg = p.flatTealBg
     }
 
     private lateinit var resultsBox: LinearLayout
@@ -79,7 +87,7 @@ class StockReportActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(18, 4, 18, 4)
-            background = strokedBg(border, "#FAFAFF", 14)
+            background = strokedBg(border, fieldFill, 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
         }
         searchBox.addView(ImageView(this).apply {
@@ -177,10 +185,10 @@ class StockReportActivity : AppCompatActivity() {
         val totalStockValue = allProducts.sumOf { it.stock * costPerSmallestUnit(it) }
         val totalSaleValue = allProducts.sumOf { it.stock * salePerSmallestUnit(it) }
 
-        summaryBox.addView(summaryCard(R.drawable.ic_box, Loc.t(this, "Total Products", "کل آئٹمز"), "$totalProducts", primary, "#E9E6FF"))
+        summaryBox.addView(summaryCard(R.drawable.ic_box, Loc.t(this, "Total Products", "کل آئٹمز"), "$totalProducts", primary, purpleBg))
         summaryBox.addView(summaryCard(R.drawable.ic_warning, Loc.t(this, "Low Stock Items", "کم اسٹاک آئٹمز"), "$lowStockCount", red, "#FDE8E8"))
-        summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Stock Value (Cost)", "اسٹاک ویلیو (لاگت)"), "Rs %.2f".format(totalStockValue), amber, "#FFF3E0"))
-        summaryBox.addView(summaryCard(R.drawable.ic_trending, Loc.t(this, "Stock Value (Sale)", "اسٹاک ویلیو (سیل)"), "Rs %.2f".format(totalSaleValue), teal, "#E0F2F1"))
+        summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Stock Value (Cost)", "اسٹاک ویلیو (لاگت)"), "Rs %.2f".format(totalStockValue), amber, amberBg))
+        summaryBox.addView(summaryCard(R.drawable.ic_trending, Loc.t(this, "Stock Value (Sale)", "اسٹاک ویلیو (سیل)"), "Rs %.2f".format(totalSaleValue), teal, tealBg))
     }
 
     private fun renderList(query: String) {

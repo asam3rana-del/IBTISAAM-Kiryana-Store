@@ -76,6 +76,8 @@ class HistoryActivity : AppCompatActivity() {
     private var textDark = "#1A1A2E"
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
+    private var purpleBg = "#E9E6FF"
+    private var amberBg = "#F6EFDD"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -91,6 +93,8 @@ class HistoryActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
+        purpleBg = p.flatPurpleBg
+        amberBg = p.flatAmberBg
     }
 
     private lateinit var tabRow: LinearLayout
@@ -198,7 +202,7 @@ class HistoryActivity : AppCompatActivity() {
             if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No sales yet", "کوئی سیل نہیں ہوئی"))); return@launch }
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             for (s in list) listContainer.addView(
-                row(R.drawable.ic_receipt, s.invoice, s.customerName, s.total, fmt.format(Date(s.createdAt)), primary, "#E9E6FF", s.status == "returned") { openSaleDetail(s.invoice) }
+                row(R.drawable.ic_receipt, s.invoice, s.customerName, s.total, fmt.format(Date(s.createdAt)), primary, purpleBg, s.status == "returned") { openSaleDetail(s.invoice) }
             )
         }
     }
@@ -210,7 +214,7 @@ class HistoryActivity : AppCompatActivity() {
             if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی"))); return@launch }
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             for (p in list) listContainer.addView(
-                row(R.drawable.ic_cart, p.billNo, p.supplierName, p.total, fmt.format(Date(p.createdAt)), gold, "#F6EFDD", p.status == "returned") { openPurchaseDetail(p.billNo) }
+                row(R.drawable.ic_cart, p.billNo, p.supplierName, p.total, fmt.format(Date(p.createdAt)), gold, amberBg, p.status == "returned") { openPurchaseDetail(p.billNo) }
             )
         }
     }
@@ -220,7 +224,7 @@ class HistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@HistoryActivity)
             val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
-            val content = detailContainer(R.drawable.ic_receipt, primary, "#E9E6FF", Loc.t(this@HistoryActivity, "Sale", "سیل"), invoice)
+            val content = detailContainer(R.drawable.ic_receipt, primary, purpleBg, Loc.t(this@HistoryActivity, "Sale", "سیل"), invoice)
             val body = content.getChildAt(1) as LinearLayout
             if (sale.status == "returned") body.addView(returnedBanner())
             body.addView(kv(Loc.t(this@HistoryActivity, "Total", "کل"), "Rs %.2f".format(sale.total)))
@@ -299,7 +303,7 @@ class HistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@HistoryActivity)
             val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
-            val content = detailContainer(R.drawable.ic_cart, gold, "#F6EFDD", Loc.t(this@HistoryActivity, "Purchase", "خریداری"), billNo)
+            val content = detailContainer(R.drawable.ic_cart, gold, amberBg, Loc.t(this@HistoryActivity, "Purchase", "خریداری"), billNo)
             val body = content.getChildAt(1) as LinearLayout
             if (purchase.status == "returned") body.addView(returnedBanner())
             body.addView(kv(Loc.t(this@HistoryActivity, "Total", "کل"), "Rs %.2f".format(purchase.total)))
@@ -851,7 +855,7 @@ class HistoryActivity : AppCompatActivity() {
     // icon-badge empty-state card matching the rest of the app's premium style.
     private fun emptyText(t: String): LinearLayout {
         val accentHex = if (showingSales) primary else gold
-        val tintHex = if (showingSales) "#E9E6FF" else "#F6EFDD"
+        val tintHex = if (showingSales) purpleBg else amberBg
         val iconRes = if (showingSales) R.drawable.ic_receipt else R.drawable.ic_cart
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
