@@ -95,17 +95,17 @@ class PartyDashboardActivity : AppCompatActivity() {
     // hues below (purple/teal/gold) come straight from the same shared flat palette
     // so each quick-menu row keeps its own distinct icon-badge color. ----
     private var bg = "#F4F6F8"
-    private var blue = "#993556"       // primary chrome — flatPinkFg
-    private var orange = "#993C1D"     // flatCoralFg
-    private var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
-    private var red = "#D32F4A"
-    private var cardWhite = "#FFFFFF"
-    private var cardBorder = "#E3E8EE"
-    private var labelGray = "#7C8798"
-    private var purple = "#534AB7"     // flatPurpleFg
-    private var teal = "#085041"       // flatTealFg
-    private var gold = "#854F0B"       // flatAmberFg
-    private var textDark = "#0B2545"
+    internal var blue = "#993556"       // primary chrome — flatPinkFg
+    internal var orange = "#993C1D"     // flatCoralFg
+    internal var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
+    internal var red = "#D32F4A"
+    internal var cardWhite = "#FFFFFF"
+    internal var cardBorder = "#E3E8EE"
+    internal var labelGray = "#7C8798"
+    internal var purple = "#534AB7"     // flatPurpleFg
+    internal var teal = "#085041"       // flatTealFg
+    internal var gold = "#854F0B"       // flatAmberFg
+    internal var textDark = "#0B2545"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -131,7 +131,7 @@ class PartyDashboardActivity : AppCompatActivity() {
 
     private var activeTab = Tab.PARTIES
     private var filterMode = FilterMode.ALL
-    private var allItems: List<PartyItem> = emptyList()
+    internal var allItems: List<PartyItem> = emptyList()
     private var role: String = "cashier"
 
     // ---- Transactions tab cache + search query (so typing doesn't re-hit the DB) ----
@@ -146,7 +146,7 @@ class PartyDashboardActivity : AppCompatActivity() {
     private enum class FilterMode { ALL, CUSTOMERS, SUPPLIERS }
 
     /** Unified wrapper so customers + suppliers can share one list/adapter-ish rendering. */
-    private data class PartyItem(
+    internal data class PartyItem(
         val id: Long,
         val name: String,
         val phone: String,
@@ -685,272 +685,6 @@ class PartyDashboardActivity : AppCompatActivity() {
     // CHANGE (luxury premium UI pass): replaced the plain AlertDialog.setItems() text
     // list with the same icon-badge nav-row card style used across Reports/History/
     // Stock screens — colored circular icon, bold title + gray subtitle, chevron.
-    private fun showQuickAddDialog() {
-        showPremiumMenuSheet(
-            headerIcon = "\u2795",
-            headerTitle = Loc.t(this, "Quick Add", "\u0641\u0648\u0631\u06CC \u0627\u0646\u062F\u0631\u0627\u062C"),
-            headerSubtitle = Loc.t(this, "Choose an action", "\u0627\u06CC\u06A9 \u0639\u0645\u0644 \u0645\u0646\u062A\u062E\u0628 \u06A9\u0631\u06CC\u06BA"),
-            items = listOf(
-                QuickMenuItem("\uD83E\uDDFE", red, "#FDEDED",
-                    Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
-                    Loc.t(this, "Create a new sale invoice", "نیا سیل انوائس بنائیں")
-                ) { startActivity(Intent(this, SaleActivity::class.java)) },
-                QuickMenuItem("\uD83D\uDED2", blue, "#EAF0FF",
-                    Loc.t(this, "Add Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
-                    Loc.t(this, "Create a new purchase bill", "نیا خریداری بل بنائیں")
-                ) { startActivity(Intent(this, PurchaseActivity::class.java)) },
-                // Sale/Purchase Return need a specific invoice/bill picked first — route
-                // to the matching history list, which already has a ↩ Return action on
-                // each row (see SaleHistoryActivity.saleRow() / PurchaseHistoryActivity's
-                // per-card actions row), instead of duplicating that picker+logic here.
-                QuickMenuItem("\u21A9", orange, "#FFF3E7",
-                    Loc.t(this, "Sale Return", "\u0633\u06CC\u0644 \u0648\u0627\u067E\u0633\u06CC"),
-                    Loc.t(this, "Return items from a past sale", "پچھلی سیل سے آئٹمز واپس کریں")
-                ) { startActivity(Intent(this, SaleHistoryActivity::class.java)) },
-                QuickMenuItem("\u21A9", teal, "#E6F7F5",
-                    Loc.t(this, "Purchase Return", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0648\u0627\u067E\u0633\u06CC"),
-                    Loc.t(this, "Return items from a past purchase", "پچھلی خریداری سے آئٹمز واپس کریں")
-                ) { startActivity(Intent(this, PurchaseHistoryActivity::class.java)) },
-                QuickMenuItem("\uD83D\uDC64", purple, "#F1EEFF",
-                    Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC"),
-                    Loc.t(this, "Add a customer or supplier", "کسٹمر یا سپلائر شامل کریں")
-                ) { startActivity(Intent(this, PartyActivity::class.java)) },
-                QuickMenuItem("\uD83D\uDCB0", green, "#EAF7EC",
-                    Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
-                    Loc.t(this, "Record money received", "موصول ہونے والی رقم درج کریں")
-                ) { showPartyPickerForPayment(forCustomer = true) },
-                QuickMenuItem("\uD83D\uDCB8", gold, "#FBF3E3",
-                    Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC"),
-                    Loc.t(this, "Record money paid out", "ادا کی گئی رقم درج کریں")
-                ) { showPartyPickerForPayment(forCustomer = false) }
-            )
-        )
-    }
-
-    // ================= Shared premium menu-sheet builder =================
-    // One card matching the icon-badge nav-row style used in ReportsActivity/
-    // HistoryActivity: colored circular icon badge, bold title, gray subtitle,
-    // chevron, divider between rows. Height is hard-capped so on a tall list the
-    // rows scroll internally instead of ever pushing content off-screen.
-    private data class QuickMenuItem(
-        val icon: String,
-        val accentHex: String,
-        val tintHex: String,
-        val title: String,
-        val subtitle: String,
-        val onClick: () -> Unit
-    )
-
-    private fun showPremiumMenuSheet(headerIcon: String, headerTitle: String, headerSubtitle: String, items: List<QuickMenuItem>) {
-        val itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(28, 26, 28, 18)
-            addView(TextView(this@PartyDashboardActivity).apply {
-                text = headerIcon
-                textSize = 20f
-                gravity = Gravity.CENTER
-                background = ovalBg("#EEF0F7")
-                layoutParams = LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (44 * resources.displayMetrics.density).toInt())
-                    .apply { setMargins(0, 0, 24, 0) }
-            })
-            addView(LinearLayout(this@PartyDashboardActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(this@PartyDashboardActivity).apply {
-                    text = headerTitle
-                    textSize = 17f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor(textDark))
-                })
-                addView(TextView(this@PartyDashboardActivity).apply {
-                    text = headerSubtitle
-                    textSize = 12.5f
-                    setTextColor(Color.parseColor(labelGray))
-                    setPadding(0, 2, 0, 0)
-                })
-            })
-        }
-        itemsContainer.addView(header)
-        itemsContainer.addView(View(this).apply {
-            setBackgroundColor(Color.parseColor(cardBorder))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2)
-        })
-
-        lateinit var dialog: AlertDialog
-
-        items.forEachIndexed { index, item ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                isClickable = true
-                isFocusable = true
-                setPadding(28, 20, 28, 20)
-                val outValue = android.util.TypedValue()
-                theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
-                setBackgroundResource(outValue.resourceId)
-                setOnClickListener { dialog.dismiss(); item.onClick() }
-            }
-            row.addView(TextView(this).apply {
-                text = item.icon
-                textSize = 17f
-                gravity = Gravity.CENTER
-                setTextColor(Color.parseColor(item.accentHex))
-                background = ovalBg(item.tintHex)
-                layoutParams = LinearLayout.LayoutParams((40 * resources.displayMetrics.density).toInt(), (40 * resources.displayMetrics.density).toInt())
-                    .apply { setMargins(0, 0, 22, 0) }
-            })
-            row.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(this@PartyDashboardActivity).apply {
-                    text = item.title
-                    textSize = 14.5f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor(textDark))
-                })
-                addView(TextView(this@PartyDashboardActivity).apply {
-                    text = item.subtitle
-                    textSize = 12f
-                    setTextColor(Color.parseColor(labelGray))
-                    setPadding(0, 2, 0, 0)
-                })
-            })
-            row.addView(TextView(this).apply {
-                text = "\u203A"
-                textSize = 18f
-                setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor(item.accentHex))
-            })
-            itemsContainer.addView(row)
-            if (index != items.lastIndex) {
-                itemsContainer.addView(View(this).apply {
-                    setBackgroundColor(Color.parseColor(cardBorder))
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-                        .apply { setMargins((28 * resources.displayMetrics.density).toInt(), 0, 0, 0) }
-                })
-            }
-        }
-
-        val scroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            addView(itemsContainer)
-        }
-
-        val maxHeightPx = (resources.displayMetrics.heightPixels * 0.78).toInt()
-        val root = object : LinearLayout(this) {
-            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                val mode = View.MeasureSpec.getMode(heightMeasureSpec)
-                val size = View.MeasureSpec.getSize(heightMeasureSpec)
-                val cappedSize = if (mode == View.MeasureSpec.UNSPECIFIED) maxHeightPx else size.coerceAtMost(maxHeightPx)
-                val newMode = if (mode == View.MeasureSpec.UNSPECIFIED) View.MeasureSpec.AT_MOST else mode
-                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(cappedSize, newMode))
-            }
-        }.apply {
-            orientation = LinearLayout.VERTICAL
-            background = strokedBg(cardBorder, cardWhite, 22)
-            clipToOutline = true
-            addView(scroll)
-        }
-        applyElevation(root, 6f)
-
-        dialog = AlertDialog.Builder(this)
-            .setView(root)
-            .create()
-        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dialog.show()
-    }
-
-    // ---------------- NEW: quick "Payment Received" / "Payment Made" from the "+" menu ----------------
-    // Previously the only way to record a standalone payment (money changing hands with no
-    // new sale/purchase bill) was to open a specific party's ledger first, then tap the
-    // "Receive Payment"/"Make Payment" button there. This adds a fast path straight from the
-    // dashboard's "+" menu: pick the customer (for money received) or supplier (for money paid)
-    // from a searchable list, then jump straight into PartyTransactionActivity with the
-    // payment dialog already open (via the "openPayment" extra), skipping the extra tap.
-    private fun showPartyPickerForPayment(forCustomer: Boolean) {
-        val candidates = allItems.filter { it.isCustomer == forCustomer }.sortedBy { it.name.lowercase() }
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 8)
-        }
-        val searchBox = EditText(this).apply {
-            hint = Loc.t(this@PartyDashboardActivity,
-                if (forCustomer) "Search customer" else "Search supplier",
-                if (forCustomer) "\u06A9\u0633\u0679\u0645\u0631 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA" else "\u0633\u067E\u0644\u0627\u0626\u0631 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA")
-            setPadding(20, 18, 20, 18)
-            background = roundedBackground("#F3F4F9", 18)
-        }
-        root.addView(searchBox)
-
-        val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply {
-            addView(listContainer)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                (320 * resources.displayMetrics.density).toInt()
-            )
-        }
-        root.addView(scroll)
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(Loc.t(this,
-                if (forCustomer) "Payment Received" else "Payment Made",
-                if (forCustomer) "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC" else "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC"))
-            .setView(root)
-            .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
-            .create()
-
-        fun renderList(query: String) {
-            listContainer.removeAllViews()
-            val filtered = if (query.isBlank()) candidates
-                else candidates.filter { it.name.contains(query, ignoreCase = true) || it.phone.contains(query) }
-            if (filtered.isEmpty()) {
-                listContainer.addView(TextView(this).apply {
-                    text = Loc.t(this@PartyDashboardActivity,
-                        if (forCustomer) "No customers found" else "No suppliers found",
-                        if (forCustomer) "\u06A9\u0648\u0626\u06CC \u06A9\u0633\u0679\u0645\u0631 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627" else "\u06A9\u0648\u0626\u06CC \u0633\u067E\u0644\u0627\u0626\u0631 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")
-                    textSize = 13.5f
-                    setTextColor(Color.parseColor("#9AA0B4"))
-                    gravity = Gravity.CENTER
-                    setPadding(20, 40, 20, 40)
-                })
-                return
-            }
-            for (item in filtered) {
-                listContainer.addView(TextView(this).apply {
-                    text = item.name + if (item.phone.isNotBlank()) "  \u00B7  ${item.phone}" else ""
-                    textSize = 14.5f
-                    setTextColor(Color.parseColor("#2E3242"))
-                    setPadding(20, 26, 20, 26)
-                    isClickable = true
-                    isFocusable = true
-                    setOnClickListener {
-                        dialog.dismiss()
-                        startActivity(Intent(this@PartyDashboardActivity, PartyTransactionActivity::class.java).apply {
-                            putExtra("partyId", item.id)
-                            putExtra("partyName", item.name)
-                            putExtra("isCustomer", item.isCustomer)
-                            putExtra("openPayment", true)
-                        })
-                    }
-                })
-            }
-        }
-
-        searchBox.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) { renderList(s?.toString() ?: "") }
-        })
-
-        renderList("")
-        dialog.show()
-    }
-
     // ================= DATA LOAD (Parties tab / summary cards) =================
     private fun loadParties() {
         lifecycleScope.launch {
@@ -1470,13 +1204,9 @@ class PartyDashboardActivity : AppCompatActivity() {
         setStroke(1, Color.parseColor(cardBorder))
     }
 
-    private fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
+    internal fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(colorHex))
         this.cornerRadius = cornerRadius.toFloat()
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
 }
