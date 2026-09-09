@@ -34,7 +34,7 @@ import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import com.grocerypos.v11.sync.SyncApi
 import com.grocerypos.v11.util.BackupHelper
-import com.grocerypos.v11.util.BackupPasswordStore
+import com.grocerypos.v11.BackupPasswordStore
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
