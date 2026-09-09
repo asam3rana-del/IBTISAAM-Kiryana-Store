@@ -15,6 +15,7 @@ import android.widget.EditText
 import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.grocerypos.v11.util.ThemeManager
 
 /**
  * Custom numeric keypad — a bottom-anchored dialog with 0-9, decimal point, backspace and
@@ -35,12 +36,6 @@ import android.widget.TextView
  *      exactly as before — the keypad never bypasses the normal text-change pipeline.
  */
 object NumericKeypad {
-
-    private val navy = "#0B2545"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val keyBg = "#F4F6F8"
-    private val keyText = "#0B2545"
 
     fun attach(editText: EditText, allowDecimal: Boolean = true, onDone: (() -> Unit)? = null) {
         // Stop the system keyboard from ever appearing for this field.
@@ -67,6 +62,7 @@ object NumericKeypad {
 
     private fun show(target: EditText, allowDecimal: Boolean, onDone: (() -> Unit)?) {
         val context = target.context
+        val p = ThemeManager.palette(context)
         val dialog = Dialog(context, android.R.style.Theme_Black_NoTitleBar)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
 
@@ -74,7 +70,7 @@ object NumericKeypad {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(context, 18), dp(context, 16), dp(context, 18), dp(context, 18))
             background = GradientDrawable().apply {
-                setColor(Color.WHITE)
+                setColor(Color.parseColor(p.cardWhite))
                 cornerRadii = floatArrayOf(
                     dp(context, 22).toFloat(), dp(context, 22).toFloat(),
                     dp(context, 22).toFloat(), dp(context, 22).toFloat(),
@@ -93,14 +89,14 @@ object NumericKeypad {
         val hintLabel = TextView(context).apply {
             text = target.hint ?: ""
             textSize = 12f
-            setTextColor(Color.parseColor("#7C8798"))
+            setTextColor(Color.parseColor(p.textMuted))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val valuePreview = TextView(context).apply {
             text = if (target.text.isNullOrEmpty()) "0" else target.text.toString()
             textSize = 20f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor(navy))
+            setTextColor(Color.parseColor(p.navy))
         }
         previewRow.addView(hintLabel)
         previewRow.addView(valuePreview)
@@ -142,9 +138,9 @@ object NumericKeypad {
                 textSize = 20f
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(if (isAccent) Color.WHITE else Color.parseColor(keyText))
+                setTextColor(if (isAccent) Color.WHITE else Color.parseColor(p.textDark))
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (isAccent) teal else keyBg))
+                    setColor(Color.parseColor(if (isAccent) p.teal else p.bg))
                     cornerRadius = dp(context, 14).toFloat()
                 }
                 layoutParams = GridLayout.LayoutParams(
@@ -183,7 +179,7 @@ object NumericKeypad {
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor(navy))
+                setColor(Color.parseColor(p.navy))
                 cornerRadius = dp(context, 14).toFloat()
             }
             setPadding(0, dp(context, 22), 0, dp(context, 22))

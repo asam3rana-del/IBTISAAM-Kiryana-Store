@@ -3,13 +3,16 @@ package com.grocerypos.v11.ui
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -18,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.util.Loc
@@ -28,6 +32,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * Home-screen style dashboard: "You'll Get / You'll Give" summary cards + Parties /
@@ -85,17 +90,58 @@ import java.util.Locale
  */
 class PartyDashboardActivity : AppCompatActivity() {
 
-    // ---- palette (kept consistent with PartyActivity.kt) ----
-    private val bg = "#F3F4F9"
-    private val gradientStart = "#7C86F5"
-    private val gradientEnd = "#A6ADFF"
-    private val blue = "#5B6EE8"
-    private val orange = "#F5A15C"
-    private val green = "#4CAF50"
-    private val red = "#E57373"
-    private val cardWhite = "#FFFFFF"
-    private val cardBorder = "#EEF0F7"
-    private val labelGray = "#9AA0B4"
+    // ---- Reports-style flat design — pulled from ThemeManager so this screen stays
+    // in sync with the rest of the app and respects dark mode. Party = flatPink
+    // everywhere per ThemeManager's documented category convention; the extra accent
+    // hues below (purple/teal/gold) come straight from the same shared flat palette
+    // so each quick-menu row keeps its own distinct icon-badge color. ----
+    private var bg = "#F4F6F8"
+    internal var blue = "#993556"       // primary chrome — flatPinkFg
+    internal var orange = "#993C1D"     // flatCoralFg
+    internal var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
+    internal var red = "#D32F4A"
+    internal var cardWhite = "#FFFFFF"
+    internal var cardBorder = "#E3E8EE"
+    internal var labelGray = "#7C8798"
+    internal var purple = "#534AB7"     // flatPurpleFg
+    internal var teal = "#085041"       // flatTealFg
+    internal var gold = "#854F0B"       // flatAmberFg
+    internal var textDark = "#0B2545"
+    internal var fieldFill = "#F3F4F9"
+    // Paired light-tint backgrounds for the quick-add menu's icon badges — kept in
+    // step with the Fg colors above so each row's badge stays a matching (bg, fg)
+    // pair from the same flat category in both light and dark mode.
+    internal var redBg = "#FDEDED"
+    internal var blueBg = "#FBEAF0"
+    internal var orangeBg = "#FAECE7"
+    internal var tealBg = "#E1F5EE"
+    internal var purpleBg = "#EEEDFE"
+    internal var greenBg = "#E1F5EE"
+    internal var goldBg = "#FAEEDA"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        cardBorder = p.border
+        labelGray = p.textMuted
+        textDark = p.textDark
+        fieldFill = p.fieldFill
+        blue = p.flatPinkFg
+        orange = p.flatCoralFg
+        green = p.flatTealFg
+        red = p.red
+        purple = p.flatPurpleFg
+        teal = p.flatTealFg
+        gold = p.flatAmberFg
+        redBg = p.flatCoralBg
+        blueBg = p.flatPinkBg
+        orangeBg = p.flatCoralBg
+        tealBg = p.flatTealBg
+        purpleBg = p.flatPurpleBg
+        greenBg = p.flatTealBg
+        goldBg = p.flatAmberBg
+    }
 
     private lateinit var youllGetValue: TextView
     private lateinit var youllGiveValue: TextView
@@ -105,7 +151,7 @@ class PartyDashboardActivity : AppCompatActivity() {
 
     private var activeTab = Tab.PARTIES
     private var filterMode = FilterMode.ALL
-    private var allItems: List<PartyItem> = emptyList()
+    internal var allItems: List<PartyItem> = emptyList()
     private var role: String = "cashier"
 
     // ---- Transactions tab cache + search query (so typing doesn't re-hit the DB) ----
@@ -120,7 +166,7 @@ class PartyDashboardActivity : AppCompatActivity() {
     private enum class FilterMode { ALL, CUSTOMERS, SUPPLIERS }
 
     /** Unified wrapper so customers + suppliers can share one list/adapter-ish rendering. */
-    private data class PartyItem(
+    internal data class PartyItem(
         val id: Long,
         val name: String,
         val phone: String,
@@ -158,6 +204,7 @@ class PartyDashboardActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val session = getSharedPreferences("session", MODE_PRIVATE)
         if (session.getString("username", null) == null) {
@@ -225,7 +272,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         if (activeTab == Tab.ITEMS) renderItemsList(forceReload = true)
     }
 
-    // ================= HEADER =================
+    // ================= HEADER (flat, Reports-style — no gradient) =================
     private fun buildHeader(): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -233,7 +280,7 @@ class PartyDashboardActivity : AppCompatActivity() {
             setPadding(28, 46, 24, 32)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(gradientStart), Color.parseColor(gradientEnd))
+                intArrayOf(Color.parseColor(blue), Color.parseColor(blue))
             )
 
             addView(TextView(this@PartyDashboardActivity).apply {
@@ -271,27 +318,41 @@ class PartyDashboardActivity : AppCompatActivity() {
     }
 
     // ================= MAIN MENU =================
+    // CHANGE (luxury premium UI pass): replaced the plain AlertDialog.setItems() text
+    // list with the same icon-badge nav-row card style used across Reports/History/
+    // Stock screens — colored circular icon, bold title + gray subtitle, chevron.
     private fun showMainMenu() {
-        val options = mutableListOf(
-            Loc.t(this, "Products", "\u067E\u0631\u0648\u0688\u06A9\u0679\u0633"),
-            Loc.t(this, "Reports", "\u0631\u067E\u0648\u0631\u0679\u0633"),
-            Loc.t(this, "Cash In/Out", "\u06A9\u06CC\u0634 \u0627\u0646/\u0622\u0624\u0679"),
-            Loc.t(this, "Item Rate Search", "\u0622\u0626\u0679\u0645 \u0631\u06CC\u0679 \u0633\u0631\u0686"),
-            Loc.t(this, "Settings", "\u0633\u06CC\u0679\u0646\u06AF\u0632"),
-            Loc.t(this, "Logout", "\u0644\u0627\u06AF \u0622\u0624\u0679")
+        showPremiumMenuSheet(
+            headerIcon = "\u2630",
+            headerTitle = Loc.t(this, "Menu", "\u0645\u06CC\u0646\u0648"),
+            headerSubtitle = Loc.t(this, "Jump to any section", "\u06A9\u0633\u06CC \u0628\u06BE\u06CC \u0633\u06CC\u06A9\u0634\u0646 \u067E\u0631 \u062C\u0627\u0626\u06CC\u06BA"),
+            items = listOf(
+                QuickMenuItem("\uD83D\uDCE6", blue, "#EAF0FF",
+                    Loc.t(this, "Products", "\u067E\u0631\u0648\u0688\u06A9\u0679\u0633"),
+                    Loc.t(this, "Manage your inventory items", "اپنے انوینٹری آئٹمز کا انتظام کریں")
+                ) { startActivity(Intent(this, ProductActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDCCA", purple, "#F1EEFF",
+                    Loc.t(this, "Reports", "\u0631\u067E\u0648\u0631\u0679\u0633"),
+                    Loc.t(this, "Sales, stock & financial overview", "سیل، اسٹاک اور مالیاتی جائزہ")
+                ) { startActivity(Intent(this, ReportsActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDCB5", green, "#EAF7EC",
+                    Loc.t(this, "Cash In/Out", "\u06A9\u06CC\u0634 \u0627\u0646/\u0622\u0624\u0679"),
+                    Loc.t(this, "Record cash movements", "کیش کی آمد و رفت درج کریں")
+                ) { startActivity(Intent(this, CashActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDD0E", teal, "#E6F7F5",
+                    Loc.t(this, "Item Rate Search", "\u0622\u0626\u0679\u0645 \u0631\u06CC\u0679 \u0633\u0631\u0686"),
+                    Loc.t(this, "Look up any item's price", "کسی بھی آئٹم کی قیمت دیکھیں")
+                ) { startActivity(Intent(this, ItemSearchActivity::class.java)) },
+                QuickMenuItem("\u2699", orange, "#FFF3E7",
+                    Loc.t(this, "Settings", "\u0633\u06CC\u0679\u0646\u06AF\u0632"),
+                    Loc.t(this, "App preferences & account", "ایپ کی ترتیبات اور اکاؤنٹ")
+                ) { startActivity(Intent(this, SettingsActivity::class.java)) },
+                QuickMenuItem("\uD83D\uDEAA", red, "#FDEDED",
+                    Loc.t(this, "Logout", "\u0644\u0627\u06AF \u0622\u0624\u0679"),
+                    Loc.t(this, "Sign out of this session", "اس سیشن سے سائن آؤٹ کریں")
+                ) { doLogout() }
+            )
         )
-        AlertDialog.Builder(this)
-            .setItems(options.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> startActivity(Intent(this, ProductActivity::class.java))
-                    1 -> startActivity(Intent(this, ReportsActivity::class.java))
-                    2 -> startActivity(Intent(this, CashActivity::class.java))
-                    3 -> startActivity(Intent(this, ItemSearchActivity::class.java))
-                    4 -> startActivity(Intent(this, SettingsActivity::class.java))
-                    5 -> doLogout()
-                }
-            }
-            .show()
     }
 
     private fun doLogout() {
@@ -641,23 +702,9 @@ class PartyDashboardActivity : AppCompatActivity() {
         return bar
     }
 
-    private fun showQuickAddDialog() {
-        val options = arrayOf(
-            Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
-            Loc.t(this, "Add Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
-            Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC")
-        )
-        AlertDialog.Builder(this)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> startActivity(Intent(this, SaleActivity::class.java))
-                    1 -> startActivity(Intent(this, PurchaseActivity::class.java))
-                    2 -> startActivity(Intent(this, PartyActivity::class.java))
-                }
-            }
-            .show()
-    }
-
+    // CHANGE (luxury premium UI pass): replaced the plain AlertDialog.setItems() text
+    // list with the same icon-badge nav-row card style used across Reports/History/
+    // Stock screens — colored circular icon, bold title + gray subtitle, chevron.
     // ================= DATA LOAD (Parties tab / summary cards) =================
     private fun loadParties() {
         lifecycleScope.launch {
@@ -1137,13 +1184,15 @@ class PartyDashboardActivity : AppCompatActivity() {
                     val db = PosDatabase.get(this@PartyDashboardActivity)
                     // FIX: ProductActivity.kt confirms ProductDao uses upsert(product),
                     // not update() — corrected from the earlier ADJUST-DAO-METHOD guess.
-                    db.productDao().upsert(
-                        c.entity.copy(
-                            cost = newCost,
-                            salePrice = newRetail,
-                            wholesalePrice = newWholesale
-                        )
+                    val updatedProduct = c.entity.copy(
+                        cost = newCost,
+                        salePrice = newRetail,
+                        wholesalePrice = newWholesale
                     )
+                    db.productDao().upsert(updatedProduct)
+                    // Keep rate changes made from Party Dashboard in the same sync path
+                    // as ProductActivity, so other branch devices receive them too.
+                    SyncQueueHelper.enqueueProduct(db, updatedProduct)
                     Toast.makeText(
                         this@PartyDashboardActivity,
                         Loc.t(this@PartyDashboardActivity, "Rates updated", "\u0631\u06CC\u0679 \u0627\u067E\u0688\u06CC\u0679 \u06C1\u0648 \u06AF\u0626\u06CC"),
@@ -1177,19 +1226,9 @@ class PartyDashboardActivity : AppCompatActivity() {
         setStroke(1, Color.parseColor(cardBorder))
     }
 
-    private fun ovalBg(colorHex: String, strokeHex: String? = null) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-        if (strokeHex != null) setStroke(2, Color.parseColor(strokeHex))
-    }
-
-    private fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
+    internal fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
         setColor(Color.parseColor(colorHex))
         this.cornerRadius = cornerRadius.toFloat()
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
 }

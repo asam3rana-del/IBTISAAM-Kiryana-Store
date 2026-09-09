@@ -1,5 +1,6 @@
 package com.grocerypos.v11.ui
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Intent
 import android.graphics.Color
@@ -17,6 +18,7 @@ import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -32,28 +34,52 @@ import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import com.grocerypos.v11.sync.SyncApi
 import com.grocerypos.v11.util.BackupHelper
-import com.grocerypos.v11.util.BackupPasswordStore
+import com.grocerypos.v11.BackupPasswordStore
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 class SettingsActivity : AppCompatActivity() {
 
     // ================= PALETTE (matches Product/Purchase/Sale premium look) =================
-    private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"
-    private val navyLight = "#1C2C4F"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val amber = "#F5A524"
-    private val badgeRed = "#E53950"
-    private val textDark = "#0B2545"
-    private val textGray = "#7C8798"
-    private val border = "#E3E8EE"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a navy→navyLight
+    // gradient; now flat (navyLight = navy) like the rest of the app's flattened headers.
+    private var bg = "#F4F6F8"
+    internal var cardWhite = "#FFFFFF"
+    private var navy = "#0B2545"
+    private var navyLight = "#0B2545"
+    internal var teal = "#0F9B8E"
+    internal var red = "#E5484D"
+    internal var amber = "#F5A524"
+    internal var amberBg = "#FAEEDA"    // flatAmberBg — paired light-tint for `amber`
+    private var badgeRed = "#E5484D"
+    internal var textDark = "#0B2545"
+    internal var textGray = "#7C8798"
+    internal var border = "#E3E8EE"
+    internal var fieldFill = "#FAFBFC"
+    private var headerSubtitleColor = "#9FB4CC"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        navy = p.navy
+        navyLight = p.navy
+        teal = p.flatTealFg
+        red = p.red
+        amber = p.flatAmberFg
+        amberBg = p.flatAmberBg
+        badgeRed = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        fieldFill = p.fieldFill
+        headerSubtitleColor = p.headerSubtitleColor
+    }
 
     private lateinit var currentUsernameField: EditText
     private lateinit var newUsernameField: EditText
@@ -79,8 +105,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var shopNameHeaderText: TextView
 
     // NEW: Sync Now row — connected/offline status indicator
-    private lateinit var syncRowDot: TextView
-    private lateinit var syncRowStatusText: TextView
+    internal lateinit var syncRowDot: TextView
+    internal lateinit var syncRowStatusText: TextView
 
     private val BT_PERMISSION_REQUEST_CODE = 501
 
@@ -95,6 +121,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         setTheme(R.style.Theme_SettingsSheet)
         super.onCreate(b)
+        loadThemeColors()
 
         importBackupLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { confirmRestoreFromUri(it) }
@@ -116,37 +143,37 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ---- Parties (real) ----
-        list.addView(menuRow("👥", "Parties", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_people, "Parties", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, PartyDashboardActivity::class.java))
         })
 
         // ---- Items (real) ----
-        list.addView(menuRow("📋", "Items") {
+        list.addView(menuRow(R.drawable.ic_list, "Items") {
             startActivity(Intent(this@SettingsActivity, ItemsActivity::class.java))
         })
 
         // ---- Reports (real) ----
-        list.addView(menuRow("📈", "Reports") {
+        list.addView(menuRow(R.drawable.ic_trending, "Reports") {
             startActivity(Intent(this@SettingsActivity, ReportsActivity::class.java))
         })
 
         // ---- Sale (real) ----
-        list.addView(menuRow("🧾", "Sale", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_receipt, "Sale", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, SaleActivity::class.java))
         })
 
         // ---- Purchase (real) ----
-        list.addView(menuRow("🛒", "Purchase", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_cart, "Purchase", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, PurchaseActivity::class.java))
         })
 
         // ---- Expense (no screen yet — reflection fallback kept in case it's added later) ----
-        list.addView(menuRow("💼", "Expense", trailingText = "+") {
+        list.addView(menuRow(R.drawable.ic_briefcase, "Expense", trailingText = "+") {
             tryOpenActivity("com.grocerypos.v11.ui.ExpenseActivity", "Expense")
         })
 
         // ---- Cash & Bank (real) ----
-        list.addView(menuRow("🏦", "Cash & Bank", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_bank, "Cash & Bank", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, CashActivity::class.java))
         })
 
@@ -157,7 +184,7 @@ class SettingsActivity : AppCompatActivity() {
         // Firebase project instead of always using whatever this build shipped with —
         // see CloudConfigStore.kt for why. Sync Now above stays disabled/no-op until
         // this is filled in (or this build already has a usable default baked in).
-        list.addView(menuRow("☁️", "Cloud Sync Setup", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_cloud, "Cloud Sync Setup", showChevron = true) {
             openCloudSyncSetupDialog()
         })
 
@@ -165,7 +192,7 @@ class SettingsActivity : AppCompatActivity() {
         // mainly conflicts (two devices editing the same record while both offline) and
         // push failures, so if something looks wrong after a sync, there's a trail to
         // check instead of it being a silent mystery.
-        list.addView(menuRow("🧾", "Sync History", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_receipt, "Sync History", showChevron = true) {
             openSyncHistoryDialog()
         })
 
@@ -174,7 +201,7 @@ class SettingsActivity : AppCompatActivity() {
         // ---- Settings (expandable — holds all the real settings sections) ----
         val settingsContent = buildSettingsContent()
         settingsContent.visibility = View.GONE
-        val settingsRow = expandableMenuRow("⚙️", "Settings", target = settingsContent)
+        val settingsRow = expandableMenuRow(R.drawable.ic_settings, "Settings", target = settingsContent)
         list.addView(settingsRow)
         list.addView(settingsContent)
 
@@ -182,7 +209,7 @@ class SettingsActivity : AppCompatActivity() {
         val backupContent = buildBackupContent()
         backupContent.visibility = View.GONE
         val backupRow = expandableMenuRow(
-            "🗄️", "Backup/Restore",
+            R.drawable.ic_archive, "Backup/Restore",
             subtitle = "Auto backup not enabled.",
             target = backupContent
         )
@@ -192,7 +219,7 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(spacer(10))
 
         // ---- Logout ----
-        list.addView(menuRow("🚪", "Logout", textColorHex = red, iconBgHex = red) {
+        list.addView(menuRow(R.drawable.ic_logout, "Logout", textColorHex = red, iconBgHex = red) {
             doLogout()
         })
 
@@ -256,474 +283,18 @@ class SettingsActivity : AppCompatActivity() {
      *  This is a connectivity check only (not a Firestore reachability check) — it tells
      *  the user whether the app *can* sync right now, matching how PurchaseActivity's
      *  header sync chip works. */
-    private fun isNetworkConnected(): Boolean {
-        val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
-
-    /** Updates the small dot + label under "Sync Now" to reflect current connectivity
-     *  AND whether this device even has a cloud project configured — see
-     *  CloudConfigStore.kt. Previously this only checked network connectivity, so a
-     *  device with no cloud project at all still showed a reassuring green
-     *  "Connected" dot even though Sync Now could never do anything. */
-    private fun refreshSyncStatus() {
-        val online = isNetworkConnected()
-        val cloudConfigured = com.grocerypos.v11.CloudConfigStore.firebaseApp(this) != null
-        when {
-            !cloudConfigured -> {
-                syncRowDot.setTextColor(Color.parseColor(amber))
-                syncRowStatusText.text = "Not set up — tap Cloud Sync Setup"
-            }
-            !BranchConfigStore.isConfigured() -> {
-                syncRowDot.setTextColor(Color.parseColor(amber))
-                syncRowStatusText.text = "Branch Code missing — tap Cloud Sync Setup"
-            }
-            online -> {
-                syncRowDot.setTextColor(Color.parseColor(teal))
-                syncRowStatusText.text = "Connected"
-            }
-            else -> {
-                syncRowDot.setTextColor(Color.parseColor(red))
-                syncRowStatusText.text = "Offline"
-            }
-        }
-    }
-
-    /** Builds the "Sync Now" row with a live Connected/Offline status line under the label,
-     *  instead of the plain menuRow() used before. Tapping it still triggers SyncQueueHelper. */
-    private fun buildSyncRow(): LinearLayout {
-        val row = premiumCard().apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 17, 18, 17)
-            isClickable = true
-            isFocusable = true
-        }
-        row.addView(iconBadge("🔄", teal))
-        row.addView(spacerH(16))
-
-        val textCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        textCol.addView(TextView(this).apply {
-            text = "Sync Now"
-            textSize = 14.5f
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, Typeface.BOLD)
-        })
-
-        val statusRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 3, 0, 0)
-        }
-        syncRowDot = TextView(this).apply {
-            text = "●"
-            textSize = 9f
-        }
-        statusRow.addView(syncRowDot)
-        statusRow.addView(spacerH(4))
-        syncRowStatusText = TextView(this).apply {
-            textSize = 11f
-            setTextColor(Color.parseColor(textGray))
-        }
-        statusRow.addView(syncRowStatusText)
-        textCol.addView(statusRow)
-        row.addView(textCol)
-
-        row.setOnClickListener { onSyncNowClicked() }
-        // NEW: long-press "Sync Now" to rewind the pull checkpoint to a chosen date/time
-        // and immediately resync from there — recovers a window where sync wasn't working
-        // (e.g. "yesterday 11am onward") without needing a full re-install/clear-data.
-        row.setOnLongClickListener { showResyncFromDialog(); true }
-
-        refreshSyncStatus()
-        return row
-    }
-
-    private fun onSyncNowClicked() {
-        if (!isNetworkConnected()) {
-            Toast.makeText(this, "No internet connection", Toast.LENGTH_SHORT).show()
-            refreshSyncStatus()
-            return
-        }
-        // FIX (sync diagnostics): this used to just enqueue a background WorkManager job
-        // and immediately show a static "Syncing…" toast with no idea whether it actually
-        // worked — a real failure (missing Firestore index, wrong Firebase project,
-        // permission error, etc.) looked identical to success. Run it directly here and
-        // await the real result so the user (and anyone debugging this) can actually see
-        // what happened.
-        Toast.makeText(this, "Syncing…", Toast.LENGTH_SHORT).show()
-        lifecycleScope.launch {
-            val result = try {
-                com.grocerypos.v11.sync.SyncRepository.syncNow(this@SettingsActivity)
-            } catch (e: Exception) {
-                Toast.makeText(this@SettingsActivity, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
-                refreshSyncStatus()
-                return@launch
-            }
-            Toast.makeText(this@SettingsActivity, result.summary(), Toast.LENGTH_LONG).show()
-            refreshSyncStatus()
-        }
-    }
-
-    /** Long-press "Sync Now" → pick a date & time → rewinds the pull checkpoint to that
-     *  moment and immediately resyncs, so anything the server has changed since that time
-     *  gets re-pulled (recovers a window where sync wasn't working, e.g. "yesterday 11am
-     *  onward"). Does not affect what's queued to be pushed — only what gets pulled. */
-    private fun showResyncFromDialog() {
-        val cal = java.util.Calendar.getInstance()
-        android.app.DatePickerDialog(
-            this,
-            { _, y, m, d ->
-                cal.set(java.util.Calendar.YEAR, y)
-                cal.set(java.util.Calendar.MONTH, m)
-                cal.set(java.util.Calendar.DAY_OF_MONTH, d)
-                android.app.TimePickerDialog(
-                    this,
-                    { _, hour, minute ->
-                        cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
-                        cal.set(java.util.Calendar.MINUTE, minute)
-                        cal.set(java.util.Calendar.SECOND, 0)
-                        com.grocerypos.v11.sync.SyncRepository.resetSyncCheckpoint(this, cal.timeInMillis)
-                        val fmt = java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault())
-                        Toast.makeText(
-                            this,
-                            "Resyncing from ${fmt.format(cal.time)}…",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        onSyncNowClicked()
-                    },
-                    cal.get(java.util.Calendar.HOUR_OF_DAY),
-                    cal.get(java.util.Calendar.MINUTE),
-                    false
-                ).show()
-            },
-            cal.get(java.util.Calendar.YEAR),
-            cal.get(java.util.Calendar.MONTH),
-            cal.get(java.util.Calendar.DAY_OF_MONTH)
-        ).show()
-    }
-
-    // ADDED (multi-tenant support): admin pastes their own Firebase project's 4
-    // values here (from Firebase Console > Project Settings > General > Your apps).
-    // See CloudConfigStore.kt for exactly why this exists and how it's used.
-    // ADDED (sync recoverability): a simple read-only viewer for the audit log —
-    // conflicts and push failures first (most likely to need attention), then
-    // everything else, newest first. Purely local — doesn't touch Firestore.
-    private fun openSyncHistoryDialog() {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 8)
-        }
-        val scroll = ScrollView(this).apply { addView(container) }
-        val loading = TextView(this).apply {
-            text = "Loading…"
-            setPadding(4, 8, 4, 8)
-            setTextColor(Color.parseColor(textGray))
-        }
-        container.addView(loading)
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Sync History")
-            .setView(scroll)
-            .setPositiveButton("Close", null)
-            .create()
-        dialog.show()
-
-        lifecycleScope.launch {
-            val db = PosDatabase.get(this@SettingsActivity)
-            val stuckItems = try {
-                db.syncQueueDao().stuck()
-            } catch (e: Exception) {
-                emptyList()
-            }
-            val entries = try {
-                db.auditDao().recent()
-            } catch (e: Exception) {
-                emptyList()
-            }
-            container.removeAllViews()
-
-            // ADDED (risk-free POS): items that gave up retrying after 10 failed
-            // attempts — shown first with a one-tap way to give them another chance,
-            // e.g. after fixing whatever was wrong (internet, Firestore rules, etc).
-            if (stuckItems.isNotEmpty()) {
-                container.addView(LinearLayout(this@SettingsActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(16, 12, 16, 12)
-                    background = strokedBg("#F5A524", "#FFF8F0", 12)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { setMargins(0, 0, 0, 12) }
-
-                    addView(TextView(this@SettingsActivity).apply {
-                        text = "⚠️ ${stuckItems.size} item(s) 10 baar fail hone ke baad rukk gaye"
-                        textSize = 12f
-                        setTextColor(Color.parseColor(amber))
-                        setTypeface(typeface, Typeface.BOLD)
-                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    })
-                    addView(TextView(this@SettingsActivity).apply {
-                        text = "🔄 Retry Now"
-                        textSize = 12f
-                        setTextColor(Color.WHITE)
-                        setTypeface(typeface, Typeface.BOLD)
-                        background = roundedBg(amber, 20)
-                        setPadding(20, 10, 20, 10)
-                        setOnClickListener {
-                            lifecycleScope.launch {
-                                db.syncQueueDao().resetAllStuck()
-                                Toast.makeText(this@SettingsActivity, "Dobara try kiya jayega agli Sync Now par", Toast.LENGTH_SHORT).show()
-                                dialog.dismiss()
-                            }
-                        }
-                    })
-                })
-            }
-
-            if (entries.isEmpty()) {
-                container.addView(TextView(this@SettingsActivity).apply {
-                    text = "Koi sync activity ya conflict abhi tak record nahi hua."
-                    setTextColor(Color.parseColor(textGray))
-                    setPadding(4, 8, 4, 8)
-                })
-                return@launch
-            }
-
-            val fmt = java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault())
-            for (e in entries) {
-                val isConflict = e.action == "sync_conflict"
-                val isFailure = e.action == "sync_push_failed"
-                val labelColor = when {
-                    isConflict -> amber
-                    isFailure -> red
-                    else -> textGray
-                }
-                container.addView(LinearLayout(this@SettingsActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(16, 12, 16, 12)
-                    background = strokedBg(border, if (isConflict || isFailure) "#FFF8F0" else cardWhite, 12)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { setMargins(0, 0, 0, 8) }
-
-                    addView(TextView(this@SettingsActivity).apply {
-                        text = when (e.action) {
-                            "sync_conflict" -> "⚠️ Conflict — ${e.reference}"
-                            "sync_push_failed" -> "❌ Push failed — ${e.reference}"
-                            else -> e.reference
-                        }
-                        setTextColor(Color.parseColor(labelColor))
-                        setTypeface(typeface, Typeface.BOLD)
-                        textSize = 12.5f
-                    })
-                    if (e.details.isNotBlank()) {
-                        addView(TextView(this@SettingsActivity).apply {
-                            text = e.details
-                            setTextColor(Color.parseColor(textDark))
-                            textSize = 11.5f
-                            setPadding(0, 4, 0, 0)
-                        })
-                    }
-                    addView(TextView(this@SettingsActivity).apply {
-                        text = fmt.format(java.util.Date(e.createdAt))
-                        setTextColor(Color.parseColor(textGray))
-                        textSize = 10.5f
-                        setPadding(0, 4, 0, 0)
-                    })
-                })
-            }
-        }
-    }
-
-    private fun openCloudSyncSetupDialog() {
-        val existing = com.grocerypos.v11.CloudConfigStore.get(this)
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 8)
-        }
-
-        fun labeledField(label: String, prefill: String): EditText {
-            container.addView(TextView(this).apply {
-                text = label
-                textSize = 11f
-                setTextColor(Color.parseColor(textGray))
-                setPadding(2, 14, 0, 4)
-            })
-            val field = EditText(this).apply {
-                setText(prefill)
-                setSingleLine(true)
-                background = strokedBg(border, cardWhite, 10)
-                setPadding(20, 18, 20, 18)
-                textSize = 13.5f
-            }
-            container.addView(field)
-            return field
-        }
-
-        container.addView(TextView(this).apply {
-            text = "Firebase Console → Project Settings → General → Your apps (Android) → Config mein ye 4 values milengi. Khali chhod kar wapas is build ke default project par ja sakte hain (agar koi ho)."
-            textSize = 11.5f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(2, 0, 0, 4)
-        })
-
-        val projectIdField = labeledField("Project ID", existing?.projectId ?: "")
-        val apiKeyField = labeledField("API Key", existing?.apiKey ?: "")
-        val appIdField = labeledField("App ID", existing?.appId ?: "")
-        val storageBucketField = labeledField("Storage Bucket", existing?.storageBucket ?: "")
-
-        // ADDED (runtime branch config): each branch is now told apart by a code
-        // entered here instead of a compile-time BuildConfig value baked into a
-        // separate APK per branch — see BranchConfigStore.kt.
-        container.addView(TextView(this).apply {
-            text = "Is device ka Branch Code — har branch ke liye alag, jaise \"main-branch\" ya \"dusri-branch\". Sab devices jo ek hi branch ka data share karna chahte hain, unka code same hona chahiye."
-            textSize = 11.5f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(2, 10, 0, 4)
-        })
-        val branchIdField = labeledField("Branch Code", BranchConfigStore.current)
-
-        // ADDED (branch approval): this device's Firebase Auth UID, so the shop
-        // owner/admin can hand it off to whoever manages the Firebase console to
-        // create the matching branch_members/{uid} document — see firestore.rules
-        // and SyncApi.currentUid(). Without this document existing server-side, sync
-        // will authenticate fine but every read/write gets rejected as permission-
-        // denied — this field is what lets a human actually fix that.
-        val uid = SyncApi.currentUid(this)
-        container.addView(TextView(this).apply {
-            text = "Device ID (admin ko share karein taake yeh device branch access ke liye approve ho sake)"
-            textSize = 11f
-            setTextColor(Color.parseColor(textGray))
-            setPadding(2, 14, 0, 4)
-        })
-        val uidRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        uidRow.addView(TextView(this).apply {
-            text = uid ?: "Pehle Save karein — pehli sync attempt ke baad ID yahan aayegi"
-            textSize = 12.5f
-            setTextColor(Color.parseColor(if (uid != null) textDark else textGray))
-            setPadding(0, 0, 12, 0)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        if (uid != null) {
-            uidRow.addView(Button(this).apply {
-                text = "Copy"
-                textSize = 11f
-                setOnClickListener {
-                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Device ID", uid))
-                    Toast.makeText(this@SettingsActivity, "Device ID copy ho gayi", Toast.LENGTH_SHORT).show()
-                }
-            })
-        }
-        container.addView(uidRow)
-
-        val scroll = ScrollView(this).apply { addView(container) }
-
-        val dialogBuilder = AlertDialog.Builder(this)
-            .setTitle("Cloud Sync Setup")
-            .setView(scroll)
-            .setPositiveButton("Save") { _, _ ->
-                val projectId = projectIdField.text.toString().trim()
-                val apiKey = apiKeyField.text.toString().trim()
-                val appId = appIdField.text.toString().trim()
-                val storageBucket = storageBucketField.text.toString().trim()
-                val branchId = branchIdField.text.toString().trim()
-
-                if (projectId.isEmpty() || apiKey.isEmpty() || appId.isEmpty()) {
-                    Toast.makeText(this, "Project ID, API Key aur App ID zaroori hain", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                if (branchId.isEmpty()) {
-                    Toast.makeText(this, "Branch Code zaroori hai", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                com.grocerypos.v11.CloudConfigStore.save(
-                    this,
-                    com.grocerypos.v11.CloudConfig(projectId, apiKey, appId, storageBucket)
-                )
-                BranchConfigStore.set(this, branchId)
-                Toast.makeText(this, "Cloud project connected — ab Sync Now try karein", Toast.LENGTH_LONG).show()
-                refreshSyncStatus()
-            }
-            .setNegativeButton("Cancel", null)
-
-        // FIX (duplicate Cancel button): setNeutralButton used to always be added with
-        // label "Cancel" whenever there was no existing config, which put two
-        // identically-labelled Cancel buttons on the dialog side by side. Only add the
-        // neutral button at all when there's something to actually disconnect.
-        if (existing != null) {
-            dialogBuilder.setNeutralButton("Disconnect") { _, _ ->
-                com.grocerypos.v11.CloudConfigStore.clear(this)
-                Toast.makeText(this, "Cloud project disconnected", Toast.LENGTH_SHORT).show()
-                refreshSyncStatus()
-            }
-        }
-
-        dialogBuilder.show()
-    }
-
-    // ================= PREMIUM GRADIENT HEADER (matches Product/Purchase/Sale headers) =================
+    // ================= FLAT HEADER (matches every other screen — see PremiumHeader.kt) =================
+    // FLAT REDESIGN: was a custom navy banner with its own white icon-circle. Replaced with
+    // the shared premiumHeader() so this screen is controlled from PremiumHeader.kt instead of
+    // carrying its own header markup. shopNameHeaderText still needs to be mutable (updated
+    // later from the saved shop name), so it's pulled back out of the header's view tree.
     private fun buildHeader(): LinearLayout {
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 48, 22, 28)
-            background = gradientBg(navy, navyLight, cornerBottom = 30)
-            applyElevation(this, 10f)
-        }
-
-        val iconCircle = FrameLayout(this).apply {
-            val px = (56 * resources.displayMetrics.density).toInt()
-            layoutParams = LinearLayout.LayoutParams(px, px)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.WHITE)
-                setStroke((1.5 * resources.displayMetrics.density).toInt(), Color.parseColor("#DCE3F0"))
-            }
-            applyElevation(this, 3f)
-        }
-        iconCircle.addView(TextView(this).apply {
-            text = "🏪"
-            textSize = 25f
-            gravity = Gravity.CENTER
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-        })
-        header.addView(iconCircle)
-
-        val textCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        shopNameHeaderText = TextView(this).apply {
-            text = "My Shop"
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
+        val header = premiumHeader(R.drawable.ic_store, "My Shop", "POINT OF SALE", navy, navy) { finish() }
+        val headerCol = header.getChildAt(4) as LinearLayout
+        shopNameHeaderText = (headerCol.getChildAt(0) as TextView).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        textCol.addView(shopNameHeaderText)
-        textCol.addView(TextView(this).apply {
-            text = "POINT OF SALE"
-            textSize = 10.5f
-            setTextColor(Color.parseColor("#A7B4CC"))
-            setTypeface(typeface, Typeface.BOLD)
-            letterSpacing = 0.12f
-            setPadding(0, 6, 0, 0)
-        })
-        header.addView(textCol)
-
         return header
     }
 
@@ -742,7 +313,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** A simple, non-expanding premium card row: icon-in-circle + label (+ optional chevron / trailing text). */
     private fun menuRow(
-        icon: String,
+        iconRes: Int,
         label: String,
         showChevron: Boolean = false,
         trailingText: String? = null,
@@ -757,7 +328,7 @@ class SettingsActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
-        row.addView(iconBadge(icon, iconBgHex))
+        row.addView(iconBadge(iconRes, iconBgHex))
         row.addView(spacerH(16))
         row.addView(TextView(this).apply {
             text = label
@@ -782,7 +353,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** A premium card row with an optional subtitle line that expands/collapses a target view when tapped. */
     private fun expandableMenuRow(
-        icon: String,
+        iconRes: Int,
         label: String,
         subtitle: String? = null,
         target: View
@@ -794,7 +365,7 @@ class SettingsActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
-        row.addView(iconBadge(icon, navy))
+        row.addView(iconBadge(iconRes, navy))
         row.addView(spacerH(16))
 
         val textCol = LinearLayout(this).apply {
@@ -823,31 +394,42 @@ class SettingsActivity : AppCompatActivity() {
         row.setOnClickListener {
             val expanding = target.visibility != View.VISIBLE
             target.visibility = if (expanding) View.VISIBLE else View.GONE
-            chevron.text = if (expanding) "⌃" else "⌄"
+            chevron.rotation = if (expanding) 180f else 0f
         }
         return row
     }
 
-    private fun iconBadge(icon: String, colorHex: String) = TextView(this).apply {
-        text = icon
-        textSize = 18f
-        gravity = Gravity.CENTER
+    // ---- Vector-icon helpers (replace emoji throughout this screen with tinted drawables
+    // from res/drawable, per the item-6 UI improvement pass) — same pattern as ProductActivity. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    internal fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    internal fun iconBadge(iconRes: Int, colorHex: String) = ImageView(this).apply {
+        setImageDrawable(tintedDrawable(iconRes, colorHex, 20))
+        scaleType = ImageView.ScaleType.CENTER
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.parseColor(lightenTint(colorHex)))
         }
         val px = (44 * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
-    private fun chevronText() = TextView(this).apply {
-        text = "⌄"
-        textSize = 16f
-        setTextColor(Color.parseColor(teal))
-        setTypeface(typeface, Typeface.BOLD)
+    private fun chevronText() = ImageView(this).apply {
+        setImageDrawable(tintedDrawable(R.drawable.ic_chevron_down, teal, 18))
     }
 
-    private fun spacerH(widthDp: Int) = View(this).apply {
+    internal fun spacerH(widthDp: Int) = View(this).apply {
         val px = (widthDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(px, 1)
     }
@@ -860,7 +442,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ---- Shop Info ----
-        val shopCard = premiumCard("🏪", "Shop Information")
+        val shopCard = premiumCard(R.drawable.ic_store, "Shop Information")
         shopNameField = plainField("Shop Name")
         phoneField = plainField("Phone")
         addressField = plainField("Address")
@@ -868,28 +450,28 @@ class SettingsActivity : AppCompatActivity() {
         currencyField = plainField("Currency")
         taxField = plainField("Tax %")
 
-        shopCard.addView(iconFieldBox("🏪", "Shop Name", shopNameField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_store, "Shop Name", shopNameField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("📞", "Phone", phoneField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_phone, "Phone", phoneField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("📍", "Address", addressField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_location, "Address", addressField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("🧾", "Receipt Footer", footerField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_receipt, "Receipt Footer", footerField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("💱", "Currency", currencyField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_wallet, "Currency", currencyField))
         shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox("📊", "Tax %", taxField))
+        shopCard.addView(iconFieldBox(R.drawable.ic_chart, "Tax %", taxField))
         shopCard.addView(spacer(12))
         shopCard.addView(primaryButton("SAVE SETTINGS", navy) { saveShopSettings() })
         container.addView(shopCard)
         loadShopSettings()
 
         // ---- Printer ----
-        val printerCard = premiumCard("🖨️", "Printer Setup (58mm Bluetooth)")
+        val printerCard = premiumCard(R.drawable.ic_printer, "Printer Setup (58mm Bluetooth)")
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = strokedBg(border, "#FAFBFC", 12)
+            background = strokedBg(border, fieldFill, 12)
             setPadding(16, 12, 16, 12)
         }
         printerStatusDot = TextView(this).apply {
@@ -921,7 +503,7 @@ class SettingsActivity : AppCompatActivity() {
         container.addView(printerCard)
 
         // ---- Security (Login Method) ----
-        val securityCard = premiumCard("🔐", "Security — Login Method")
+        val securityCard = premiumCard(R.drawable.ic_lock, "Security — Login Method")
         loginMethodGroup = RadioGroup(this).apply { orientation = LinearLayout.VERTICAL }
         passwordOnlyRadio = radioOption("Password Only")
         fingerprintOnlyRadio = radioOption("Fingerprint Only")
@@ -958,7 +540,7 @@ class SettingsActivity : AppCompatActivity() {
         loadLoginMethodSetting()
 
         // ---- Change Username / Password ----
-        val loginCard = premiumCard("🔑", "Change Login (Username / Password)")
+        val loginCard = premiumCard(R.drawable.ic_key, "Change Login (Username / Password)")
         val session = getSharedPreferences("session", MODE_PRIVATE)
         val loggedInUsername = session.getString("username", "") ?: ""
 
@@ -972,25 +554,25 @@ class SettingsActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
 
-        loginCard.addView(iconFieldBox("👤", "Current Username", currentUsernameField, muted = true))
+        loginCard.addView(iconFieldBox(R.drawable.ic_person, "Current Username", currentUsernameField, muted = true))
         loginCard.addView(spacer(10))
-        loginCard.addView(iconFieldBox("🆕", "New Username", newUsernameField))
+        loginCard.addView(iconFieldBox(R.drawable.ic_add, "New Username", newUsernameField))
         loginCard.addView(spacer(10))
-        loginCard.addView(passwordFieldBox("🔒", "New Password", newPasswordField))
+        loginCard.addView(passwordFieldBox(R.drawable.ic_lock, "New Password", newPasswordField))
         loginCard.addView(spacer(12))
         loginCard.addView(primaryButton("UPDATE LOGIN", navy) { updateLogin(loggedInUsername) })
         container.addView(loginCard)
 
         // ---- Language ----
-        val languageCard = premiumCard("🌐", "Language")
+        val languageCard = premiumCard(R.drawable.ic_globe, "Language")
         val langRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val englishBtn = pillToggleButton("English")
         val urduBtn = pillToggleButton("اردو")
         fun refreshLanguageButtons() {
             val isUrdu = com.grocerypos.v11.util.Loc.isUrdu(this)
-            englishBtn.background = if (!isUrdu) roundedBg(navy, 30) else strokedBg(border, "#FAFBFC", 30)
+            englishBtn.background = if (!isUrdu) roundedBg(navy, 30) else strokedBg(border, fieldFill, 30)
             englishBtn.setTextColor(if (!isUrdu) Color.WHITE else Color.parseColor(textGray))
-            urduBtn.background = if (isUrdu) roundedBg(navy, 30) else strokedBg(border, "#FAFBFC", 30)
+            urduBtn.background = if (isUrdu) roundedBg(navy, 30) else strokedBg(border, fieldFill, 30)
             urduBtn.setTextColor(if (isUrdu) Color.WHITE else Color.parseColor(textGray))
         }
         englishBtn.setOnClickListener {
@@ -1012,7 +594,7 @@ class SettingsActivity : AppCompatActivity() {
         container.addView(languageCard)
 
         // ---- Users ----
-        val usersCard = premiumCard("👥", "Users & Account")
+        val usersCard = premiumCard(R.drawable.ic_people, "Users & Account")
         usersCard.addView(secondaryButton("MANAGE USERS", navy) {
             startActivity(Intent(this@SettingsActivity, UserManagementActivity::class.java))
         })
@@ -1027,7 +609,7 @@ class SettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 4, 0, 8)
         }
-        val backupCard = premiumCard("🗄️", "Backup & Restore")
+        val backupCard = premiumCard(R.drawable.ic_archive, "Backup & Restore")
         backupCard.addView(primaryButton("BACKUP NOW", teal) { onBackupClicked() })
         backupCard.addView(spacer(10))
         backupCard.addView(primaryButton("RESTORE BACKUP", red) { onRestoreClicked() })
@@ -1052,7 +634,13 @@ class SettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             background = strokedBg("#F4C9CB", "#FDEEEE", 12)
             setPadding(16, 12, 16, 12)
-            addView(TextView(this@SettingsActivity).apply { text = "⚠️  "; textSize = 13f })
+            addView(ImageView(this@SettingsActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_warning, red, 16))
+                val px = (16 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                    marginEnd = (8 * resources.displayMetrics.density).toInt()
+                }
+            })
             addView(TextView(this@SettingsActivity).apply {
                 text = "Restore purani backup laata hai aur is waqt ka sara naya data (jo backup ke baad add hua) permanently mita deta hai. Sirf tab use karein jab aapko waqai purani state par jaana ho."
                 textSize = 11.5f
@@ -1067,7 +655,7 @@ class SettingsActivity : AppCompatActivity() {
     // ================= UI HELPERS =================
 
     /** Premium card container — matches Product/Purchase/Sale's premiumCard() pattern. */
-    private fun premiumCard() = LinearLayout(this).apply {
+    internal fun premiumCard() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = strokedBg(border, cardWhite, 18)
         layoutParams = LinearLayout.LayoutParams(
@@ -1077,19 +665,22 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /** Premium card with a small icon-badge section title inside — used for the Settings sub-sections. */
-    private fun premiumCard(icon: String, title: String) = premiumCard().apply {
+    private fun premiumCard(iconRes: Int, title: String) = premiumCard().apply {
         setPadding(20, 18, 20, 18)
-        addView(sectionLabel(icon, title))
+        addView(sectionLabel(iconRes, title))
         addView(spacer(4))
     }
 
-    private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
+    private fun sectionLabel(iconRes: Int, label: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, 0, 0, 14)
-        addView(TextView(this@SettingsActivity).apply {
-            text = "$icon  "
-            textSize = 14f
+        addView(ImageView(this@SettingsActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, teal, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
         })
         addView(TextView(this@SettingsActivity).apply {
             text = label
@@ -1118,26 +709,38 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /** Icon-prefixed labeled field box — matches ProductActivity's fieldBox(icon) pattern. */
-    private fun iconFieldBox(icon: String, label: String, field: EditText, muted: Boolean = false) = LinearLayout(this).apply {
+    private fun iconFieldBox(iconRes: Int, label: String, field: EditText, muted: Boolean = false) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = strokedBg(border, if (muted) "#F1F3F5" else "#FAFBFC", 12)
+        background = strokedBg(border, if (muted) "#F1F3F5" else fieldFill, 12)
         setPadding(16, 10, 16, 10)
         addView(microLabel(label))
         val row = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        row.addView(TextView(this@SettingsActivity).apply { text = "$icon  "; textSize = 14f })
+        row.addView(ImageView(this@SettingsActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         row.addView(field)
         addView(row)
     }
 
-    private fun passwordFieldBox(icon: String, label: String, field: EditText) = LinearLayout(this).apply {
+    private fun passwordFieldBox(iconRes: Int, label: String, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = strokedBg(border, "#FAFBFC", 12)
+        background = strokedBg(border, fieldFill, 12)
         setPadding(16, 10, 16, 10)
         addView(microLabel(label))
         val row = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        row.addView(TextView(this@SettingsActivity).apply { text = "$icon  "; textSize = 14f })
+        row.addView(ImageView(this@SettingsActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         row.addView(field)
@@ -1190,7 +793,7 @@ class SettingsActivity : AppCompatActivity() {
         textSize = 12.5f
         isAllCaps = false
         setTypeface(typeface, Typeface.BOLD)
-        background = strokedBg(colorHex, "#FFFFFF", 14)
+        background = strokedBg(colorHex, cardWhite, 14)
         setPadding(0, 16, 0, 16)
         setOnClickListener { onClick() }
     }
@@ -1204,17 +807,6 @@ class SettingsActivity : AppCompatActivity() {
         setPadding(0, 14, 0, 14)
         minHeight = 0
         stateListAnimator = null
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
     }
 
     private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) = GradientDrawable(
@@ -1239,17 +831,8 @@ class SettingsActivity : AppCompatActivity() {
         return String.format("#%02X%02X%02X", r, g, bl)
     }
 
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 
     // ================= SHOP INFO SAVE/LOAD =================
     private fun loadShopSettings() {
@@ -1310,6 +893,7 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun onSelectPrinterClicked() {
         if (!PrinterHelper.hasBluetoothPermission(this)) {
             PrinterHelper.requestBluetoothPermission(this, BT_PERMISSION_REQUEST_CODE)
@@ -1439,8 +1023,8 @@ class SettingsActivity : AppCompatActivity() {
             .setView(field)
             .setPositiveButton("Save") { _, _ ->
                 val newPass = field.text.toString().trim()
-                if (newPass.length < 4) {
-                    Toast.makeText(this, "Password kam se kam 4 characters ka ho", Toast.LENGTH_SHORT).show()
+                if (newPass.length < 8) {
+                    Toast.makeText(this, "Password kam se kam 8 characters ka ho", Toast.LENGTH_SHORT).show()
                 } else {
                     BackupPasswordStore.setPassword(this, newPass)
                     Toast.makeText(this, "Password update ho gaya", Toast.LENGTH_SHORT).show()
