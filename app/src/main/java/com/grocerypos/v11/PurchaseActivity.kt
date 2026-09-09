@@ -149,6 +149,13 @@ class PurchaseActivity : ThemedActivity() {
 
     private var isSaving = false
 
+    // ---- ADDED (tablet / commercial "desktop view"): same two-pane treatment
+    // as SaleActivity — on wide screens the cart/billing section becomes a
+    // separate right-hand pane that stays visible, instead of only being
+    // reachable through the "Billed Items" popup dialog. Phones keep the
+    // original single-column, dialog-based flow untouched. ----
+    private var isTabletWide = false
+
     private var scrollTargetView: View? = null
     private var scrollAlignTop: Boolean = true
 
@@ -218,6 +225,11 @@ class PurchaseActivity : ThemedActivity() {
     }
 
     private fun buildUi() {
+        // ---- ADDED (tablet / desktop-style layout): same 700dp breakpoint as
+        // SaleActivity, tune in one place if a specific tablet needs a
+        // different value. ----
+        isTabletWide = resources.configuration.screenWidthDp >= 700
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 0, 24, 80)
@@ -466,6 +478,21 @@ class PurchaseActivity : ThemedActivity() {
         itemEntrySection.addView(cancelEditButton)
         root.addView(itemEntrySection)
 
+        // ---- ADDED (tablet / desktop-style layout): from here on, everything
+        // that used to go straight into `root` (billed items, total, payment,
+        // due, save/delete) is added to `cartColumn` instead. On phones
+        // `cartColumn` IS `root`, so nothing changes. On a tablet-wide screen
+        // it's a separate LinearLayout that becomes the right-hand "cart"
+        // pane, built further down. ----
+        val cartColumn: LinearLayout = if (isTabletWide) {
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 0, 0, 40)
+            }
+        } else {
+            root
+        }
+
         billedItemsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -486,10 +513,22 @@ class PurchaseActivity : ThemedActivity() {
         billedItemsHeader.addView(billedItemsSummaryText)
         billedItemsChevron = TextView(this).apply { text = "\u203A"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         billedItemsHeader.addView(billedItemsChevron)
-        root.addView(billedItemsHeader)
-        root.addView(spacer(14))
+        cartColumn.addView(billedItemsHeader)
+        cartColumn.addView(spacer(14))
 
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
+
+        // ---- ADDED (tablet / desktop-style layout): cart list shown inline in
+        // the right pane at all times instead of only via the popup dialog.
+        // renderItemsList() already keeps `itemsContainer` up to date on every
+        // add/remove; this just keeps it permanently attached and visible. ----
+        if (isTabletWide) {
+            billedItemsHeader.setOnClickListener(null)
+            billedItemsHeader.isClickable = false
+            billedItemsChevron.visibility = View.GONE
+            cartColumn.addView(itemsContainer)
+            cartColumn.addView(spacer(14))
+        }
 
         val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, fieldFill, 18) }
         totalCard.addView(TextView(this).apply {
@@ -502,7 +541,7 @@ class PurchaseActivity : ThemedActivity() {
         })
         grandTotalText = TextView(this).apply { text = "Rs 0"; textSize = 21f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         totalCard.addView(grandTotalText)
-        root.addView(totalCard)
+        cartColumn.addView(totalCard)
 
         paymentSection = premiumCard().apply { orientation = LinearLayout.VERTICAL; setPadding(24, 20, 24, 20) }
         val paidRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -539,7 +578,7 @@ class PurchaseActivity : ThemedActivity() {
             setLeadingIcon(R.drawable.ic_warning, red, 12, 5)
         }
         paymentSection.addView(paidWarningText)
-        root.addView(paymentSection)
+        cartColumn.addView(paymentSection)
 
         val dueCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(22, 18, 22, 18); background = strokedBg(border, fieldFill, 18) }
         dueCard.addView(TextView(this).apply {
@@ -552,8 +591,12 @@ class PurchaseActivity : ThemedActivity() {
         })
         dueAmountText = TextView(this).apply { text = "Rs 0"; textSize = 18f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         dueCard.addView(dueAmountText)
-        root.addView(dueCard)
-        root.addView(spacer(220))
+        cartColumn.addView(dueCard)
+        // ---- CHANGED (tablet / desktop-style layout): the large 220dp spacer
+        // below exists to leave scroll room above the phone's soft keyboard.
+        // On the tablet's right-hand cart pane that would just be a big dead
+        // gap before the Save button, so it's shrunk there. ----
+        cartColumn.addView(spacer(if (isTabletWide) 24 else 220))
 
         saveButton = Button(this).apply {
             text = if (editBillNo != null) com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "UPDATE PURCHASE", "خریداری اپ ڈیٹ کریں") else com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "SAVE PURCHASE", "خریداری محفوظ کریں")
@@ -579,16 +622,52 @@ class PurchaseActivity : ThemedActivity() {
         val saveDeleteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         saveDeleteRow.addView(saveButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) })
         saveDeleteRow.addView(deleteButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply { setMargins(8, 0, 0, 0) })
-        root.addView(saveDeleteRow)
-        root.addView(spacer(30))
+        cartColumn.addView(saveDeleteRow)
+        cartColumn.addView(spacer(30))
 
-        scrollArea = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
-            setBackgroundColor(Color.parseColor(bg))
-            addView(root)
+        if (isTabletWide) {
+            // ---- ADDED (tablet / desktop-style layout): two side-by-side panes,
+            // like a computer POS screen — left = supplier/item entry (scrolls),
+            // right = cart/bill/payment (its own scroll). `scrollArea` keeps
+            // pointing at the LEFT pane — every existing scrollArea call above is
+            // about the item-entry side of the screen, and the handful of
+            // payment-related scroll calls elsewhere are skipped on tablet
+            // (search isTabletWide in this file) since the right pane is short
+            // enough to already be fully visible without scrolling. ----
+            val leftScroll = ScrollView(this).apply {
+                setBackgroundColor(Color.parseColor(bg))
+                setPadding(0, 0, 16, 0)
+                addView(root)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1.3f)
+            }
+            val divider = View(this).apply {
+                setBackgroundColor(Color.parseColor(border))
+                layoutParams = LinearLayout.LayoutParams((1 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.MATCH_PARENT)
+            }
+            val rightScroll = ScrollView(this).apply {
+                setBackgroundColor(Color.parseColor(bg))
+                setPadding(16, 0, 0, 0)
+                addView(cartColumn)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            }
+            val twoPane = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setBackgroundColor(Color.parseColor(bg))
+                setPadding(24, 0, 24, 0)
+                addView(leftScroll)
+                addView(divider)
+                addView(rightScroll)
+            }
+            scrollArea = leftScroll
+            setContentView(twoPane)
+        } else {
+            scrollArea = ScrollView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
+                setBackgroundColor(Color.parseColor(bg))
+                addView(root)
+            }
+            setContentView(scrollArea)
         }
-
-        setContentView(scrollArea)
 
         observeViewModel()
         editBillNo?.let { loadForEdit(it) }
@@ -710,7 +789,7 @@ class PurchaseActivity : ThemedActivity() {
         paidInput.addTextChangedListener(simpleWatcher { updateGrandTotal() })
 
         paidInput.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
+            if (hasFocus && !isTabletWide) {
                 scrollTargetView = paymentSection
                 scrollAlignTop = false
                 scrollArea.post { scrollToShowView(paymentSection, false) }
@@ -901,9 +980,11 @@ class PurchaseActivity : ThemedActivity() {
                     paidInput.selectAll()
                     val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
                     imm?.showSoftInput(paidInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-                    scrollTargetView = paymentSection
-                    scrollAlignTop = false
-                    scrollArea.post { scrollToShowView(paymentSection, false) }
+                    if (!isTabletWide) {
+                        scrollTargetView = paymentSection
+                        scrollAlignTop = false
+                        scrollArea.post { scrollToShowView(paymentSection, false) }
+                    }
                 }
             }
             .show()
@@ -1390,7 +1471,7 @@ class PurchaseActivity : ThemedActivity() {
                 .setTitle("Confirm Credit Purchase")
                 .setMessage("You have not entered Paid Amount.\nTotal: Rs %.0f\n\nThis bill will be saved as CREDIT (Udhaar).\nSupplier balance will increase.\n\nAre you sure?".format(grandTotal))
                 .setPositiveButton("Yes, Save as Credit") { _, _ -> checkDuplicateAndProceed(party, grandTotal) }
-                .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); scrollArea.post { scrollArea.smoothScrollTo(0, paymentSection.top); paidInput.requestFocus() } }
+                .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); if (isTabletWide) paidInput.requestFocus() else scrollArea.post { scrollArea.smoothScrollTo(0, paymentSection.top); paidInput.requestFocus() } }
                 .show()
             return
         }
