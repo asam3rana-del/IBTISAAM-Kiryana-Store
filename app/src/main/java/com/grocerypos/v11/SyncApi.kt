@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.tasks.await
 import com.grocerypos.v11.CloudConfigStore
+import com.grocerypos.v11.BranchConfigStore
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.Supplier
@@ -152,7 +153,7 @@ object SyncApi {
                     val updateMap = mapOf(
                         fieldName to com.google.firebase.firestore.FieldValue.increment(delta),
                         "updatedAt" to (map["updatedAt"] ?: System.currentTimeMillis()),
-                        "branchId" to (map["branchId"] ?: com.grocerypos.v11.BuildConfig.BRANCH_ID)
+                        "branchId" to (map["branchId"] ?: BranchConfigStore.current)
                     )
                     db.collection(collection).document(entry.entityId)
                         .set(updateMap, com.google.firebase.firestore.SetOptions.merge())
@@ -220,10 +221,10 @@ object SyncApi {
 
     suspend fun pull(context: Context, since: Long): PullResult {
         val db = firestoreFor(context) ?: return PullResult(serverTime = since)
-        val branchId = com.grocerypos.v11.BuildConfig.BRANCH_ID
+        val branchId = BranchConfigStore.current
         if (branchId.isBlank()) {
             throw BranchNotConfiguredException(
-                Loc.t(context, "This build has no branch id configured — cannot sync.", "اس بلڈ میں برانچ آئی ڈی سیٹ نہیں ہے — سنک نہیں ہو سکتا۔")
+                Loc.t(context, "No branch code is configured on this device — open Settings > Cloud Sync Setup and save a branch code before syncing.", "اس ڈیوائس پر برانچ کوڈ سیٹ نہیں ہے — Sync سے پہلے Settings > Cloud Sync Setup میں برانچ کوڈ محفوظ کریں۔")
             )
         }
 

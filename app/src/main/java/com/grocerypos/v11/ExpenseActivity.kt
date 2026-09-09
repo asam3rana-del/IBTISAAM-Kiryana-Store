@@ -431,7 +431,16 @@ class ExpenseActivity : AppCompatActivity() {
             .setMessage(Loc.t(this, "Remove this expense entry?", "کیا یہ خرچہ حذف کر دیں؟"))
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { _, _ ->
                 lifecycleScope.launch {
-                    PosDatabase.get(this@ExpenseActivity).expenseDao().delete(e)
+                    val db = PosDatabase.get(this@ExpenseActivity)
+                    db.expenseDao().delete(e)
+                    // A delete must also reach Firestore; otherwise another device
+                    // would keep showing the removed expense after the next sync.
+                    SyncQueueHelper.enqueueDelete(
+                        db,
+                        "expense",
+                        SyncQueueHelper.expenseEntityId(e),
+                        this@ExpenseActivity
+                    )
                     loadTotals()
                 }
             }

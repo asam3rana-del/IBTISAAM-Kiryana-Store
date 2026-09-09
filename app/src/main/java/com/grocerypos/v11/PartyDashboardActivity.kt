@@ -21,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.util.Loc
@@ -1164,13 +1165,15 @@ class PartyDashboardActivity : AppCompatActivity() {
                     val db = PosDatabase.get(this@PartyDashboardActivity)
                     // FIX: ProductActivity.kt confirms ProductDao uses upsert(product),
                     // not update() — corrected from the earlier ADJUST-DAO-METHOD guess.
-                    db.productDao().upsert(
-                        c.entity.copy(
-                            cost = newCost,
-                            salePrice = newRetail,
-                            wholesalePrice = newWholesale
-                        )
+                    val updatedProduct = c.entity.copy(
+                        cost = newCost,
+                        salePrice = newRetail,
+                        wholesalePrice = newWholesale
                     )
+                    db.productDao().upsert(updatedProduct)
+                    // Keep rate changes made from Party Dashboard in the same sync path
+                    // as ProductActivity, so other branch devices receive them too.
+                    SyncQueueHelper.enqueueProduct(db, updatedProduct)
                     Toast.makeText(
                         this@PartyDashboardActivity,
                         Loc.t(this@PartyDashboardActivity, "Rates updated", "\u0631\u06CC\u0679 \u0627\u067E\u0688\u06CC\u0679 \u06C1\u0648 \u06AF\u0626\u06CC"),
