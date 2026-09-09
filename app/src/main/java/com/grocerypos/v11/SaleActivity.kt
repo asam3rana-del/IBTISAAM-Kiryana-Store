@@ -126,6 +126,14 @@ class SaleActivity : AppCompatActivity() {
     internal var isCashSale = true
     internal var saleDateMillis = System.currentTimeMillis()
 
+    // ---- ADDED (tablet / commercial "desktop view"): on wide screens (tablets,
+    // and phones in landscape past ~700dp) the cart/billing section becomes a
+    // separate right-hand pane that stays visible at all times, instead of
+    // being reached only through the "Billed Items" popup dialog — closer to
+    // how a computer-based POS screen is laid out. Phones keep the original
+    // single-column, dialog-based flow untouched. ----
+    internal var isTabletWide = false
+
     internal var editInvoice: String? = null
     private var originalSale: Sale? = null
     private var originalItems: List<SaleItem> = emptyList()
@@ -167,6 +175,13 @@ class SaleActivity : AppCompatActivity() {
 
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         loadThemeColors()
+
+        // ---- ADDED (tablet / desktop-style layout): 700dp roughly matches a
+        // 9"+ tablet in either orientation, while keeping ordinary phones
+        // (even large ones, even rotated) on the original single-column flow.
+        // Tune this number in one place if a specific tablet needs a different
+        // breakpoint. ----
+        isTabletWide = resources.configuration.screenWidthDp >= 700
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -444,6 +459,21 @@ class SaleActivity : AppCompatActivity() {
         })
         root.addView(itemEntrySection)
 
+        // ---- ADDED (tablet / desktop-style layout): from here on, everything
+        // that used to go straight into `root` (billed items, subtotal,
+        // discount, total, payment, due, save/delete) is added to `cartColumn`
+        // instead. On phones `cartColumn` IS `root`, so nothing changes. On a
+        // tablet-wide screen it's a separate LinearLayout that becomes the
+        // right-hand "cart" pane, built further down. ----
+        val cartColumn: LinearLayout = if (isTabletWide) {
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 0, 0, 40)
+            }
+        } else {
+            root
+        }
+
         // ---------- Billed items header ----------
         billedItemsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -465,10 +495,24 @@ class SaleActivity : AppCompatActivity() {
         billedItemsHeader.addView(billedItemsTrigger)
         billedItemsChevron = TextView(this).apply { text = "\u203A"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         billedItemsHeader.addView(billedItemsChevron)
-        root.addView(billedItemsHeader)
-        root.addView(spacer(14))
+        cartColumn.addView(billedItemsHeader)
+        cartColumn.addView(spacer(14))
 
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
+
+        // ---- ADDED (tablet / desktop-style layout): on the tablet pane the
+        // cart list is shown inline, right under its header, at all times —
+        // no need to tap through to a popup dialog to see what's in the bill.
+        // renderItemsList() (SaleCart.kt) already keeps `itemsContainer` up to
+        // date on every add/remove; this just keeps it permanently attached
+        // and visible instead of only borrowing it for the dialog. ----
+        if (isTabletWide) {
+            billedItemsHeader.setOnClickListener(null)
+            billedItemsHeader.isClickable = false
+            billedItemsChevron.visibility = View.GONE
+            cartColumn.addView(itemsContainer)
+            cartColumn.addView(spacer(14))
+        }
 
         // ---------- Subtotal + discount card ----------
         val billingCard = premiumCard()
@@ -493,7 +537,7 @@ class SaleActivity : AppCompatActivity() {
         }
         discountInput.addTextChangedListener(simpleWatcher { updateTotals() })
         billingCard.addView(discountInput)
-        root.addView(billingCard)
+        cartColumn.addView(billingCard)
 
         // ---------- Grand total card ----------
         val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, fieldFill, 18) }
@@ -507,7 +551,7 @@ class SaleActivity : AppCompatActivity() {
         })
         totalText = TextView(this).apply { text = "Rs 0.00"; textSize = 21f; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         totalCard.addView(totalText)
-        root.addView(totalCard)
+        cartColumn.addView(totalCard)
 
         // ---------- Payment section ----------
         paymentSection = premiumCard().apply { orientation = LinearLayout.VERTICAL; setPadding(22, 14, 22, 14) }
@@ -573,7 +617,7 @@ class SaleActivity : AppCompatActivity() {
             visibility = View.GONE
         }
         paymentSection.addView(paidWarningText)
-        root.addView(paymentSection)
+        cartColumn.addView(paymentSection)
 
         // ---------- Due card ----------
         val dueCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(22, 18, 22, 18); background = strokedBg(border, fieldFill, 18) }
@@ -587,8 +631,8 @@ class SaleActivity : AppCompatActivity() {
         })
         dueAmountText = TextView(this).apply { text = "Rs 0.00"; textSize = 18f; setTextColor(Color.parseColor(green)); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         dueCard.addView(dueAmountText)
-        root.addView(dueCard)
-        root.addView(spacer(24))
+        cartColumn.addView(dueCard)
+        cartColumn.addView(spacer(24))
 
         // ---------- Save / delete ----------
         saveButton = Button(this).apply {
@@ -617,14 +661,51 @@ class SaleActivity : AppCompatActivity() {
         val saveDeleteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         saveDeleteRow.addView(saveButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) })
         saveDeleteRow.addView(deleteButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply { setMargins(8, 0, 0, 0) })
-        root.addView(saveDeleteRow)
-        root.addView(spacer(30))
+        cartColumn.addView(saveDeleteRow)
+        cartColumn.addView(spacer(30))
 
-        scrollView = ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor(bg))
-            addView(root)
+        if (isTabletWide) {
+            // ---- ADDED (tablet / desktop-style layout): two side-by-side panes,
+            // like a computer POS screen — left = item entry (scrolls), right =
+            // cart/bill/payment (its own scroll, but stays fully visible since it's
+            // short enough on most tablets). `scrollView` keeps pointing at the LEFT
+            // pane, since every existing scrollView.smoothScrollTo(...) call in
+            // SaleActivity.kt/SaleCart.kt is about the item-entry side of the
+            // screen (jumping back to Item Name / Sale Type after an action) — that
+            // behavior is unchanged, it just now scrolls the left pane only. ----
+            val leftScroll = ScrollView(this).apply {
+                setBackgroundColor(Color.parseColor(bg))
+                setPadding(0, 0, 16, 0)
+                addView(root)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1.3f)
+            }
+            val divider = View(this).apply {
+                setBackgroundColor(Color.parseColor(border))
+                layoutParams = LinearLayout.LayoutParams((1 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.MATCH_PARENT)
+            }
+            val rightScroll = ScrollView(this).apply {
+                setBackgroundColor(Color.parseColor(bg))
+                setPadding(16, 0, 0, 0)
+                addView(cartColumn)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            }
+            val twoPane = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setBackgroundColor(Color.parseColor(bg))
+                setPadding(24, 0, 24, 0)
+                addView(leftScroll)
+                addView(divider)
+                addView(rightScroll)
+            }
+            scrollView = leftScroll
+            setContentView(twoPane)
+        } else {
+            scrollView = ScrollView(this).apply {
+                setBackgroundColor(Color.parseColor(bg))
+                addView(root)
+            }
+            setContentView(scrollView)
         }
-        setContentView(scrollView)
 
         observeViewModel()
         loadFirmName()

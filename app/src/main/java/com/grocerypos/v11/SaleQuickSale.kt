@@ -344,4 +344,13 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
         }
     }
     dialog.show()
+
+    // ---- ADDED (tablet / desktop-style layout): AlertDialog defaults to
+    // stretching almost full-width, which looks like an oversized phone popup
+    // on a tablet. Capping it to a fixed, comfortable width on tablet-wide
+    // screens makes it read like a proper desktop dialog box instead. ----
+    if (isTabletWide) {
+        val widthPx = (560 * resources.displayMetrics.density).toInt()
+        dialog.window?.setLayout(widthPx, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
 }
