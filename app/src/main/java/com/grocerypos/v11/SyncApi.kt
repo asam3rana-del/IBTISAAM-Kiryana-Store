@@ -466,9 +466,7 @@ object SyncApi {
                 createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
                 status = row["status"] as? String ?: "active",
                 updatedAt = System.currentTimeMillis(),
-                dirty = false,
-                // NEW (Due Date Reminders): pull the reminder date set on either device.
-                dueDate = (row["dueDate"] as? Number)?.toLong() ?: 0L
+                dirty = false
             )
             saleDao.upsertSale(sale)
 
