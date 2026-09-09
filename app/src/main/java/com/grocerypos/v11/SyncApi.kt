@@ -110,6 +110,9 @@ object SyncApi {
      *  its own separate Firebase project (CloudConfigStore), it means data can no
      *  longer be touched by someone who merely has the API key and nothing else. */
     private suspend fun firestoreFor(context: Context): FirebaseFirestore? {
+        // Never perform a cloud request without an explicitly configured branch.
+        // This prevents an accidental empty/wrong tenant write during first setup.
+        if (!BranchConfigStore.isConfigured()) return null
         val app = CloudConfigStore.firebaseApp(context) ?: return null
         val auth = com.google.firebase.auth.FirebaseAuth.getInstance(app)
         if (auth.currentUser == null) {
@@ -143,7 +146,29 @@ object SyncApi {
 
             when (entry.operation) {
                 "delete" -> {
-                    db.collection(collection).document(entry.entityId).delete().await()
+                    // Use a timestamped tombstone instead of a hard delete. A hard
+                    // delete cannot be observed by other devices because pull() only
+                    // sees documents changed since its last checkpoint. Compare the
+                    // tombstone timestamp just like normal upserts so an older offline
+                    // delete cannot erase a newer edit.
+                    val docRef = db.collection(collection).document(entry.entityId)
+                    val deleteAt = System.currentTimeMillis()
+                    db.runTransaction { txn ->
+                        val snap = txn.get(docRef)
+                        val serverUpdatedAt = (snap.get("updatedAt") as? Number)?.toLong() ?: 0L
+                        if (!snap.exists() || deleteAt >= serverUpdatedAt) {
+                            txn.set(
+                                docRef,
+                                mapOf(
+                                    "serverId" to entry.entityId,
+                                    "_deleted" to true,
+                                    "updatedAt" to deleteAt,
+                                    "branchId" to BranchConfigStore.current
+                                ),
+                                com.google.firebase.firestore.SetOptions.merge()
+                            )
+                        }
+                    }.await()
                 }
                 "increment_stock", "increment_balance" -> {
                     @Suppress("UNCHECKED_CAST")
@@ -281,13 +306,31 @@ object SyncApi {
         val expenseDao = db.expenseDao()
         val cashTxDao = db.cashTransactionDao()
 
+        // Local deltas that are still queued must be layered on top of the latest
+        // server snapshot. Without this, a pull could temporarily erase an offline
+        // sale/purchase/adjustment until the queued increment reached Firestore.
+        suspend fun pendingDelta(entityType: String, entityId: String, operation: String): Double {
+            return db.syncQueueDao().pendingForEntity(entityType, entityId, operation).asSequence()
+                .sumOf { row ->
+                    runCatching {
+                        (gson.fromJson(row.payloadJson, Map::class.java)["delta"] as? Number)?.toDouble() ?: 0.0
+                    }.getOrDefault(0.0)
+                }
+        }
+
         for (row in changes.customers) {
+            if (row["_deleted"] == true) {
+                (row["serverId"] as? String)?.let { custDao.findByServerId(it)?.let { c -> custDao.delete(c) } }
+                continue
+            }
             val serverId = row["serverId"] as? String ?: continue
             val name = row["name"] as? String ?: continue
             val phone = row["phone"] as? String ?: ""
             val balance = (row["balance"] as? Number)?.toDouble() ?: 0.0
             val creditLimit = (row["creditLimit"] as? Number)?.toDouble() ?: 0.0
             val openingBalance = (row["openingBalance"] as? Number)?.toDouble() ?: 0.0
+            val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val localPendingBalance = pendingDelta("customer", serverId, "increment_balance")
 
             val existing = custDao.findByServerId(serverId)
             if (existing != null) {
@@ -300,28 +343,34 @@ object SyncApi {
                 }
                 custDao.update(
                     existing.copy(
-                        name = name, phone = phone, balance = balance,
+                        name = name, phone = phone, balance = balance + localPendingBalance,
                         creditLimit = creditLimit, openingBalance = openingBalance,
-                        updatedAt = System.currentTimeMillis(), dirty = false
+                        updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
             } else {
                 custDao.insert(
                     Customer(
-                        name = name, phone = phone, balance = balance,
+                        name = name, phone = phone, balance = balance + localPendingBalance,
                         creditLimit = creditLimit, openingBalance = openingBalance,
-                        serverId = serverId, updatedAt = System.currentTimeMillis(), dirty = false
+                        serverId = serverId, updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
             }
         }
 
         for (row in changes.suppliers) {
+            if (row["_deleted"] == true) {
+                (row["serverId"] as? String)?.let { suppDao.findByServerId(it)?.let { x -> suppDao.delete(x) } }
+                continue
+            }
             val serverId = row["serverId"] as? String ?: continue
             val name = row["name"] as? String ?: continue
             val phone = row["phone"] as? String ?: ""
             val balance = (row["balance"] as? Number)?.toDouble() ?: 0.0
             val openingBalance = (row["openingBalance"] as? Number)?.toDouble() ?: 0.0
+            val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val localPendingBalance = pendingDelta("supplier", serverId, "increment_balance")
 
             val existing = suppDao.findByServerId(serverId)
             if (existing != null) {
@@ -334,9 +383,9 @@ object SyncApi {
                 }
                 suppDao.update(
                     existing.copy(
-                        name = name, phone = phone, balance = balance,
+                        name = name, phone = phone, balance = balance + localPendingBalance,
                         openingBalance = openingBalance,
-                        updatedAt = System.currentTimeMillis(), dirty = false
+                        updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
             } else {
@@ -351,6 +400,10 @@ object SyncApi {
         }
 
         for (row in changes.products) {
+            if (row["_deleted"] == true) {
+                (row["barcode"] as? String)?.let { prodDao.find(it)?.let { p -> prodDao.delete(p) } }
+                continue
+            }
             val barcode = row["barcode"] as? String ?: continue
             val name = row["name"] as? String ?: continue
             val category = row["category"] as? String ?: ""
@@ -382,6 +435,8 @@ object SyncApi {
             // back into a snapshot overwrite (an increment_stock entry queued locally but
             // not yet pushed still layers its own delta on top via decrease()/increase()).
             val stock = (row["stock"] as? Number)?.toDouble()
+            val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val localPendingStock = pendingDelta("product", barcode, "increment_stock")
 
             val existing = prodDao.find(barcode)
             if (existing != null) {
@@ -399,8 +454,8 @@ object SyncApi {
                         unit = unit, unitSize = unitSize, unitNote = unitNote,
                         secondaryUnit = secondaryUnit, secondaryUnitQty = secondaryUnitQty,
                         tertiaryUnit = tertiaryUnit, tertiaryUnitQty = tertiaryUnitQty,
-                        stock = stock ?: existing.stock,
-                        dirty = false, updatedAt = System.currentTimeMillis()
+                        stock = (stock ?: existing.stock) + localPendingStock,
+                        dirty = localPendingStock != 0.0, updatedAt = serverUpdatedAt
                     )
                 )
             } else {
@@ -411,14 +466,18 @@ object SyncApi {
                         reorderLevel = reorderLevel, expiry = expiry, unit = unit,
                         unitSize = unitSize, unitNote = unitNote, secondaryUnit = secondaryUnit,
                         secondaryUnitQty = secondaryUnitQty, tertiaryUnit = tertiaryUnit,
-                        tertiaryUnitQty = tertiaryUnitQty, stock = stock ?: 0.0, dirty = false,
-                        updatedAt = System.currentTimeMillis()
+                        tertiaryUnitQty = tertiaryUnitQty, stock = (stock ?: 0.0) + localPendingStock,
+                        dirty = localPendingStock != 0.0, updatedAt = serverUpdatedAt
                     )
                 )
             }
         }
 
         for (row in changes.users) {
+            if (row["_deleted"] == true) {
+                (row["username"] as? String)?.let { userDao.delete(it) }
+                continue
+            }
             val username = row["username"] as? String ?: continue
             val displayName = row["displayName"] as? String ?: continue
             val role = row["role"] as? String ?: "cashier"
@@ -452,6 +511,11 @@ object SyncApi {
         @Suppress("UNCHECKED_CAST")
         for (row in changes.sales) {
             val invoice = row["invoice"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                saleDao.deleteItems(invoice)
+                saleDao.deleteSale(invoice)
+                continue
+            }
             val customerServerId = row["customerServerId"] as? String
             val localCustomerId = customerServerId?.let { custDao.findByServerId(it)?.id }
             val sale = Sale(
@@ -466,7 +530,7 @@ object SyncApi {
                 saleType = row["saleType"] as? String ?: "retail",
                 createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
                 status = row["status"] as? String ?: "active",
-                updatedAt = System.currentTimeMillis(),
+                updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
                 dirty = false,
                 // NEW (Due Date Reminders): pull the reminder date set on either device.
                 dueDate = (row["dueDate"] as? Number)?.toLong() ?: 0L
@@ -499,6 +563,11 @@ object SyncApi {
         @Suppress("UNCHECKED_CAST")
         for (row in changes.purchases) {
             val billNo = row["billNo"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                purchaseDao.deleteItems(billNo)
+                purchaseDao.deletePurchase(billNo)
+                continue
+            }
             val supplierServerId = row["supplierServerId"] as? String
             val localSupplierId = supplierServerId?.let { suppDao.findByServerId(it)?.id }
             val purchase = Purchase(
@@ -510,7 +579,7 @@ object SyncApi {
                 subtotal = (row["subtotal"] as? Number)?.toDouble() ?: 0.0,
                 discount = (row["discount"] as? Number)?.toDouble() ?: 0.0,
                 status = row["status"] as? String ?: "active",
-                updatedAt = System.currentTimeMillis(),
+                updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
                 dirty = false
             )
             purchaseDao.upsertPurchase(purchase)
@@ -538,6 +607,10 @@ object SyncApi {
 
         for (row in changes.expenses) {
             val serverId = row["serverId"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                expenseDao.findByServerId(serverId)?.let { expenseDao.delete(it) }
+                continue
+            }
             val category = row["category"] as? String ?: continue
             val description = row["description"] as? String ?: ""
             val amount = (row["amount"] as? Number)?.toDouble() ?: 0.0
@@ -548,7 +621,7 @@ object SyncApi {
                 expenseDao.update(
                     existing.copy(
                         category = category, description = description, amount = amount,
-                        createdAt = createdAt, updatedAt = System.currentTimeMillis(), dirty = false
+                        createdAt = createdAt, updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )
             } else {
@@ -556,7 +629,7 @@ object SyncApi {
                     Expense(
                         category = category, description = description, amount = amount,
                         createdAt = createdAt, serverId = serverId,
-                        updatedAt = System.currentTimeMillis(), dirty = false
+                        updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )
             }
@@ -564,6 +637,10 @@ object SyncApi {
 
         for (row in changes.payments) {
             val serverId = row["serverId"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                paymentDao.deleteByServerId(serverId)
+                continue
+            }
             val reference = row["reference"] as? String ?: continue
             val partyType = row["partyType"] as? String ?: ""
             val partyId = (row["partyId"] as? Number)?.toLong()
@@ -578,7 +655,7 @@ object SyncApi {
                     existing.copy(
                         reference = reference, partyType = partyType, partyId = partyId,
                         amount = amount, method = method, note = note, createdAt = createdAt,
-                        updatedAt = System.currentTimeMillis(), dirty = false
+                        updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )
             } else {
@@ -586,7 +663,7 @@ object SyncApi {
                     Payment(
                         reference = reference, partyType = partyType, partyId = partyId,
                         amount = amount, method = method, note = note, createdAt = createdAt,
-                        serverId = serverId, updatedAt = System.currentTimeMillis(), dirty = false
+                        serverId = serverId, updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )
             }
@@ -594,6 +671,10 @@ object SyncApi {
 
         for (row in changes.cashTransactions) {
             val serverId = row["serverId"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                cashTxDao.deleteByServerId(serverId)
+                continue
+            }
             val type = row["type"] as? String ?: continue
             val method = row["method"] as? String ?: ""
             val amount = (row["amount"] as? Number)?.toDouble() ?: 0.0
@@ -607,7 +688,7 @@ object SyncApi {
                     existing.copy(
                         type = type, method = method, amount = amount, reason = reason,
                         reference = reference, createdAt = createdAt,
-                        updatedAt = System.currentTimeMillis(), dirty = false
+                        updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )
             } else {
@@ -615,7 +696,7 @@ object SyncApi {
                     CashTransaction(
                         type = type, method = method, amount = amount, reason = reason,
                         reference = reference, createdAt = createdAt, serverId = serverId,
-                        updatedAt = System.currentTimeMillis(), dirty = false
+                        updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )
             }

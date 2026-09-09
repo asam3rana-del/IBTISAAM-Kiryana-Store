@@ -930,6 +930,7 @@ interface ProductDao {
     // same reasoning as ExpenseDao/CashTransactionDao above.
     @Update suspend fun update(p:Payment)
     @Query("SELECT * FROM payments WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Payment?
+    @Query("DELETE FROM payments WHERE serverId=:serverId") suspend fun deleteByServerId(serverId:String)
     // ADDED (Amount Payable/Receivable — standalone payments): lets PartyTransactionActivity
     // show a party's manually-recorded "Receive Payment"/"Make Payment" entries (not tied to
     // a specific bill) alongside their sale/purchase history.
@@ -1013,6 +1014,7 @@ interface ProductDao {
     // ADDED (multi-device two-way sync): same reasoning as ExpenseDao above.
     @Update suspend fun update(t:CashTransaction)
     @Query("SELECT * FROM cash_transactions WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):CashTransaction?
+    @Query("DELETE FROM cash_transactions WHERE serverId=:serverId") suspend fun deleteByServerId(serverId:String)
 }
 
 @Dao interface CashRegisterDao {
@@ -1037,6 +1039,8 @@ interface ProductDao {
     // lost) but needs a manual "Retry Now" (see Settings > Sync History) to try again.
     @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND retryCount < 10 ORDER BY createdAt ASC LIMIT :limit")
     suspend fun pending(limit: Int = 50): List<SyncQueueEntry>
+    @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND retryCount < 10 AND entityType=:entityType AND entityId=:entityId AND operation=:operation ORDER BY createdAt ASC")
+    suspend fun pendingForEntity(entityType:String, entityId:String, operation:String):List<SyncQueueEntry>
     @Query("UPDATE sync_queue SET syncedAt=:ts WHERE id=:id")
     suspend fun markSynced(id: Long, ts: Long = System.currentTimeMillis())
     @Query("UPDATE sync_queue SET retryCount=retryCount+1, lastError=:err WHERE id=:id")
@@ -1398,13 +1402,10 @@ abstract class PosDatabase:RoomDatabase(){
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
                 .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
-                // Dev builds sometimes get installed out of order (an older-versioned
-                // build over a device whose DB an newer build already upgraded). Room has
-                // no upgrade path for that (it's a downgrade), so instead of crashing,
-                // just recreate the DB in that specific case. Normal upgrades above are
-                // unaffected — this only fires when the on-disk version is HIGHER than
-                // what this build knows about.
-                .fallbackToDestructiveMigrationOnDowngrade()
+                // Never destructively recreate a POS database on downgrade. A silent
+                // database wipe would destroy sales, purchases, stock and balances.
+                // Downgrades must be handled as an explicit supported migration or by
+                // restoring a verified backup.
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }

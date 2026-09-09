@@ -424,8 +424,8 @@ internal fun SettingsActivity.openCloudSyncSetupDialog() {
                 Toast.makeText(this, "Project ID, API Key aur App ID zaroori hain", Toast.LENGTH_SHORT).show()
                 return@setPositiveButton
             }
-            if (branchId.isEmpty()) {
-                Toast.makeText(this, "Branch Code zaroori hai", Toast.LENGTH_SHORT).show()
+            if (!BranchConfigStore.isValid(branchId)) {
+                Toast.makeText(this, "Branch Code 2-50 characters ka ho: A-Z, 0-9, _ ya -", Toast.LENGTH_LONG).show()
                 return@setPositiveButton
             }
             com.grocerypos.v11.CloudConfigStore.save(
@@ -445,7 +445,8 @@ internal fun SettingsActivity.openCloudSyncSetupDialog() {
     if (existing != null) {
         dialogBuilder.setNeutralButton("Disconnect") { _, _ ->
             com.grocerypos.v11.CloudConfigStore.clear(this)
-            Toast.makeText(this, "Cloud project disconnected", Toast.LENGTH_SHORT).show()
+            BranchConfigStore.clear(this)
+            Toast.makeText(this, "Cloud project aur Branch Code disconnect ho gaye", Toast.LENGTH_SHORT).show()
             refreshSyncStatus()
         }
     }

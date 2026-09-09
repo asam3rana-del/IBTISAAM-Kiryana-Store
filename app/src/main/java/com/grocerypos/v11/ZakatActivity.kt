@@ -24,6 +24,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
+import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.ZakatYear
 import com.grocerypos.v11.smallestUnitFactor
@@ -406,7 +407,14 @@ class ZakatActivity : AppCompatActivity() {
             // existing Expense reports/P&L alongside everything else — same as every
             // other outgoing payment in this app.
             val desc = Loc.t(this@ZakatActivity, "Zakat payment", "زکوٰۃ کی ادائیگی") + " (${fmt.format(Date(year.startDate))} \u2014 ${fmt.format(Date(year.endDate))})" + if (note.isNotEmpty()) " | $note" else ""
-            db.expenseDao().insert(Expense(category = "Zakat", description = desc, amount = amount))
+            val zakatExpense = Expense(category = "Zakat", description = desc, amount = amount)
+            val expenseId = db.expenseDao().insert(zakatExpense)
+            val savedExpense = zakatExpense.copy(id = expenseId)
+            SyncQueueHelper.enqueue(
+                db, "expense", SyncQueueHelper.expenseEntityId(savedExpense),
+                "create", SyncQueueHelper.expenseJson(savedExpense)
+            )
+            SyncQueueHelper.trigger(this@ZakatActivity)
             Toast.makeText(this@ZakatActivity, Loc.t(this@ZakatActivity, "Payment saved", "ادائیگی محفوظ ہو گئی"), Toast.LENGTH_SHORT).show()
             loadScreen()
         }

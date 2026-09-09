@@ -35,25 +35,13 @@ object BranchConfigStore {
     // that could need it, same as DeviceTag).
     @Volatile private var cached: String = ""
 
-    /** Call once, e.g. first line of PosApplication.onCreate() (after DeviceTag.init).
-     *  Safe to call again. Falls back to the old BuildConfig.BRANCH_ID for existing
-     *  installs that already had a compile-time branch baked in and haven't entered
-     *  one on-device yet, so upgrading the app doesn't silently break their sync. */
+    /** Call once from PosApplication.onCreate(). Existing installations keep their
+     *  previously stored branch. New installations must choose a branch in Settings;
+     *  there is intentionally no compile-time branch fallback. */
     fun init(context: Context) {
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val stored = prefs.getString(KEY_BRANCH_ID, null)
-        cached = if (!stored.isNullOrBlank()) {
-            stored
-        } else {
-            @Suppress("SENSELESS_COMPARISON")
-            (BuildConfig.BRANCH_ID ?: "").also {
-                if (it.isNotBlank()) {
-                    // Persist the compile-time fallback on first run so it survives
-                    // even if a future build removes the BuildConfig field entirely.
-                    prefs.edit().putString(KEY_BRANCH_ID, it).apply()
-                }
-            }
-        }
+        cached = stored?.trim()?.takeIf { isValid(it) } ?: ""
     }
 
     /** The branch code currently in effect on this device. Empty string means "not
@@ -61,12 +49,26 @@ object BranchConfigStore {
      *  CloudConfigStore.isConfigured()==false is treated: nothing to sync. */
     val current: String get() = cached
 
-    fun isConfigured(): Boolean = cached.isNotBlank()
+    fun isConfigured(): Boolean = isValid(cached)
+
+    /** Firestore document paths must never contain '/'. Keep branch codes predictable
+     *  and safe: letters, numbers, underscore and hyphen only. */
+    fun isValid(branchId: String): Boolean =
+        branchId.trim().matches(Regex("[A-Za-z0-9_-]{2,50}"))
 
     fun set(context: Context, branchId: String) {
         val trimmed = branchId.trim()
+        require(isValid(trimmed)) {
+            "Branch Code must be 2-50 characters and contain only A-Z, a-z, 0-9, _ or -."
+        }
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY_BRANCH_ID, trimmed).apply()
         cached = trimmed
+    }
+
+    fun clear(context: Context) {
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(KEY_BRANCH_ID).apply()
+        cached = ""
     }
 }

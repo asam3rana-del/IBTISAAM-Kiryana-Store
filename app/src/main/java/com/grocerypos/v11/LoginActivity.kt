@@ -595,6 +595,39 @@ class LoginActivity : ThemedActivity() {
         }
     }
 
+    private fun askPasswordBeforeFirstPhoneLink(db: PosDatabase, user: User, phone: String) {
+        val field = EditText(this).apply {
+            hint = "${user.displayName} ka password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Phone ko account se link karein")
+            .setMessage("OTP verify ho gaya. Security ke liye ${user.displayName} ka current password bhi verify karein.")
+            .setView(field)
+            .setPositiveButton("Verify") { _, _ ->
+                val typed = field.text.toString()
+                val ok = if (PasswordHasher.isHashed(user.passwordHash)) {
+                    PasswordHasher.verify(typed, user.passwordHash)
+                } else {
+                    user.passwordHash == typed
+                }
+                if (!ok) {
+                    Toast.makeText(this, "Password ghalat hai — phone link nahi hua", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    val linked = user.copy(phone = phone)
+                    db.userDao().upsert(linked)
+                    loggedInUser = linked
+                    db.appSettingDao().set(AppSetting("last_username", linked.username))
+                    Toast.makeText(this@LoginActivity, "Phone account se link ho gaya.", Toast.LENGTH_LONG).show()
+                    completeLogin()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     /** Firebase se OTP verify hone ke baad, us phone number se local User record dhoondh kar login complete karta hai. */
     private fun verifyAndLogin(credential: PhoneAuthCredential, phone: String) {
         auth.signInWithCredential(credential).addOnCompleteListener(this) { task ->
@@ -607,21 +640,11 @@ class LoginActivity : ThemedActivity() {
                         db.appSettingDao().set(AppSetting("last_username", user.username))
                         completeLogin()
                     } else if (db.userDao().activeCount() == 1 && db.userDao().soleActiveUserOrNull() != null) {
-                        // FIX (OTP first-link deadlock): only one account exists (typical
-                        // single-owner store) — Firebase already proved this phone's
-                        // ownership, so auto-link it instead of sending the person to a
-                        // Manage Users screen they can't reach without already being logged in.
+                        // SECURITY FIX: OTP ownership alone must not silently bind an
+                        // arbitrary new phone number to the only admin account. Require
+                        // the account password once, then save the verified phone.
                         val onlyUser = db.userDao().soleActiveUserOrNull()!!
-                        val linked = onlyUser.copy(phone = phone)
-                        db.userDao().upsert(linked)
-                        loggedInUser = linked
-                        db.appSettingDao().set(AppSetting("last_username", linked.username))
-                        Toast.makeText(
-                            this@LoginActivity,
-                            "Ye number ${linked.displayName} ke account se link kar diya gaya.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        completeLogin()
+                        askPasswordBeforeFirstPhoneLink(db, onlyUser, phone)
                     } else {
                         Toast.makeText(
                             this@LoginActivity,

@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PasswordHasher
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.Audit
 import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
@@ -538,14 +539,26 @@ class UserManagementActivity : AppCompatActivity() {
             .setView(newPasswordField)
             .setPositiveButton("Reset") { _, _ ->
                 val newPassword = newPasswordField.text.toString()
-                if (newPassword.length < 4) {
-                    Toast.makeText(this, "Password kam az kam 4 characters ka ho", Toast.LENGTH_SHORT).show()
+                if (newPassword.length < 8) {
+                    Toast.makeText(this, "Password kam az kam 8 characters ka ho", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@UserManagementActivity)
-                    db.userDao().upsert(user.copy(passwordHash = PasswordHasher.hash(newPassword)))
-                    Toast.makeText(this@UserManagementActivity, "Password reset ho gaya", Toast.LENGTH_SHORT).show()
+                    val updated = user.copy(passwordHash = PasswordHasher.hash(newPassword))
+                    db.userDao().upsert(updated)
+                    // Password hashes intentionally stay device-local and are never sent
+                    // to Firestore. Record the event locally for auditability instead.
+                    runCatching {
+                        db.auditDao().insert(Audit(
+                            username = getSharedPreferences("session", MODE_PRIVATE).getString("username", "admin") ?: "admin",
+                            action = "password_reset",
+                            reference = user.username,
+                            details = "Password reset locally by admin",
+                            createdAt = System.currentTimeMillis()
+                        ))
+                    }
+                    Toast.makeText(this@UserManagementActivity, "Password reset ho gaya (is device par)", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)

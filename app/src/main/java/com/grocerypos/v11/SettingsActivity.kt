@@ -34,7 +34,7 @@ import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import com.grocerypos.v11.sync.SyncApi
 import com.grocerypos.v11.util.BackupHelper
-import com.grocerypos.v11.util.BackupPasswordStore
+import com.grocerypos.v11.BackupPasswordStore
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -1060,8 +1060,8 @@ class SettingsActivity : AppCompatActivity() {
             .setView(field)
             .setPositiveButton("Save") { _, _ ->
                 val newPass = field.text.toString().trim()
-                if (newPass.length < 4) {
-                    Toast.makeText(this, "Password kam se kam 4 characters ka ho", Toast.LENGTH_SHORT).show()
+                if (newPass.length < 8) {
+                    Toast.makeText(this, "Password kam se kam 8 characters ka ho", Toast.LENGTH_SHORT).show()
                 } else {
                     BackupPasswordStore.setPassword(this, newPass)
                     Toast.makeText(this, "Password update ho gaya", Toast.LENGTH_SHORT).show()
