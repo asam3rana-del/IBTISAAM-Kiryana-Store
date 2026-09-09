@@ -252,7 +252,8 @@ class ItemSearchActivity : ThemedActivity() {
                             rate = r.unitPrice,
                             date = fmt.format(Date(r.createdAt)),
                             colorHex = teal,
-                            isLatest = index == 0
+                            isLatest = index == 0,
+                            product = product
                         )
                     )
                 }
@@ -284,7 +285,8 @@ class ItemSearchActivity : ThemedActivity() {
                             lastRate = lastRate,
                             avgRate = avgAndCount.first,
                             purchaseCount = avgAndCount.second,
-                            isBest = lastRate == cheapestRate
+                            isBest = lastRate == cheapestRate,
+                            product = product
                         )
                     )
                 }
@@ -305,7 +307,8 @@ class ItemSearchActivity : ThemedActivity() {
                             rate = r.unitCost,
                             date = fmt.format(Date(r.createdAt)),
                             colorHex = orange,
-                            isLatest = index == 0
+                            isLatest = index == 0,
+                            product = product
                         )
                     )
                 }
@@ -313,10 +316,38 @@ class ItemSearchActivity : ThemedActivity() {
         }
     }
 
+    // NEW: given a rate in the product's PRIMARY unit, format the same rate in
+    // every OTHER tier of the product's unit ladder (secondary/tertiary), e.g.
+    // "Rs 769.17 / Dzn  •  Rs 64.10 / Pc" for a Carton→Dozen→Piece product.
+    // Reuses Product.fromPrimaryUnitRate() (the same conversion Sale/Purchase
+    // screens use) so this can never drift out of sync with actual pricing math.
+    // Returns "" for a 1-tier product (nothing to break down).
+    private fun Product.rateBreakdownLabel(primaryRate: Double): String {
+        val ladder = unitLadder()
+        if (ladder.size <= 1) return ""
+        // unitLadder() is smallest-first; reverse to largest-first ([primary, ...,
+        // smallest]) and drop the primary tier since that's already the main
+        // "Rs X" figure shown above this line.
+        return ladder.asReversed().drop(1).joinToString("   •   ") { tier ->
+            "Rs %.2f / ${tier.unit}".format(fromPrimaryUnitRate(primaryRate, tier.unit))
+        }
+    }
+
+    private fun unitBreakdownRow(product: Product, rate: Double, colorHex: String): TextView? {
+        val label = product.rateBreakdownLabel(rate)
+        if (label.isEmpty()) return null
+        return TextView(this).apply {
+            text = label
+            textSize = 11f
+            setTextColor(Color.parseColor(colorHex))
+            setPadding(0, 4, 0, 0)
+        }
+    }
+
     // NEW: one row of the Compare Suppliers table — supplier name, their last rate
     // and running average, purchase count, and a "BEST RATE" badge on whoever is
     // currently cheapest (by last rate).
-    private fun supplierCompareRow(supplier: String, lastRate: Double, avgRate: Double, purchaseCount: Int, isBest: Boolean): LinearLayout {
+    private fun supplierCompareRow(supplier: String, lastRate: Double, avgRate: Double, purchaseCount: Int, isBest: Boolean, product: Product): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 14, 18, 14)
@@ -351,6 +382,7 @@ class ItemSearchActivity : ThemedActivity() {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             addView(top)
+            unitBreakdownRow(product, lastRate, if (isBest) navy else textMuted)?.let { addView(it) }
             addView(TextView(this@ItemSearchActivity).apply {
                 text = "Last rate  •  Avg Rs %.2f over %d purchase%s".format(avgRate, purchaseCount, if (purchaseCount == 1) "" else "s")
                 textSize = 11.5f
@@ -375,7 +407,7 @@ class ItemSearchActivity : ThemedActivity() {
         setPadding(4, 4, 4, 12)
     }
 
-    private fun rateRow(party: String, qtyLabel: String, rate: Double, date: String, colorHex: String, isLatest: Boolean): LinearLayout {
+    private fun rateRow(party: String, qtyLabel: String, rate: Double, date: String, colorHex: String, isLatest: Boolean, product: Product): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 14, 18, 14)
@@ -411,6 +443,7 @@ class ItemSearchActivity : ThemedActivity() {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             addView(top)
+            unitBreakdownRow(product, rate, colorHex)?.let { addView(it) }
             addView(TextView(this@ItemSearchActivity).apply {
                 text = "$qtyLabel  •  $date"
                 textSize = 11.5f
