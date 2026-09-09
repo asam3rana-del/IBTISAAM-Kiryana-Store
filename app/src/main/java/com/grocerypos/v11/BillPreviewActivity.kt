@@ -21,6 +21,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.launch
 import java.io.File
@@ -28,8 +29,9 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
-class BillPreviewActivity : AppCompatActivity() {
+class BillPreviewActivity : ThemedActivity() {
 
     companion object {
         const val EXTRA_TYPE = "type"
@@ -46,7 +48,11 @@ class BillPreviewActivity : AppCompatActivity() {
         const val EXTRA_ITEMS_ENCODED = "items_encoded"
     }
 
-    private val bg = "#F3F2FA"
+    // NOTE: cardBg/textDark/textGray/border/primary stay fixed — they're the printed
+    // receipt paper's own colors (must always look like white paper with dark ink,
+    // same as what actually prints/shares via WhatsApp, regardless of app theme).
+    // Only the screen's own background (around the paper) follows dark mode.
+    private var bg = "#F3F2FA"
     private val cardBg = "#FFFFFF"
     private val primary = "#4A3AFF"
     private val primaryDark = "#3527D6"
@@ -58,6 +64,23 @@ class BillPreviewActivity : AppCompatActivity() {
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
     private val border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        bg = com.grocerypos.v11.util.ThemeManager.palette(this).bg
+    }
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
 
     private data class PreviewLine(val name: String, val qty: String, val unit: String, val rate: Double, val amount: Double)
 
@@ -74,6 +97,7 @@ class BillPreviewActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val type = intent.getStringExtra(EXTRA_TYPE) ?: "sale"
         val reference = intent.getStringExtra(EXTRA_REFERENCE) ?: ""
@@ -116,10 +140,9 @@ class BillPreviewActivity : AppCompatActivity() {
             ).apply { setMargins(0, 0, 0, 18) }
             applyElevation(this, 10f)
         }
-        header.addView(TextView(this).apply {
-            text = "✅"
-            textSize = 32f
-            gravity = Gravity.CENTER
+        header.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_check, "#FFFFFF", 32))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER }
         })
         header.addView(TextView(this).apply {
             text = if (isSale) "Sale Saved" else "Purchase Saved"
@@ -250,7 +273,8 @@ class BillPreviewActivity : AppCompatActivity() {
 
         // ---- WhatsApp share button (full width, above Print/Done) ----
         root.addView(Button(this).apply {
-            text = "📤  WhatsApp par bhejein"
+            text = "WhatsApp par bhejein"
+            setLeadingIcon(R.drawable.ic_send, "#FFFFFF", 18, 8)
             setTextColor(Color.WHITE)
             textSize = 14.5f
             isAllCaps = false
@@ -267,7 +291,8 @@ class BillPreviewActivity : AppCompatActivity() {
 
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
-            text = "🖨️  PRINT"
+            text = "PRINT"
+            setLeadingIcon(R.drawable.ic_printer, "#FFFFFF", 17, 6)
             setTextColor(Color.WHITE)
             textSize = 14.5f
             isAllCaps = false
@@ -282,7 +307,8 @@ class BillPreviewActivity : AppCompatActivity() {
             setOnClickListener { printReceipt(type, reference, partyName, partyLabel, dateMillis, lines, subtotal, discount, total, paid, paymentMethod) }
         })
         btnRow.addView(Button(this).apply {
-            text = "✓  DONE"
+            text = "DONE"
+            setLeadingIcon(R.drawable.ic_check, "#FFFFFF", 17, 6)
             setTextColor(Color.WHITE)
             textSize = 14.5f
             isAllCaps = false
@@ -606,21 +632,6 @@ class BillPreviewActivity : AppCompatActivity() {
         }
     }
 
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

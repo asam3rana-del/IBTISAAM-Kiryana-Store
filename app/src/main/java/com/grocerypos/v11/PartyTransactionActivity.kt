@@ -67,16 +67,33 @@ private class InsufficientStockException(message: String) : Exception(message)
 
 class PartyTransactionActivity : AppCompatActivity() {
 
-    private val bg = "#F3F4F9"
-    private val cardWhite = "#FFFFFF"
-    private val cardBorder = "#EEF0F7"
-    private val textDark = "#2E3242"
-    private val labelGray = "#9AA0B4"
-    private val green = "#4CAF50"
-    private val orange = "#F5A15C"
-    private val red = "#E57373"
-    private val teal = "#0F9B8E"
-    private val blue = "#5B6EE8"
+    // ---- Reports-style flat design — pulled from ThemeManager so this screen stays in
+    // sync with the rest of the app and respects dark mode. Party = flatPink everywhere
+    // per ThemeManager's documented category convention. ----
+    private var bg = "#F4F6F8"
+    private var cardWhite = "#FFFFFF"
+    private var cardBorder = "#E3E8EE"
+    private var textDark = "#0B2545"
+    private var labelGray = "#7C8798"
+    private var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
+    private var orange = "#993C1D"     // flatCoralFg
+    private var red = "#D32F4A"
+    private var teal = "#085041"       // flatTealFg
+    private var blue = "#993556"       // primary chrome — flatPinkFg
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        cardBorder = p.border
+        textDark = p.textDark
+        labelGray = p.textMuted
+        green = p.flatTealFg
+        orange = p.flatCoralFg
+        red = p.red
+        teal = p.flatTealFg
+        blue = p.flatPinkFg
+    }
 
     private lateinit var listContainer: LinearLayout
     private lateinit var partyNameLabel: TextView
@@ -98,6 +115,7 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         partyId = intent.getLongExtra("partyId", -1)
         partyName = intent.getStringExtra("partyName") ?: ""

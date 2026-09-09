@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.ItemMovement
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.smallestUnitName
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 // NEW: four related inventory reports behind one tab switcher, launched from
 // ReportsActivity via EXTRA_MODE (which tab opens first) — the person can still
@@ -35,16 +37,36 @@ class InventoryInsightsActivity : AppCompatActivity() {
         const val MODE_MOVERS = "movers"
     }
 
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a
+    // primary→primaryDark gradient; now flat like the rest of the app.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var amber = "#F5A524"
+    private var teal = "#0F9B8E"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+    private var amberBg = "#FFF3E0"
+    private var tealBg = "#E0F2F1"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        amberBg = p.flatAmberBg
+        tealBg = p.flatTealBg
+    }
 
     private var mode: String = MODE_REORDER
     private val tabs = mutableListOf<TextView>()
@@ -59,6 +81,7 @@ class InventoryInsightsActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
         mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_REORDER
 
         val root = LinearLayout(this).apply {
@@ -119,10 +142,10 @@ class InventoryInsightsActivity : AppCompatActivity() {
     private fun onModeChanged() {
         headerBox.removeAllViews()
         headerBox.addView(when (mode) {
-            MODE_REORDER -> premiumHeader("\uD83D\uDECD\uFE0F", Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"), Loc.t(this, "Items at or below their reorder level", "آئٹمز جو دوبارہ آرڈر کی سطح پر یا نیچے ہیں"))
-            MODE_DAMAGE -> premiumHeader("\uD83D\uDCA5", Loc.t(this, "Damage / Loss Report", "نقصان کی رپورٹ"), Loc.t(this, "Stock logged as damaged or lost", "خراب یا ضائع ہونے والا اسٹاک"))
-            MODE_PROFIT -> premiumHeader("\uD83D\uDCC8", Loc.t(this, "Profit Margin per Item", "فی آئٹم منافع"), Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت"))
-            else -> premiumHeader("\u23F1\uFE0F", Loc.t(this, "Fast / Slow Movers", "تیز / سست چلنے والے"), Loc.t(this, "Which items sell, and which sit on the shelf", "کون سے آئٹم بکتے ہیں"))
+            MODE_REORDER -> premiumHeader(R.drawable.ic_shopping_bag, Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"), Loc.t(this, "Items at or below their reorder level", "آئٹمز جو دوبارہ آرڈر کی سطح پر یا نیچے ہیں"))
+            MODE_DAMAGE -> premiumHeader(R.drawable.ic_warning, Loc.t(this, "Damage / Loss Report", "نقصان کی رپورٹ"), Loc.t(this, "Stock logged as damaged or lost", "خراب یا ضائع ہونے والا اسٹاک"))
+            MODE_PROFIT -> premiumHeader(R.drawable.ic_trending, Loc.t(this, "Profit Margin per Item", "فی آئٹم منافع"), Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت"))
+            else -> premiumHeader(R.drawable.ic_stopwatch, Loc.t(this, "Fast / Slow Movers", "تیز / سست چلنے والے"), Loc.t(this, "Which items sell, and which sit on the shelf", "کون سے آئٹم بکتے ہیں"))
         })
         highlightTab()
         periodRow.visibility = if (mode == MODE_DAMAGE || mode == MODE_MOVERS) View.VISIBLE else View.GONE
@@ -207,7 +230,7 @@ class InventoryInsightsActivity : AppCompatActivity() {
         val products = db.productDao().all().first().associateBy { it.barcode }
         val totalLoss = movements.sumOf { m -> kotlin.math.abs(m.qty) * m.cost }
         summaryBox.addView(summaryCard("\uD83D\uDCB8", Loc.t(this, "Total loss value", "کل نقصان کی مالیت"), "Rs %.2f".format(totalLoss), red, "#FDE8E8"))
-        summaryBox.addView(summaryCard("\uD83D\uDCE6", Loc.t(this, "Entries logged", "درج اندراجات"), "${movements.size}", amber, "#FFF3E0"))
+        summaryBox.addView(summaryCard("\uD83D\uDCE6", Loc.t(this, "Entries logged", "درج اندراجات"), "${movements.size}", amber, amberBg))
         if (movements.isEmpty()) { showEmpty(Loc.t(this, "No damage/loss logged for this period", "اس مدت میں کوئی نقصان درج نہیں")); return }
         movements.forEach { m ->
             val p = products[m.barcode]
@@ -225,7 +248,7 @@ class InventoryInsightsActivity : AppCompatActivity() {
     private suspend fun loadProfit(db: PosDatabase) {
         val products = db.productDao().all().first().filter { it.salePrice > 0.0 }
         val avgMargin = if (products.isNotEmpty()) products.map { marginPercent(it) }.average() else 0.0
-        summaryBox.addView(summaryCard("\uD83D\uDCC8", Loc.t(this, "Average margin", "اوسط منافع"), "%.1f%%".format(avgMargin), teal, "#E0F2F1"))
+        summaryBox.addView(summaryCard("\uD83D\uDCC8", Loc.t(this, "Average margin", "اوسط منافع"), "%.1f%%".format(avgMargin), teal, tealBg))
         val lowMarginCount = products.count { marginPercent(it) < 10.0 }
         summaryBox.addView(summaryCard("\u26A0\uFE0F", Loc.t(this, "Under 10% margin", "10% سے کم منافع"), "$lowMarginCount", red, "#FDE8E8"))
         if (products.isEmpty()) { showEmpty(Loc.t(this, "No priced items yet", "ابھی کوئی قیمت والا آئٹم نہیں")); return }
@@ -254,7 +277,7 @@ class InventoryInsightsActivity : AppCompatActivity() {
             Row(p.name, p.barcode, m?.totalQty ?: 0.0, m?.totalAmount ?: 0.0)
         }
         val totalUnitsSold = rows.sumOf { it.qty }
-        summaryBox.addView(summaryCard("\uD83D\uDD25", Loc.t(this, "Units sold this period", "اس مدت میں فروخت شدہ یونٹس"), "%.0f".format(totalUnitsSold), teal, "#E0F2F1"))
+        summaryBox.addView(summaryCard("\uD83D\uDD25", Loc.t(this, "Units sold this period", "اس مدت میں فروخت شدہ یونٹس"), "%.0f".format(totalUnitsSold), teal, tealBg))
 
         resultsBox.addView(sectionLabel(Loc.t(this, "\uD83D\uDD25 FAST MOVERS", "\uD83D\uDD25 تیز چلنے والے")))
         val fast = rows.sortedByDescending { it.qty }.take(15).filter { it.qty > 0 }
@@ -370,14 +393,14 @@ class InventoryInsightsActivity : AppCompatActivity() {
             text = "\u2039"; textSize = 20f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = ovalBg("#33FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt(); width = px; height = px
+            val px = (36 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { finish() }
         })
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
         header.addView(TextView(this).apply {
             text = icon; textSize = 18f; gravity = Gravity.CENTER
             background = ovalBg("#5C4DFF")
-            val px = (42 * resources.displayMetrics.density).toInt(); width = px; height = px
+            val px = (42 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
         })
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
         val headerCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
@@ -387,21 +410,6 @@ class InventoryInsightsActivity : AppCompatActivity() {
         return header
     }
 
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(colorHex)) }
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(colorHex)); cornerRadius = radius.toFloat() }
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

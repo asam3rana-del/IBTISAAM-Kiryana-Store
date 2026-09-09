@@ -55,7 +55,10 @@ class SettingsActivity : AppCompatActivity() {
     internal var teal = "#0F9B8E"
     internal var red = "#E5484D"
     internal var amber = "#F5A524"
+<<<<<<< HEAD
     internal var amberBg = "#FAEEDA"    // flatAmberBg — paired light-tint for `amber`
+=======
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     private var badgeRed = "#E5484D"
     internal var textDark = "#0B2545"
     internal var textGray = "#7C8798"
@@ -72,7 +75,10 @@ class SettingsActivity : AppCompatActivity() {
         teal = p.flatTealFg
         red = p.red
         amber = p.flatAmberFg
+<<<<<<< HEAD
         amberBg = p.flatAmberBg
+=======
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         badgeRed = p.red
         textDark = p.textDark
         textGray = p.textMuted
@@ -283,6 +289,7 @@ class SettingsActivity : AppCompatActivity() {
      *  This is a connectivity check only (not a Firestore reachability check) — it tells
      *  the user whether the app *can* sync right now, matching how PurchaseActivity's
      *  header sync chip works. */
+<<<<<<< HEAD
     // ================= FLAT HEADER (matches every other screen — see PremiumHeader.kt) =================
     // FLAT REDESIGN: was a custom navy banner with its own white icon-circle. Replaced with
     // the shared premiumHeader() so this screen is controlled from PremiumHeader.kt instead of
@@ -295,6 +302,59 @@ class SettingsActivity : AppCompatActivity() {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
+=======
+    // ================= PREMIUM GRADIENT HEADER (matches Product/Purchase/Sale headers) =================
+    private fun buildHeader(): LinearLayout {
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(26, 48, 22, 28)
+            background = gradientBg(navy, navyLight, cornerBottom = 30)
+            applyElevation(this, 10f)
+        }
+
+        val iconCircle = FrameLayout(this).apply {
+            val px = (56 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+                setStroke((1.5 * resources.displayMetrics.density).toInt(), Color.parseColor("#DCE3F0"))
+            }
+            applyElevation(this, 3f)
+        }
+        iconCircle.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_store, navy, 26))
+            scaleType = ImageView.ScaleType.CENTER
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        })
+        header.addView(iconCircle)
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        shopNameHeaderText = TextView(this).apply {
+            text = "My Shop"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        textCol.addView(shopNameHeaderText)
+        textCol.addView(TextView(this).apply {
+            text = "POINT OF SALE"
+            textSize = 10.5f
+            setTextColor(Color.parseColor(headerSubtitleColor))
+            setTypeface(typeface, Typeface.BOLD)
+            letterSpacing = 0.12f
+            setPadding(0, 6, 0, 0)
+        })
+        header.addView(textCol)
+
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         return header
     }
 

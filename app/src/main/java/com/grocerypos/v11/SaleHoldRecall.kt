@@ -132,7 +132,11 @@ internal fun SaleActivity.openRecallDialog() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(18, 16, 18, 16)
+<<<<<<< HEAD
                 background = strokedBg(border, fieldFill, 14)
+=======
+                background = strokedBg(border, "#F7F8FC", 14)
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 10) }

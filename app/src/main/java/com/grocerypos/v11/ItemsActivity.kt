@@ -4,16 +4,15 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.text.Editable
 import android.text.TextWatcher
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewOutlineProvider
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -21,13 +20,16 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.R
 import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.formatStockBreakdown
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import com.grocerypos.v11.ui.components.*
 
 /**
  * "Items" hub — three tabs: Products, Categories, Units.
@@ -37,21 +39,38 @@ import kotlinx.coroutines.launch
  * every product inside it, with per-product Edit / Change Category / Delete
  * actions, plus Edit (rename) and Delete on the category row itself.
  */
-class ItemsActivity : AppCompatActivity() {
+class ItemsActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE (matches Settings / Product) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val red = "#E5484D"
-    private val redDark = "#C93A3E"
-    private val purple = "#8B5CF6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#3527D6"
+    private var red = "#E5484D"
+    private var redDark = "#E5484D"
+    private var purple = "#8B5CF6"
+    private var amber = "#F5A524"
+    private var teal = "#0F9B8E"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        red = p.red
+        redDark = p.red
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private enum class Tab { PRODUCTS, CATEGORIES, UNITS }
     private var currentTab = Tab.PRODUCTS
@@ -71,11 +90,17 @@ class ItemsActivity : AppCompatActivity() {
     private lateinit var categoriesTabBtn: TextView
     private lateinit var unitsTabBtn: TextView
     private lateinit var searchField: EditText
-    private lateinit var listContainer: LinearLayout
+    // ---- Item #2 (RecyclerView migration): was a LinearLayout that render*()
+    // functions addView()'d rows into directly; now a RecyclerView backed by
+    // the shared ViewListAdapter (see UiHelpers.kt), so only on-screen rows
+    // across all three tabs get inflated instead of the whole list living as
+    // permanent child views. ----
+    private lateinit var listContainer: RecyclerView
     private lateinit var fab: TextView
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val outer = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor(bg))
@@ -86,45 +111,14 @@ class ItemsActivity : AppCompatActivity() {
             setPadding(24, 48, 24, 130)
         }
 
-        // ================= HEADER =================
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 18) }
-            applyElevation(this, 10f)
-        }
-        header.addView(circleIcon("🗃️", "#5C4DFF", 42))
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = "Items"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        headerCol.addView(TextView(this).apply {
-            text = "Products, Categories & Units"
-            textSize = 11.5f
-            setTextColor(Color.parseColor("#D8D3FF"))
-            setPadding(0, 4, 0, 0)
-        })
-        header.addView(headerCol)
+        // ================= HEADER (matches Items/Categories/Reports) =================
+        val header = premiumHeader(R.drawable.ic_box, "Items", "Products, Categories & Units", primary, primaryDark)
 
         // ---- NEW: "Translate" pill button — launches BulkTranslateActivity so Urdu
         // category/unit values already saved can be renamed to English once each,
         // instead of editing every product individually. ----
         header.addView(TextView(this).apply {
-            text = "🌐 Translate"
+            text = "Translate"
             textSize = 11f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
@@ -133,6 +127,8 @@ class ItemsActivity : AppCompatActivity() {
                 cornerRadius = 30f
             }
             setPadding(18, 12, 18, 12)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_globe, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener {
                 startActivity(Intent(this@ItemsActivity, BulkTranslateActivity::class.java))
             }
@@ -167,7 +163,11 @@ class ItemsActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 18) }
         }
-        searchBox.addView(TextView(this).apply { text = "🔍  "; textSize = 14f })
+        searchBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         searchField = EditText(this).apply {
             hint = "Search..."
             setHintTextColor(Color.parseColor(textGray))
@@ -182,7 +182,7 @@ class ItemsActivity : AppCompatActivity() {
         searchBox.addView(searchField)
         root.addView(searchBox)
 
-        listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        listContainer = recyclerListView()
         root.addView(listContainer)
 
         val scroll = ScrollView(this).apply { addView(root) }
@@ -309,7 +309,6 @@ class ItemsActivity : AppCompatActivity() {
     }
 
     private fun renderCurrentTab() {
-        listContainer.removeAllViews()
         when (currentTab) {
             Tab.PRODUCTS -> renderProducts()
             Tab.CATEGORIES -> {
@@ -326,12 +325,14 @@ class ItemsActivity : AppCompatActivity() {
         else allProducts.filter {
             it.name.contains(searchQuery, ignoreCase = true) || it.barcode.contains(searchQuery, ignoreCase = true)
         }
+        val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
-            listContainer.addView(emptyState("Koi product nahi mila"))
+            rows.add(emptyState("Koi product nahi mila"))
+            listContainer.submitRows(rows)
             return
         }
         for (p in filtered) {
-            listContainer.addView(LinearLayout(this).apply {
+            rows.add(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(20, 16, 20, 16)
                 background = strokedBg(border, cardBg, 14)
@@ -373,6 +374,7 @@ class ItemsActivity : AppCompatActivity() {
                 }
             })
         }
+        listContainer.submitRows(rows)
     }
 
     private fun priceCol(label: String, value: Double) = LinearLayout(this).apply {
@@ -396,22 +398,24 @@ class ItemsActivity : AppCompatActivity() {
         val notCategorized = counts[""] ?: 0
 
         // name to (count, isSpecialUncategorizedBucket)
-        val rows = mutableListOf<Triple<String, Int, Boolean>>()
-        rows.add(Triple("Items Not in Any Category", notCategorized, true))
+        val categoryRows = mutableListOf<Triple<String, Int, Boolean>>()
+        categoryRows.add(Triple("Items Not in Any Category", notCategorized, true))
         for (c in allCategories) {
-            rows.add(Triple(c.name, counts[c.name] ?: 0, false))
+            categoryRows.add(Triple(c.name, counts[c.name] ?: 0, false))
         }
 
-        val filtered = if (searchQuery.isEmpty()) rows
-        else rows.filter { it.first.contains(searchQuery, ignoreCase = true) }
+        val filtered = if (searchQuery.isEmpty()) categoryRows
+        else categoryRows.filter { it.first.contains(searchQuery, ignoreCase = true) }
 
+        val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
-            listContainer.addView(emptyState("Koi category nahi mili"))
+            rows.add(emptyState("Koi category nahi mili"))
+            listContainer.submitRows(rows)
             return
         }
 
         for ((name, count, isUncategorized) in filtered) {
-            listContainer.addView(LinearLayout(this).apply {
+            rows.add(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(20, 18, 20, 18)
@@ -452,21 +456,20 @@ class ItemsActivity : AppCompatActivity() {
                 if (!isUncategorized) {
                     val category = allCategories.first { it.name == name }
                     addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-                    addView(TextView(this@ItemsActivity).apply {
-                        text = "✏️"
-                        textSize = 15f
+                    addView(ImageView(this@ItemsActivity).apply {
+                        setImageDrawable(tintedDrawable(R.drawable.ic_edit, textGray, 16))
                         setPadding(14, 8, 14, 8)
                         setOnClickListener { promptEditCategory(category) }
                     })
-                    addView(TextView(this@ItemsActivity).apply {
-                        text = "🗑️"
-                        textSize = 15f
+                    addView(ImageView(this@ItemsActivity).apply {
+                        setImageDrawable(tintedDrawable(R.drawable.ic_delete, textGray, 16))
                         setPadding(14, 8, 14, 8)
                         setOnClickListener { confirmDeleteCategory(category, count) }
                     })
                 }
             })
         }
+        listContainer.submitRows(rows)
     }
 
     private fun promptAddCategory() {
@@ -541,22 +544,33 @@ class ItemsActivity : AppCompatActivity() {
     // ================= CATEGORIES TAB (drill-down: products inside one category) =================
     private fun renderCategoryDetail(categoryName: String) {
         val displayName = categoryName.ifBlank { "Items Not in Any Category" }
+        val rows = mutableListOf<View>()
 
         // ---- Back row + category title ----
-        listContainer.addView(LinearLayout(this).apply {
+        rows.add(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(4, 0, 4, 16)
-            addView(TextView(this@ItemsActivity).apply {
-                text = "←  Categories"
-                textSize = 13f
-                setTextColor(Color.parseColor(primary))
-                setTypeface(typeface, Typeface.BOLD)
+            addView(LinearLayout(this@ItemsActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 setPadding(10, 10, 20, 10)
                 setOnClickListener { closeCategoryDetail() }
+                addView(ImageView(this@ItemsActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_chevron_down, primary, 13))
+                    rotation = 90f
+                    val px = (13 * resources.displayMetrics.density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (6 * resources.displayMetrics.density).toInt() }
+                })
+                addView(TextView(this@ItemsActivity).apply {
+                    text = "Categories"
+                    textSize = 13f
+                    setTextColor(Color.parseColor(primary))
+                    setTypeface(typeface, Typeface.BOLD)
+                })
             })
         })
-        listContainer.addView(TextView(this).apply {
+        rows.add(TextView(this).apply {
             text = displayName
             textSize = 17f
             setTextColor(Color.parseColor(textDark))
@@ -569,13 +583,15 @@ class ItemsActivity : AppCompatActivity() {
         else inCategory.filter { it.name.contains(searchQuery, ignoreCase = true) }
 
         if (filtered.isEmpty()) {
-            listContainer.addView(emptyState(if (inCategory.isEmpty()) "Is category mein koi item nahi" else "Koi matching item nahi mila"))
+            rows.add(emptyState(if (inCategory.isEmpty()) "Is category mein koi item nahi" else "Koi matching item nahi mila"))
+            listContainer.submitRows(rows)
             return
         }
 
         for (p in filtered) {
-            listContainer.addView(categoryProductRow(p))
+            rows.add(categoryProductRow(p))
         }
+        listContainer.submitRows(rows)
     }
 
     private fun categoryProductRow(p: Product) = LinearLayout(this).apply {
@@ -594,10 +610,12 @@ class ItemsActivity : AppCompatActivity() {
         })
 
         addView(TextView(this@ItemsActivity).apply {
-            text = "📊 Stock: ${p.formatStockBreakdown()}"
+            text = "Stock: ${p.formatStockBreakdown()}"
             textSize = 12f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 6, 0, 0)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_chart, textGray, 12), null, null, null)
+            compoundDrawablePadding = (5 * resources.displayMetrics.density).toInt()
         })
 
         val priceRow = LinearLayout(this@ItemsActivity).apply {
@@ -613,12 +631,14 @@ class ItemsActivity : AppCompatActivity() {
             setPadding(0, 12, 0, 0)
         }
         actionsRow.addView(TextView(this@ItemsActivity).apply {
-            text = "✏️  Edit"
+            text = "Edit"
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(primary, 30)
             setPadding(20, 10, 20, 10)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_edit, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener {
                 startActivity(Intent(this@ItemsActivity, ProductActivity::class.java).apply {
                     putExtra(ProductActivity.EXTRA_EDIT_BARCODE, p.barcode)
@@ -627,22 +647,26 @@ class ItemsActivity : AppCompatActivity() {
         })
         actionsRow.addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
         actionsRow.addView(TextView(this@ItemsActivity).apply {
-            text = "🔀  Change Category"
+            text = "Change Category"
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(teal, 30)
             setPadding(20, 10, 20, 10)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_repeat, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener { promptChangeProductCategory(p) }
         })
         actionsRow.addView(View(this@ItemsActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
         actionsRow.addView(TextView(this@ItemsActivity).apply {
-            text = "🗑️  Delete"
+            text = "Delete"
             textSize = 12f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             background = roundedBg(red, 30)
             setPadding(20, 10, 20, 10)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_delete, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener { confirmDeleteProduct(p) }
         })
         addView(actionsRow)
@@ -693,12 +717,14 @@ class ItemsActivity : AppCompatActivity() {
         val filtered = if (searchQuery.isEmpty()) allUnits
         else allUnits.filter { it.name.contains(searchQuery, ignoreCase = true) }
 
+        val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
-            listContainer.addView(emptyState("Koi unit nahi mila"))
+            rows.add(emptyState("Koi unit nahi mila"))
+            listContainer.submitRows(rows)
             return
         }
         for (u in filtered) {
-            listContainer.addView(LinearLayout(this).apply {
+            rows.add(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(20, 18, 20, 18)
@@ -707,7 +733,11 @@ class ItemsActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 10) }
 
-                addView(TextView(this@ItemsActivity).apply { text = "📏  "; textSize = 15f })
+                addView(ImageView(this@ItemsActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_ruler, textGray, 15))
+                    val px = (15 * resources.displayMetrics.density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+                })
                 addView(TextView(this@ItemsActivity).apply {
                     text = u.name
                     textSize = 14f
@@ -718,16 +748,19 @@ class ItemsActivity : AppCompatActivity() {
 
                 // ---- Delete button for this unit ----
                 addView(TextView(this@ItemsActivity).apply {
-                    text = "🗑️  Delete"
+                    text = "Delete"
                     textSize = 12f
                     setTextColor(Color.WHITE)
                     setTypeface(typeface, Typeface.BOLD)
                     background = roundedBg(red, 30)
                     setPadding(22, 10, 22, 10)
+                    setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_delete, "#FFFFFF", 13), null, null, null)
+                    compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
                     setOnClickListener { confirmDeleteUnit(u) }
                 })
             })
         }
+        listContainer.submitRows(rows)
     }
 
     private fun promptAddUnit() {
@@ -768,6 +801,17 @@ class ItemsActivity : AppCompatActivity() {
         setPadding(0, 60, 0, 0)
     }
 
+    // ---- Icon migration helper (matches ProductActivity/PartyReportsActivity pattern):
+    // tints and sizes a R.drawable.ic_* vector so it can replace a raw emoji, either as a
+    // standalone ImageView or as a TextView/Button's compound drawable. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
     private fun tabButton(label: String, onClick: () -> Unit) = TextView(this).apply {
         text = label
         textSize = 12.5f
@@ -784,30 +828,7 @@ class ItemsActivity : AppCompatActivity() {
         gravity = Gravity.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
     private fun EditText.addTextChangedListener(onChanged: (String) -> Unit) {

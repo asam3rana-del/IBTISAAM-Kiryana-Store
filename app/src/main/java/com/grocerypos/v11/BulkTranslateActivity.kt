@@ -8,16 +8,18 @@ import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.UnitType
+import com.grocerypos.v11.ui.components.*
 import com.grocerypos.v11.util.DuplicateUnitFix
 import kotlinx.coroutines.launch
 
@@ -46,18 +48,45 @@ import kotlinx.coroutines.launch
  * "Box\nBox", "Box Box") and collapses it to the single clean word, using
  * the same rename* functions this screen already uses above.
  */
-class BulkTranslateActivity : AppCompatActivity() {
+class BulkTranslateActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE (matches rest of app) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
-    private val teal = "#0F9B8E"
-    private val tealDark = "#0C7C71"
+    // Pulled from ThemeManager so this screen respects dark mode (item #1).
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#3527D6"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+    private var teal = "#0F9B8E"
+    private var tealDark = "#0C7C71"
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        teal = p.flatTealFg
+        tealDark = p.flatTealFg
+    }
 
     companion object {
         private const val TAG = "BulkTranslate"
@@ -76,6 +105,7 @@ class BulkTranslateActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -96,7 +126,8 @@ class BulkTranslateActivity : AppCompatActivity() {
             ).apply { setMargins(0, 0, 0, 20) }
         }
         header.addView(TextView(this).apply {
-            text = "🌐 Bulk Translate"
+            text = "Bulk Translate"
+            setLeadingIcon(R.drawable.ic_globe, "#FFFFFF", 18, 8)
             textSize = 19f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
@@ -126,7 +157,8 @@ class BulkTranslateActivity : AppCompatActivity() {
             ).apply { setMargins(0, 0, 0, 20) }
         }
         fixCard.addView(TextView(this).apply {
-            text = "🔧 Fix Duplicate Unit Names"
+            text = "Fix Duplicate Unit Names"
+            setLeadingIcon(R.drawable.ic_wrench, teal, 15, 6)
             textSize = 14.5f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.parseColor(textDark))
@@ -163,7 +195,9 @@ class BulkTranslateActivity : AppCompatActivity() {
         root.addView(loadingText)
 
         emptyText = TextView(this).apply {
-            text = "Nothing left to translate 🎉"
+            text = "Nothing left to translate"
+            setCompoundDrawablesRelative(null, null, tintedDrawable(R.drawable.ic_check, teal, 16), null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             textSize = 14f
             setTextColor(Color.parseColor(textGray))
             gravity = Gravity.CENTER
@@ -183,7 +217,8 @@ class BulkTranslateActivity : AppCompatActivity() {
         root.addView(spacer(30))
 
         saveBtn = TextView(this).apply {
-            text = "💾  SAVE TRANSLATIONS"
+            text = "SAVE TRANSLATIONS"
+            setLeadingIcon(R.drawable.ic_save, "#FFFFFF", 16, 8)
             textSize = 14.5f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
@@ -421,7 +456,6 @@ class BulkTranslateActivity : AppCompatActivity() {
         setPadding(4, 0, 0, 10)
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(-1, (heightDp * resources.displayMetrics.density).toInt())
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before (functionally, -1 == LinearLayout.LayoutParams.MATCH_PARENT).
 }

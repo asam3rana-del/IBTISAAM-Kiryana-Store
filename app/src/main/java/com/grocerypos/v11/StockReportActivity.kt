@@ -15,26 +15,53 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.R
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.grocerypos.v11.ui.components.*
 
 class StockReportActivity : AppCompatActivity() {
 
     // ================= PREMIUM PALETTE (shared with Items / Categories / Reports) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val purple = "#8B5CF6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a
+    // primary→primaryDark gradient; now flat like the rest of the app.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var purple = "#8B5CF6"
+    private var amber = "#F5A524"
+    private var teal = "#0F9B8E"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+    private var fieldFill = "#FAFAFF"
+    private var purpleBg = "#E9E6FF"
+    private var amberBg = "#FFF3E0"
+    private var tealBg = "#E0F2F1"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        fieldFill = p.fieldFill
+        purpleBg = p.flatPurpleBg
+        amberBg = p.flatAmberBg
+        tealBg = p.flatTealBg
+    }
 
     private lateinit var resultsBox: LinearLayout
     private lateinit var searchField: EditText
@@ -46,6 +73,7 @@ class StockReportActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -53,16 +81,19 @@ class StockReportActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("📦", Loc.t(this, "Stock Report", "اسٹاک رپورٹ"), Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")))
+        root.addView(premiumHeader(R.drawable.ic_box, Loc.t(this, "Stock Report", "اسٹاک رپورٹ"), Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")))
 
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(18, 4, 18, 4)
-            background = strokedBg(border, "#FAFAFF", 14)
+            background = strokedBg(border, fieldFill, 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f })
+        searchBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textGray, 15))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         searchField = EditText(this).apply {
             hint = Loc.t(this@StockReportActivity, "Search item or category…", "آئٹم یا کیٹیگری تلاش کریں…")
             setHintTextColor(Color.parseColor(textGray))
@@ -75,7 +106,8 @@ class StockReportActivity : AppCompatActivity() {
         root.addView(searchBox)
 
         lowStockToggle = TextView(this).apply {
-            text = "⚠️  " + Loc.t(this@StockReportActivity, "LOW STOCK ONLY", "صرف کم اسٹاک")
+            text = Loc.t(this@StockReportActivity, "LOW STOCK ONLY", "صرف کم اسٹاک")
+            setLeadingIcon(R.drawable.ic_warning, red, 13, 6)
             textSize = 11.5f
             setTypeface(typeface, Typeface.BOLD)
             setPadding(24, 14, 24, 14)
@@ -116,9 +148,11 @@ class StockReportActivity : AppCompatActivity() {
         if (lowStockOnly) {
             lowStockToggle.background = roundedBg(red, 14)
             lowStockToggle.setTextColor(Color.WHITE)
+            lowStockToggle.setLeadingIcon(R.drawable.ic_warning, "#FFFFFF", 13, 6)
         } else {
             lowStockToggle.background = strokedBg(border, cardBg, 14)
             lowStockToggle.setTextColor(Color.parseColor(textGray))
+            lowStockToggle.setLeadingIcon(R.drawable.ic_warning, red, 13, 6)
         }
     }
 
@@ -151,10 +185,10 @@ class StockReportActivity : AppCompatActivity() {
         val totalStockValue = allProducts.sumOf { it.stock * costPerSmallestUnit(it) }
         val totalSaleValue = allProducts.sumOf { it.stock * salePerSmallestUnit(it) }
 
-        summaryBox.addView(summaryCard("\uD83D\uDCE6", Loc.t(this, "Total Products", "کل آئٹمز"), "$totalProducts", primary, "#E9E6FF"))
-        summaryBox.addView(summaryCard("\u26A0\uFE0F", Loc.t(this, "Low Stock Items", "کم اسٹاک آئٹمز"), "$lowStockCount", red, "#FDE8E8"))
-        summaryBox.addView(summaryCard("\uD83D\uDCB0", Loc.t(this, "Stock Value (Cost)", "اسٹاک ویلیو (لاگت)"), "Rs %.2f".format(totalStockValue), amber, "#FFF3E0"))
-        summaryBox.addView(summaryCard("\uD83D\uDCC8", Loc.t(this, "Stock Value (Sale)", "اسٹاک ویلیو (سیل)"), "Rs %.2f".format(totalSaleValue), teal, "#E0F2F1"))
+        summaryBox.addView(summaryCard(R.drawable.ic_box, Loc.t(this, "Total Products", "کل آئٹمز"), "$totalProducts", primary, purpleBg))
+        summaryBox.addView(summaryCard(R.drawable.ic_warning, Loc.t(this, "Low Stock Items", "کم اسٹاک آئٹمز"), "$lowStockCount", red, "#FDE8E8"))
+        summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Stock Value (Cost)", "اسٹاک ویلیو (لاگت)"), "Rs %.2f".format(totalStockValue), amber, amberBg))
+        summaryBox.addView(summaryCard(R.drawable.ic_trending, Loc.t(this, "Stock Value (Sale)", "اسٹاک ویلیو (سیل)"), "Rs %.2f".format(totalSaleValue), teal, tealBg))
     }
 
     private fun renderList(query: String) {
@@ -225,55 +259,21 @@ class StockReportActivity : AppCompatActivity() {
     }
 
     // ================= PREMIUM HEADER (matches Items/Categories/Reports) =================
-    private fun premiumHeader(icon: String, title: String, subtitle: String): LinearLayout {
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 20) }
-            applyElevation(this, 10f)
-        }
-        header.addView(TextView(this).apply {
-            text = "‹"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = ovalBg("#33FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt()
-            width = px; height = px
-            setOnClickListener { finish() }
-        })
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-        header.addView(circleIcon(icon, "#5C4DFF", 42))
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = title
-            textSize = 19f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        headerCol.addView(TextView(this).apply {
-            text = subtitle
-            textSize = 11f
-            setTextColor(Color.parseColor("#D8D3FF"))
-            setPadding(0, 4, 0, 0)
-        })
-        header.addView(headerCol)
-        return header
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
     }
 
-    private fun summaryCard(emoji: String, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun summaryCard(iconRes: Int, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -289,9 +289,9 @@ class StockReportActivity : AppCompatActivity() {
                     shape = GradientDrawable.OVAL
                     setColor(Color.parseColor(tintHex))
                 }
-                addView(TextView(this@StockReportActivity).apply {
-                    text = emoji; textSize = 16f; gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                addView(ImageView(this@StockReportActivity).apply {
+                    setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
+                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER }
                 })
             })
 
@@ -313,40 +313,6 @@ class StockReportActivity : AppCompatActivity() {
     }
 
     // ================= SHARED UI HELPERS (matches Items/Categories/Reports) =================
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER
-        background = ovalBg(colorHex)
-        val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // circleIcon() and spacer() now come from the shared PremiumHeader.kt/UiHelpers.kt
+    // (item #24 dedup) — both were byte-identical private copies here before.
 }

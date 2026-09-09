@@ -2,7 +2,6 @@ package com.grocerypos.v11.ui
 
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.text.Editable
@@ -13,6 +12,7 @@ import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.StockMovement
@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 // ADDED (Inventory Accounting upgrade): single Activity backing BOTH the "Stock
 // History" and "Cost History" screens recommended alongside the stock_movements
@@ -40,23 +41,47 @@ class StockMovementActivity : AppCompatActivity() {
     }
 
     // ================= PREMIUM PALETTE (shared with Items / Categories / Reports) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val purple = "#8B5CF6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a
+    // primary→primaryDark gradient; now flat like the rest of the app.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var purple = "#8B5CF6"
+    private var amber = "#F5A524"
+    private var teal = "#0F9B8E"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+    private var fieldFill = "#FAFAFF"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        fieldFill = p.fieldFill
+    }
 
     private var mode: String = MODE_STOCK
 
     private lateinit var headerBox: LinearLayout
     private lateinit var searchField: EditText
-    private lateinit var resultsBox: LinearLayout
+    // ---- Item #2 (RecyclerView migration): was a LinearLayout that
+    // renderProductList()/renderMovements() addView()'d rows into directly;
+    // now a RecyclerView backed by the shared ViewListAdapter (see
+    // UiHelpers.kt), so only on-screen rows get inflated instead of the
+    // whole list living as permanent child views. ----
+    private lateinit var resultsBox: RecyclerView
 
     private var allProducts: List<Product> = emptyList()
     private var selectedProduct: Product? = null
@@ -65,6 +90,7 @@ class StockMovementActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
         mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_STOCK
 
         val root = LinearLayout(this).apply {
@@ -77,13 +103,13 @@ class StockMovementActivity : AppCompatActivity() {
         root.addView(headerBox)
 
         searchField = EditText(this)
-        resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        resultsBox = recyclerListView()
 
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(18, 4, 18, 4)
-            background = strokedBg(border, "#FAFAFF", 14)
+            background = strokedBg(border, fieldFill, 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
         }
         searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f })
@@ -155,19 +181,20 @@ class StockMovementActivity : AppCompatActivity() {
     private fun renderProductList(query: String) {
         if (selectedProduct != null) return
         searchField.visibility = View.VISIBLE
-        resultsBox.removeAllViews()
         val q = query.trim().lowercase()
         val filtered = allProducts.filter { p ->
             q.isEmpty() || p.name.lowercase().contains(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
         }
+        val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
-            resultsBox.addView(TextView(this).apply {
+            rows.add(TextView(this).apply {
                 text = Loc.t(this@StockMovementActivity, "No items found", "کوئی آئٹم نہیں ملا")
                 setTextColor(Color.parseColor(textGray))
                 textSize = 13f
                 gravity = Gravity.CENTER
                 setPadding(0, 40, 0, 40)
             })
+            resultsBox.submitRows(rows)
             return
         }
         for (p in filtered) {
@@ -192,8 +219,9 @@ class StockMovementActivity : AppCompatActivity() {
             }
             row.addView(nameCol)
             row.addView(TextView(this).apply { text = "\u203A"; textSize = 18f; setTextColor(Color.parseColor(textGray)) })
-            resultsBox.addView(row)
+            rows.add(row)
         }
+        resultsBox.submitRows(rows)
     }
 
     private fun loadMovements(p: Product) = lifecycleScope.launch {
@@ -207,20 +235,22 @@ class StockMovementActivity : AppCompatActivity() {
     }
 
     private fun renderMovements(movements: List<StockMovement>) {
-        resultsBox.removeAllViews()
+        val rows = mutableListOf<View>()
         if (movements.isEmpty()) {
-            resultsBox.addView(TextView(this).apply {
+            rows.add(TextView(this).apply {
                 text = Loc.t(this@StockMovementActivity, "No movements recorded yet", "ابھی تک کوئی ریکارڈ نہیں")
                 setTextColor(Color.parseColor(textGray))
                 textSize = 13f
                 gravity = Gravity.CENTER
                 setPadding(0, 40, 0, 40)
             })
+            resultsBox.submitRows(rows)
             return
         }
         for (m in movements) {
-            resultsBox.addView(movementCard(m))
+            rows.add(movementCard(m))
         }
+        resultsBox.submitRows(rows)
     }
 
     private fun typeLabel(type: String): Pair<String, String> = when (type) {
@@ -297,53 +327,6 @@ class StockMovementActivity : AppCompatActivity() {
     }
 
     // ================= PREMIUM HEADER (matches Items/Categories/Reports) =================
-    private fun premiumHeader(icon: String, title: String, subtitle: String, onBack: () -> Unit): LinearLayout {
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 20) }
-            applyElevation(this, 10f)
-        }
-        header.addView(TextView(this).apply {
-            text = "‹"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = ovalBg("#33FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt()
-            width = px; height = px
-            setOnClickListener { onBack() }
-        })
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-        header.addView(circleIcon(icon, "#5C4DFF", 42))
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = title
-            textSize = 19f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        headerCol.addView(TextView(this).apply {
-            text = subtitle
-            textSize = 11f
-            setTextColor(Color.parseColor("#D8D3FF"))
-            setPadding(0, 4, 0, 0)
-        })
-        header.addView(headerCol)
-        return header
-    }
 
     // ================= SHARED UI HELPERS (matches Items/Categories/Reports) =================
     private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
@@ -352,34 +335,9 @@ class StockMovementActivity : AppCompatActivity() {
         gravity = Gravity.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

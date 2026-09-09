@@ -67,7 +67,10 @@ class SaleActivity : AppCompatActivity() {
     internal var red = "#D32F4A"
     internal var redDark = "#A81F39"
     internal var amber = "#854F0B"      // flatAmberFg
+<<<<<<< HEAD
     internal var amberBg = "#FAEEDA"    // flatAmberBg — paired light-tint for `amber`
+=======
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     internal var textDark = "#0B2545"
     internal var textGray = "#7C8798"
     internal var border = "#E3E8EE"
@@ -84,7 +87,10 @@ class SaleActivity : AppCompatActivity() {
         greenDark = p.flatTealFg
         red = p.red
         amber = p.flatAmberFg
+<<<<<<< HEAD
         amberBg = p.flatAmberBg
+=======
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
@@ -176,12 +182,44 @@ class SaleActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
+<<<<<<< HEAD
         // FLAT REDESIGN: was a custom navy banner (title/subtitle column, no icon badge, no
         // back chevron). Replaced with the shared premiumHeader() — controlled from
         // PremiumHeader.kt like every other flat screen; "Quick Sale"/"History" pills and the
         // overflow (⋮) button are appended after it.
         val saleTitle = if (editInvoice != null) com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Edit Sale", "سیل میں ترمیم") else com.grocerypos.v11.util.Loc.t(this@SaleActivity, "New Sale", "نئی سیل")
         val header = premiumHeader(R.drawable.ic_receipt, saleTitle, "RETAIL · WHOLESALE BILLING", navy, navy) { finish() }
+=======
+        // ---------- Header (Reports-style flat header — flatPurple, no gradient) ----------
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(26, 30, 22, 26)
+            background = gradientBg(navy, navy, cornerBottom = 26)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(-24, 0, -24, 16) }
+            applyElevation(this, 8f)
+        }
+        val headerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headerCol.addView(TextView(this).apply {
+            text = if (editInvoice != null) com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Edit Sale", "سیل میں ترمیم") else com.grocerypos.v11.util.Loc.t(this@SaleActivity, "New Sale", "نئی سیل")
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.01f
+        })
+        headerCol.addView(TextView(this).apply {
+            text = "RETAIL · WHOLESALE BILLING"
+            textSize = 10.5f
+            setTextColor(Color.parseColor("#9FB4CC"))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.08f
+            setPadding(0, 5, 0, 0)
+        })
+        header.addView(headerCol)
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         header.addView(pillChip("Quick Sale", textSizeSp = 13.5f, hPad = 24, vPad = 14) { quickSaleDialog() })
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((6 * resources.displayMetrics.density).toInt(), 1) })
         header.addView(pillChip("History", textSizeSp = 13.5f, hPad = 24, vPad = 14) { startActivity(Intent(this@SaleActivity, SaleHistoryActivity::class.java)) })
@@ -191,7 +229,11 @@ class SaleActivity : AppCompatActivity() {
             textSize = 19f
             setTextColor(Color.parseColor(navy))
             gravity = Gravity.CENTER
+<<<<<<< HEAD
             background = ovalBg("#EEEDFE")
+=======
+            background = ovalBg("#22FFFFFF")
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
             val px = (34 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { showOverflowMenu(it) }
         }

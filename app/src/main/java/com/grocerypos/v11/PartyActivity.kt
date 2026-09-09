@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * UI layer only — this Activity builds views and forwards user actions to
@@ -38,17 +39,30 @@ class PartyActivity : AppCompatActivity() {
 
     private val viewModel: PartyViewModel by viewModels { PartyViewModelFactory(applicationContext) }
 
-    // ---- Light premium palette ----
-    private val bg = "#FAFAFC"
-    private val gradientStart = "#7C86F5"
-    private val gradientEnd = "#A6ADFF"
-    private val blue = "#5B6EE8"
-    private val orange = "#F5A15C"
-    private val green = "#4CAF50"
-    private val red = "#E57373"
-    private val cardWhite = "#FFFFFF"
-    private val cardBorder = "#EEF0F7"
-    private val labelGray = "#9AA0B4"
+    // ---- Reports-style flat design — pulled from ThemeManager so this screen stays in
+    // sync with the rest of the app and respects dark mode. Party = flatPink everywhere
+    // per ThemeManager's documented category convention (matches MainActivity's
+    // "Customers & Suppliers" tile). ----
+    private var bg = "#F4F6F8"
+    private var blue = "#993556"       // primary chrome — flatPinkFg
+    private var orange = "#993C1D"     // secondary accent — flatCoralFg
+    private var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
+    private var red = "#D32F4A"
+    private var cardWhite = "#FFFFFF"
+    private var cardBorder = "#E3E8EE"
+    private var labelGray = "#7C8798"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        cardBorder = p.border
+        labelGray = p.textMuted
+        blue = p.flatPinkFg
+        orange = p.flatCoralFg
+        green = p.flatTealFg
+        red = p.red
+    }
 
     private lateinit var tabRow: LinearLayout
     private lateinit var formCard: LinearLayout
@@ -67,6 +81,7 @@ class PartyActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         contactPickerLauncher = registerForActivityResult(ActivityResultContracts.PickContact()) { uri ->
             uri?.let { fetchPhoneFromContact(it) }
@@ -95,14 +110,14 @@ class PartyActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= GRADIENT HEADER =================
+        // ================= FLAT HEADER (Reports-style, no gradient) =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding((28 * d).toInt(), (44 * d).toInt(), (24 * d).toInt(), (32 * d).toInt())
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(gradientStart), Color.parseColor(gradientEnd))
+                intArrayOf(Color.parseColor(blue), Color.parseColor(blue))
             )
         }
         header.addView(TextView(this).apply {
@@ -822,11 +837,6 @@ class PartyActivity : AppCompatActivity() {
         setColor(Color.parseColor(cardWhite))
         cornerRadius = 16f
         setStroke(1, Color.parseColor(cardBorder))
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
     }
 
     private fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {

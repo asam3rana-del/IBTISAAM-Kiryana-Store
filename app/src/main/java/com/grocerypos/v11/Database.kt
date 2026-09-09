@@ -475,6 +475,95 @@ data class Expense(
     val dirty:Boolean=true
 )
 
+<<<<<<< HEAD
+=======
+// NEW (Zakat tracker): one row per Zakat year the user has started (Ramadan-to-Ramadan,
+// per their request), holding the asset snapshot + 2.5% payable calculated at the time
+// the year was started. `dirty`/`serverId` follow the same shape as every other synced
+// entity in this app for future-proofing, but — unlike Payment/CashTransaction/Expense —
+// these are NOT currently pushed through SyncQueueHelper, since that requires a matching
+// server-side endpoint this file can't add on its own; treat Zakat data as local-only
+// until that's wired up.
+@Entity(tableName="zakat_years")
+data class ZakatYear(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val startDate:Long,
+    val endDate:Long,
+    val assetsSnapshot:Double,
+    val totalPayable:Double,
+    val createdAt:Long=System.currentTimeMillis(),
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
+// NEW (Zakat tracker): a partial or full payment recorded against a ZakatYear —
+// letting the user pay all at once or spread across several installments.
+@Entity(tableName="zakat_payments")
+data class ZakatPayment(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val zakatYearId:Long,
+    val amount:Double,
+    val method:String,
+    val note:String="",
+    val createdAt:Long=System.currentTimeMillis(),
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
+// NEW (Bottle Shell Ledger): a customer who has been given a filled bottle without
+// handing back an empty shell in exchange — shellsOwed is the running count of shells
+// they still owe the shop. This is a standalone ledger (not tied to the Customer table)
+// since a shell-taking "customer" here is often just a name/phone jotted down, not a
+// full party record. serverId/updatedAt/dirty follow the same shape as ZakatYear above
+// for future-proofing, but — like Zakat — this is NOT currently pushed through
+// SyncQueueHelper; treat it as local-only until a matching server-side endpoint exists.
+@Entity(tableName="shell_customers")
+data class ShellCustomer(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val name:String,
+    val phone:String="",
+    val shellsOwed:Int=0,
+    val createdAt:Long=System.currentTimeMillis(),
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
+// NEW (Bottle Shell Ledger): one row per issue/return against a ShellCustomer, so the
+// running shellsOwed total always has a history behind it (who took what, when).
+@Entity(
+    tableName="shell_transactions",
+    indices=[Index(value=["customerId"], name="index_shell_transactions_customerId")]
+)
+data class ShellTransaction(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val customerId:Long,
+    val type:String, // "ISSUE" (filled given, shell owed) or "RETURN" (empty shell handed back)
+    val qty:Int,
+    val note:String="",
+    val createdAt:Long=System.currentTimeMillis(),
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
+// NEW (Bottle Shell Ledger): the shop's OWN empty-shell count — separate from what
+// customers owe. A plain signed delta log (same shape as StockMovement above), summed
+// for the current total, so "how many empties are sitting at the shop right now" always
+// has a history behind it too (collected from a return, sent off for refill, or a
+// manual recount correction).
+@Entity(tableName="shop_empty_shell_log")
+data class ShopEmptyShellLog(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val delta:Int,
+    val reason:String, // MANUAL_ADD, MANUAL_REMOVE, CUSTOMER_RETURN, SENT_FOR_REFILL
+    val note:String="",
+    val createdAt:Long=System.currentTimeMillis()
+)
+
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 @Entity(tableName="held_bills")
 data class HeldBill(
     @PrimaryKey val holdId:String,
@@ -744,6 +833,38 @@ interface ProductDao {
     @Delete suspend fun delete(h:HeldBill)
 }
 
+<<<<<<< HEAD
+=======
+// NEW (Zakat tracker)
+@Dao interface ZakatDao {
+    @Insert suspend fun insertYear(y:ZakatYear):Long
+    @Update suspend fun updateYear(y:ZakatYear)
+    @Query("SELECT * FROM zakat_years ORDER BY startDate DESC LIMIT 1") suspend fun latestYear():ZakatYear?
+    @Query("SELECT * FROM zakat_years ORDER BY startDate DESC") suspend fun allYears():List<ZakatYear>
+    @Insert suspend fun insertPayment(p:ZakatPayment): Long
+    @Query("SELECT * FROM zakat_payments WHERE zakatYearId=:yearId ORDER BY createdAt DESC") suspend fun paymentsForYear(yearId:Long):List<ZakatPayment>
+    @Query("SELECT COALESCE(SUM(amount),0) FROM zakat_payments WHERE zakatYearId=:yearId") suspend fun totalPaidForYear(yearId:Long):Double
+}
+
+@Dao interface ShellDao {
+    @Insert suspend fun insertCustomer(c:ShellCustomer):Long
+    @Update suspend fun updateCustomer(c:ShellCustomer)
+    @Query("SELECT * FROM shell_customers WHERE id=:id LIMIT 1") suspend fun getCustomer(id:Long):ShellCustomer?
+    // COLLATE NOCASE: so "Ahmed" and "ahmed" resolve to the same ledger entry instead
+    // of silently creating a duplicate customer with a fresh shellsOwed=0.
+    @Query("SELECT * FROM shell_customers WHERE name=:name COLLATE NOCASE LIMIT 1") suspend fun findByName(name:String):ShellCustomer?
+    @Query("SELECT * FROM shell_customers ORDER BY shellsOwed DESC, name COLLATE NOCASE ASC") suspend fun allCustomers():List<ShellCustomer>
+    @Query("SELECT COALESCE(SUM(shellsOwed),0) FROM shell_customers") suspend fun totalOwedByCustomers():Int
+
+    @Insert suspend fun insertTransaction(t:ShellTransaction):Long
+    @Query("SELECT * FROM shell_transactions WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun historyForCustomer(customerId:Long):List<ShellTransaction>
+
+    @Insert suspend fun insertShopLog(l:ShopEmptyShellLog):Long
+    @Query("SELECT COALESCE(SUM(delta),0) FROM shop_empty_shell_log") suspend fun shopStockTotal():Int
+    @Query("SELECT * FROM shop_empty_shell_log ORDER BY createdAt DESC LIMIT 100") suspend fun shopLogHistory():List<ShopEmptyShellLog>
+}
+
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 @Dao interface PaymentDao {
     @Insert suspend fun insert(p:Payment): Long
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double
@@ -758,6 +879,14 @@ interface ProductDao {
     // same reasoning as ExpenseDao/CashTransactionDao above.
     @Update suspend fun update(p:Payment)
     @Query("SELECT * FROM payments WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Payment?
+<<<<<<< HEAD
+=======
+    @Query("DELETE FROM payments WHERE serverId=:serverId") suspend fun deleteByServerId(serverId:String)
+    // ADDED (Amount Payable/Receivable — standalone payments): lets PartyTransactionActivity
+    // show a party's manually-recorded "Receive Payment"/"Make Payment" entries (not tied to
+    // a specific bill) alongside their sale/purchase history.
+    @Query("SELECT * FROM payments WHERE partyType=:partyType AND partyId=:partyId ORDER BY createdAt DESC") suspend fun listByParty(partyType:String,partyId:Long):List<Payment>
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 }
 
 @Dao interface PurchaseDao {
@@ -837,6 +966,7 @@ interface ProductDao {
     // ADDED (multi-device two-way sync): same reasoning as ExpenseDao above.
     @Update suspend fun update(t:CashTransaction)
     @Query("SELECT * FROM cash_transactions WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):CashTransaction?
+    @Query("DELETE FROM cash_transactions WHERE serverId=:serverId") suspend fun deleteByServerId(serverId:String)
 }
 
 @Dao interface CashRegisterDao {
@@ -861,6 +991,8 @@ interface ProductDao {
     // lost) but needs a manual "Retry Now" (see Settings > Sync History) to try again.
     @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND retryCount < 10 ORDER BY createdAt ASC LIMIT :limit")
     suspend fun pending(limit: Int = 50): List<SyncQueueEntry>
+    @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND retryCount < 10 AND entityType=:entityType AND entityId=:entityId AND operation=:operation ORDER BY createdAt ASC")
+    suspend fun pendingForEntity(entityType:String, entityId:String, operation:String):List<SyncQueueEntry>
     @Query("UPDATE sync_queue SET syncedAt=:ts WHERE id=:id")
     suspend fun markSynced(id: Long, ts: Long = System.currentTimeMillis())
     @Query("UPDATE sync_queue SET retryCount=retryCount+1, lastError=:err WHERE id=:id")
@@ -1105,12 +1237,104 @@ val MIGRATION_27_28 = object : Migration(27, 28) {
     }
 }
 
+<<<<<<< HEAD
+=======
+// NEW (Zakat tracker): fresh tables, no data migration needed from any existing table.
+val MIGRATION_28_29 = object : Migration(28, 29) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS zakat_years (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                startDate INTEGER NOT NULL,
+                endDate INTEGER NOT NULL,
+                assetsSnapshot REAL NOT NULL,
+                totalPayable REAL NOT NULL,
+                createdAt INTEGER NOT NULL,
+                serverId TEXT,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS zakat_payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                zakatYearId INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                method TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL,
+                serverId TEXT,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+    }
+}
+
+// NEW (Due Date Reminders): Sale.dueDate, a plain nullable-by-default ADD COLUMN —
+// same simple pattern as MIGRATION_25_26's returnReversed, no table recreate needed.
+val MIGRATION_29_30 = object : Migration(29, 30) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE sales ADD COLUMN dueDate INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+// NEW (Bottle Shell Ledger): shell_customers/shell_transactions track what customers
+// owe the shop; shop_empty_shell_log tracks the shop's own empty-shell count. All three
+// are brand-new tables, same CREATE-TABLE-IF-NOT-EXISTS pattern as MIGRATION_28_29.
+val MIGRATION_30_31 = object : Migration(30, 31) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS shell_customers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL DEFAULT '',
+                shellsOwed INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL,
+                serverId TEXT,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS shell_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                customerId INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                qty INTEGER NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL,
+                serverId TEXT,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                dirty INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent())
+        database.execSQL("CREATE INDEX IF NOT EXISTS index_shell_transactions_customerId ON shell_transactions(customerId)")
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS shop_empty_shell_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                delta INTEGER NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
+<<<<<<< HEAD
         CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class],
     version=28, exportSchema=false
+=======
+        CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
+        ZakatYear::class,ZakatPayment::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class],
+    version=31, exportSchema=false
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1131,11 +1355,24 @@ abstract class PosDatabase:RoomDatabase(){
     abstract fun appSettingDao():AppSettingDao
     abstract fun syncQueueDao():SyncQueueDao
     abstract fun stockMovementDao():StockMovementDao
+<<<<<<< HEAD
+=======
+    abstract fun zakatDao():ZakatDao
+    abstract fun shellDao():ShellDao
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     companion object{
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
+<<<<<<< HEAD
                 .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+=======
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
+                // Never destructively recreate a POS database on downgrade. A silent
+                // database wipe would destroy sales, purchases, stock and balances.
+                // Downgrades must be handled as an explicit supported migration or by
+                // restoring a verified backup.
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
                 .build().also{INSTANCE=it}
         }
         fun closeInstance() { INSTANCE?.close(); INSTANCE = null }

@@ -12,8 +12,10 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -21,6 +23,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * ---- CHANGE (ultra-premium UI pass) ----
@@ -36,19 +39,41 @@ import java.util.Locale
 class PartyReportsActivity : AppCompatActivity() {
 
     // ================= PREMIUM PALETTE (shared with Reports / Stock Report) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val purple = "#8B5CF6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a
+    // primary→primaryDark gradient; now flat like the rest of the app.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var purple = "#8B5CF6"
+    private var amber = "#F5A524"
+    private var teal = "#0F9B8E"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
 
-    private lateinit var listContainer: LinearLayout
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
+
+    // ---- Item #2 (RecyclerView migration): was a LinearLayout that
+    // loadParties() addView()'d rows into directly; now a RecyclerView backed
+    // by the shared ViewListAdapter (see UiHelpers.kt), so only on-screen
+    // rows get inflated instead of the whole list living as permanent child
+    // views. ----
+    private lateinit var listContainer: RecyclerView
     private lateinit var customersTab: TextView
     private lateinit var suppliersTab: TextView
     private var showingCustomers = true
@@ -64,6 +89,7 @@ class PartyReportsActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -71,7 +97,7 @@ class PartyReportsActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("👥", Loc.t(this, "Party Reports", "پارٹی رپورٹس"), Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس")))
+        root.addView(premiumHeader(R.drawable.ic_people, Loc.t(this, "Party Reports", "پارٹی رپورٹس"), Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس")))
 
         // ================= TAB PILLS (matches Reports' period-filter row) =================
         val tabRow = LinearLayout(this).apply {
@@ -89,7 +115,7 @@ class PartyReportsActivity : AppCompatActivity() {
 
         root.addView(sectionHeader(Loc.t(this, "Tap a party to select a report", "رپورٹ منتخب کرنے کے لیے پارٹی پر ٹیپ کریں")))
 
-        listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        listContainer = recyclerListView()
         root.addView(listContainer)
         root.addView(spacer(30))
 
@@ -118,26 +144,27 @@ class PartyReportsActivity : AppCompatActivity() {
     }
 
     private fun loadParties() {
-        listContainer.removeAllViews()
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
+            val rows = mutableListOf<View>()
             if (showingCustomers) {
                 val customers = db.customerDao().all().first()
-                if (customers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
+                if (customers.isEmpty()) rows.add(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
                 customers.forEach { c ->
-                    listContainer.addView(partyRow(c.name, c.openingBalance + c.balance, isCustomer = true) {
+                    rows.add(partyRow(c.name, c.openingBalance + c.balance, isCustomer = true) {
                         showReportMenu(true, c.id, c.name, c.openingBalance)
                     })
                 }
             } else {
                 val suppliers = db.supplierDao().all().first()
-                if (suppliers.isEmpty()) listContainer.addView(emptyText(Loc.t(this@PartyReportsActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
+                if (suppliers.isEmpty()) rows.add(emptyText(Loc.t(this@PartyReportsActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
                 suppliers.forEach { s ->
-                    listContainer.addView(partyRow(s.name, s.openingBalance + s.balance, isCustomer = false) {
+                    rows.add(partyRow(s.name, s.openingBalance + s.balance, isCustomer = false) {
                         showReportMenu(false, s.id, s.name, s.openingBalance)
                     })
                 }
             }
+            listContainer.submitRows(rows)
         }
     }
 
@@ -163,15 +190,7 @@ class PartyReportsActivity : AppCompatActivity() {
             isClickable = true
             setOnClickListener { onClick() }
 
-            addView(FrameLayout(this@PartyReportsActivity).apply {
-                val size = (40 * resources.displayMetrics.density).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size)
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(tintHex)) }
-                addView(TextView(this@PartyReportsActivity).apply {
-                    text = if (isCustomer) "👤" else "📦"; textSize = 15f; gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-                })
-            })
+            addView(iconCircle(if (isCustomer) R.drawable.ic_person else R.drawable.ic_box, accentHex, tintHex, 40))
 
             addView(TextView(this@PartyReportsActivity).apply {
                 text = name
@@ -203,12 +222,12 @@ class PartyReportsActivity : AppCompatActivity() {
             Loc.t(this, "Supplier Statement", "سپلائر اسٹیٹمنٹ")
 
         val entries = listOf(
-            Triple("📦", Loc.t(this, "Party Report by Item", "آئٹم کے لحاظ سے پارٹی رپورٹ"), 0),
-            Triple("📒", Loc.t(this, "Customer Ledger", "کسٹمر لیجر"), 1),
-            Triple("💵", Loc.t(this, "Payment History", "ادائیگی کی تاریخ"), 2),
-            Triple("📜", statementLabel, 3),
-            Triple("🧾", Loc.t(this, "Sale/Purchase by Party", "پارٹی کے لحاظ سے سیل/خریداری"), 4),
-            Triple("📊", plLabel, 5)
+            Triple(R.drawable.ic_box, Loc.t(this, "Party Report by Item", "آئٹم کے لحاظ سے پارٹی رپورٹ"), 0),
+            Triple(R.drawable.ic_book, Loc.t(this, "Customer Ledger", "کسٹمر لیجر"), 1),
+            Triple(R.drawable.ic_wallet, Loc.t(this, "Payment History", "ادائیگی کی تاریخ"), 2),
+            Triple(R.drawable.ic_document, statementLabel, 3),
+            Triple(R.drawable.ic_receipt, Loc.t(this, "Sale/Purchase by Party", "پارٹی کے لحاظ سے سیل/خریداری"), 4),
+            Triple(R.drawable.ic_chart, plLabel, 5)
         )
 
         val menuCard = LinearLayout(this).apply {
@@ -267,7 +286,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 map.values.sortedByDescending { it.amount }
             }
 
-            val content = reportContainer("📦", primary, "#E9E6FF", Loc.t(this@PartyReportsActivity, "Item Report", "آئٹم رپورٹ"), name)
+            val content = reportContainer(R.drawable.ic_box, primary, "#E9E6FF", Loc.t(this@PartyReportsActivity, "Item Report", "آئٹم رپورٹ"), name)
             val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
             if (items.isEmpty()) {
                 body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No items found", "کوئی آئٹم نہیں ملا")))
@@ -292,7 +311,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val fmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
             var running = opening
 
-            val content = reportContainer("📒", primary, "#E9E6FF", Loc.t(this@PartyReportsActivity, "Ledger", "لیجر"), name)
+            val content = reportContainer(R.drawable.ic_book, primary, "#E9E6FF", Loc.t(this@PartyReportsActivity, "Ledger", "لیجر"), name)
             val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             body.addView(ledgerHeaderRow())
@@ -419,7 +438,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@PartyReportsActivity)
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
-            val content = reportContainer("💵", teal, "#E0F2F1", Loc.t(this@PartyReportsActivity, "Payment History", "ادائیگی کی تاریخ"), name)
+            val content = reportContainer(R.drawable.ic_wallet, teal, "#E0F2F1", Loc.t(this@PartyReportsActivity, "Payment History", "ادائیگی کی تاریخ"), name)
             val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             val payments = mutableListOf<PaymentEntry>()
@@ -466,15 +485,7 @@ class PartyReportsActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(4, 10, 4, 10)
 
-            addView(FrameLayout(this@PartyReportsActivity).apply {
-                val size = (32 * resources.displayMetrics.density).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size)
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#E0F2F1")) }
-                addView(TextView(this@PartyReportsActivity).apply {
-                    text = "💵"; textSize = 14f; gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-                })
-            })
+            addView(iconCircle(R.drawable.ic_wallet, teal, "#E0F2F1", 32))
 
             val col = LinearLayout(this@PartyReportsActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -510,7 +521,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val fmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
             var running = opening
 
-            val content = reportContainer("📜", purple, "#F0EBFF", Loc.t(this@PartyReportsActivity, "Statement", "اسٹیٹمنٹ"), name)
+            val content = reportContainer(R.drawable.ic_document, purple, "#F0EBFF", Loc.t(this@PartyReportsActivity, "Statement", "اسٹیٹمنٹ"), name)
             val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             body.addView(rowText(Loc.t(this@PartyReportsActivity, "Opening Balance", "ابتدائی بیلنس"), "Rs %.2f".format(opening)).apply {
@@ -591,7 +602,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
             val title = if (isCustomer) Loc.t(this@PartyReportsActivity, "Sales", "سیلز") else Loc.t(this@PartyReportsActivity, "Purchases", "خریداریاں")
-            val content = reportContainer("🧾", if (isCustomer) primary else amber, if (isCustomer) "#E9E6FF" else "#FFF3E0", title, name)
+            val content = reportContainer(R.drawable.ic_receipt, if (isCustomer) primary else amber, if (isCustomer) "#E9E6FF" else "#FFF3E0", title, name)
             val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             if (isCustomer) {
@@ -632,7 +643,7 @@ class PartyReportsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
             val title = if (isCustomer) Loc.t(this@PartyReportsActivity, "Profit & Loss", "منافع اور نقصان") else Loc.t(this@PartyReportsActivity, "Purchase Summary", "خریداری کا خلاصہ")
-            val content = reportContainer("📊", teal, "#E0F2F1", title, name)
+            val content = reportContainer(R.drawable.ic_chart, teal, "#E0F2F1", title, name)
             val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             if (isCustomer) {
@@ -703,7 +714,7 @@ class PartyReportsActivity : AppCompatActivity() {
     // treatment) + scrollable body card. Keeps the same child order the show*() functions
     // above rely on — index 0 header, index 1 ScrollView wrapping the body LinearLayout —
     // so none of that access code had to change. ----
-    private fun reportContainer(icon: String, accentHex: String, tintHex: String, title: String, partyName: String): LinearLayout {
+    private fun reportContainer(icon: Int, accentHex: String, tintHex: String, title: String, partyName: String): LinearLayout {
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(4, 4, 4, 4) }
 
         val headerRow = LinearLayout(this).apply {
@@ -711,15 +722,7 @@ class PartyReportsActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(20, 20, 20, 12)
         }
-        headerRow.addView(FrameLayout(this).apply {
-            val size = (38 * resources.displayMetrics.density).toInt()
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(tintHex)) }
-            addView(TextView(this@PartyReportsActivity).apply {
-                text = icon; textSize = 15f; gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-            })
-        })
+        headerRow.addView(iconCircle(icon, accentHex, tintHex, 38))
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(14, 0, 0, 0)
@@ -800,57 +803,10 @@ class PartyReportsActivity : AppCompatActivity() {
     private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
     // ================= PREMIUM HEADER (matches Reports/Stock Report exactly) =================
-    private fun premiumHeader(icon: String, title: String, subtitle: String): LinearLayout {
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 20) }
-            applyElevation(this, 10f)
-        }
-        header.addView(TextView(this).apply {
-            text = "‹"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = ovalBg("#33FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt()
-            width = px; height = px
-            setOnClickListener { finish() }
-        })
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-        header.addView(circleIcon(icon, "#5C4DFF", 42))
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = title
-            textSize = 19f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        headerCol.addView(TextView(this).apply {
-            text = subtitle
-            textSize = 11f
-            setTextColor(Color.parseColor("#D8D3FF"))
-            setPadding(0, 4, 0, 0)
-        })
-        header.addView(headerCol)
-        return header
-    }
 
     // ---- Nav row (matches Reports' navRow used for Sale History / Party Reports / etc.) ----
     private fun navRow(
-        icon: String,
+        icon: Int,
         accentHex: String,
         tintHex: String,
         title: String,
@@ -865,15 +821,7 @@ class PartyReportsActivity : AppCompatActivity() {
             isFocusable = true
             setOnClickListener { onClick() }
 
-            addView(FrameLayout(this@PartyReportsActivity).apply {
-                val size = (42 * resources.displayMetrics.density).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size)
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(tintHex)) }
-                addView(TextView(this@PartyReportsActivity).apply {
-                    text = icon; textSize = 17f; gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-                })
-            })
+            addView(iconCircle(icon, accentHex, tintHex, 42))
 
             val textCol = LinearLayout(this@PartyReportsActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -938,40 +886,28 @@ class PartyReportsActivity : AppCompatActivity() {
     }
 
     // ================= SHARED UI HELPERS (matches Reports/Stock Report exactly) =================
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER
-        background = ovalBg(colorHex)
-        val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
-    }
-
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
+    // ---- item-6 UI improvement pass: vector-icon circle badge, replaces the old emoji-in-a-
+    // TextView pattern that was copy-pasted at every call site (partyRow, paymentRow,
+    // reportContainer, navRow). Icon is tinted with accentHex so it reads clearly against the
+    // light tintHex background, matching the badge treatment already used in ProductActivity. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int) =
+        androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate()?.apply {
+            setTint(Color.parseColor(tintHex))
+            val px = (sizeDp * resources.displayMetrics.density).toInt()
+            setBounds(0, 0, px, px)
         }
+
+    private fun iconCircle(iconRes: Int, accentHex: String, tintHex: String, sizeDp: Int) = FrameLayout(this).apply {
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(size, size)
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(tintHex)) }
+        addView(ImageView(this@PartyReportsActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, accentHex, (sizeDp * 0.5).toInt()))
+            scaleType = ImageView.ScaleType.CENTER
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        })
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

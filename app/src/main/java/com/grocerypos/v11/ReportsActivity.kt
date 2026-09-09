@@ -10,14 +10,18 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import com.grocerypos.v11.ui.components.*
 
 class ReportsActivity : AppCompatActivity() {
 
+<<<<<<< HEAD
     // ================= PREMIUM PALETTE (shared with Items / Categories) =================
     private val bg = "#F3F2FA"
     private val cardBg = "#FFFFFF"
@@ -30,6 +34,41 @@ class ReportsActivity : AppCompatActivity() {
     private val textDark = "#1A1A2E"
     private val textGray = "#8A8A9E"
     private val border = "#E7E5F3"
+=======
+    // ================= FLAT PALETTE (aligned with ThemeManager's app-wide flat design tokens) =================
+    // Pulled from ThemeManager so this screen respects dark mode, same as Stock Report,
+    // History, Party Reports and Balance Sheet.
+    private var bg = "#F4F6F8"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#534AB7"       // flatPurpleFg
+    private var primaryDark = "#534AB7"
+    private var purple = "#534AB7"        // flatPurpleFg (merged with primary — one purple everywhere)
+    private var amber = "#854F0B"         // flatAmberFg
+    private var teal = "#085041"          // flatTealFg
+    private var gold = "#854F0B"          // Zakat only — reuses amber (financial)
+    private var red = "#D32F4A"           // matches MainActivity's danger/logout red
+    private var textDark = "#0B2545"
+    private var textGray = "#7C8798"
+    private var border = "#E3E8EE"
+    private var headerIconTint = "#EEEDFE" // flatPurpleBg — header badge behind the reports icon
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        purple = p.flatPurpleFg
+        amber = p.flatAmberFg
+        teal = p.flatTealFg
+        gold = p.flatAmberFg
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        headerIconTint = p.flatPurpleBg
+    }
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 
     private lateinit var resultsBox: LinearLayout
     private var periodLabel: TextView? = null
@@ -51,13 +90,15 @@ class ReportsActivity : AppCompatActivity() {
             return
         }
 
+        loadThemeColors()
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 48, 24, 24)
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("📊", Loc.t(this, "Reports", "رپورٹس"), Loc.t(this, "Sales, stock & financial overview", "سیل، اسٹاک اور مالیاتی جائزہ")))
+        root.addView(premiumHeader(R.drawable.ic_chart, Loc.t(this, "Reports", "رپورٹس"), Loc.t(this, "Sales, stock & financial overview", "سیل، اسٹاک اور مالیاتی جائزہ")))
 
         root.addView(sectionHeader(Loc.t(this, "Sale reports", "سیل رپورٹس")))
         val navCard = LinearLayout(this).apply {
@@ -68,15 +109,31 @@ class ReportsActivity : AppCompatActivity() {
             applyElevation(this, 3f)
         }
         navCard.addView(navRow(
-            icon = "🧾", accentHex = primary, tintHex = "#E9E6FF",
-            title = Loc.t(this, "Sale / Purchase History", "سیل / خریداری کی تاریخ"),
-            subtitle = Loc.t(this, "View all transactions", "تمام لین دین دیکھیں")
-        ) { startActivity(android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)) })
+            iconRes = R.drawable.ic_receipt, accentHex = primary, tintHex = "#EEEDFE",
+            title = Loc.t(this, "Sale History", "سیل کی تاریخ"),
+            subtitle = Loc.t(this, "View all sale transactions", "تمام سیل لین دین دیکھیں")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)
+            i.putExtra(HistoryActivity.EXTRA_MODE, HistoryActivity.MODE_SALES)
+            startActivity(i)
+        })
 
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = "👥", accentHex = purple, tintHex = "#F0EBFF",
+            iconRes = R.drawable.ic_cart, accentHex = "#993C1D", tintHex = "#FAECE7",
+            title = Loc.t(this, "Purchase History", "خریداری کی تاریخ"),
+            subtitle = Loc.t(this, "View all purchase transactions", "تمام خریداری لین دین دیکھیں")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)
+            i.putExtra(HistoryActivity.EXTRA_MODE, HistoryActivity.MODE_PURCHASES)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_people, accentHex = purple, tintHex = "#EEEDFE",
             title = Loc.t(this, "Party Reports", "پارٹی رپورٹس"),
             subtitle = Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس")
         ) { startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java)) })
@@ -84,7 +141,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = "📦", accentHex = amber, tintHex = "#FFF3E0",
+            iconRes = R.drawable.ic_box, accentHex = amber, tintHex = "#FAEEDA",
             title = Loc.t(this, "Stock Report", "اسٹاک رپورٹ"),
             subtitle = Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")
         ) { startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java)) })
@@ -95,7 +152,7 @@ class ReportsActivity : AppCompatActivity() {
         // ledger of every purchase/sale/reversal/edit, and a cost-only view of the
         // same ledger — both backed by StockMovementActivity (see that file).
         navCard.addView(navRow(
-            icon = "📜", accentHex = primary, tintHex = "#E9E6FF",
+            iconRes = R.drawable.ic_history, accentHex = primary, tintHex = "#EEEDFE",
             title = Loc.t(this, "Stock History", "اسٹاک کی تاریخ"),
             subtitle = Loc.t(this, "Every purchase, sale & adjustment per item", "ہر آئٹم کی خریداری، سیل اور ایڈجسٹمنٹ")
         ) {
@@ -107,7 +164,7 @@ class ReportsActivity : AppCompatActivity() {
         navCard.addView(navDivider())
 
         navCard.addView(navRow(
-            icon = "📈", accentHex = teal, tintHex = "#E0F2F1",
+            iconRes = R.drawable.ic_trending, accentHex = teal, tintHex = "#E1F5EE",
             title = Loc.t(this, "Cost History", "لاگت کی تاریخ"),
             subtitle = Loc.t(this, "How a product's cost changed over time", "پروڈکٹ کی لاگت وقت کے ساتھ کیسے بدلی")
         ) {
@@ -118,12 +175,95 @@ class ReportsActivity : AppCompatActivity() {
 
         navCard.addView(navDivider())
 
+<<<<<<< HEAD
+=======
+        // NEW: Stock Adjustment (log damage/loss or a manual correction) plus the four
+        // Inventory Insights tabs (Reorder Suggestions, Damage/Loss Report, Profit
+        // Margin per Item, Fast/Slow Movers) and Due Date Reminders.
         navCard.addView(navRow(
-            icon = "⚖️", accentHex = teal, tintHex = "#E0F2F1",
+            iconRes = R.drawable.ic_wrench, accentHex = red, tintHex = "#FCEBEB",
+            title = Loc.t(this, "Stock Adjustment", "اسٹاک ایڈجسٹمنٹ"),
+            subtitle = Loc.t(this, "Log damage, loss, or a correction", "نقصان یا درستگی درج کریں")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, StockAdjustmentActivity::class.java)) })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_shopping_bag, accentHex = amber, tintHex = "#FAEEDA",
+            title = Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"),
+            subtitle = Loc.t(this, "Items at or below reorder level", "کم اسٹاک آئٹمز")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
+            i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_REORDER)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_warning, accentHex = red, tintHex = "#FCEBEB",
+            title = Loc.t(this, "Damage / Loss Report", "نقصان کی رپورٹ"),
+            subtitle = Loc.t(this, "Value of stock damaged or lost", "خراب یا ضائع اسٹاک کی مالیت")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
+            i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_DAMAGE)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_trending, accentHex = teal, tintHex = "#E1F5EE",
+            title = Loc.t(this, "Profit Margin per Item", "فی آئٹم منافع"),
+            subtitle = Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
+            i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_PROFIT)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_stopwatch, accentHex = purple, tintHex = "#EEEDFE",
+            title = Loc.t(this, "Fast / Slow Movers", "تیز / سست چلنے والے"),
+            subtitle = Loc.t(this, "Which items sell, and which don't", "کون سے آئٹم بکتے ہیں")
+        ) {
+            val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
+            i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_MOVERS)
+            startActivity(i)
+        })
+
+        navCard.addView(navDivider())
+
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_alarm, accentHex = primary, tintHex = "#EEEDFE",
+            title = Loc.t(this, "Due Date Reminders", "ادائیگی کی یاد دہانی"),
+            subtitle = Loc.t(this, "Credit sales still owed, by due date", "ادھار سیلز جو واجب الادا ہیں")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, DueRemindersActivity::class.java)) })
+
+        navCard.addView(navDivider())
+
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_bank, accentHex = teal, tintHex = "#E1F5EE",
             title = Loc.t(this, "Balance Sheet", "بیلنس شیٹ"),
             subtitle = Loc.t(this, "Assets, liabilities & capital", "اثاثے، واجبات اور سرمایہ")
         ) { startActivity(android.content.Intent(this@ReportsActivity, BalanceSheetActivity::class.java)) })
 
+<<<<<<< HEAD
+=======
+        navCard.addView(navDivider())
+
+        // NEW: Zakat tracker — Ramadan-to-Ramadan year, auto-calculated from the same
+        // asset figures Balance Sheet uses, with monthly-installment support.
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_zakat, accentHex = gold, tintHex = "#FAEEDA",
+            title = Loc.t(this, "Zakat", "زکوٰۃ"),
+            subtitle = Loc.t(this, "Track & pay this year's Zakat", "اس سال کی زکوٰۃ ٹریک اور ادا کریں")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, ZakatActivity::class.java)) })
+
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         root.addView(navCard)
 
         // ================= PERIOD FILTER PILLS (matches Items tab-row style) =================
@@ -244,13 +384,13 @@ class ReportsActivity : AppCompatActivity() {
 
             resultsBox.removeAllViews()
 
-            resultsBox.addView(summaryCard("💰", Loc.t(this@ReportsActivity, "Total Sales", "کل سیل"), "Rs %.2f".format(totalSales), primary, "#E9E6FF"))
-            resultsBox.addView(summaryCard("📈", Loc.t(this@ReportsActivity, "Total Profit", "کل منافع"), "Rs %.2f".format(totalProfit), teal, "#E0F2F1"))
-            resultsBox.addView(summaryCard("🧾", Loc.t(this@ReportsActivity, "Total Purchases", "کل خریداری"), "Rs %.2f".format(totalPurchases), amber, "#FFF3E0"))
-            resultsBox.addView(summaryCard("💸", Loc.t(this@ReportsActivity, "Total Expenses", "کل اخراجات"), "Rs %.2f".format(totalExpenses), red, "#FDE8E8"))
-            resultsBox.addView(summaryCard("↩", Loc.t(this@ReportsActivity, "Sale Returns", "سیل کی واپسی"), "Rs %.2f".format(totalSaleReturns), "#AD1457", "#FCE4EC"))
-            resultsBox.addView(summaryCard("↩", Loc.t(this@ReportsActivity, "Purchase Returns", "خریداری کی واپسی"), "Rs %.2f".format(totalPurchaseReturns), teal, "#E0F2F1"))
-            resultsBox.addView(summaryCard("🧮", Loc.t(this@ReportsActivity, "Number of Sales", "سیلز کی تعداد"), "$saleCount", purple, "#F0EBFF"))
+            resultsBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this@ReportsActivity, "Total Sales", "کل سیل"), "Rs %.2f".format(totalSales), primary, "#EEEDFE"))
+            resultsBox.addView(summaryCard(R.drawable.ic_trending, Loc.t(this@ReportsActivity, "Total Profit", "کل منافع"), "Rs %.2f".format(totalProfit), teal, "#E1F5EE"))
+            resultsBox.addView(summaryCard(R.drawable.ic_receipt, Loc.t(this@ReportsActivity, "Total Purchases", "کل خریداری"), "Rs %.2f".format(totalPurchases), amber, "#FAEEDA"))
+            resultsBox.addView(summaryCard(R.drawable.ic_trending_down, Loc.t(this@ReportsActivity, "Total Expenses", "کل اخراجات"), "Rs %.2f".format(totalExpenses), red, "#FCEBEB"))
+            resultsBox.addView(summaryCard(R.drawable.ic_undo, Loc.t(this@ReportsActivity, "Sale Returns", "سیل کی واپسی"), "Rs %.2f".format(totalSaleReturns), "#AD1457", "#FCE4EC"))
+            resultsBox.addView(summaryCard(R.drawable.ic_undo, Loc.t(this@ReportsActivity, "Purchase Returns", "خریداری کی واپسی"), "Rs %.2f".format(totalPurchaseReturns), teal, "#E1F5EE"))
+            resultsBox.addView(summaryCard(R.drawable.ic_number, Loc.t(this@ReportsActivity, "Number of Sales", "سیلز کی تعداد"), "$saleCount", purple, "#EEEDFE"))
 
             resultsBox.addView(spacer(10))
 
@@ -280,34 +420,30 @@ class ReportsActivity : AppCompatActivity() {
         }
     }
 
-    // ================= PREMIUM HEADER (matches Items/Categories) =================
-    private fun premiumHeader(icon: String, title: String, subtitle: String): LinearLayout {
+    // ================= FLAT HEADER (matches MainActivity's flat surface) =================
+    private fun premiumHeader(iconRes: Int, title: String, subtitle: String): LinearLayout {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
+            setPadding(20, 18, 20, 18)
+            background = strokedBg(border, cardBg, 22)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 20) }
-            applyElevation(this, 10f)
         }
         header.addView(TextView(this).apply {
             text = "‹"
             textSize = 20f
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = ovalBg("#33FFFFFF")
+            background = ovalBg(border)
             val px = (36 * resources.displayMetrics.density).toInt()
-            width = px; height = px
+            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { finish() }
         })
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-        header.addView(circleIcon(icon, "#5C4DFF", 42))
+        header.addView(circleIcon(iconRes, headerIconTint, 42))
         header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -316,13 +452,13 @@ class ReportsActivity : AppCompatActivity() {
         headerCol.addView(TextView(this).apply {
             text = title
             textSize = 19f
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, Typeface.BOLD)
         })
         headerCol.addView(TextView(this).apply {
             text = subtitle
             textSize = 11f
-            setTextColor(Color.parseColor("#D8D3FF"))
+            setTextColor(Color.parseColor(textGray))
             setPadding(0, 4, 0, 0)
         })
         header.addView(headerCol)
@@ -330,7 +466,7 @@ class ReportsActivity : AppCompatActivity() {
     }
 
     // ---- UI helpers ----
-    private fun summaryCard(emoji: String, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
+    private fun summaryCard(iconRes: Int, label: String, value: String, accentHex: String, tintHex: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -348,8 +484,9 @@ class ReportsActivity : AppCompatActivity() {
                     shape = GradientDrawable.OVAL
                     setColor(Color.parseColor(tintHex))
                 }
-                addView(TextView(this@ReportsActivity).apply {
-                    text = emoji; textSize = 16f; gravity = Gravity.CENTER
+                addView(ImageView(this@ReportsActivity).apply {
+                    setImageDrawable(tintedDrawable(iconRes, accentHex, 17))
+                    scaleType = ImageView.ScaleType.CENTER
                     layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
                 })
             })
@@ -398,9 +535,12 @@ class ReportsActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, 0, 0, 14)
             }
-            titleRow.addView(TextView(this@ReportsActivity).apply {
-                text = "📊  "
-                textSize = 15f
+            titleRow.addView(ImageView(this@ReportsActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_chart, textDark, 15))
+                val px = (15 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                    marginEnd = (8 * resources.displayMetrics.density).toInt()
+                }
             })
             titleRow.addView(TextView(this@ReportsActivity).apply {
                 text = Loc.t(this@ReportsActivity, "Profit & Loss Statement", "منافع اور نقصان کا بیان")
@@ -511,7 +651,7 @@ class ReportsActivity : AppCompatActivity() {
 
     // ---- Nav row (Sale/Purchase History, Party Reports, Stock Report, Balance Sheet) ----
     private fun navRow(
-        icon: String,
+        iconRes: Int,
         accentHex: String,
         tintHex: String,
         title: String,
@@ -533,8 +673,9 @@ class ReportsActivity : AppCompatActivity() {
                     shape = GradientDrawable.OVAL
                     setColor(Color.parseColor(tintHex))
                 }
-                addView(TextView(this@ReportsActivity).apply {
-                    text = icon; textSize = 17f; gravity = Gravity.CENTER
+                addView(ImageView(this@ReportsActivity).apply {
+                    setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
+                    scaleType = ImageView.ScaleType.CENTER
                     layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
                 })
             })
@@ -590,40 +731,28 @@ class ReportsActivity : AppCompatActivity() {
     }
 
     // ================= SHARED UI HELPERS (matches Items/Categories) =================
-    private fun circleIcon(label: String, colorHex: String, sizeDp: Int) = TextView(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun circleIcon(iconRes: Int, colorHex: String, sizeDp: Int) = ImageView(this).apply {
+        setImageDrawable(tintedDrawable(iconRes, textDark, (sizeDp * 0.5).toInt()))
+        scaleType = ImageView.ScaleType.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
+    // ---- Flat design has no shadows/elevation — kept as a no-op so existing call sites
+    // (navCard, summaryCard, etc.) don't need to be touched individually. ----
     private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
+        // intentionally flat — no elevation
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

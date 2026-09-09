@@ -5,7 +5,7 @@ import com.google.gson.Gson
 import com.grocerypos.v11.sync.SyncWorker
 
 // FIX (Phase 3 - Online): every ...Json() builder below stamps its payload with
-// "branchId" (BuildConfig.BRANCH_ID) before it's pushed to Firestore, so records from
+// "branchId" (BranchConfigStore.current) before it's pushed to Firestore, so records from
 // different branches can be told apart / filtered on pull (see SyncApi.kt).
 //
 // FIX (sync bug #2): previously NOTHING called db.syncQueueDao().enqueue(...) anywhere
@@ -214,7 +214,7 @@ object SyncQueueHelper {
         val map = mapOf(
             "delta" to delta,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -223,7 +223,7 @@ object SyncQueueHelper {
         val map = mapOf(
             "delta" to delta,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -286,7 +286,7 @@ object SyncQueueHelper {
             "creditLimit" to c.creditLimit,
             "openingBalance" to c.openingBalance,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -299,7 +299,7 @@ object SyncQueueHelper {
             // FIX (conflict-safe sync): "balance" excluded — same reasoning as customerJson.
             "openingBalance" to s.openingBalance,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -331,7 +331,7 @@ object SyncQueueHelper {
             "tertiaryUnit" to p.tertiaryUnit,
             "tertiaryUnitQty" to p.tertiaryUnitQty,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -385,7 +385,7 @@ object SyncQueueHelper {
             "itemCount" to items.size,
             "items" to itemMaps,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -414,7 +414,7 @@ object SyncQueueHelper {
             "itemCount" to items.size,
             "items" to itemMaps,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -430,7 +430,7 @@ object SyncQueueHelper {
             "note" to payment.note,
             "createdAt" to payment.createdAt,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -443,7 +443,7 @@ object SyncQueueHelper {
             "amount" to expense.amount,
             "createdAt" to expense.createdAt,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -458,7 +458,7 @@ object SyncQueueHelper {
             "reference" to t.reference,
             "createdAt" to t.createdAt,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }
@@ -473,7 +473,7 @@ object SyncQueueHelper {
             "phone" to u.phone,
             "active" to u.active,
             "updatedAt" to System.currentTimeMillis(),
-            "branchId" to com.grocerypos.v11.BuildConfig.BRANCH_ID
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
     }

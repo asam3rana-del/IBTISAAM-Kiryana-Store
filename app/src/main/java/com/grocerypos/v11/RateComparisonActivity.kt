@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * Supplier Rate Comparison.
@@ -58,20 +59,39 @@ class RateComparisonActivity : ThemedActivity() {
     )
 
     // ---- Palette kept consistent with ProductActivity / PurchaseActivity ----
-    private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"
-    private val navyLight = "#173863"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val amber = "#F5A524"
-    private val textDark = "#0B2545"
-    private val textMuted = "#7C8798"
-    private val border = "#E3E8EE"
-    private val fieldFill = "#FAFBFC"
-    private val bestBg = "#E9FBF9"
-    private val headerSubtitleColor = "#9FB4CC"
-    private val headerBadgeOverlay = "#33FFFFFF"
+    // Pulled from ThemeManager so this screen respects dark mode.
+    private var bg = "#F4F6F8"
+    private var cardWhite = "#FFFFFF"
+    private var navy = "#0B2545"
+    private var navyLight = "#173863"
+    private var teal = "#0F9B8E"
+    private var red = "#E5484D"
+    private var amber = "#F5A524"
+    private var textDark = "#0B2545"
+    private var textMuted = "#7C8798"
+    private var border = "#E3E8EE"
+    private var fieldFill = "#FAFBFC"
+    private var bestBg = "#E9FBF9"
+    private var headerSubtitleColor = "#9FB4CC"
+    private var headerBadgeOverlay = "#33FFFFFF"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        navy = p.navy
+        navyLight = p.navy
+        teal = p.teal
+        red = p.red
+        amber = p.amber
+        textDark = p.textDark
+        textMuted = p.textMuted
+        border = p.border
+        fieldFill = p.fieldFill
+        bestBg = p.savedHighlightBg
+        headerSubtitleColor = p.headerSubtitleColor
+        headerBadgeOverlay = p.headerBadgeOverlay
+    }
 
     private lateinit var searchField: EditText
     private lateinit var productListContainer: LinearLayout
@@ -88,6 +108,7 @@ class RateComparisonActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -498,17 +519,6 @@ class RateComparisonActivity : ThemedActivity() {
 
     // ---------------- UI helpers (same style as ProductActivity) ----------------
 
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
     private fun gradientBg(startHex: String, endHex: String, cornerTop: Int = 0, cornerBottom: Int = 0) =
         GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
@@ -523,10 +533,4 @@ class RateComparisonActivity : ThemedActivity() {
             )
         }
 
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
 }

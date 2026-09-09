@@ -20,7 +20,27 @@ data class AppPalette(
     val fieldFill: String,
     val headerSubtitleColor: String,
     val headerBadgeOverlay: String,
-    val savedHighlightBg: String
+    val savedHighlightBg: String,
+
+    // --- Flat-minimal design system (app-wide UI redesign, added 2026-09) ---
+    // Every screen is being migrated to pull ONLY from this block instead of
+    // gradients/hardcoded hex. Old fields above are kept until every screen
+    // is migrated, then can be removed.
+    // Soft "chip" background + matching icon/text color per category. Pick
+    // ONE category per screen/action type and reuse it everywhere that type
+    // appears (e.g. Sale = flatPurple everywhere, Purchase = flatCoral everywhere).
+    val flatPurpleBg: String,
+    val flatPurpleFg: String,
+    val flatCoralBg: String,
+    val flatCoralFg: String,
+    val flatBlueBg: String,
+    val flatBlueFg: String,
+    val flatPinkBg: String,
+    val flatPinkFg: String,
+    val flatTealBg: String,
+    val flatTealFg: String,
+    val flatAmberBg: String,
+    val flatAmberFg: String
 )
 
 /**
@@ -46,7 +66,14 @@ object ThemeManager {
         fieldFill = "#FAFBFC",
         headerSubtitleColor = "#9FB4CC",
         headerBadgeOverlay = "#33FFFFFF",
-        savedHighlightBg = "#E9FBF9"
+        savedHighlightBg = "#E9FBF9",
+
+        flatPurpleBg = "#EEEDFE", flatPurpleFg = "#534AB7",
+        flatCoralBg = "#FAECE7", flatCoralFg = "#993C1D",
+        flatBlueBg = "#E6F1FB", flatBlueFg = "#185FA5",
+        flatPinkBg = "#FBEAF0", flatPinkFg = "#993556",
+        flatTealBg = "#E1F5EE", flatTealFg = "#085041",
+        flatAmberBg = "#FAEEDA", flatAmberFg = "#854F0B"
     )
 
     val DARK = AppPalette(
@@ -62,7 +89,14 @@ object ThemeManager {
         fieldFill = "#161D2C",
         headerSubtitleColor = "#9FB4CC",
         headerBadgeOverlay = "#33FFFFFF",
-        savedHighlightBg = "#12332F"
+        savedHighlightBg = "#12332F",
+
+        flatPurpleBg = "#3C3489", flatPurpleFg = "#CECBF6",
+        flatCoralBg = "#712B13", flatCoralFg = "#F5C4B3",
+        flatBlueBg = "#0C447C", flatBlueFg = "#B5D4F4",
+        flatPinkBg = "#72243E", flatPinkFg = "#F4C0D1",
+        flatTealBg = "#085041", flatTealFg = "#9FE1CB",
+        flatAmberBg = "#633806", flatAmberFg = "#FAC775"
     )
 
     fun isDarkMode(context: Context): Boolean =

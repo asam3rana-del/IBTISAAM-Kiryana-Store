@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -26,23 +27,37 @@ import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.MainActivity
 import com.grocerypos.v11.PasswordHasher
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.User
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
+import com.grocerypos.v11.ui.components.*
 
-class LoginActivity : AppCompatActivity() {
+class LoginActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE =================
+    // Splash gradient stays fixed brand colors (shown before login, same for everyone).
+    // Card surface below it now follows ThemeManager so the login card isn't stuck in
+    // light mode if dark mode was already on (e.g. after logging out).
     private val gradientTop = "#1A237E"
     private val gradientBottom = "#3949AB"
-    private val cardBg = "#FFFFFF"
+    private var cardBg = "#FFFFFF"
     private val primary = "#4A3AFF"
     private val primaryDark = "#3527D6"
     private val green = "#1FA971"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    private var red = "#E5484D"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        cardBg = p.cardWhite
+        red = p.red
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var loggedInUser: User
 
@@ -64,6 +79,7 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         // FIX (crash-catcher coverage): MainActivity used to be the only screen that checked
         // for a saved crash log, but when there's no session, MainActivity redirects to
@@ -153,7 +169,7 @@ class LoginActivity : AppCompatActivity() {
             )
         }
 
-        outer.addView(circleIcon("🔐", "#FFFFFF", "#3949AB", 84))
+        outer.addView(circleIcon(R.drawable.ic_lock, "#FFFFFF", "#3949AB", 84))
         outer.addView(spacer(20))
         outer.addView(TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
@@ -200,7 +216,7 @@ class LoginActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
-        card.addView(fieldBox("🙍", displayNameField))
+        card.addView(fieldBox(R.drawable.ic_person, displayNameField))
         card.addView(spacer(14))
 
         val usernameField = EditText(this).apply {
@@ -209,7 +225,7 @@ class LoginActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
-        card.addView(fieldBox("👤", usernameField))
+        card.addView(fieldBox(R.drawable.ic_person, usernameField))
         card.addView(spacer(14))
 
         val passwordField = EditText(this).apply {
@@ -242,7 +258,7 @@ class LoginActivity : AppCompatActivity() {
         card.addView(spacer(10))
 
         val createBtn = Button(this).apply {
-            text = "✅  ADMIN ACCOUNT BANAYEIN"
+            text = "ADMIN ACCOUNT BANAYEIN"
             setTextColor(Color.WHITE)
             textSize = 14.5f
             isAllCaps = false
@@ -253,6 +269,7 @@ class LoginActivity : AppCompatActivity() {
             ).apply { cornerRadius = 16f }
             setPadding(0, 28, 0, 28)
             applyElevation(this, 6f)
+            setLeadingIcon(R.drawable.ic_check, "#FFFFFF", 17, 8)
         }
         card.addView(createBtn)
 
@@ -329,7 +346,7 @@ class LoginActivity : AppCompatActivity() {
         }
 
         // ================= LOGO / APP TITLE =================
-        outer.addView(circleIcon("🏪", "#FFFFFF", "#3949AB", 84))
+        outer.addView(circleIcon(R.drawable.ic_store, "#FFFFFF", "#3949AB", 84))
         outer.addView(spacer(20))
         outer.addView(TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
@@ -377,7 +394,7 @@ class LoginActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
         }
-        card.addView(fieldBox("👤", u))
+        card.addView(fieldBox(R.drawable.ic_person, u))
         card.addView(spacer(14))
 
         p = EditText(this).apply {
@@ -391,7 +408,7 @@ class LoginActivity : AppCompatActivity() {
         card.addView(spacer(22))
 
         btn = Button(this).apply {
-            text = "🔓  LOGIN"
+            text = "LOGIN"
             setTextColor(Color.WHITE)
             textSize = 15f
             isAllCaps = false
@@ -402,6 +419,7 @@ class LoginActivity : AppCompatActivity() {
             ).apply { cornerRadius = 16f }
             setPadding(0, 28, 0, 28)
             applyElevation(this, 6f)
+            setLeadingIcon(R.drawable.ic_lock_open, "#FFFFFF", 17, 8)
         }
         card.addView(btn)
         card.addView(spacer(14))
@@ -410,7 +428,7 @@ class LoginActivity : AppCompatActivity() {
         // active so the person always has a manual way to re-open the prompt if the
         // auto-triggered one is dismissed, cancelled, or fails.
         fingerprintBtn = Button(this).apply {
-            text = "🔓  UNLOCK WITH FINGERPRINT"
+            text = "UNLOCK WITH FINGERPRINT"
             setTextColor(Color.parseColor(green))
             textSize = 13.5f
             isAllCaps = false
@@ -418,6 +436,7 @@ class LoginActivity : AppCompatActivity() {
             background = strokedBg(green, "#FFFFFF", 16)
             setPadding(0, 24, 0, 24)
             visibility = View.GONE
+            setLeadingIcon(R.drawable.ic_lock_open, green, 15, 6)
         }
         card.addView(fingerprintBtn)
 
@@ -434,11 +453,11 @@ class LoginActivity : AppCompatActivity() {
             background = null
             inputType = InputType.TYPE_CLASS_PHONE
         }
-        otpSection.addView(fieldBox("📱", otpPhoneField))
+        otpSection.addView(fieldBox(R.drawable.ic_phone, otpPhoneField))
         otpSection.addView(spacer(14))
 
         sendOtpBtn = Button(this).apply {
-            text = "📩  SEND OTP"
+            text = "SEND OTP"
             setTextColor(Color.WHITE)
             textSize = 14f
             isAllCaps = false
@@ -448,6 +467,7 @@ class LoginActivity : AppCompatActivity() {
                 intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
             ).apply { cornerRadius = 16f }
             setPadding(0, 24, 0, 24)
+            setLeadingIcon(R.drawable.ic_send, "#FFFFFF", 16, 8)
         }
         otpSection.addView(sendOtpBtn)
         otpSection.addView(spacer(14))
@@ -459,12 +479,12 @@ class LoginActivity : AppCompatActivity() {
             background = null
             inputType = InputType.TYPE_CLASS_NUMBER
         }
-        otpCodeBox = fieldBox("🔢", otpCodeField).apply { visibility = View.GONE }
+        otpCodeBox = fieldBox(R.drawable.ic_number, otpCodeField).apply { visibility = View.GONE }
         otpSection.addView(otpCodeBox)
         otpSection.addView(spacer(14))
 
         verifyOtpBtn = Button(this).apply {
-            text = "✅  VERIFY & LOGIN"
+            text = "VERIFY & LOGIN"
             setTextColor(Color.WHITE)
             textSize = 14f
             isAllCaps = false
@@ -474,6 +494,7 @@ class LoginActivity : AppCompatActivity() {
             }
             setPadding(0, 24, 0, 24)
             visibility = View.GONE
+            setLeadingIcon(R.drawable.ic_check, "#FFFFFF", 16, 8)
         }
         otpSection.addView(verifyOtpBtn)
 
@@ -575,6 +596,39 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
+    private fun askPasswordBeforeFirstPhoneLink(db: PosDatabase, user: User, phone: String) {
+        val field = EditText(this).apply {
+            hint = "${user.displayName} ka password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Phone ko account se link karein")
+            .setMessage("OTP verify ho gaya. Security ke liye ${user.displayName} ka current password bhi verify karein.")
+            .setView(field)
+            .setPositiveButton("Verify") { _, _ ->
+                val typed = field.text.toString()
+                val ok = if (PasswordHasher.isHashed(user.passwordHash)) {
+                    PasswordHasher.verify(typed, user.passwordHash)
+                } else {
+                    user.passwordHash == typed
+                }
+                if (ok) {
+                    lifecycleScope.launch {
+                        val linked = user.copy(phone = phone)
+                        db.userDao().upsert(linked)
+                        loggedInUser = linked
+                        db.appSettingDao().set(AppSetting("last_username", linked.username))
+                        Toast.makeText(this@LoginActivity, "Phone account se link ho gaya.", Toast.LENGTH_LONG).show()
+                        completeLogin()
+                    }
+                } else {
+                    Toast.makeText(this, "Password ghalat hai — phone link nahi hua", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     /** Firebase se OTP verify hone ke baad, us phone number se local User record dhoondh kar login complete karta hai. */
     private fun verifyAndLogin(credential: PhoneAuthCredential, phone: String) {
         auth.signInWithCredential(credential).addOnCompleteListener(this) { task ->
@@ -587,21 +641,11 @@ class LoginActivity : AppCompatActivity() {
                         db.appSettingDao().set(AppSetting("last_username", user.username))
                         completeLogin()
                     } else if (db.userDao().activeCount() == 1 && db.userDao().soleActiveUserOrNull() != null) {
-                        // FIX (OTP first-link deadlock): only one account exists (typical
-                        // single-owner store) — Firebase already proved this phone's
-                        // ownership, so auto-link it instead of sending the person to a
-                        // Manage Users screen they can't reach without already being logged in.
+                        // SECURITY FIX: OTP ownership alone must not silently bind an
+                        // arbitrary new phone number to the only admin account. Require
+                        // the account password once, then save the verified phone.
                         val onlyUser = db.userDao().soleActiveUserOrNull()!!
-                        val linked = onlyUser.copy(phone = phone)
-                        db.userDao().upsert(linked)
-                        loggedInUser = linked
-                        db.appSettingDao().set(AppSetting("last_username", linked.username))
-                        Toast.makeText(
-                            this@LoginActivity,
-                            "Ye number ${linked.displayName} ke account se link kar diya gaya.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        completeLogin()
+                        askPasswordBeforeFirstPhoneLink(db, onlyUser, phone)
                     } else {
                         Toast.makeText(
                             this@LoginActivity,
@@ -733,12 +777,31 @@ class LoginActivity : AppCompatActivity() {
     }
 
     // ================= UI HELPERS =================
-    private fun fieldBox(icon: String, field: EditText) = LinearLayout(this).apply {
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun fieldBox(iconRes: Int, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         background = strokedBg(border, "#FAFAFF", 12)
         setPadding(18, 4, 18, 4)
-        addView(TextView(this@LoginActivity).apply { text = "$icon  "; textSize = 14f })
+        addView(ImageView(this@LoginActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         addView(field)
@@ -750,14 +813,19 @@ class LoginActivity : AppCompatActivity() {
         gravity = Gravity.CENTER_VERTICAL
         background = strokedBg(border, "#FAFAFF", 12)
         setPadding(18, 4, 18, 4)
-        addView(TextView(this@LoginActivity).apply { text = "🔒  "; textSize = 14f })
+        addView(ImageView(this@LoginActivity).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_lock, textGray, 15))
+            val px = (15 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        })
         (field.parent as? ViewGroup)?.removeView(field)
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         addView(field)
 
-        val toggle = TextView(this@LoginActivity).apply {
-            text = "👁"
-            textSize = 16f
+        val toggle = ImageView(this@LoginActivity).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_eye, textGray, 18))
             setPadding(16, 0, 8, 0)
             var visible = false
             setOnClickListener {
@@ -767,13 +835,13 @@ class LoginActivity : AppCompatActivity() {
                 else
                     InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 field.setSelection(field.text.length)
-                text = if (visible) "🙈" else "👁"
+                setImageDrawable(tintedDrawable(if (visible) R.drawable.ic_eye_off else R.drawable.ic_eye, textGray, 18))
             }
         }
         addView(toggle)
     }
 
-    private fun circleIcon(label: String, colorHex: String, textColorHex: String, sizeDp: Int) = FrameLayout(this).apply {
+    private fun circleIcon(iconRes: Int, colorHex: String, textColorHex: String, sizeDp: Int) = FrameLayout(this).apply {
         val px = (sizeDp * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(px, px).apply { gravity = Gravity.CENTER_HORIZONTAL }
         background = GradientDrawable().apply {
@@ -781,34 +849,13 @@ class LoginActivity : AppCompatActivity() {
             setColor(Color.parseColor(colorHex))
         }
         applyElevation(this, 10f)
-        addView(TextView(this@LoginActivity).apply {
-            text = label
-            textSize = 32f
-            gravity = Gravity.CENTER
+        addView(ImageView(this@LoginActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textColorHex, (sizeDp * 0.42).toInt()))
+            scaleType = ImageView.ScaleType.CENTER
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         })
     }
 
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

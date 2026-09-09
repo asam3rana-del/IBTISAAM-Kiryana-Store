@@ -52,7 +52,10 @@ class ProductActivity : ThemedActivity() {
     internal var navy = "#0B2545"
     internal var navyLight = "#173863"
     internal var teal = "#0F9B8E"
+<<<<<<< HEAD
     internal var tealDark = "#0C8F8A"     // gradient partner for `teal`; kept in step per theme
+=======
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     private var red = "#E5484D"
     internal var blue = "#3B82F6"
     internal var orange = "#F5A524"
@@ -225,6 +228,7 @@ class ProductActivity : ThemedActivity() {
     }
 
     private fun buildHeader(root: LinearLayout) {
+<<<<<<< HEAD
         // FLAT REDESIGN: was a custom navy→navyLight banner with a translucent-white icon
         // badge. Replaced with the shared premiumHeader() (back chevron + light badge); the
         // dark/light toggle and "View List" pill are appended the same way ItemsActivity
@@ -243,6 +247,70 @@ class ProductActivity : ThemedActivity() {
             )
             setPadding(14, 12, 14, 12)
             background = ovalBg("#EEEDFE")
+=======
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(24, 22, 22, 22)
+            background = gradientBg(navy, navyLight, cornerTop = 20, cornerBottom = 20)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 18) }
+            applyElevation(this, 6f)
+        }
+
+        // ADDED (ultra premium pass): a leading circular icon badge, matching the
+        // icon + title/subtitle header pattern used everywhere else in the app
+        // (Reports, History, Party Reports, etc.) — previously this header was just
+        // text + action pills with no icon, so it read as visually inconsistent
+        // next to the rest of the app.
+        header.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_box, "#FFFFFF", 20))
+            scaleType = ImageView.ScaleType.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(headerBadgeOverlay))
+            }
+            val px = 44.dp()
+            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
+            applyElevation(this, 2f)
+        })
+        header.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
+        })
+
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+
+        col.addView(TextView(this).apply {
+            text = Loc.t(this@ProductActivity, "Add / Edit Product", "پروڈکٹ شامل / تبدیل کریں")
+            textSize = 18.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+
+        col.addView(TextView(this).apply {
+            text = Loc.t(this@ProductActivity, "Inventory Management", "انوینٹری مینجمنٹ")
+            textSize = 11f
+            setTextColor(Color.parseColor(headerSubtitleColor))
+            setPadding(0, 3, 0, 0)
+        })
+
+        header.addView(col)
+
+        header.addView(ImageView(this).apply {
+            setImageDrawable(
+                tintedDrawable(if (isDarkMode) R.drawable.ic_sun else R.drawable.ic_moon, "#FFFFFF", 18)
+            )
+            setPadding(14, 12, 14, 12)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(headerBadgeOverlay))
+                cornerRadius = 30f
+            }
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
             applyElevation(this, 2f)
             setOnClickListener { toggleTheme() }
         })
@@ -259,7 +327,11 @@ class ProductActivity : ThemedActivity() {
             background = strokedBg(border, "#EEEDFE", 30)
             setPadding(20, 12, 20, 12)
             applyElevation(this, 2f)
+<<<<<<< HEAD
             setLeadingIcon(R.drawable.ic_list, navy, 14, 6)
+=======
+            setLeadingIcon(R.drawable.ic_list, "#FFFFFF", 14, 6)
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
             setOnClickListener { toggleProductsList() }
         })
 

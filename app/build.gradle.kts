@@ -18,16 +18,9 @@ android {
         targetSdk = 35
         versionCode = 10
         versionName = "10.0"
-        // FIX (Phase 3 - Online): every synced record is now tagged with this branch ID
-        // (see SyncQueueHelper.kt / SyncApi.kt) so Firestore data from different store
-        // branches no longer mixes together — this was previously one flat, unpartitioned
-        // space shared by every install of the app, regardless of branch. Give each
-        // branch's build its own unique value here before building its APK — e.g. the
-        // main branch keeps "main-branch", and this "Dusri branch" copy uses
-        // "dusri-branch" as set below. Existing pre-fix Firestore data has no branchId
-        // field on it, so it won't match any branch's filtered pull() query — see the
-        // migration note in SyncApi.kt's pull().
-        buildConfigField("String", "BRANCH_ID", "\"dusri-branch\"")
+        // Branch identity is configured securely at runtime from Settings > Cloud Sync
+        // Setup. Do not bake a branch into the APK; the same APK can now be installed
+        // on every device/branch. Server-side Firestore rules remain the authority.
     }
 
     buildFeatures {
@@ -88,6 +81,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.activity:activity-ktx:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")

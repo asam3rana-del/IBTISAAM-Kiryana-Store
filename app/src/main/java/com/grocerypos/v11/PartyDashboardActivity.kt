@@ -107,6 +107,7 @@ class PartyDashboardActivity : AppCompatActivity() {
     internal var teal = "#085041"       // flatTealFg
     internal var gold = "#854F0B"       // flatAmberFg
     internal var textDark = "#0B2545"
+<<<<<<< HEAD
     internal var fieldFill = "#F3F4F9"
     // Paired light-tint backgrounds for the quick-add menu's icon badges — kept in
     // step with the Fg colors above so each row's badge stays a matching (bg, fg)
@@ -118,6 +119,8 @@ class PartyDashboardActivity : AppCompatActivity() {
     internal var purpleBg = "#EEEDFE"
     internal var greenBg = "#E1F5EE"
     internal var goldBg = "#FAEEDA"
+=======
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
@@ -126,7 +129,10 @@ class PartyDashboardActivity : AppCompatActivity() {
         cardBorder = p.border
         labelGray = p.textMuted
         textDark = p.textDark
+<<<<<<< HEAD
         fieldFill = p.fieldFill
+=======
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         blue = p.flatPinkFg
         orange = p.flatCoralFg
         green = p.flatTealFg
@@ -134,6 +140,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         purple = p.flatPurpleFg
         teal = p.flatTealFg
         gold = p.flatAmberFg
+<<<<<<< HEAD
         redBg = p.flatCoralBg
         blueBg = p.flatPinkBg
         orangeBg = p.flatCoralBg
@@ -141,6 +148,8 @@ class PartyDashboardActivity : AppCompatActivity() {
         purpleBg = p.flatPurpleBg
         greenBg = p.flatTealBg
         goldBg = p.flatAmberBg
+=======
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     }
 
     private lateinit var youllGetValue: TextView

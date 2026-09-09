@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
@@ -19,15 +20,34 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 class ExpenseActivity : AppCompatActivity() {
 
-    private val bg = "#F3F4F9"
-    private val cardWhite = "#FFFFFF"
-    private val textDark = "#1A1D2E"
-    private val textMuted = "#8A8FA3"
-    private val red = "#C62828"
-    private val teal = "#0F9B8E"
+    // ---- Pulled from ThemeManager so this screen respects dark mode and stays in sync
+    // with the rest of the app. Red/negative logic untouched, only the hex source changed. ----
+    private var bg = "#F3F4F9"
+    private var cardWhite = "#FFFFFF"
+    private var textDark = "#1A1D2E"
+    private var textMuted = "#8A8FA3"
+    private var red = "#C62828"
+    private var teal = "#0F9B8E"
+    private var border = "#E6E8F0"
+    private var fieldFill = "#FFFFFF"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        textDark = p.textDark
+        textMuted = p.textMuted
+        red = p.red
+        teal = p.teal
+        border = p.border
+        fieldFill = p.fieldFill
+    }
+
+    private fun lightenHex(hex: String): String = String.format("#%06X", 0xFFFFFF and lighten(hex, 0.88f))
 
     private val expenseCategories = listOf(
         "Food Authority License Fees",
@@ -53,6 +73,7 @@ class ExpenseActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -71,8 +92,8 @@ class ExpenseActivity : AppCompatActivity() {
         // ---- Totals: premium white cards ----
         val totalsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val todayCard = statCard("💸", Loc.t(this, "Today's Expense", "آج کا خرچہ"), red, "#FFEBEE")
-        val monthCard = statCard("📅", Loc.t(this, "This Month", "اس مہینے"), red, "#FFEBEE")
+        val todayCard = statCard(R.drawable.ic_trending_down, Loc.t(this, "Today's Expense", "آج کا خرچہ"), red, lightenHex(red))
+        val monthCard = statCard(R.drawable.ic_calendar, Loc.t(this, "This Month", "اس مہینے"), red, lightenHex(red))
         todayTotalText = todayCard.second
         monthTotalText = monthCard.second
 
@@ -107,7 +128,8 @@ class ExpenseActivity : AppCompatActivity() {
 
         // ---- Miscellaneous description: collapsed by default, expands on tap ----
         miscToggle = TextView(this).apply {
-            text = "📝  " + Loc.t(this@ExpenseActivity, "Add description", "تفصیل شامل کریں")
+            text = Loc.t(this@ExpenseActivity, "Add description", "تفصیل شامل کریں")
+            setLeadingIcon(R.drawable.ic_text, teal, 13, 6)
             textSize = 12f
             setTextColor(Color.parseColor(teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -195,7 +217,7 @@ class ExpenseActivity : AppCompatActivity() {
     private fun outlinedBox() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(20, 14, 20, 14)
-        background = strokedBg("#E6E8F0", "#FFFFFF", 14)
+        background = strokedBg(border, fieldFill, 14)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, 0, 0, 14) }
@@ -217,7 +239,20 @@ class ExpenseActivity : AppCompatActivity() {
         setPadding(4, 0, 0, 0)
     }
 
-    private fun statCard(emoji: String, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun statCard(iconRes: Int, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 20, 22, 20)
@@ -230,13 +265,13 @@ class ExpenseActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(size, size)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                colors = intArrayOf(lighten(accentHex, 0.85f), Color.parseColor(tintHex))
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
+                setColor(Color.parseColor(tintHex))
             }
-            addView(TextView(this@ExpenseActivity).apply {
-                text = emoji; textSize = 15f; gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            addView(ImageView(this@ExpenseActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.CENTER
+                }
             })
         })
         topRow.addView(TextView(this).apply {
@@ -255,17 +290,6 @@ class ExpenseActivity : AppCompatActivity() {
         return Pair(card, valueText)
     }
 
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
     private fun lighten(hex: String, factor: Float): Int {
         val base = Color.parseColor(hex)
         val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt()
@@ -274,10 +298,8 @@ class ExpenseActivity : AppCompatActivity() {
         return Color.rgb(r.coerceIn(0,255), g.coerceIn(0,255), bl.coerceIn(0,255))
     }
 
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 
     // ---- logic ----
     private fun saveExpense() {
@@ -407,7 +429,16 @@ class ExpenseActivity : AppCompatActivity() {
             .setMessage(Loc.t(this, "Remove this expense entry?", "کیا یہ خرچہ حذف کر دیں؟"))
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { _, _ ->
                 lifecycleScope.launch {
-                    PosDatabase.get(this@ExpenseActivity).expenseDao().delete(e)
+                    val db = PosDatabase.get(this@ExpenseActivity)
+                    db.expenseDao().delete(e)
+                    // A delete must also reach Firestore; otherwise another device
+                    // would keep showing the removed expense after the next sync.
+                    SyncQueueHelper.enqueueDelete(
+                        db,
+                        "expense",
+                        SyncQueueHelper.expenseEntityId(e),
+                        this@ExpenseActivity
+                    )
                     loadTotals()
                 }
             }

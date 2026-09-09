@@ -17,6 +17,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 private data class DayBookEntry(
     val time: Long,
@@ -31,16 +32,33 @@ private data class DayBookEntry(
 
 class DayBookActivity : AppCompatActivity() {
 
-    private val bg = "#F3F4F9"
-    private val cardWhite = "#FFFFFF"
-    private val textDark = "#1A1D2E"
-    private val textMuted = "#8A8FA3"
-    private val green = "#2E7D32"
-    private val red = "#C62828"
-    private val teal = "#0F9B8E"
-    private val navy = "#101B33"
-    private val navyLight = "#1C2C4F"
-    private val amber = "#C9A24B"
+    // ---- Pulled from ThemeManager so this screen respects dark mode. The header used to be
+    // a navy→navyLight gradient (out of step with the rest of the app); it's now a flat teal
+    // header like Reports/Party, sourced from flatTealFg. In/out (green/red) logic is untouched. ----
+    private var bg = "#F3F4F9"
+    private var cardWhite = "#FFFFFF"
+    private var textDark = "#1A1D2E"
+    private var textMuted = "#8A8FA3"
+    private var green = "#2E7D32"      // positive — flatTealFg
+    private var red = "#C62828"
+    private var teal = "#0F9B8E"       // header — flatTealFg (was navy/navyLight gradient)
+    private var amber = "#C9A24B"      // flatAmberFg
+    private var border = "#E6E8F0"
+    private var headerOverlay = "#22FFFFFF"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        textDark = p.textDark
+        textMuted = p.textMuted
+        green = p.flatTealFg
+        red = p.red
+        teal = p.flatTealFg
+        amber = p.flatAmberFg
+        border = p.border
+        headerOverlay = p.headerBadgeOverlay
+    }
 
     private lateinit var dateValueText: TextView
     private lateinit var summaryRow: LinearLayout
@@ -52,6 +70,7 @@ class DayBookActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -59,12 +78,12 @@ class DayBookActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ---- Header ----
+        // ---- Header (flat, no gradient — Reports-style) ----
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(26, 40, 22, 26)
-            background = gradientBg(navy, navyLight)
+            background = gradientBg(teal, teal)
         }
         header.addView(TextView(this).apply {
             text = Loc.t(this@DayBookActivity, "Day Book", "روزنامچہ")
@@ -78,8 +97,8 @@ class DayBookActivity : AppCompatActivity() {
             textSize = 20f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            background = ovalBg("#22FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt(); width = px; height = px
+            background = ovalBg(headerOverlay)
+            val px = (36 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { shiftDay(-1) }
         })
         header.addView(spacer(10).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
@@ -88,8 +107,8 @@ class DayBookActivity : AppCompatActivity() {
             textSize = 20f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            background = ovalBg("#22FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt(); width = px; height = px
+            background = ovalBg(headerOverlay)
+            val px = (36 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { shiftDay(1) }
         })
         root.addView(header)
@@ -104,7 +123,7 @@ class DayBookActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(22, 14, 22, 14)
-            background = strokedBg("#E6E8F0", cardWhite, 30)
+            background = strokedBg(border, cardWhite, 30)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 18) }
             setOnClickListener { openDatePicker() }
         }
@@ -293,7 +312,7 @@ class DayBookActivity : AppCompatActivity() {
         row1.addView(statCard("\uD83D\uDED2", Loc.t(this, "Sales", "سیل"), sales, green).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 10) }
         })
-        row1.addView(statCard("\uD83D\uDCE6", Loc.t(this, "Purchases", "خریداری"), purchases, "#C77B00").apply {
+        row1.addView(statCard("\uD83D\uDCE6", Loc.t(this, "Purchases", "خریداری"), purchases, amber).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 10) }
         })
         summaryRow.addView(row1)
@@ -356,8 +375,8 @@ class DayBookActivity : AppCompatActivity() {
                     text = e.icon
                     textSize = 18f
                     gravity = Gravity.CENTER
-                    background = ovalBg(if (e.isInflow) "#E8F5E9" else "#FFEBEE")
-                    val px = (40 * resources.displayMetrics.density).toInt(); width = px; height = px
+                    background = ovalBg(if (e.isInflow) lightenHex(green) else lightenHex(red))
+                    val px = (40 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
                 })
 
                 val infoCol = LinearLayout(this@DayBookActivity).apply {
@@ -403,17 +422,19 @@ class DayBookActivity : AppCompatActivity() {
         setTypeface(typeface, android.graphics.Typeface.BOLD)
         letterSpacing = 0.04f
     }
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(colorHex)); cornerRadius = radius.toFloat() }
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex)); setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex)); cornerRadius = radius.toFloat()
+
+    private fun lightenHex(hex: String): String {
+        val base = Color.parseColor(hex)
+        val factor = 0.88f
+        val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt().coerceIn(0, 255)
+        val g = (Color.green(base) + (255 - Color.green(base)) * factor).toInt().coerceIn(0, 255)
+        val bl = (Color.blue(base) + (255 - Color.blue(base)) * factor).toInt().coerceIn(0, 255)
+        return String.format("#%06X", 0xFFFFFF and Color.rgb(r, g, bl))
     }
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(colorHex)) }
     private fun gradientBg(startHex: String, endHex: String) = GradientDrawable(
         GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(startHex), Color.parseColor(endHex))
     )
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
     private fun formatDate(millis: Long) = SimpleDateFormat("dd MMM yyyy, EEEE", Locale.getDefault()).format(Date(millis))
 }

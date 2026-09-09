@@ -19,25 +19,48 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PasswordHasher
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.Audit
+import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import com.grocerypos.v11.ui.components.*
 
 class UserManagementActivity : AppCompatActivity() {
 
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val green = "#1FA971"
-    private val red = "#E5484D"
-    private val redDark = "#C93A3E"
-    private val blue = "#2F6FED"
-    private val amber = "#F5A524"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header/button
+    // gradients were two-tone (primary/primaryDark, green/#158A5C); now flat.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var green = "#1FA971"
+    private var red = "#E5484D"
+    private var redDark = "#E5484D"
+    private var blue = "#2F6FED"
+    private var amber = "#F5A524"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+    private var fieldFill = "#FAFAFF"
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        green = p.flatTealFg
+        red = p.red
+        redDark = p.red
+        blue = p.flatBlueFg
+        amber = p.flatAmberFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+        fieldFill = p.fieldFill
+    }
 
     private lateinit var listContainer: LinearLayout
     private lateinit var usernameField: EditText
@@ -49,6 +72,7 @@ class UserManagementActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val session = getSharedPreferences("session", MODE_PRIVATE)
         val myRole = session.getString("role", "cashier") ?: "cashier"
@@ -81,13 +105,11 @@ class UserManagementActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        outer.addView(TextView(this).apply {
-            text = "🔒"
-            textSize = 44f
-            gravity = Gravity.CENTER
+        outer.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_lock, "#FFFFFF", 36))
+            scaleType = ImageView.ScaleType.CENTER
             background = ovalBg(primary)
             val px = (86 * resources.displayMetrics.density).toInt()
-            width = px; height = px
             layoutParams = LinearLayout.LayoutParams(px, px).apply { gravity = Gravity.CENTER_HORIZONTAL }
         })
         outer.addView(spacer(22))
@@ -117,7 +139,7 @@ class UserManagementActivity : AppCompatActivity() {
             applyElevation(this, 4f)
         }
 
-        card.addView(primaryButton("👆  FINGERPRINT SE VERIFY KAREIN", primary, primaryDark) {
+        card.addView(primaryButton("FINGERPRINT SE VERIFY KAREIN", primary, primaryDark, R.drawable.ic_fingerprint) {
             tryLockFingerprint(myUsername)
         })
         card.addView(spacer(18))
@@ -136,7 +158,7 @@ class UserManagementActivity : AppCompatActivity() {
             background = null
             inputType = 0x81 // text | password
         }
-        card.addView(fieldBox("🔑", lockPasswordField))
+        card.addView(fieldBox(R.drawable.ic_key, lockPasswordField))
         card.addView(spacer(10))
 
         lockErrorText = TextView(this).apply {
@@ -148,7 +170,7 @@ class UserManagementActivity : AppCompatActivity() {
         card.addView(lockErrorText)
         card.addView(spacer(8))
 
-        card.addView(primaryButton("🔓  UNLOCK", green, "#158A5C") {
+        card.addView(primaryButton("UNLOCK", green, green, R.drawable.ic_lock_open) {
             verifyLockPassword(myUsername)
         })
 
@@ -245,7 +267,7 @@ class UserManagementActivity : AppCompatActivity() {
             ).apply { setMargins(0, 0, 0, 20) }
             applyElevation(this, 10f)
         }
-        header.addView(circleIcon("👥", "#5C4DFF", 42))
+        header.addView(circleIconDrawable(R.drawable.ic_people, "#5C4DFF", 42))
         header.addView(spacerH(16))
         val headerCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -266,7 +288,7 @@ class UserManagementActivity : AppCompatActivity() {
         header.addView(headerCol)
         root.addView(header)
 
-        val formCard = sectionCard("➕", "Add / Update User")
+        val formCard = sectionCard(R.drawable.ic_add, "Add / Update User")
 
         usernameField = EditText(this).apply {
             hint = "Username"
@@ -295,13 +317,13 @@ class UserManagementActivity : AppCompatActivity() {
             inputType = 0x81
         }
 
-        formCard.addView(fieldBox("👤", usernameField))
+        formCard.addView(fieldBox(R.drawable.ic_person, usernameField))
         formCard.addView(spacer(10))
-        formCard.addView(fieldBox("🪪", displayNameField))
+        formCard.addView(fieldBox(R.drawable.ic_tag, displayNameField))
         formCard.addView(spacer(10))
-        formCard.addView(fieldBox("📱", phoneField))
+        formCard.addView(fieldBox(R.drawable.ic_phone, phoneField))
         formCard.addView(spacer(10))
-        formCard.addView(fieldBox("🔒", passwordField))
+        formCard.addView(fieldBox(R.drawable.ic_lock, passwordField))
         formCard.addView(spacer(10))
 
         formCard.addView(TextView(this).apply {
@@ -312,16 +334,16 @@ class UserManagementActivity : AppCompatActivity() {
         })
         roleSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@UserManagementActivity, android.R.layout.simple_spinner_dropdown_item, roles)
-            background = strokedBg(border, "#FAFAFF", 12)
+            background = strokedBg(border, fieldFill, 12)
             setPadding(18, 10, 18, 10)
         }
         formCard.addView(roleSpinner)
         formCard.addView(spacer(14))
-        formCard.addView(primaryButton("✓  ADD / UPDATE USER", primary, primaryDark) { saveUser() })
+        formCard.addView(primaryButton("ADD / UPDATE USER", primary, primaryDark, R.drawable.ic_check) { saveUser() })
         root.addView(formCard)
         root.addView(spacer(18))
 
-        val listCard = sectionCard("📋", "All Users")
+        val listCard = sectionCard(R.drawable.ic_list, "All Users")
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         listCard.addView(listContainer)
         root.addView(listCard)
@@ -407,7 +429,7 @@ class UserManagementActivity : AppCompatActivity() {
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = strokedBg(border, "#FAFAFF", 14)
+            background = strokedBg(border, fieldFill, 14)
             setPadding(16, 14, 16, 14)
 
             val topRow = LinearLayout(this@UserManagementActivity).apply {
@@ -426,7 +448,7 @@ class UserManagementActivity : AppCompatActivity() {
                 // obvious at a glance without having to read the badge text.
                 alpha = if (user.active) 1f else 0.4f
                 val px = (36 * resources.displayMetrics.density).toInt()
-                width = px; height = px
+                layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             })
             topRow.addView(spacerH(14))
 
@@ -442,10 +464,12 @@ class UserManagementActivity : AppCompatActivity() {
             })
             if (user.phone.isNotBlank()) {
                 info.addView(TextView(this@UserManagementActivity).apply {
-                    text = "📱 ${user.phone}"
+                    text = user.phone
                     textSize = 11.5f
                     setTextColor(Color.parseColor(textGray))
                     setPadding(0, 2, 0, 0)
+                    setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_phone, textGray, 12), null, null, null)
+                    compoundDrawablePadding = (5 * resources.displayMetrics.density).toInt()
                 })
             }
             val badgeRow = LinearLayout(this@UserManagementActivity).apply { orientation = LinearLayout.HORIZONTAL }
@@ -465,19 +489,20 @@ class UserManagementActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
             }
             val weighted = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            actionRow.addView(secondaryButton("🔑 Reset PW", blue) { openResetPasswordDialog(user) }, weighted)
+            actionRow.addView(secondaryButton("Reset PW", blue, R.drawable.ic_key) { openResetPasswordDialog(user) }, weighted)
             actionRow.addView(spacerH(8))
             if (user.username != myUsername) {
                 actionRow.addView(
                     secondaryButton(
-                        if (user.active) "⏸ Deactivate" else "▶ Activate",
-                        if (user.active) amber else green
+                        if (user.active) "Deactivate" else "Activate",
+                        if (user.active) amber else green,
+                        if (user.active) R.drawable.ic_lock else R.drawable.ic_lock_open
                     ) { toggleActive(user) },
                     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 )
                 actionRow.addView(spacerH(8))
                 actionRow.addView(
-                    secondaryButton("🗑 DELETE", red) { confirmDelete(user) },
+                    secondaryButton("DELETE", red, R.drawable.ic_delete) { confirmDelete(user) },
                     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 )
             }
@@ -502,14 +527,26 @@ class UserManagementActivity : AppCompatActivity() {
             .setView(newPasswordField)
             .setPositiveButton("Reset") { _, _ ->
                 val newPassword = newPasswordField.text.toString()
-                if (newPassword.length < 4) {
-                    Toast.makeText(this, "Password kam az kam 4 characters ka ho", Toast.LENGTH_SHORT).show()
+                if (newPassword.length < 8) {
+                    Toast.makeText(this, "Password kam az kam 8 characters ka ho", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@UserManagementActivity)
-                    db.userDao().upsert(user.copy(passwordHash = PasswordHasher.hash(newPassword)))
-                    Toast.makeText(this@UserManagementActivity, "Password reset ho gaya", Toast.LENGTH_SHORT).show()
+                    val updated = user.copy(passwordHash = PasswordHasher.hash(newPassword))
+                    db.userDao().upsert(updated)
+                    // Password hashes intentionally stay device-local and are never sent
+                    // to Firestore. Record the event locally for auditability instead.
+                    runCatching {
+                        db.auditDao().insert(Audit(
+                            username = getSharedPreferences("session", MODE_PRIVATE).getString("username", "admin") ?: "admin",
+                            action = "password_reset",
+                            reference = user.username,
+                            details = "Password reset locally by admin",
+                            createdAt = System.currentTimeMillis()
+                        ))
+                    }
+                    Toast.makeText(this@UserManagementActivity, "Password reset ho gaya (is device par)", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -593,7 +630,18 @@ class UserManagementActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun sectionCard(icon: String, title: String) = LinearLayout(this).apply {
+    // ---- Icons throughout this screen used to be raw emoji strings; now every icon slot
+    // takes a R.drawable.ic_* resource and gets tinted/sized here, same pattern as
+    // ProductActivity/PartyReportsActivity's icon migration. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun sectionCard(iconRes: Int, title: String) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(24, 22, 24, 22)
         background = strokedBg(border, cardBg, 18)
@@ -601,15 +649,19 @@ class UserManagementActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         )
         applyElevation(this, 3f)
-        addView(sectionLabel(icon, title))
+        addView(sectionLabel(iconRes, title))
         addView(spacer(4))
     }
 
-    private fun sectionLabel(icon: String, label: String) = LinearLayout(this).apply {
+    private fun sectionLabel(iconRes: Int, label: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, 0, 0, 12)
-        addView(TextView(this@UserManagementActivity).apply { text = "$icon  "; textSize = 15f })
+        addView(ImageView(this@UserManagementActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, primary, 17))
+            val px = (17 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         addView(TextView(this@UserManagementActivity).apply {
             text = label
             textSize = 14.5f
@@ -618,17 +670,21 @@ class UserManagementActivity : AppCompatActivity() {
         })
     }
 
-    private fun fieldBox(icon: String, field: EditText) = LinearLayout(this).apply {
+    private fun fieldBox(iconRes: Int, field: EditText) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = strokedBg(border, "#FAFAFF", 12)
+        background = strokedBg(border, fieldFill, 12)
         setPadding(18, 4, 18, 4)
-        addView(TextView(this@UserManagementActivity).apply { text = "$icon  "; textSize = 14f })
+        addView(ImageView(this@UserManagementActivity).apply {
+            setImageDrawable(tintedDrawable(iconRes, textGray, 16))
+            val px = (16 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (10 * resources.displayMetrics.density).toInt() }
+        })
         field.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         addView(field)
     }
 
-    private fun primaryButton(label: String, colorHex: String, colorDarkHex: String, onClick: () -> Unit) = Button(this).apply {
+    private fun primaryButton(label: String, colorHex: String, colorDarkHex: String, iconRes: Int? = null, onClick: () -> Unit) = Button(this).apply {
         text = label
         setTextColor(Color.WHITE)
         textSize = 14.5f
@@ -639,20 +695,28 @@ class UserManagementActivity : AppCompatActivity() {
             intArrayOf(Color.parseColor(colorHex), Color.parseColor(colorDarkHex))
         ).apply { cornerRadius = 16f }
         setPadding(0, 24, 0, 24)
+        if (iconRes != null) {
+            setCompoundDrawablesRelative(tintedDrawable(iconRes, "#FFFFFF", 17), null, null, null)
+            compoundDrawablePadding = (8 * resources.displayMetrics.density).toInt()
+        }
         setOnClickListener { onClick() }
         applyElevation(this, 4f)
     }
 
-    private fun secondaryButton(label: String, colorHex: String, onClick: () -> Unit) = Button(this).apply {
+    private fun secondaryButton(label: String, colorHex: String, iconRes: Int? = null, onClick: () -> Unit) = Button(this).apply {
         text = label
         setTextColor(Color.parseColor(colorHex))
         textSize = 11.5f
         isAllCaps = false
         setTypeface(typeface, Typeface.BOLD)
-        background = strokedBg(colorHex, "#FFFFFF", 14)
+        background = strokedBg(colorHex, cardBg, 14)
         setPadding(20, 14, 20, 14)
         minWidth = 0
         minimumWidth = 0
+        if (iconRes != null) {
+            setCompoundDrawablesRelative(tintedDrawable(iconRes, colorHex, 14), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
+        }
         setOnClickListener { onClick() }
     }
 
@@ -662,31 +726,11 @@ class UserManagementActivity : AppCompatActivity() {
         gravity = Gravity.CENTER
         background = ovalBg(colorHex)
         val px = (sizeDp * resources.displayMetrics.density).toInt()
-        width = px; height = px
+        layoutParams = android.view.ViewGroup.LayoutParams(px, px)
     }
 
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.parseColor(colorHex))
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 
     private fun spacerH(widthDp: Int) = View(this).apply {
         val px = (widthDp * resources.displayMetrics.density).toInt()

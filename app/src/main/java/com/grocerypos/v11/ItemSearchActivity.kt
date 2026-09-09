@@ -1,5 +1,7 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.R
+
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.grocerypos.v11.ui.components.*
 
 /**
  * Standalone "check the rate" screen: search for any item and see every sale
@@ -29,17 +32,38 @@ import java.util.Locale
  *  2) With extras "product_id" / "product_name" (from Dashboard search result
  *     tap) — skips the typing step and shows that item's history directly.
  */
-class ItemSearchActivity : AppCompatActivity() {
+class ItemSearchActivity : ThemedActivity() {
 
     // ---- Same navy + teal palette as PurchaseActivity / SaleActivity ----
-    private val bg = "#F4F6F8"
-    private val cardWhite = "#FFFFFF"
-    private val navy = "#0B2545"
-    private val teal = "#0F9B8E"
-    private val orange = "#F5A15C"
-    private val textDark = "#0B2545"
-    private val textMuted = "#7C8798"
-    private val border = "#E3E8EE"
+    // Pulled from ThemeManager so this screen respects dark mode.
+    private var bg = "#F4F6F8"
+    private var cardWhite = "#FFFFFF"
+    private var navy = "#0B2545"
+    private var teal = "#0F9B8E"
+    private var orange = "#F5A15C"
+    private var textDark = "#0B2545"
+    private var textMuted = "#7C8798"
+    private var border = "#E3E8EE"
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardWhite = p.cardWhite
+        navy = p.navy
+        teal = p.teal
+        orange = p.amber
+        textDark = p.textDark
+        textMuted = p.textMuted
+        border = p.border
+    }
 
     private lateinit var searchInput: EditText
     private lateinit var resultsContainer: LinearLayout
@@ -54,6 +78,7 @@ class ItemSearchActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         preselectProductBarcode = intent.getStringExtra("product_barcode")
         preselectProductName = intent.getStringExtra("product_name")
@@ -87,9 +112,8 @@ class ItemSearchActivity : AppCompatActivity() {
         // ================= SEARCH BOX =================
         val searchBox = card()
         val searchRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        searchRow.addView(TextView(this).apply {
-            text = "🔍"
-            textSize = 16f
+        searchRow.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textMuted, 16))
             setPadding(0, 0, 12, 0)
         })
         searchInput = EditText(this).apply {
@@ -327,19 +351,6 @@ class ItemSearchActivity : AppCompatActivity() {
         elevation = 2f
     }
 
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(colorHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

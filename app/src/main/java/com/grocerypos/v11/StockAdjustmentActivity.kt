@@ -16,12 +16,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.smallestUnitName
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.grocerypos.v11.ui.components.*
 
 // NEW (Stock Adjustment): search a product, then log either a "Damage / Loss" (always
 // reduces stock, feeds the Damage/Loss Report in InventoryInsightsActivity) or a plain
@@ -31,15 +33,43 @@ import kotlinx.coroutines.launch
 // nothing here touches those tables directly, so behaviour stays identical across devices.
 class StockAdjustmentActivity : AppCompatActivity() {
 
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val red = "#E5484D"
-    private val amber = "#F5A524"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
+    // Pulled from ThemeManager so this screen respects dark mode. Header was a
+    // primary→primaryDark gradient; now flat like the rest of the app.
+    private var bg = "#F3F2FA"
+    private var cardBg = "#FFFFFF"
+    private var primary = "#4A3AFF"
+    private var primaryDark = "#4A3AFF"
+    private var red = "#E5484D"
+    private var amber = "#F5A524"
+    private var textDark = "#1A1A2E"
+    private var textGray = "#8A8A9E"
+    private var border = "#E7E5F3"
+
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, size, size)
+        return d
+    }
+
+    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
+        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
+        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun loadThemeColors() {
+        val p = com.grocerypos.v11.util.ThemeManager.palette(this)
+        bg = p.bg
+        cardBg = p.cardWhite
+        primary = p.flatPurpleFg
+        primaryDark = p.flatPurpleFg
+        red = p.red
+        amber = p.flatAmberFg
+        textDark = p.textDark
+        textGray = p.textMuted
+        border = p.border
+    }
 
     private lateinit var resultsBox: LinearLayout
     private lateinit var searchField: EditText
@@ -47,6 +77,7 @@ class StockAdjustmentActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        loadThemeColors()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -54,7 +85,7 @@ class StockAdjustmentActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        root.addView(premiumHeader("\uD83D\uDD27",
+        root.addView(premiumHeader(R.drawable.ic_wrench,
             Loc.t(this, "Stock Adjustment", "اسٹاک ایڈجسٹمنٹ"),
             Loc.t(this, "Log damage, loss, or a manual correction", "نقصان یا خودکار درستگی درج کریں")))
 
@@ -65,7 +96,10 @@ class StockAdjustmentActivity : AppCompatActivity() {
             background = strokedBg(border, "#FAFAFF", 14)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 16) }
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f })
+        searchBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_search, textGray, 15))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
+        })
         searchField = EditText(this).apply {
             hint = Loc.t(this@StockAdjustmentActivity, "Search item or category…", "آئٹم یا کیٹیگری تلاش کریں…")
             setHintTextColor(Color.parseColor(textGray))
@@ -175,12 +209,14 @@ class StockAdjustmentActivity : AppCompatActivity() {
         // Reason chips: Damage/Loss vs Correction
         val reasonRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 16) } }
         val damageChip = TextView(this).apply {
-            text = "  \uD83D\uDCA5  " + Loc.t(this@StockAdjustmentActivity, "Damage / Loss", "نقصان")
+            text = Loc.t(this@StockAdjustmentActivity, "Damage / Loss", "نقصان")
+            setLeadingIcon(R.drawable.ic_warning, red, 14, 6)
             textSize = 13f; setTypeface(typeface, Typeface.BOLD); setPadding(20, 16, 20, 16)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = 8 }
         }
         val correctionChip = TextView(this).apply {
-            text = "  \u2696\uFE0F  " + Loc.t(this@StockAdjustmentActivity, "Correction", "درستگی")
+            text = Loc.t(this@StockAdjustmentActivity, "Correction", "درستگی")
+            setLeadingIcon(R.drawable.ic_edit, amber, 14, 6)
             textSize = 13f; setTypeface(typeface, Typeface.BOLD); setPadding(20, 16, 20, 16)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = 8 }
         }
@@ -285,68 +321,7 @@ class StockAdjustmentActivity : AppCompatActivity() {
     }
 
     // ================= SHARED UI HELPERS (matches StockReportActivity) =================
-    private fun premiumHeader(icon: String, title: String, subtitle: String): LinearLayout {
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 22, 26, 22)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
-            ).apply { cornerRadius = 22f }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 20) }
-            applyElevation(this, 10f)
-        }
-        header.addView(TextView(this).apply {
-            text = "\u2039"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = ovalBg("#33FFFFFF")
-            val px = (36 * resources.displayMetrics.density).toInt()
-            width = px; height = px
-            setOnClickListener { finish() }
-        })
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(14, 1) })
-        header.addView(TextView(this).apply {
-            text = icon; textSize = 18f; gravity = Gravity.CENTER
-            background = ovalBg("#5C4DFF")
-            val px = (42 * resources.displayMetrics.density).toInt()
-            width = px; height = px
-        })
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = title; textSize = 19f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD)
-        })
-        headerCol.addView(TextView(this).apply {
-            text = subtitle; textSize = 11f; setTextColor(Color.parseColor("#D8D3FF")); setPadding(0, 4, 0, 0)
-        })
-        header.addView(headerCol)
-        return header
-    }
 
-    private fun ovalBg(colorHex: String) = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(colorHex)) }
-    private fun roundedBg(colorHex: String, radius: Int) = GradientDrawable().apply { setColor(Color.parseColor(colorHex)); cornerRadius = radius.toFloat() }
-    private fun strokedBg(strokeHex: String, fillHex: String, radius: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(fillHex))
-        setStroke((1.4 * resources.displayMetrics.density).toInt(), Color.parseColor(strokeHex))
-        cornerRadius = radius.toFloat()
-    }
-    private fun applyElevation(view: View, dp: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.elevation = dp * resources.displayMetrics.density
-            view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        }
-    }
-    private fun spacer(heightDp: Int) = View(this).apply {
-        val px = (heightDp * resources.displayMetrics.density).toInt()
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px)
-    }
+    // spacer() now comes from the shared UiHelpers.kt (item #24 dedup) — was a
+    // byte-identical private copy here before.
 }

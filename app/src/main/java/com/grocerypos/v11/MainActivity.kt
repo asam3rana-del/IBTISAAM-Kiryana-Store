@@ -54,11 +54,21 @@ class MainActivity : ThemedActivity() {
     private var textMuted = "#8A8FA3"
     private var border = "#ECEEF6"
 
-    // ---- Brand colors — the header gradient, gold accents, and get/give greens/reds are part
-    // of the app's identity and already read fine on both light and dark backgrounds (the
-    // header is a dark navy-purple gradient regardless of theme), so these stay fixed. ----
+    // ---- Flat-minimal design tokens (app-wide redesign) — soft chip bg + matching icon/text
+    // color per category, pulled from the shared ThemeManager palette. ----
+    private var flatPurpleBg = "#EEEDFE"; private var flatPurpleFg = "#534AB7"
+    private var flatCoralBg = "#FAECE7"; private var flatCoralFg = "#993C1D"
+    private var flatBlueBg = "#E6F1FB"; private var flatBlueFg = "#185FA5"
+    private var flatPinkBg = "#FBEAF0"; private var flatPinkFg = "#993556"
+    private var flatTealBg = "#E1F5EE"; private var flatTealFg = "#085041"
+    private var flatAmberBg = "#FAEEDA"; private var flatAmberFg = "#854F0B"
+
+    // ---- Brand colors — get/give green & red are semantic (money owed to/by the shop) and
+    // stay fixed regardless of theme; paired with a soft flat tint background for their cards. ----
     private val partyGreen = "#1B8A4A"
+    private val partyGreenBg = "#EAF3DE"
     private val partyRed = "#D32F4A"
+    private val partyRedBg = "#FCEBEB"
     private val headerStart = "#0F1450"
     private val headerMid = "#2A2E8F"
     private val headerEnd = "#4B4FCF"
@@ -73,6 +83,12 @@ class MainActivity : ThemedActivity() {
         textDark = p.textDark
         textMuted = p.textMuted
         border = p.border
+        flatPurpleBg = p.flatPurpleBg; flatPurpleFg = p.flatPurpleFg
+        flatCoralBg = p.flatCoralBg; flatCoralFg = p.flatCoralFg
+        flatBlueBg = p.flatBlueBg; flatBlueFg = p.flatBlueFg
+        flatPinkBg = p.flatPinkBg; flatPinkFg = p.flatPinkFg
+        flatTealBg = p.flatTealBg; flatTealFg = p.flatTealFg
+        flatAmberBg = p.flatAmberBg; flatAmberFg = p.flatAmberFg
     }
 
     // ---- Flips the app-wide theme preference and recreates this activity. Any other open
@@ -111,17 +127,15 @@ class MainActivity : ThemedActivity() {
             setBackgroundColor(Color.parseColor(bgColor))
         }
 
-        // ================= HEADER — back to a compact size =================
+        // ================= HEADER — flat surface, no gradient (app-wide flat redesign) =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(26, 46, 26, 32)
-            elevation = 14f
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(headerStart), Color.parseColor(headerMid), Color.parseColor(headerEnd))
-            ).apply {
-                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 40f, 40f, 40f, 40f)
+            setPadding(26, 40, 26, 24)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 28f, 28f, 28f, 28f)
             }
+            elevation = 0f
         }
 
         val topRow = LinearLayout(this).apply {
@@ -132,23 +146,18 @@ class MainActivity : ThemedActivity() {
         topRow.addView(FrameLayout(this).apply {
             val size = (40 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(size, size)
-            elevation = 8f
             val chipBg = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                colors = intArrayOf(Color.parseColor("#6B74E0"), Color.parseColor("#3D42B0"))
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
-                setStroke((1.2 * resources.displayMetrics.density).toInt(), Color.parseColor(goldAccent))
+                setColor(Color.parseColor(flatPurpleBg))
             }
             isClickable = true
             background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(70),
+                android.content.res.ColorStateList.valueOf(Color.parseColor(flatPurpleFg)).withAlpha(40),
                 chipBg, null
             )
-            addView(TextView(this@MainActivity).apply {
-                text = "⚙️"
-                textSize = 17f
-                gravity = Gravity.CENTER
+            addView(ImageView(this@MainActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_settings, flatPurpleFg, 17))
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
             // Products & Reports live in Settings — reached via this gear icon, since they're
@@ -162,11 +171,27 @@ class MainActivity : ThemedActivity() {
         })
 
         // ---- Day/night toggle — shows the icon for the mode you'd switch TO. ----
-        topRow.addView(premiumIconBadge(if (ThemeManager.isDarkMode(this)) "☀️" else "🌙", "#6B74E0", 40, 17f).apply {
+        topRow.addView(premiumIconBadge(if (ThemeManager.isDarkMode(this)) R.drawable.ic_sun else R.drawable.ic_moon, flatAmberBg, flatAmberFg, 40, 17).apply {
             isClickable = true
             setOnClickListener { toggleTheme() }
         })
 
+<<<<<<< HEAD
+=======
+        topRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1)
+        })
+
+        // ---- QUICK SWITCH USER — one tap opens a list of active staff accounts
+        // (Admin/Manager/Cashier); tapping a name verifies fingerprint first (falls
+        // back to that user's password) and switches the session instantly, without
+        // going through the full Login screen / OTP flow. ----
+        topRow.addView(premiumIconBadge(R.drawable.ic_sync, flatTealBg, flatTealFg, 40, 16).apply {
+            isClickable = true
+            setOnClickListener { openQuickSwitchDialog() }
+        })
+
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         topRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
 
         topRow.addView(LinearLayout(this).apply {
@@ -176,7 +201,7 @@ class MainActivity : ThemedActivity() {
             addView(TextView(this@MainActivity).apply {
                 text = role.replaceFirstChar { it.uppercase() } + " Panel"
                 textSize = 9f
-                setTextColor(Color.parseColor("#C7CAF5"))
+                setTextColor(Color.parseColor(textMuted))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
                 setPadding(0, 5, 0, 0)
@@ -188,23 +213,18 @@ class MainActivity : ThemedActivity() {
         shopNameHeader = TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
             textSize = 19.5f
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor(textDark))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(8, 16, 8, 0)
-            setShadowLayer(6f, 0f, 2f, Color.parseColor("#40000000"))
         }
         header.addView(shopNameHeader)
 
         header.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams((38 * resources.displayMetrics.density).toInt(), (3 * resources.displayMetrics.density).toInt()).apply {
-                topMargin = (9 * resources.displayMetrics.density).toInt()
-                gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (1.2 * resources.displayMetrics.density).toInt()).apply {
+                topMargin = (16 * resources.displayMetrics.density).toInt()
             }
-            background = GradientDrawable().apply {
-                cornerRadius = 6f
-                setColor(Color.parseColor(goldAccent))
-            }
+            setBackgroundColor(Color.parseColor(border))
         })
 
         root.addView(header)
@@ -226,12 +246,12 @@ class MainActivity : ThemedActivity() {
         // ================= STAT CARDS =================
         val statsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val saleCardParts = premiumStatCard("💰", "Today's Sale", "#1B8A4A", "#E4F6EA")
+        val saleCardParts = premiumStatCard("Today's sale", flatTealBg, flatTealFg)
         val saleCardView = saleCardParts.first
         todaySaleValue = saleCardParts.second
 
         if (role == "admin") {
-            val profitCardParts = premiumStatCard("📈", "Today's Profit", "#1257C4", "#E4EDFC")
+            val profitCardParts = premiumStatCard("Today's profit", flatBlueBg, flatBlueFg)
             val profitCardView = profitCardParts.first
             todayProfitValue = profitCardParts.second
 
@@ -256,10 +276,10 @@ class MainActivity : ThemedActivity() {
         // are intentionally not in this list — they're setup/review actions, reachable from
         // the ⚙️ Settings icon in the header instead.
         val quickActions = mutableListOf(
-            QuickAction("Sale", "Start a new sale", "#00B4D8", "#0077B6") {
+            QuickAction("Sale", "Start a new sale", R.drawable.ic_cart, flatPurpleBg, flatPurpleFg) {
                 startActivity(Intent(this@MainActivity, SaleActivity::class.java))
             },
-            QuickAction("Cash", "Cash In / Cash Out", "#F5A524", "#C97A0A") {
+            QuickAction("Cash", "Cash in / cash out", R.drawable.ic_wallet, flatAmberBg, flatAmberFg) {
                 startActivity(Intent(this@MainActivity, CashActivity::class.java))
             }
         )
@@ -268,13 +288,13 @@ class MainActivity : ThemedActivity() {
         // too, matching the enforcement inside PurchaseActivity itself.
         if (role == "admin") {
             quickActions.add(
-                QuickAction("Purchase", "Record a purchase", "#D6408F", "#8E2A6C") {
+                QuickAction("Purchase", "Record a purchase", R.drawable.ic_box, flatCoralBg, flatCoralFg) {
                     startActivity(Intent(this@MainActivity, PurchaseActivity::class.java))
                 }
             )
         }
         quickActions.add(
-            QuickAction("Day Book", "View daily ledger", "#0F9B8E", "#0B6E64") {
+            QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
                 startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
             }
         )
@@ -283,19 +303,19 @@ class MainActivity : ThemedActivity() {
         // access level as Purchase above.
         if (role == "admin" || role == "manager") {
             quickActions.add(
-                QuickAction("Backup", "Export data (CSV + PDF)", "#5B6EE8", "#3B44A8") {
+                QuickAction("Backup", "Export data (CSV + PDF)", R.drawable.ic_save, flatBlueBg, flatBlueFg) {
                     startActivity(Intent(this@MainActivity, BackupExportActivity::class.java))
                 }
             )
         }
         quickActions.add(
-            QuickAction("Customers &\nSuppliers", "Manage ledgers & dues", "#4E342E", "#2E1F1B") {
+            QuickAction("Customers &\nSuppliers", "Manage ledgers & dues", R.drawable.ic_people, flatPinkBg, flatPinkFg) {
                 startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java))
             }
         )
         if (role == "manager" || role == "cashier") {
             quickActions.add(
-                QuickAction("Logout", "Sign out of this session", "#D32F4A", "#8E1F30") { doLogout() }
+                QuickAction("Logout", "Sign out of this session", R.drawable.ic_logout, partyRedBg, partyRed) { doLogout() }
             )
         }
 
@@ -349,65 +369,50 @@ class MainActivity : ThemedActivity() {
             .show()
     }
 
-    // ---- premium metallic circular icon badge, reused everywhere for a consistent ultra-premium look ----
-    private fun premiumIconBadge(emoji: String, accentHex: String, sizeDp: Int, textSizeSp: Float): FrameLayout {
+    // ---- flat circular icon badge — soft tint background, no gradient/elevation — reused
+    // everywhere for a consistent flat-minimal look across the dashboard. ----
+    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
+        val d = ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
+        d.setTint(Color.parseColor(tintHex))
+        val px = (sizeDp * resources.displayMetrics.density).toInt()
+        d.setBounds(0, 0, px, px)
+        return d
+    }
+
+    private fun premiumIconBadge(iconRes: Int, bgHex: String, fgHex: String, sizeDp: Int, iconSizeDp: Int): FrameLayout {
         val size = (sizeDp * resources.displayMetrics.density).toInt()
         return FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(size, size)
-            elevation = 8f
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                colors = intArrayOf(
-                    lighten(accentHex, 0.9f),
-                    lighten(accentHex, 0.35f),
-                    Color.parseColor(accentHex),
-                    darken(accentHex, 0.35f)
-                )
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
-                setStroke((1 * resources.displayMetrics.density).toInt(), lighten(accentHex, 0.6f))
+                setColor(Color.parseColor(bgHex))
             }
-            addView(TextView(this@MainActivity).apply {
-                text = emoji
-                textSize = textSizeSp
-                gravity = Gravity.CENTER
+            addView(ImageView(this@MainActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, fgHex, iconSizeDp))
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
         }
     }
 
-    // ---- premium circular logo badge: gold double-ring + navy-gold gradient fill ----
+    // ---- flat circular logo badge — solid soft-purple fill, no gradient rings ----
     private fun premiumLogoBadge(sizeDp: Int): FrameLayout {
         val size = (sizeDp * resources.displayMetrics.density).toInt()
-        val outer = FrameLayout(this).apply {
+        return FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(size, size)
-            elevation = 10f
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                colors = intArrayOf(Color.parseColor(goldAccent), Color.parseColor("#B9892C"))
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
-            }
-        }
-        val innerSize = ((sizeDp - 5) * resources.displayMetrics.density).toInt()
-        outer.addView(FrameLayout(this).apply {
-            layoutParams = FrameLayout.LayoutParams(innerSize, innerSize, Gravity.CENTER)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                colors = intArrayOf(Color.parseColor(headerEnd), Color.parseColor(headerStart))
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                orientation = GradientDrawable.Orientation.TL_BR
+                setColor(Color.parseColor(flatPurpleBg))
             }
             addView(TextView(this@MainActivity).apply {
                 text = "IK"
                 textSize = 13f
-                setTextColor(Color.parseColor(goldAccent))
-                setTypeface(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(flatPurpleFg))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
-        })
-        return outer
+        }
     }
 
     // ---- live search bar: typing filters products immediately and results render right below,
@@ -433,7 +438,7 @@ class MainActivity : ThemedActivity() {
             elevation = 8f
             background = roundedBackgroundBordered(cardWhite, 30)
 
-            addView(premiumIconBadge("🔎", "#0F9B8E", 36, 16f).apply {
+            addView(premiumIconBadge(R.drawable.ic_search, flatTealBg, flatTealFg, 36, 16).apply {
                 (layoutParams as LinearLayout.LayoutParams).setMargins(0, 0, 14, 0)
             })
             addView(input)
@@ -576,34 +581,40 @@ class MainActivity : ThemedActivity() {
     private fun quickActionCard(action: QuickAction): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(20, 30, 20, 28)
-            elevation = 12f
-
-            val base = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(action.accentHex), Color.parseColor(action.accentHex2))
-            ).apply { cornerRadius = 30f }
-
+            gravity = Gravity.START
+            setPadding(18, 20, 18, 20)
+            val base = roundedBackgroundBordered(cardWhite, 22)
             background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(60),
+                android.content.res.ColorStateList.valueOf(Color.parseColor(textMuted)).withAlpha(40),
                 base, base
             )
             isClickable = true
+            isFocusable = true
 
+            val iconSize = (36 * resources.displayMetrics.density).toInt()
+            addView(FrameLayout(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { bottomMargin = 14 }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor(action.bgHex))
+                }
+                addView(ImageView(this@MainActivity).apply {
+                    setImageDrawable(tintedDrawable(action.iconRes, action.fgHex, 16))
+                    scaleType = ImageView.ScaleType.CENTER
+                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                })
+            })
             addView(TextView(this@MainActivity).apply {
                 text = action.title
-                textSize = 19f
-                setTextColor(Color.WHITE)
+                textSize = 14.5f
+                setTextColor(Color.parseColor(textDark))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                gravity = Gravity.CENTER
             })
             addView(TextView(this@MainActivity).apply {
                 text = action.subtitle
-                textSize = 11.5f
-                setTextColor(Color.parseColor("#F5F5F5"))
-                gravity = Gravity.CENTER
-                setPadding(0, 4, 0, 0)
+                textSize = 11f
+                setTextColor(Color.parseColor(textMuted))
+                setPadding(0, 3, 0, 0)
             })
 
             setOnClickListener { action.onClick() }
@@ -627,8 +638,8 @@ class MainActivity : ThemedActivity() {
 
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val getCardParts = premiumStatCard("↓", "You'll Get", partyGreen, "#E4F6EA")
-        val giveCardParts = premiumStatCard("↑", "You'll Give", partyRed, "#FCE6EA")
+        val getCardParts = premiumStatCard("You'll get", partyGreenBg, partyGreen)
+        val giveCardParts = premiumStatCard("You'll give", partyRedBg, partyRed)
         youllGetValue = getCardParts.second
         youllGiveValue = giveCardParts.second
 
@@ -690,32 +701,213 @@ class MainActivity : ThemedActivity() {
         finish()
     }
 
+<<<<<<< HEAD
     private data class QuickAction(val title: String, val subtitle: String, val accentHex: String, val accentHex2: String, val onClick: () -> Unit)
+=======
+    // ================= QUICK SWITCH USER =================
+    // List of every active staff account, tap-to-switch — a fast alternative to Logout +
+    // full Login screen when the person handing the counter over is just changing who's
+    // ringing up sales (Admin/Manager/Cashier). Each switch still requires proving it's
+    // really that person: fingerprint is tried first, password is always the fallback.
+    private fun openQuickSwitchDialog() {
+        lifecycleScope.launch {
+            val users = PosDatabase.get(this@MainActivity).userDao().all().first().filter { it.active }
+            if (users.isEmpty()) return@launch
 
-    private fun premiumStatCard(emoji: String, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
+            val myUsername = getSharedPreferences("session", MODE_PRIVATE).getString("username", "")
+
+            val list = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(12, 8, 12, 8)
+            }
+            val dialog = AlertDialog.Builder(this@MainActivity)
+                .setTitle("Switch User")
+                .setView(ScrollView(this@MainActivity).apply { addView(list) })
+                .setNegativeButton("Cancel", null)
+                .create()
+
+            users.forEach { user ->
+                list.addView(quickSwitchRow(user, user.username == myUsername) {
+                    dialog.dismiss()
+                    attemptQuickSwitch(user)
+                })
+                list.addView(spacer(8))
+            }
+            dialog.show()
+        }
+    }
+
+    private fun quickSwitchRow(user: User, isCurrent: Boolean, onTap: () -> Unit): LinearLayout {
+        val roleColor = when (user.role) {
+            "admin" -> "#4A3AFF"
+            "manager" -> "#2F6FED"
+            else -> "#F5A524"
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 16, 18, 16)
+            background = roundedBackgroundBordered(cardWhite, 14)
+            isClickable = !isCurrent
+            if (!isCurrent) setOnClickListener { onTap() }
+            alpha = if (isCurrent) 0.55f else 1f
+
+            addView(TextView(this@MainActivity).apply {
+                text = user.displayName.take(1).uppercase()
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor(roleColor))
+                }
+                val px = (38 * resources.displayMetrics.density).toInt()
+                layoutParams = android.view.ViewGroup.LayoutParams(px, px)
+            })
+            addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams((14 * resources.displayMetrics.density).toInt(), 1)
+            })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply {
+                    text = if (isCurrent) "${user.displayName} (Current)" else user.displayName
+                    textSize = 14f
+                    setTextColor(Color.parseColor(textDark))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = user.role.replaceFirstChar { it.uppercase() }
+                    textSize = 11.5f
+                    setTextColor(Color.parseColor(roleColor))
+                    setPadding(0, 2, 0, 0)
+                })
+            })
+            if (!isCurrent) {
+                addView(TextView(this@MainActivity).apply {
+                    text = "›"
+                    textSize = 18f
+                    setTextColor(Color.parseColor(textMuted))
+                })
+            }
+        }
+    }
+
+    // Fingerprint first; falls back to that user's own password if fingerprint isn't set
+    // up on this device, or if the person cancels/fails the prompt.
+    private fun attemptQuickSwitch(user: User) {
+        val biometricManager = BiometricManager.from(this)
+        val canAuthenticate = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+
+        if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+            askPasswordForSwitch(user)
+            return
+        }
+
+        val executor = ContextCompat.getMainExecutor(this)
+        val biometricPrompt = BiometricPrompt(
+            this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    completeQuickSwitch(user)
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    // Cancelled / failed to open / "Use Password" tapped — password
+                    // fallback picks up from here either way.
+                    askPasswordForSwitch(user)
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    Toast.makeText(this@MainActivity, "Fingerprint match nahi hua, dobara try karein", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Fingerprint Verify Karein")
+            .setSubtitle("${user.displayName} ke account par switch karne ke liye")
+            .setNegativeButtonText("Password Use Karein")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .build()
+
+        biometricPrompt.authenticate(promptInfo)
+    }
+
+    private fun askPasswordForSwitch(user: User) {
+        val passwordField = EditText(this).apply {
+            hint = "${user.displayName} ka password"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(28, 22, 28, 22)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Password Verify Karein")
+            .setView(passwordField)
+            .setPositiveButton("Switch") { _, _ ->
+                val typed = passwordField.text.toString()
+                lifecycleScope.launch {
+                    // FIX: same backward-compat check as LoginActivity — PasswordHasher.verify()
+                    // always returns false for a still-plain-text passwordHash (pre-hashing-update
+                    // accounts, e.g. the seeded admin), so it can't be the only check here or a
+                    // correct password would always be rejected as "Ghalat password".
+                    val passwordOk = if (PasswordHasher.isHashed(user.passwordHash)) {
+                        PasswordHasher.verify(typed, user.passwordHash)
+                    } else {
+                        user.passwordHash == typed
+                    }
+                    if (passwordOk) {
+                        if (!PasswordHasher.isHashed(user.passwordHash)) {
+                            PosDatabase.get(this@MainActivity).userDao().upsert(user.copy(passwordHash = PasswordHasher.hash(typed)))
+                        }
+                        completeQuickSwitch(user)
+                    } else {
+                        Toast.makeText(this@MainActivity, "Ghalat password", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun completeQuickSwitch(user: User) {
+        getSharedPreferences("session", MODE_PRIVATE).edit()
+            .putString("username", user.username)
+            .putString("role", user.role)
+            .apply()
+        Toast.makeText(this, "${user.displayName} par switch ho gaya", Toast.LENGTH_SHORT).show()
+        // Simplest correct refresh: re-run onCreate (same pattern used by toggleTheme()
+        // above) so every role-gated button/card on this screen rebuilds against the
+        // new session instead of drifting out of sync.
+        recreate()
+    }
+
+    private data class QuickAction(val title: String, val subtitle: String, val iconRes: Int, val bgHex: String, val fgHex: String, val onClick: () -> Unit)
+>>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
+
+    private fun premiumStatCard(label: String, tintBgHex: String, tintFgHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 22, 24, 22)
-            background = roundedBackgroundBordered(cardWhite, 26)
-            elevation = 7f
+            setPadding(24, 20, 24, 20)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(tintBgHex))
+                cornerRadius = 26f
+            }
         }
-        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        topRow.addView(premiumIconBadge(emoji, accentHex, 42, 18f).apply {
-            (layoutParams as LinearLayout.LayoutParams).setMargins(0, 0, 0, 0)
-        })
-        topRow.addView(TextView(this).apply {
-            text = "  $label"
-            setTextColor(Color.parseColor(textMuted))
+        card.addView(TextView(this).apply {
+            text = label
+            setTextColor(Color.parseColor(tintFgHex))
             textSize = 12.5f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
-        card.addView(topRow)
         val valueText = TextView(this).apply {
             text = "Rs 0.00"
-            setTextColor(Color.parseColor(accentHex))
+            setTextColor(Color.parseColor(tintFgHex))
             textSize = 22f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, 12, 0, 0)
+            setPadding(0, 6, 0, 0)
         }
         card.addView(valueText)
         return Pair(card, valueText)
