@@ -34,6 +34,12 @@ jobs:
         run: |
           echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
 
+      - name: Verify project configuration
+        run: |
+          test -f app/google-services.json
+          grep -q 'com.google.gms.google-services' app/build.gradle.kts
+          echo "Firebase config present"
+
       - name: Run lint
         run: gradle lintDebug
 
