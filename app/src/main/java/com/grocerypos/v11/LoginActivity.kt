@@ -611,17 +611,17 @@ class LoginActivity : ThemedActivity() {
                 } else {
                     user.passwordHash == typed
                 }
-                if (!ok) {
+                if (ok) {
+                    lifecycleScope.launch {
+                        val linked = user.copy(phone = phone)
+                        db.userDao().upsert(linked)
+                        loggedInUser = linked
+                        db.appSettingDao().set(AppSetting("last_username", linked.username))
+                        Toast.makeText(this@LoginActivity, "Phone account se link ho gaya.", Toast.LENGTH_LONG).show()
+                        completeLogin()
+                    }
+                } else {
                     Toast.makeText(this, "Password ghalat hai — phone link nahi hua", Toast.LENGTH_LONG).show()
-                    return@setPositiveButton
-                }
-                lifecycleScope.launch {
-                    val linked = user.copy(phone = phone)
-                    db.userDao().upsert(linked)
-                    loggedInUser = linked
-                    db.appSettingDao().set(AppSetting("last_username", linked.username))
-                    Toast.makeText(this@LoginActivity, "Phone account se link ho gaya.", Toast.LENGTH_LONG).show()
-                    completeLogin()
                 }
             }
             .setNegativeButton("Cancel", null)
