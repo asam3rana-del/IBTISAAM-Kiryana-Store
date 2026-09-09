@@ -21,20 +21,6 @@ import com.grocerypos.v11.ui.components.*
 
 class ReportsActivity : AppCompatActivity() {
 
-<<<<<<< HEAD
-    // ================= PREMIUM PALETTE (shared with Items / Categories) =================
-    private val bg = "#F3F2FA"
-    private val cardBg = "#FFFFFF"
-    private val primary = "#4A3AFF"
-    private val primaryDark = "#3527D6"
-    private val purple = "#8B5CF6"
-    private val amber = "#F5A524"
-    private val teal = "#0F9B8E"
-    private val red = "#E5484D"
-    private val textDark = "#1A1A2E"
-    private val textGray = "#8A8A9E"
-    private val border = "#E7E5F3"
-=======
     // ================= FLAT PALETTE (aligned with ThemeManager's app-wide flat design tokens) =================
     // Pulled from ThemeManager so this screen respects dark mode, same as Stock Report,
     // History, Party Reports and Balance Sheet.
@@ -68,7 +54,6 @@ class ReportsActivity : AppCompatActivity() {
         border = p.border
         headerIconTint = p.flatPurpleBg
     }
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 
     private lateinit var resultsBox: LinearLayout
     private var periodLabel: TextView? = null
@@ -175,8 +160,6 @@ class ReportsActivity : AppCompatActivity() {
 
         navCard.addView(navDivider())
 
-<<<<<<< HEAD
-=======
         // NEW: Stock Adjustment (log damage/loss or a manual correction) plus the four
         // Inventory Insights tabs (Reorder Suggestions, Damage/Loss Report, Profit
         // Margin per Item, Fast/Slow Movers) and Due Date Reminders.
@@ -244,15 +227,12 @@ class ReportsActivity : AppCompatActivity() {
 
         navCard.addView(navDivider())
 
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         navCard.addView(navRow(
             iconRes = R.drawable.ic_bank, accentHex = teal, tintHex = "#E1F5EE",
             title = Loc.t(this, "Balance Sheet", "بیلنس شیٹ"),
             subtitle = Loc.t(this, "Assets, liabilities & capital", "اثاثے، واجبات اور سرمایہ")
         ) { startActivity(android.content.Intent(this@ReportsActivity, BalanceSheetActivity::class.java)) })
 
-<<<<<<< HEAD
-=======
         navCard.addView(navDivider())
 
         // NEW: Zakat tracker — Ramadan-to-Ramadan year, auto-calculated from the same
@@ -263,7 +243,6 @@ class ReportsActivity : AppCompatActivity() {
             subtitle = Loc.t(this, "Track & pay this year's Zakat", "اس سال کی زکوٰۃ ٹریک اور ادا کریں")
         ) { startActivity(android.content.Intent(this@ReportsActivity, ZakatActivity::class.java)) })
 
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         root.addView(navCard)
 
         // ================= PERIOD FILTER PILLS (matches Items tab-row style) =================

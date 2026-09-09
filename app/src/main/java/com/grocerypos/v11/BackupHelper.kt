@@ -9,7 +9,6 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.sqlite.db.SimpleSQLiteQuery
-import com.grocerypos.v11.BackupPasswordStore
 import com.grocerypos.v11.DeviceTag
 import com.grocerypos.v11.PosDatabase
 import java.io.File

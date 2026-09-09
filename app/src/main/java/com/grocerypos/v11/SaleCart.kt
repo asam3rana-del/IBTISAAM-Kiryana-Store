@@ -202,11 +202,7 @@ internal fun SaleActivity.addItem() {
 
     if (editInvoice == null) saveDraft()
     if (lines.isNotEmpty() && paidInput.text.toString().isBlank()) {
-<<<<<<< HEAD
-        paymentSection.background = strokedBg(amber, amberBg, 18)
-=======
         paymentSection.background = strokedBg("#FF9800", "#FFF8E1", 18)
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         paymentSection.postDelayed({ paymentSection.background = strokedBg(border, cardBg, 18) }, 2000)
     }
 }

@@ -67,10 +67,6 @@ class SaleActivity : AppCompatActivity() {
     internal var red = "#D32F4A"
     internal var redDark = "#A81F39"
     internal var amber = "#854F0B"      // flatAmberFg
-<<<<<<< HEAD
-    internal var amberBg = "#FAEEDA"    // flatAmberBg — paired light-tint for `amber`
-=======
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     internal var textDark = "#0B2545"
     internal var textGray = "#7C8798"
     internal var border = "#E3E8EE"
@@ -87,10 +83,6 @@ class SaleActivity : AppCompatActivity() {
         greenDark = p.flatTealFg
         red = p.red
         amber = p.flatAmberFg
-<<<<<<< HEAD
-        amberBg = p.flatAmberBg
-=======
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
@@ -182,14 +174,6 @@ class SaleActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-<<<<<<< HEAD
-        // FLAT REDESIGN: was a custom navy banner (title/subtitle column, no icon badge, no
-        // back chevron). Replaced with the shared premiumHeader() — controlled from
-        // PremiumHeader.kt like every other flat screen; "Quick Sale"/"History" pills and the
-        // overflow (⋮) button are appended after it.
-        val saleTitle = if (editInvoice != null) com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Edit Sale", "سیل میں ترمیم") else com.grocerypos.v11.util.Loc.t(this@SaleActivity, "New Sale", "نئی سیل")
-        val header = premiumHeader(R.drawable.ic_receipt, saleTitle, "RETAIL · WHOLESALE BILLING", navy, navy) { finish() }
-=======
         // ---------- Header (Reports-style flat header — flatPurple, no gradient) ----------
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -219,7 +203,6 @@ class SaleActivity : AppCompatActivity() {
             setPadding(0, 5, 0, 0)
         })
         header.addView(headerCol)
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         header.addView(pillChip("Quick Sale", textSizeSp = 13.5f, hPad = 24, vPad = 14) { quickSaleDialog() })
         header.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((6 * resources.displayMetrics.density).toInt(), 1) })
         header.addView(pillChip("History", textSizeSp = 13.5f, hPad = 24, vPad = 14) { startActivity(Intent(this@SaleActivity, SaleHistoryActivity::class.java)) })
@@ -227,13 +210,9 @@ class SaleActivity : AppCompatActivity() {
         overflowButton = TextView(this).apply {
             text = "\u22EE"
             textSize = 19f
-            setTextColor(Color.parseColor(navy))
+            setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-<<<<<<< HEAD
-            background = ovalBg("#EEEDFE")
-=======
             background = ovalBg("#22FFFFFF")
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
             val px = (34 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
             setOnClickListener { showOverflowMenu(it) }
         }
@@ -978,9 +957,7 @@ class SaleActivity : AppCompatActivity() {
     }
 
     private fun pillChip(label: String, textSizeSp: Float = 12.5f, hPad: Int = 22, vPad: Int = 12, onClick: () -> Unit) = TextView(this).apply {
-        // FLAT REDESIGN: added a border — a plain white pill blended into the new flat white
-        // header (was fine against the old solid navy banner).
-        this.text = label; textSize = textSizeSp; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, cardBg, 30); setPadding(hPad, vPad, hPad, vPad); setOnClickListener { onClick() }
+        this.text = label; textSize = textSizeSp; setTextColor(Color.parseColor(navy)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = roundedBg(cardBg, 30); setPadding(hPad, vPad, hPad, vPad); setOnClickListener { onClick() }
     }
 
     internal fun circleIcon(label: String, colorHex: String, sizeDp: Int, onClick: (() -> Unit)? = null) = TextView(this).apply {

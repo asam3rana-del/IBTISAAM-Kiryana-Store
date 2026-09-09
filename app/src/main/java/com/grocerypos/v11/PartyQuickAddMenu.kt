@@ -32,19 +32,11 @@ internal fun PartyDashboardActivity.showQuickAddDialog() {
         headerTitle = Loc.t(this, "Quick Add", "\u0641\u0648\u0631\u06CC \u0627\u0646\u062F\u0631\u0627\u062C"),
         headerSubtitle = Loc.t(this, "Choose an action", "\u0627\u06CC\u06A9 \u0639\u0645\u0644 \u0645\u0646\u062A\u062E\u0628 \u06A9\u0631\u06CC\u06BA"),
         items = listOf(
-<<<<<<< HEAD
-            QuickMenuItem("\uD83E\uDDFE", red, redBg,
-                Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
-                Loc.t(this, "Create a new sale invoice", "نیا سیل انوائس بنائیں")
-            ) { startActivity(Intent(this, SaleActivity::class.java)) },
-            QuickMenuItem("\uD83D\uDED2", blue, blueBg,
-=======
             QuickMenuItem("\uD83E\uDDFE", red, "#FDEDED",
                 Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
                 Loc.t(this, "Create a new sale invoice", "نیا سیل انوائس بنائیں")
             ) { startActivity(Intent(this, SaleActivity::class.java)) },
             QuickMenuItem("\uD83D\uDED2", blue, "#EAF0FF",
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
                 Loc.t(this, "Add Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
                 Loc.t(this, "Create a new purchase bill", "نیا خریداری بل بنائیں")
             ) { startActivity(Intent(this, PurchaseActivity::class.java)) },
@@ -52,25 +44,6 @@ internal fun PartyDashboardActivity.showQuickAddDialog() {
             // to the matching history list, which already has a ↩ Return action on
             // each row (see SaleHistoryActivity.saleRow() / PurchaseHistoryActivity's
             // per-card actions row), instead of duplicating that picker+logic here.
-<<<<<<< HEAD
-            QuickMenuItem("\u21A9", orange, orangeBg,
-                Loc.t(this, "Sale Return", "\u0633\u06CC\u0644 \u0648\u0627\u067E\u0633\u06CC"),
-                Loc.t(this, "Return items from a past sale", "پچھلی سیل سے آئٹمز واپس کریں")
-            ) { startActivity(Intent(this, SaleHistoryActivity::class.java)) },
-            QuickMenuItem("\u21A9", teal, tealBg,
-                Loc.t(this, "Purchase Return", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0648\u0627\u067E\u0633\u06CC"),
-                Loc.t(this, "Return items from a past purchase", "پچھلی خریداری سے آئٹمز واپس کریں")
-            ) { startActivity(Intent(this, PurchaseHistoryActivity::class.java)) },
-            QuickMenuItem("\uD83D\uDC64", purple, purpleBg,
-                Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC"),
-                Loc.t(this, "Add a customer or supplier", "کسٹمر یا سپلائر شامل کریں")
-            ) { startActivity(Intent(this, PartyActivity::class.java)) },
-            QuickMenuItem("\uD83D\uDCB0", green, greenBg,
-                Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
-                Loc.t(this, "Record money received", "موصول ہونے والی رقم درج کریں")
-            ) { showPartyPickerForPayment(forCustomer = true) },
-            QuickMenuItem("\uD83D\uDCB8", gold, goldBg,
-=======
             QuickMenuItem("\u21A9", orange, "#FFF3E7",
                 Loc.t(this, "Sale Return", "\u0633\u06CC\u0644 \u0648\u0627\u067E\u0633\u06CC"),
                 Loc.t(this, "Return items from a past sale", "پچھلی سیل سے آئٹمز واپس کریں")
@@ -88,7 +61,6 @@ internal fun PartyDashboardActivity.showQuickAddDialog() {
                 Loc.t(this, "Record money received", "موصول ہونے والی رقم درج کریں")
             ) { showPartyPickerForPayment(forCustomer = true) },
             QuickMenuItem("\uD83D\uDCB8", gold, "#FBF3E3",
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
                 Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC"),
                 Loc.t(this, "Record money paid out", "ادا کی گئی رقم درج کریں")
             ) { showPartyPickerForPayment(forCustomer = false) }
@@ -121,11 +93,7 @@ internal fun PartyDashboardActivity.showPremiumMenuSheet(headerIcon: String, hea
             text = headerIcon
             textSize = 20f
             gravity = Gravity.CENTER
-<<<<<<< HEAD
-            background = ovalBg(cardBorder)
-=======
             background = ovalBg("#EEF0F7")
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
             layoutParams = LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (44 * resources.displayMetrics.density).toInt())
                 .apply { setMargins(0, 0, 24, 0) }
         })
@@ -255,11 +223,7 @@ internal fun PartyDashboardActivity.showPartyPickerForPayment(forCustomer: Boole
             if (forCustomer) "Search customer" else "Search supplier",
             if (forCustomer) "\u06A9\u0633\u0679\u0645\u0631 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA" else "\u0633\u067E\u0644\u0627\u0626\u0631 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA")
         setPadding(20, 18, 20, 18)
-<<<<<<< HEAD
-        background = roundedBackground(fieldFill, 18)
-=======
         background = roundedBackground("#F3F4F9", 18)
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     }
     root.addView(searchBox)
 
@@ -291,11 +255,7 @@ internal fun PartyDashboardActivity.showPartyPickerForPayment(forCustomer: Boole
                     if (forCustomer) "No customers found" else "No suppliers found",
                     if (forCustomer) "\u06A9\u0648\u0626\u06CC \u06A9\u0633\u0679\u0645\u0631 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627" else "\u06A9\u0648\u0626\u06CC \u0633\u067E\u0644\u0627\u0626\u0631 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")
                 textSize = 13.5f
-<<<<<<< HEAD
-                setTextColor(Color.parseColor(labelGray))
-=======
                 setTextColor(Color.parseColor("#9AA0B4"))
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
                 gravity = Gravity.CENTER
                 setPadding(20, 40, 20, 40)
             })
@@ -305,11 +265,7 @@ internal fun PartyDashboardActivity.showPartyPickerForPayment(forCustomer: Boole
             listContainer.addView(TextView(this).apply {
                 text = item.name + if (item.phone.isNotBlank()) "  \u00B7  ${item.phone}" else ""
                 textSize = 14.5f
-<<<<<<< HEAD
-                setTextColor(Color.parseColor(textDark))
-=======
                 setTextColor(Color.parseColor("#2E3242"))
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
                 setPadding(20, 26, 20, 26)
                 isClickable = true
                 isFocusable = true

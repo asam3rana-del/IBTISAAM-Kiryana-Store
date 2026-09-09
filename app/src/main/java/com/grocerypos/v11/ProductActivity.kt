@@ -52,10 +52,6 @@ class ProductActivity : ThemedActivity() {
     internal var navy = "#0B2545"
     internal var navyLight = "#173863"
     internal var teal = "#0F9B8E"
-<<<<<<< HEAD
-    internal var tealDark = "#0C8F8A"     // gradient partner for `teal`; kept in step per theme
-=======
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     private var red = "#E5484D"
     internal var blue = "#3B82F6"
     internal var orange = "#F5A524"
@@ -76,7 +72,6 @@ class ProductActivity : ThemedActivity() {
         cardWhite = p.cardWhite
         navy = p.navy
         teal = p.teal
-        tealDark = if (ThemeManager.isDarkMode(this)) "#0D9E96" else "#0C8F8A"
         red = p.red
         textDark = p.textDark
         textMuted = p.textMuted
@@ -228,26 +223,6 @@ class ProductActivity : ThemedActivity() {
     }
 
     private fun buildHeader(root: LinearLayout) {
-<<<<<<< HEAD
-        // FLAT REDESIGN: was a custom navy→navyLight banner with a translucent-white icon
-        // badge. Replaced with the shared premiumHeader() (back chevron + light badge); the
-        // dark/light toggle and "View List" pill are appended the same way ItemsActivity
-        // appends its "Translate" pill — solid pastel-tinted backgrounds instead of the old
-        // translucent-white-on-dark treatment (which would be invisible on a flat header).
-        val header = premiumHeader(
-            R.drawable.ic_box,
-            Loc.t(this@ProductActivity, "Add / Edit Product", "پروڈکٹ شامل / تبدیل کریں"),
-            Loc.t(this@ProductActivity, "Inventory Management", "انوینٹری مینجمنٹ"),
-            navy, navy
-        ) { finish() }
-
-        header.addView(ImageView(this).apply {
-            setImageDrawable(
-                tintedDrawable(if (isDarkMode) R.drawable.ic_sun else R.drawable.ic_moon, navy, 18)
-            )
-            setPadding(14, 12, 14, 12)
-            background = ovalBg("#EEEDFE")
-=======
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -310,7 +285,6 @@ class ProductActivity : ThemedActivity() {
                 setColor(Color.parseColor(headerBadgeOverlay))
                 cornerRadius = 30f
             }
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
             applyElevation(this, 2f)
             setOnClickListener { toggleTheme() }
         })
@@ -322,16 +296,15 @@ class ProductActivity : ThemedActivity() {
         header.addView(TextView(this).apply {
             text = Loc.t(this@ProductActivity, "View List", "فہرست دیکھیں")
             textSize = 11.5f
-            setTextColor(Color.parseColor(navy))
+            setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
-            background = strokedBg(border, "#EEEDFE", 30)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(headerBadgeOverlay))
+                cornerRadius = 30f
+            }
             setPadding(20, 12, 20, 12)
             applyElevation(this, 2f)
-<<<<<<< HEAD
-            setLeadingIcon(R.drawable.ic_list, navy, 14, 6)
-=======
             setLeadingIcon(R.drawable.ic_list, "#FFFFFF", 14, 6)
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
             setOnClickListener { toggleProductsList() }
         })
 
@@ -781,8 +754,7 @@ class ProductActivity : ThemedActivity() {
             addView(View(this@ProductActivity).apply {
                 background = GradientDrawable(
                     GradientDrawable.Orientation.LEFT_RIGHT,
-                    // FLAT REDESIGN: solid accentTopHex now (was accentTopHex->fadeHex blend).
-                    intArrayOf(Color.parseColor(accentTopHex), Color.parseColor(accentTopHex))
+                    intArrayOf(Color.parseColor(accentTopHex), Color.parseColor(fadeHex(accentTopHex)))
                 ).apply {
                     val d = resources.displayMetrics.density
                     cornerRadii = floatArrayOf(

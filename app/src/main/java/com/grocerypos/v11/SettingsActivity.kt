@@ -34,7 +34,7 @@ import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.User
 import com.grocerypos.v11.sync.SyncApi
 import com.grocerypos.v11.util.BackupHelper
-import com.grocerypos.v11.BackupPasswordStore
+import com.grocerypos.v11.util.BackupPasswordStore
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,10 +55,6 @@ class SettingsActivity : AppCompatActivity() {
     internal var teal = "#0F9B8E"
     internal var red = "#E5484D"
     internal var amber = "#F5A524"
-<<<<<<< HEAD
-    internal var amberBg = "#FAEEDA"    // flatAmberBg — paired light-tint for `amber`
-=======
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
     private var badgeRed = "#E5484D"
     internal var textDark = "#0B2545"
     internal var textGray = "#7C8798"
@@ -75,10 +71,6 @@ class SettingsActivity : AppCompatActivity() {
         teal = p.flatTealFg
         red = p.red
         amber = p.flatAmberFg
-<<<<<<< HEAD
-        amberBg = p.flatAmberBg
-=======
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         badgeRed = p.red
         textDark = p.textDark
         textGray = p.textMuted
@@ -289,20 +281,6 @@ class SettingsActivity : AppCompatActivity() {
      *  This is a connectivity check only (not a Firestore reachability check) — it tells
      *  the user whether the app *can* sync right now, matching how PurchaseActivity's
      *  header sync chip works. */
-<<<<<<< HEAD
-    // ================= FLAT HEADER (matches every other screen — see PremiumHeader.kt) =================
-    // FLAT REDESIGN: was a custom navy banner with its own white icon-circle. Replaced with
-    // the shared premiumHeader() so this screen is controlled from PremiumHeader.kt instead of
-    // carrying its own header markup. shopNameHeaderText still needs to be mutable (updated
-    // later from the saved shop name), so it's pulled back out of the header's view tree.
-    private fun buildHeader(): LinearLayout {
-        val header = premiumHeader(R.drawable.ic_store, "My Shop", "POINT OF SALE", navy, navy) { finish() }
-        val headerCol = header.getChildAt(4) as LinearLayout
-        shopNameHeaderText = (headerCol.getChildAt(0) as TextView).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-=======
     // ================= PREMIUM GRADIENT HEADER (matches Product/Purchase/Sale headers) =================
     private fun buildHeader(): LinearLayout {
         val header = LinearLayout(this).apply {
@@ -354,7 +332,6 @@ class SettingsActivity : AppCompatActivity() {
         })
         header.addView(textCol)
 
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         return header
     }
 

@@ -11,6 +11,9 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.sync.SyncWorker
 import com.grocerypos.v11.ui.LoginActivity
@@ -176,8 +179,6 @@ class MainActivity : ThemedActivity() {
             setOnClickListener { toggleTheme() }
         })
 
-<<<<<<< HEAD
-=======
         topRow.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1)
         })
@@ -191,7 +192,6 @@ class MainActivity : ThemedActivity() {
             setOnClickListener { openQuickSwitchDialog() }
         })
 
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         topRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
 
         topRow.addView(LinearLayout(this).apply {
@@ -701,9 +701,6 @@ class MainActivity : ThemedActivity() {
         finish()
     }
 
-<<<<<<< HEAD
-    private data class QuickAction(val title: String, val subtitle: String, val accentHex: String, val accentHex2: String, val onClick: () -> Unit)
-=======
     // ================= QUICK SWITCH USER =================
     // List of every active staff account, tap-to-switch — a fast alternative to Logout +
     // full Login screen when the person handing the counter over is just changing who's
@@ -886,7 +883,6 @@ class MainActivity : ThemedActivity() {
     }
 
     private data class QuickAction(val title: String, val subtitle: String, val iconRes: Int, val bgHex: String, val fgHex: String, val onClick: () -> Unit)
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
 
     private fun premiumStatCard(label: String, tintBgHex: String, tintFgHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {

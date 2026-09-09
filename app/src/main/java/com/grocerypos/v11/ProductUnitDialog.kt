@@ -409,11 +409,7 @@ internal fun ProductActivity.openUnitDialog() {
         textSize = 14f
         setTextColor(Color.WHITE)
         setTypeface(typeface, Typeface.BOLD)
-<<<<<<< HEAD
-        background = gradientBg(teal, tealDark, cornerTop = 14, cornerBottom = 14)
-=======
         background = gradientBg(teal, "#0C8F8A", cornerTop = 14, cornerBottom = 14)
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
         setPadding(0, 24, 0, 24)
         applyElevation(this, 3f)
         layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {

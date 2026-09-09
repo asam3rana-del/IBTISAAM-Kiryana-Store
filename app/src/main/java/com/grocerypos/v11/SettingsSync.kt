@@ -231,11 +231,7 @@ internal fun SettingsActivity.openSyncHistoryDialog() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(16, 12, 16, 12)
-<<<<<<< HEAD
-                background = strokedBg(amber, amberBg, 12)
-=======
                 background = strokedBg("#F5A524", "#FFF8F0", 12)
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 12) }
@@ -288,11 +284,7 @@ internal fun SettingsActivity.openSyncHistoryDialog() {
             container.addView(LinearLayout(this@openSyncHistoryDialog).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(16, 12, 16, 12)
-<<<<<<< HEAD
-                background = strokedBg(border, if (isConflict || isFailure) amberBg else cardWhite, 12)
-=======
                 background = strokedBg(border, if (isConflict || isFailure) "#FFF8F0" else cardWhite, 12)
->>>>>>> cc8b3ed1c3be113f6b2a67aab0b9727c246553fa
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 8) }

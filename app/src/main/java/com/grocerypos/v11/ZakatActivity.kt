@@ -24,7 +24,6 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
-import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.ZakatYear
 import com.grocerypos.v11.smallestUnitFactor

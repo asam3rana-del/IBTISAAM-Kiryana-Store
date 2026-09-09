@@ -12,7 +12,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.*
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -612,17 +611,17 @@ class LoginActivity : ThemedActivity() {
                 } else {
                     user.passwordHash == typed
                 }
-                if (ok) {
-                    lifecycleScope.launch {
-                        val linked = user.copy(phone = phone)
-                        db.userDao().upsert(linked)
-                        loggedInUser = linked
-                        db.appSettingDao().set(AppSetting("last_username", linked.username))
-                        Toast.makeText(this@LoginActivity, "Phone account se link ho gaya.", Toast.LENGTH_LONG).show()
-                        completeLogin()
-                    }
-                } else {
+                if (!ok) {
                     Toast.makeText(this, "Password ghalat hai — phone link nahi hua", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    val linked = user.copy(phone = phone)
+                    db.userDao().upsert(linked)
+                    loggedInUser = linked
+                    db.appSettingDao().set(AppSetting("last_username", linked.username))
+                    Toast.makeText(this@LoginActivity, "Phone account se link ho gaya.", Toast.LENGTH_LONG).show()
+                    completeLogin()
                 }
             }
             .setNegativeButton("Cancel", null)

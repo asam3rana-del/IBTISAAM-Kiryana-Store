@@ -382,6 +382,9 @@ object SyncQueueHelper {
             "saleType" to sale.saleType,
             "createdAt" to sale.createdAt,
             "status" to sale.status,
+            // NEW (Due Date Reminders): synced like every other Sale field so a due
+            // date set on one device (from DueRemindersActivity) shows up on the other.
+            "dueDate" to sale.dueDate,
             "itemCount" to items.size,
             "items" to itemMaps,
             "updatedAt" to System.currentTimeMillis(),
