@@ -114,6 +114,29 @@ class ItemsActivity : ThemedActivity() {
         // ================= HEADER (matches Items/Categories/Reports) =================
         val header = premiumHeader(R.drawable.ic_box, "Items", "Products, Categories & Units", primary, primaryDark)
 
+        // ---- Rate List export — dumps every product's unit/wholesale/retail rate
+        // (all 3 unit tiers) into one CSV, so rates can be reviewed/audited in one
+        // glance in Excel/Sheets instead of scrolling and opening each product card
+        // one by one on this screen. ----
+        header.addView(TextView(this).apply {
+            text = "Rate List"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#33FFFFFF"))
+                cornerRadius = 30f
+            }
+            setPadding(18, 12, 18, 12)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_document, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
+            setOnClickListener { exportRateListCsv() }
+        })
+
+        header.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1)
+        })
+
         // ---- NEW: "Translate" pill button — launches BulkTranslateActivity so Urdu
         // category/unit values already saved can be renamed to English once each,
         // instead of editing every product individually. ----
@@ -837,5 +860,134 @@ class ItemsActivity : ThemedActivity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: Editable?) { onChanged(s?.toString() ?: "") }
         })
+    }
+
+    // ---------------- Rate List export (CSV) ----------------
+    // Lets the shopkeeper review/audit every product's unit + wholesale + retail rate
+    // (including 2nd/3rd unit conversions) in one spreadsheet instead of scrolling this
+    // list and opening each product one at a time.
+
+    private fun trimNum(v: Double): String =
+        if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+
+    private fun exportRateListCsv() {
+        if (allProducts.isEmpty()) {
+            Toast.makeText(this, "No products to export", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val stamp = java.text.SimpleDateFormat(
+                "yyyy-MM-dd_HH-mm",
+                java.util.Locale.getDefault()
+            ).format(java.util.Date())
+            val fileName = "IBTISAAM_Rate_List_$stamp.csv"
+
+            val folder = java.io.File(getExternalFilesDir(null), "IBTISAAM Rate Lists").apply {
+                if (!exists()) mkdirs()
+            }
+            val file = java.io.File(folder, fileName)
+
+            fun esc(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
+
+            file.bufferedWriter(Charsets.UTF_8).use { w ->
+                // UTF-8 BOM so Excel (which otherwise guesses the wrong encoding for a
+                // plain .csv) shows English/Urdu product & category names correctly
+                // instead of garbled characters.
+                w.write('\uFEFF'.toString())
+                w.write(
+                    listOf(
+                        "Name", "Category", "Unit",
+                        "Wholesale Rate", "Retail Rate",
+                        "2nd Unit", "1 Unit = Qty (2nd Unit)",
+                        "3rd Unit", "1 (2nd Unit) = Qty (3rd Unit)"
+                    ).joinToString(",")
+                )
+                w.newLine()
+                allProducts.sortedBy { it.name.lowercase(java.util.Locale.getDefault()) }
+                    .forEach { p ->
+                        w.write(
+                            listOf(
+                                esc(p.name),
+                                esc(p.category),
+                                esc(p.unit),
+                                trimNum(p.wholesalePrice),
+                                trimNum(p.salePrice),
+                                esc(p.secondaryUnit),
+                                if (p.secondaryUnit.isNotBlank()) trimNum(p.secondaryUnitQty) else "",
+                                esc(p.tertiaryUnit),
+                                if (p.tertiaryUnit.isNotBlank()) trimNum(p.tertiaryUnitQty) else ""
+                            ).joinToString(",")
+                        )
+                        w.newLine()
+                    }
+            }
+
+            copyRateListToDownloads(file, fileName)
+            shareRateList(file)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Also drops a copy into the public Downloads folder so the file stays
+     *  browsable/re-openable later even without re-sharing. */
+    private fun copyRateListToDownloads(sourceFile: java.io.File, fileName: String) {
+        try {
+            val subFolder = "IBTISAAM Rate Lists"
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val resolver = contentResolver
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+                    put(
+                        android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                        android.os.Environment.DIRECTORY_DOWNLOADS + "/" + subFolder
+                    )
+                }
+                val uri = resolver.insert(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    values
+                )
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        java.io.FileInputStream(sourceFile).use { input -> input.copyTo(out) }
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val downloadsDir = java.io.File(
+                    android.os.Environment.getExternalStoragePublicDirectory(
+                        android.os.Environment.DIRECTORY_DOWNLOADS
+                    ),
+                    subFolder
+                )
+                if (!downloadsDir.exists()) downloadsDir.mkdirs()
+                sourceFile.copyTo(java.io.File(downloadsDir, fileName), overwrite = true)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /** Opens the Android Share menu so the CSV can be opened directly in Excel/Sheets,
+     *  or sent via WhatsApp/Gmail/Drive for review on another device. */
+    private fun shareRateList(file: java.io.File) {
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Open/Share Rate List"))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Could not open share menu", Toast.LENGTH_SHORT).show()
+        }
     }
 }
