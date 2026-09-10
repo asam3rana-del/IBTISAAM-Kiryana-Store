@@ -17,6 +17,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -98,9 +100,18 @@ class ItemsActivity : ThemedActivity() {
     private lateinit var listContainer: RecyclerView
     private lateinit var fab: TextView
 
+    // ---- Rate List import: lets the user pick the CSV back up (after editing rates
+    // in Excel/Sheets) via the system file picker, and applies the edited rates back
+    // onto the matching products (matched by the hidden "Code" column). ----
+    private lateinit var importRatesLauncher: ActivityResultLauncher<Array<String>>
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         loadThemeColors()
+
+        importRatesLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { importRateListCsv(it) }
+        }
 
         val outer = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor(bg))
@@ -131,6 +142,30 @@ class ItemsActivity : ThemedActivity() {
             setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_document, "#FFFFFF", 13), null, null, null)
             compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
             setOnClickListener { exportRateListCsv() }
+        })
+
+        header.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1)
+        })
+
+        // ---- Import edited Rate List back — reads the CSV (after it was opened &
+        // edited in Excel/Sheets) and applies the new rates/units onto the matching
+        // products in this POS, so edits don't require re-entering each item by hand. ----
+        header.addView(TextView(this).apply {
+            text = "Import"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#33FFFFFF"))
+                cornerRadius = 30f
+            }
+            setPadding(18, 12, 18, 12)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_undo, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
+            setOnClickListener {
+                importRatesLauncher.launch(arrayOf("text/*", "text/comma-separated-values", "application/*"))
+            }
         })
 
         header.addView(View(this).apply {
@@ -896,7 +931,7 @@ class ItemsActivity : ThemedActivity() {
                 w.write('\uFEFF'.toString())
                 w.write(
                     listOf(
-                        "Name", "Category", "Unit",
+                        "Code (don't edit)", "Name", "Category", "Unit",
                         "Wholesale Rate", "Retail Rate",
                         "2nd Unit", "1 Unit = Qty (2nd Unit)",
                         "3rd Unit", "1 (2nd Unit) = Qty (3rd Unit)"
@@ -907,6 +942,7 @@ class ItemsActivity : ThemedActivity() {
                     .forEach { p ->
                         w.write(
                             listOf(
+                                esc(p.barcode),
                                 esc(p.name),
                                 esc(p.category),
                                 esc(p.unit),
@@ -923,7 +959,7 @@ class ItemsActivity : ThemedActivity() {
             }
 
             copyRateListToDownloads(file, fileName)
-            shareRateList(file)
+            openRateListDirectly(file)
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show()
@@ -970,24 +1006,135 @@ class ItemsActivity : ThemedActivity() {
         }
     }
 
-    /** Opens the Android Share menu so the CSV can be opened directly in Excel/Sheets,
-     *  or sent via WhatsApp/Gmail/Drive for review on another device. */
-    private fun shareRateList(file: java.io.File) {
+    /** Opens the CSV directly in whatever app the phone already uses for
+     *  spreadsheets (Excel, Sheets, WPS Office, etc.) — no Share menu in between.
+     *  Falls back to the Share sheet only if no app on the device can open it
+     *  directly (some phones need that route to pick a viewer). */
+    private fun openRateListDirectly(file: java.io.File) {
         try {
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 this,
                 "$packageName.fileprovider",
                 file
             )
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/csv"
-                putExtra(Intent.EXTRA_STREAM, uri)
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "text/csv")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            startActivity(Intent.createChooser(intent, "Open/Share Rate List"))
+            try {
+                startActivity(viewIntent)
+            } catch (notFound: android.content.ActivityNotFoundException) {
+                // No app registered for "text/csv" specifically — try a generic type,
+                // which some spreadsheet apps register instead.
+                viewIntent.setDataAndType(uri, "*/*")
+                startActivity(viewIntent)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
-            Toast.makeText(this, "Could not open share menu", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Rate List saved, but no app found to open it. Install Excel, Google Sheets or WPS Office to view/edit it.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /** Splits one CSV line into fields, honoring double-quoted fields (which may
+     *  contain commas or escaped "" quotes) — same format exportRateListCsv writes. */
+    private fun parseCsvLine(line: String): List<String> {
+        val fields = mutableListOf<String>()
+        val cur = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val ch = line[i]
+            when {
+                inQuotes && ch == '"' && i + 1 < line.length && line[i + 1] == '"' -> {
+                    cur.append('"'); i++
+                }
+                ch == '"' -> inQuotes = !inQuotes
+                ch == ',' && !inQuotes -> { fields.add(cur.toString()); cur.setLength(0) }
+                else -> cur.append(ch)
+            }
+            i++
+        }
+        fields.add(cur.toString())
+        return fields
+    }
+
+    /** Reads back a Rate List CSV (after it was edited in Excel/Sheets) and applies
+     *  the new unit/wholesale/retail rates onto the matching products here in the
+     *  POS — matched by the hidden "Code" column, so a renamed product still updates
+     *  correctly. Products edited on-device since export are safely overwritten by
+     *  whatever the CSV row says (last edit wins), same as editing them by hand. */
+    private fun importRateListCsv(uri: android.net.Uri) {
+        lifecycleScope.launch {
+            try {
+                val lines = contentResolver.openInputStream(uri)?.use { input ->
+                    input.bufferedReader(Charsets.UTF_8).readLines()
+                } ?: run {
+                    Toast.makeText(this@ItemsActivity, "Could not read file", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                if (lines.size < 2) {
+                    Toast.makeText(this@ItemsActivity, "File has no product rows", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val db = PosDatabase.get(this@ItemsActivity)
+                var updated = 0
+                var notFound = 0
+
+                lines.drop(1).forEach { rawLine ->
+                    if (rawLine.isBlank()) return@forEach
+                    // Strip a leading UTF-8 BOM if this is the very first data line.
+                    val line = rawLine.removePrefix("\uFEFF")
+                    val f = parseCsvLine(line)
+                    if (f.size < 6) return@forEach
+
+                    val barcode = f[0].trim()
+                    if (barcode.isBlank()) return@forEach
+                    val existing = db.productDao().find(barcode)
+                    if (existing == null) {
+                        notFound++
+                        return@forEach
+                    }
+
+                    val unit = f.getOrElse(3) { existing.unit }.trim().ifBlank { existing.unit }
+                    val wholesale = f.getOrElse(4) { "" }.trim().toDoubleOrNull() ?: existing.wholesalePrice
+                    val retail = f.getOrElse(5) { "" }.trim().toDoubleOrNull() ?: existing.salePrice
+                    val secondaryUnit = f.getOrElse(6) { "" }.trim()
+                    val secondaryUnitQty = f.getOrElse(7) { "" }.trim().toDoubleOrNull() ?: 0.0
+                    val tertiaryUnit = f.getOrElse(8) { "" }.trim()
+                    val tertiaryUnitQty = f.getOrElse(9) { "" }.trim().toDoubleOrNull() ?: 0.0
+
+                    db.productDao().upsert(
+                        existing.copy(
+                            unit = unit,
+                            wholesalePrice = wholesale,
+                            salePrice = retail,
+                            secondaryUnit = secondaryUnit,
+                            secondaryUnitQty = secondaryUnitQty,
+                            tertiaryUnit = tertiaryUnit,
+                            tertiaryUnitQty = tertiaryUnitQty,
+                            updatedAt = System.currentTimeMillis(),
+                            dirty = true
+                        )
+                    )
+                    updated++
+                }
+
+                val msg = if (notFound == 0) {
+                    "Updated $updated product(s)"
+                } else {
+                    "Updated $updated product(s), $notFound not found (Code column changed?)"
+                }
+                Toast.makeText(this@ItemsActivity, msg, Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Toast.makeText(this@ItemsActivity, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 }
