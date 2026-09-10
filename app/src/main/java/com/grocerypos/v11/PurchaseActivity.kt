@@ -513,21 +513,25 @@ class PurchaseActivity : ThemedActivity() {
         billedItemsHeader.addView(billedItemsSummaryText)
         billedItemsChevron = TextView(this).apply { text = "\u203A"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         billedItemsHeader.addView(billedItemsChevron)
-        cartColumn.addView(billedItemsHeader)
-        cartColumn.addView(spacer(14))
+        // ---- CHANGED (tablet / desktop-style layout — keyboard-hides-total fix):
+        // on phone this still goes straight into cartColumn (===root), unchanged.
+        // On tablet it's NOT added to cartColumn — see the final two-pane assembly
+        // below, where the header + cart list become their own independently-
+        // scrolling middle section, separate from the Total/Payment/Due/Save
+        // block. That way a long item list (or the keyboard eating vertical
+        // space) can only squeeze the cart-list area, never push Total/Paid/Save
+        // off-screen. ----
+        if (!isTabletWide) {
+            cartColumn.addView(billedItemsHeader)
+            cartColumn.addView(spacer(14))
+        }
 
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
 
-        // ---- ADDED (tablet / desktop-style layout): cart list shown inline in
-        // the right pane at all times instead of only via the popup dialog.
-        // renderItemsList() already keeps `itemsContainer` up to date on every
-        // add/remove; this just keeps it permanently attached and visible. ----
         if (isTabletWide) {
             billedItemsHeader.setOnClickListener(null)
             billedItemsHeader.isClickable = false
             billedItemsChevron.visibility = View.GONE
-            cartColumn.addView(itemsContainer)
-            cartColumn.addView(spacer(14))
         }
 
         val totalCard = premiumCard().apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(24, 20, 24, 20); background = strokedBg(border, fieldFill, 18) }
@@ -628,12 +632,39 @@ class PurchaseActivity : ThemedActivity() {
         if (isTabletWide) {
             // ---- ADDED (tablet / desktop-style layout): two side-by-side panes,
             // like a computer POS screen — left = supplier/item entry (scrolls),
-            // right = cart/bill/payment (its own scroll). `scrollArea` keeps
-            // pointing at the LEFT pane — every existing scrollArea call above is
-            // about the item-entry side of the screen, and the handful of
-            // payment-related scroll calls elsewhere are skipped on tablet
-            // (search isTabletWide in this file) since the right pane is short
-            // enough to already be fully visible without scrolling. ----
+            // right = cart/bill/payment. `scrollArea` keeps pointing at the LEFT
+            // pane — every existing scrollArea call above is about the item-entry
+            // side of the screen, and the handful of payment-related scroll calls
+            // elsewhere are skipped on tablet (search isTabletWide in this file).
+            //
+            // ---- FIX (keyboard-hides-total): same fix as SaleActivity — the
+            // right pane is built as THREE stacked pieces, not one long
+            // ScrollView. billedItemsHeader (fixed) + a scrollable middle strip
+            // holding just the cart list is the ONLY part that grows with more
+            // items or shrinks for the keyboard; cartColumn (Total/Payment/Due/
+            // Save) is pinned at the bottom with its own small ScrollView as a
+            // safety net. A LinearLayout gives non-weighted children their full
+            // requested height first, so Total/Paid/Save always stay visible
+            // regardless of how long the cart list gets or how much room the
+            // keyboard eats — only the cart list itself scrolls/shrinks. ----
+            val cartListScroll = ScrollView(this).apply {
+                addView(itemsContainer)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            }
+            val pinnedBottom = ScrollView(this).apply {
+                addView(cartColumn)
+            }
+            val rightPane = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(Color.parseColor(bg))
+                setPadding(16, 0, 0, 0)
+                addView(billedItemsHeader)
+                addView(spacer(10))
+                addView(cartListScroll)
+                addView(spacer(10))
+                addView(pinnedBottom)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            }
             val leftScroll = ScrollView(this).apply {
                 setBackgroundColor(Color.parseColor(bg))
                 setPadding(0, 0, 16, 0)
@@ -644,19 +675,13 @@ class PurchaseActivity : ThemedActivity() {
                 setBackgroundColor(Color.parseColor(border))
                 layoutParams = LinearLayout.LayoutParams((1 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.MATCH_PARENT)
             }
-            val rightScroll = ScrollView(this).apply {
-                setBackgroundColor(Color.parseColor(bg))
-                setPadding(16, 0, 0, 0)
-                addView(cartColumn)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
-            }
             val twoPane = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundColor(Color.parseColor(bg))
                 setPadding(24, 0, 24, 0)
                 addView(leftScroll)
                 addView(divider)
-                addView(rightScroll)
+                addView(rightPane)
             }
             scrollArea = leftScroll
             setContentView(twoPane)

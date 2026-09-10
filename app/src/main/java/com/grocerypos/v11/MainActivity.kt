@@ -27,6 +27,7 @@ import com.grocerypos.v11.ui.DayBookActivity
 import com.grocerypos.v11.ui.BackupExportActivity
 import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
+import com.grocerypos.v11.ui.StockReportActivity
 import com.grocerypos.v11.ui.ThemedActivity
 import com.grocerypos.v11.util.Loc
 import com.grocerypos.v11.util.ThemeManager
@@ -279,6 +280,12 @@ class MainActivity : ThemedActivity() {
             QuickAction("Sale", "Start a new sale", R.drawable.ic_cart, flatPurpleBg, flatPurpleFg) {
                 startActivity(Intent(this@MainActivity, SaleActivity::class.java))
             },
+            // ---- ADDED (dashboard fit for tablet): jumps straight into the
+            // existing Quick Sale dialog (SaleQuickSale.kt) instead of the full
+            // New Sale screen — for fast single/couple-item counter sales.
+            QuickAction("Quick Sale", "Fast single-item sale", R.drawable.ic_stopwatch, flatPurpleBg, flatPurpleFg) {
+                startActivity(Intent(this@MainActivity, SaleActivity::class.java).putExtra(SaleActivity.EXTRA_OPEN_QUICK_SALE, true))
+            },
             QuickAction("Cash", "Cash in / cash out", R.drawable.ic_wallet, flatAmberBg, flatAmberFg) {
                 startActivity(Intent(this@MainActivity, CashActivity::class.java))
             }
@@ -296,6 +303,14 @@ class MainActivity : ThemedActivity() {
         quickActions.add(
             QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
                 startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
+            }
+        )
+        // ---- ADDED (dashboard fit for tablet): one tap into Stock Report with
+        // the Low Stock filter already switched on, so restocking is a single
+        // tap away from the dashboard instead of Settings > Stock Report > toggle.
+        quickActions.add(
+            QuickAction("Low Stock", "Items needing restock", R.drawable.ic_warning, partyRedBg, partyRed) {
+                startActivity(Intent(this@MainActivity, StockReportActivity::class.java).putExtra(StockReportActivity.EXTRA_LOW_STOCK_ONLY, true))
             }
         )
         // NEW: Backup & Reports — combined CSV + PDF export (full data or custom date range).

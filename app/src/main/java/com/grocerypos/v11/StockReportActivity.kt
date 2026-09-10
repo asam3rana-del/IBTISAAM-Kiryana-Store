@@ -25,6 +25,12 @@ import com.grocerypos.v11.ui.components.*
 
 class StockReportActivity : AppCompatActivity() {
 
+    companion object {
+        // ---- ADDED (dashboard "Low Stock" card): when this extra is true, the
+        // screen opens with the Low Stock filter already switched on. ----
+        const val EXTRA_LOW_STOCK_ONLY = "low_stock_only"
+    }
+
     // ================= PREMIUM PALETTE (shared with Items / Categories / Reports) =================
     // Pulled from ThemeManager so this screen respects dark mode. Header was a
     // primary→primaryDark gradient; now flat like the rest of the app.
@@ -74,6 +80,8 @@ class StockReportActivity : AppCompatActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         loadThemeColors()
+        // ---- ADDED (dashboard "Low Stock" card) ----
+        lowStockOnly = intent.getBooleanExtra(EXTRA_LOW_STOCK_ONLY, false)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

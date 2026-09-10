@@ -44,6 +44,10 @@ class SaleActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_INVOICE = "invoice"
+        // ---- ADDED (dashboard "Quick Sale" card): when this extra is true, the
+        // Quick Sale dialog opens immediately on launch — lets MainActivity's
+        // dashboard jump straight into it instead of the full New Sale screen. ----
+        const val EXTRA_OPEN_QUICK_SALE = "open_quick_sale"
         private const val PREFS_NAME = "sale_draft_prefs"
         private const val KEY_DRAFT = "draft_json"
 
@@ -495,23 +499,26 @@ class SaleActivity : AppCompatActivity() {
         billedItemsHeader.addView(billedItemsTrigger)
         billedItemsChevron = TextView(this).apply { text = "\u203A"; textSize = 18f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD) }
         billedItemsHeader.addView(billedItemsChevron)
-        cartColumn.addView(billedItemsHeader)
-        cartColumn.addView(spacer(14))
+        // ---- CHANGED (tablet / desktop-style layout — keyboard-hides-total fix):
+        // on phone this still goes straight into cartColumn (===root), unchanged.
+        // On tablet it is NOT added to cartColumn — see the final two-pane
+        // assembly below, where the header + cart list become their own
+        // independently-scrolling middle section, separate from the
+        // Total/Payment/Due/Save block. That way a long item list (or the
+        // keyboard eating vertical space) can only ever squeeze the cart-list
+        // area — it can no longer push Total Amount / Paid Amount / Save off
+        // the bottom of the screen the way it did before this fix. ----
+        if (!isTabletWide) {
+            cartColumn.addView(billedItemsHeader)
+            cartColumn.addView(spacer(14))
+        }
 
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 0) }
 
-        // ---- ADDED (tablet / desktop-style layout): on the tablet pane the
-        // cart list is shown inline, right under its header, at all times —
-        // no need to tap through to a popup dialog to see what's in the bill.
-        // renderItemsList() (SaleCart.kt) already keeps `itemsContainer` up to
-        // date on every add/remove; this just keeps it permanently attached
-        // and visible instead of only borrowing it for the dialog. ----
         if (isTabletWide) {
             billedItemsHeader.setOnClickListener(null)
             billedItemsHeader.isClickable = false
             billedItemsChevron.visibility = View.GONE
-            cartColumn.addView(itemsContainer)
-            cartColumn.addView(spacer(14))
         }
 
         // ---------- Subtotal + discount card ----------
@@ -667,12 +674,43 @@ class SaleActivity : AppCompatActivity() {
         if (isTabletWide) {
             // ---- ADDED (tablet / desktop-style layout): two side-by-side panes,
             // like a computer POS screen — left = item entry (scrolls), right =
-            // cart/bill/payment (its own scroll, but stays fully visible since it's
-            // short enough on most tablets). `scrollView` keeps pointing at the LEFT
-            // pane, since every existing scrollView.smoothScrollTo(...) call in
+            // cart/bill/payment. `scrollView` keeps pointing at the LEFT pane,
+            // since every existing scrollView.smoothScrollTo(...) call in
             // SaleActivity.kt/SaleCart.kt is about the item-entry side of the
-            // screen (jumping back to Item Name / Sale Type after an action) — that
-            // behavior is unchanged, it just now scrolls the left pane only. ----
+            // screen (jumping back to Item Name / Sale Type after an action) —
+            // that behavior is unchanged, it just now scrolls the left pane only.
+            //
+            // ---- FIX (keyboard-hides-total): the right pane is built as THREE
+            // stacked pieces, not one long ScrollView — billedItemsHeader (fixed),
+            // a scrollable middle strip holding just the cart list (this is the
+            // ONLY part that grows with more items / shrinks for the keyboard),
+            // and cartColumn (Total/Payment/Due/Save) pinned at the bottom. A
+            // LinearLayout gives non-weighted children (the header and the
+            // pinned bottom block) their full requested height FIRST, and only
+            // gives the weighted middle strip whatever space is left over — so
+            // no matter how many items are billed, or how much the keyboard
+            // shrinks the window, Total/Paid/Save always get their space and
+            // stay visible; only the cart list itself scrolls/shrinks. The
+            // bottom block also has its own small ScrollView as a safety net,
+            // in case even it doesn't fully fit in extreme cases. ----
+            val cartListScroll = ScrollView(this).apply {
+                addView(itemsContainer)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            }
+            val pinnedBottom = ScrollView(this).apply {
+                addView(cartColumn)
+            }
+            val rightPane = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(Color.parseColor(bg))
+                setPadding(16, 0, 0, 0)
+                addView(billedItemsHeader)
+                addView(spacer(10))
+                addView(cartListScroll)
+                addView(spacer(10))
+                addView(pinnedBottom)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            }
             val leftScroll = ScrollView(this).apply {
                 setBackgroundColor(Color.parseColor(bg))
                 setPadding(0, 0, 16, 0)
@@ -683,19 +721,13 @@ class SaleActivity : AppCompatActivity() {
                 setBackgroundColor(Color.parseColor(border))
                 layoutParams = LinearLayout.LayoutParams((1 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.MATCH_PARENT)
             }
-            val rightScroll = ScrollView(this).apply {
-                setBackgroundColor(Color.parseColor(bg))
-                setPadding(16, 0, 0, 0)
-                addView(cartColumn)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
-            }
             val twoPane = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundColor(Color.parseColor(bg))
                 setPadding(24, 0, 24, 0)
                 addView(leftScroll)
                 addView(divider)
-                addView(rightScroll)
+                addView(rightPane)
             }
             scrollView = leftScroll
             setContentView(twoPane)
@@ -803,6 +835,11 @@ class SaleActivity : AppCompatActivity() {
 
         if (editInvoice == null) {
             restoreDraftIfAny()
+        }
+
+        // ---- ADDED (dashboard "Quick Sale" card) ----
+        if (intent.getBooleanExtra(EXTRA_OPEN_QUICK_SALE, false)) {
+            quickSaleDialog()
         }
     }
 
