@@ -1271,6 +1271,24 @@ class ProductActivity : ThemedActivity() {
     internal fun updateOpeningStockPreview() {
         if (!::stockPreview.isInitialized) return
 
+        // While editing an existing product, the "stock" field already holds the
+        // stored value in the SMALLEST unit (e.g. pcs/grams). It must never be
+        // re-interpreted as a fresh quantity typed in the currently selected
+        // spinner unit — doing so double-converts it (e.g. 7000 gram getting
+        // treated as "7000 Kg" and multiplied by 1000 again). Async spinner
+        // selection callbacks (triggered by refreshStockUnitAdapter/setStockUnitAdapter)
+        // used to call into this function and cause exactly that. So in edit mode,
+        // always just re-render the real current stock instead of recomputing it.
+        val existing = editingProduct
+        if (existing != null) {
+            stockPreview.text = Loc.t(
+                this,
+                "Current stock: ${existing.formatStockBreakdown()}",
+                "موجودہ اسٹاک: ${existing.formatStockBreakdown()}"
+            )
+            return
+        }
+
         val q = stock.text.toString().toDoubleOrNull() ?: 0.0
         if (q <= 0) {
             stockPreview.text = ""
