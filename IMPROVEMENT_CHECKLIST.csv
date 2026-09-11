@@ -1,0 +1,13 @@
+priority,status,item
+P1,DONE,Restore Gradle wrapper and verify release build
+P1,DONE,Validate CI debug keystore secret
+P2,DONE,Add UUID saleId independent of invoice number
+P2,DONE,Make invoice numbering collision-safe across devices
+P3,TODO,Test Room migrations from oldest supported version to 32
+P4,TODO,Run two-device offline sync stress tests
+P5,DONE,Review Android backup policy for POS business data
+P6,DONE,Add strict sale/purchase input validation (duplicate invoice/bill, empty bill, qty>0, rate>=0 all added; discount/paid<=total already safe)
+P7,VERIFY,Keep business writes atomic with Room transactions
+P8,TODO,Refactor SaleActivity into ViewModel/use cases
+P9,PARTIAL,Expand sales/purchase/sync automated tests (Sale-side P6 validation now covered; no FakePurchaseRepository/purchase tests yet, sync tests still open)
+P10,TODO,Complete production release checklist

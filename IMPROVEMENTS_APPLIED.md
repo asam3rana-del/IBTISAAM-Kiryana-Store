@@ -37,6 +37,80 @@ Applied fixes from the full assessment:
 7. **CI**
    - GitHub Actions now verifies the Firebase config is present before lint/test/build.
 
+8. **Android OS backup policy (Improvement Pack P5)**
+   - `android:allowBackup` changed from `true` to `false` in AndroidManifest.xml.
+   - Rationale: this app already has its own explicit, owner-password-protected
+     backup/restore flow (BackupHelper / BackupExportActivity / BackupCrypto)
+     built specifically for the POS's business data. Implicit OS-level Auto
+     Backup (Google Drive/cloud), adb backup, and the Android device-to-device
+     migration wizard would instead silently copy the whole app sandbox,
+     including several values that are only safe on the device that created
+     them:
+       - `device_prefs` (`DeviceTag`) — the per-installation tag that keeps two
+         devices' invoice numbers/sync IDs from colliding (Improvement Pack P2).
+         Restoring it onto a second device hands that device the same tag as
+         the original and reintroduces the exact bug P2 fixed.
+       - `backup_prefs` (`BackupPasswordStore`) — the local backup password is
+         encrypted with an Android Keystore key that is hardware-bound to the
+         original device; restored elsewhere it cannot be decrypted.
+       - `session` / `sync_prefs` — per-device login session and sync cursor
+         state that would leave a restored device logged in as the wrong user
+         or resuming sync from a stale position.
+   - Net effect: the Room database (sales, purchases, customers, suppliers,
+     balances) and every SharedPreferences file are now excluded from OS-level
+     backup/restore/device-transfer. The app's own in-app backup/export screen
+     remains the only supported way to archive or move this data, and it
+     already requires the owner's backup password to restore.
+
+9. **Duplicate invoice/bill rejection (Improvement Pack P6)**
+   - Sale side (`RoomSaleRepository.saveSale` / `saveQuickSale`) generated its
+     invoice number (timestamp + DeviceTag) but never checked whether that
+     invoice already existed before inserting. A retried/double-tapped Save
+     would hit the sales table's plain `@Insert` and surface a raw
+     `SQLiteConstraintException` straight to the cashier. Added a check
+     (`findSale(invoice) != null`) before insert on both paths, throwing a new
+     `DuplicateInvoiceException` with a friendly message; wired through
+     `SaveSaleResult.DuplicateInvoice` / `QuickSaleResult.DuplicateInvoice`,
+     `SaleEvent.DuplicateInvoice` / `SaleEvent.QuickSaleDuplicateInvoice`, and a
+     Toast in `SaleActivity.handleSaleEvent`.
+   - Purchase side (`PurchaseRepository.genBillNo`) was already safe: it
+     actively loops against the existing bill-number set until it finds an
+     unused candidate before ever inserting, so no change was needed there.
+
+10. **Qty>0 / rate>=0 validation (Improvement Pack P6, continued)**
+    - Sale side: `SaveSaleUseCase`/`SaveQuickSaleUseCase` now reject a line
+      with `qty <= 0` or a negative `unitPrice`/`price` before it ever reaches
+      the subtotal/stock-decrement math — previously neither the repository
+      nor the on-screen cart checked this at all. Wired through a new
+      `SaveSaleResult.InvalidLine` → `SaleEvent.InvalidLine` → Toast (main
+      flow); Quick Sale reuses the existing `QuickSaleResult.InvalidQty` path.
+    - Purchase side: `SavePurchaseUseCase` now rejects an empty bill and any
+      line with `qty <= 0` or a negative `rate` before calling
+      `PurchaseRepository.savePurchase` — this had no such guard at all.
+      Reuses the existing `SavePurchaseResult.Error` case, already wired
+      through `PurchaseViewModel`/`PurchaseActivity`, so no new event
+      plumbing was needed.
+    - Confirmed already safe and left untouched: `DiscountCalculator.compute`
+      already clamps discount to `[0, subtotal]` and paid to `[0, total]` for
+      the Sale flow, and `PurchaseActivity` already clamps `amountPaid` to
+      `[0, grandTotal]` for the Purchase flow.
+
+11. **Unit test coverage for the P6 validation (Improvement Pack P9, started)**
+    - `FakeSaleRepository` gained `saveSaleThrowsDuplicate` /
+      `saveQuickSaleThrowsDuplicate` so tests can simulate
+      `DuplicateInvoiceException` without a real database.
+    - `SaveSaleUseCaseTest`: zero qty, negative qty, negative rate (each
+      asserts `InvalidLine` AND that the repository was never called), a
+      mixed-lines case where one bad line blocks the whole sale, and a
+      duplicate-invoice-from-repository case.
+    - `SaveQuickSaleUseCaseTest`: zero qty, negative qty, negative price (all
+      asserting `InvalidQty` without a repository call), and a
+      duplicate-invoice-from-repository case.
+    - Not yet covered: `SavePurchaseUseCase`'s equivalent P6 validation has no
+      test yet — there's no `FakePurchaseRepository` in the test suite yet to
+      build it on top of (see Remaining operational checks / P9 in the
+      checklist).
+
 ## Remaining operational checks
 
 - Run `gradle lintDebug`, `gradle testDebugUnitTest`, and `gradle assembleDebug` in a network-enabled Android/Gradle environment.
