@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.Customer
+import com.grocerypos.v11.DeviceTag
 import com.grocerypos.v11.HeldBill
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
