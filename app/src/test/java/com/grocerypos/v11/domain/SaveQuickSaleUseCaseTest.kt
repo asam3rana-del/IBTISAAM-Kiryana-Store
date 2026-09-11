@@ -1,6 +1,7 @@
 package com.grocerypos.v11.domain
 
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.data.DuplicateInvoiceException
 import com.grocerypos.v11.data.InvalidQuantityException
 import com.grocerypos.v11.data.QuickSaleSaveResult
 import com.grocerypos.v11.data.StockUnavailableException
@@ -88,5 +89,41 @@ class SaveQuickSaleUseCaseTest {
         assertEquals(3.5, recorded.qty, 0.0)
         assertEquals(200.0, recorded.price, 0.0)
         assertEquals("Kg", recorded.unit)
+    }
+
+    // ---- Improvement Pack P6: qty>0 / rate>=0 / duplicate-invoice guards ----
+
+    @Test
+    fun `zero qty returns InvalidQty and never calls repository`() = runBlocking {
+        val result = useCase(testProduct, qty = 0.0, price = 150.0, unit = "Kg", customerName = "")
+
+        assertTrue(result is QuickSaleResult.InvalidQty)
+        assertEquals(null, fakeRepository.lastSaveQuickSaleCall)
+    }
+
+    @Test
+    fun `negative qty returns InvalidQty and never calls repository`() = runBlocking {
+        val result = useCase(testProduct, qty = -1.0, price = 150.0, unit = "Kg", customerName = "")
+
+        assertTrue(result is QuickSaleResult.InvalidQty)
+        assertEquals(null, fakeRepository.lastSaveQuickSaleCall)
+    }
+
+    @Test
+    fun `negative price returns InvalidQty and never calls repository`() = runBlocking {
+        val result = useCase(testProduct, qty = 1.0, price = -10.0, unit = "Kg", customerName = "")
+
+        assertTrue(result is QuickSaleResult.InvalidQty)
+        assertEquals(null, fakeRepository.lastSaveQuickSaleCall)
+    }
+
+    @Test
+    fun `duplicate invoice from repository maps to DuplicateInvoice`() = runBlocking {
+        fakeRepository.saveQuickSaleThrowsDuplicate = DuplicateInvoiceException("Invoice number pehle se mojood hai")
+
+        val result = useCase(testProduct, qty = 1.0, price = 150.0, unit = "Kg", customerName = "")
+
+        assertTrue(result is QuickSaleResult.DuplicateInvoice)
+        assertEquals("Invoice number pehle se mojood hai", (result as QuickSaleResult.DuplicateInvoice).message)
     }
 }

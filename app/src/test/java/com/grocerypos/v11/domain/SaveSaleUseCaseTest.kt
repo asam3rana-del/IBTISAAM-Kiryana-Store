@@ -1,6 +1,7 @@
 package com.grocerypos.v11.domain
 
 import com.grocerypos.v11.Customer
+import com.grocerypos.v11.data.DuplicateInvoiceException
 import com.grocerypos.v11.data.SaleSaveResult
 import com.grocerypos.v11.data.StockUnavailableException
 import kotlinx.coroutines.runBlocking
@@ -248,5 +249,110 @@ class SaveSaleUseCaseTest {
 
         assertTrue(result is SaveSaleResult.StockIssue)
         assertEquals("Sirf 2 Piece available hai", (result as SaveSaleResult.StockIssue).message)
+    }
+
+    // ---- Improvement Pack P6: qty>0 / rate>=0 / duplicate-invoice guards ----
+
+    @Test
+    fun `zero qty line returns InvalidLine and never calls repository`() = runBlocking {
+        val result = useCase(
+            editInvoice = null,
+            enteredCustomerName = "",
+            knownCustomers = emptyList(),
+            saleTypeLabel = "Retail",
+            lines = listOf(line(amount = 100.0, qty = 0.0)),
+            discountInput = 0.0,
+            paidInput = 100.0,
+            paymentMethodLabel = "Cash",
+            saleDateMillis = System.currentTimeMillis(),
+            original = null,
+            originalItems = emptyList()
+        )
+
+        assertTrue(result is SaveSaleResult.InvalidLine)
+        assertNull(fakeRepository.lastSaveSaleCall)
+    }
+
+    @Test
+    fun `negative qty line returns InvalidLine and never calls repository`() = runBlocking {
+        val result = useCase(
+            editInvoice = null,
+            enteredCustomerName = "",
+            knownCustomers = emptyList(),
+            saleTypeLabel = "Retail",
+            lines = listOf(line(amount = 100.0, qty = -2.0)),
+            discountInput = 0.0,
+            paidInput = 100.0,
+            paymentMethodLabel = "Cash",
+            saleDateMillis = System.currentTimeMillis(),
+            original = null,
+            originalItems = emptyList()
+        )
+
+        assertTrue(result is SaveSaleResult.InvalidLine)
+        assertNull(fakeRepository.lastSaveSaleCall)
+    }
+
+    @Test
+    fun `negative rate line returns InvalidLine and never calls repository`() = runBlocking {
+        // amount negative -> unitPrice = amount/qty is negative for a qty=1 line.
+        val result = useCase(
+            editInvoice = null,
+            enteredCustomerName = "",
+            knownCustomers = emptyList(),
+            saleTypeLabel = "Retail",
+            lines = listOf(line(amount = -50.0, qty = 1.0)),
+            discountInput = 0.0,
+            paidInput = 0.0,
+            paymentMethodLabel = "Cash",
+            saleDateMillis = System.currentTimeMillis(),
+            original = null,
+            originalItems = emptyList()
+        )
+
+        assertTrue(result is SaveSaleResult.InvalidLine)
+        assertNull(fakeRepository.lastSaveSaleCall)
+    }
+
+    @Test
+    fun `one bad line among several still blocks the whole sale before saving`() = runBlocking {
+        val result = useCase(
+            editInvoice = null,
+            enteredCustomerName = "",
+            knownCustomers = emptyList(),
+            saleTypeLabel = "Retail",
+            lines = listOf(line(barcode = "B1", amount = 100.0, qty = 1.0), line(barcode = "B2", amount = 50.0, qty = 0.0)),
+            discountInput = 0.0,
+            paidInput = 150.0,
+            paymentMethodLabel = "Cash",
+            saleDateMillis = System.currentTimeMillis(),
+            original = null,
+            originalItems = emptyList()
+        )
+
+        assertTrue(result is SaveSaleResult.InvalidLine)
+        assertNull(fakeRepository.lastSaveSaleCall)
+    }
+
+    @Test
+    fun `duplicate invoice from repository is surfaced as DuplicateInvoice with the message`() = runBlocking {
+        fakeRepository.saveSaleThrowsDuplicate = DuplicateInvoiceException("Invoice number pehle se mojood hai")
+
+        val result = useCase(
+            editInvoice = null,
+            enteredCustomerName = "",
+            knownCustomers = emptyList(),
+            saleTypeLabel = "Retail",
+            lines = listOf(line(amount = 100.0)),
+            discountInput = 0.0,
+            paidInput = 100.0,
+            paymentMethodLabel = "Cash",
+            saleDateMillis = System.currentTimeMillis(),
+            original = null,
+            originalItems = emptyList()
+        )
+
+        assertTrue(result is SaveSaleResult.DuplicateInvoice)
+        assertEquals("Invoice number pehle se mojood hai", (result as SaveSaleResult.DuplicateInvoice).message)
     }
 }

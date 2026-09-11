@@ -5,6 +5,7 @@ import com.grocerypos.v11.HeldBill
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.Sale
 import com.grocerypos.v11.SaleItem
+import com.grocerypos.v11.data.DuplicateInvoiceException
 import com.grocerypos.v11.data.InvalidQuantityException
 import com.grocerypos.v11.data.QuickSaleSaveResult
 import com.grocerypos.v11.data.SaleRepository
@@ -35,10 +36,14 @@ class FakeSaleRepository(
     // ---- Configure these before invoking a use case under test ----
     var saveSaleResult: SaleSaveResult = SaleSaveResult(customer = null, stockWarnings = emptyList())
     var saveSaleThrows: StockUnavailableException? = null
+    // NEW (Improvement Pack P9): lets a test simulate RoomSaleRepository's
+    // duplicate-invoice guard (Improvement Pack P6) without a real database.
+    var saveSaleThrowsDuplicate: DuplicateInvoiceException? = null
 
     var saveQuickSaleResult: QuickSaleSaveResult = QuickSaleSaveResult(invoice = "TESTINV", isCredit = false)
     var saveQuickSaleThrowsStock: StockUnavailableException? = null
     var saveQuickSaleThrowsInvalidQty: InvalidQuantityException? = null
+    var saveQuickSaleThrowsDuplicate: DuplicateInvoiceException? = null
 
     var findSaleResult: Sale? = null
     var itemsForInvoiceResult: List<SaleItem> = emptyList()
@@ -126,6 +131,7 @@ class FakeSaleRepository(
             isUpdate = original != null
         )
         saveSaleThrows?.let { throw it }
+        saveSaleThrowsDuplicate?.let { throw it }
         // Mirror RoomSaleRepository: the resolved customer (existing match, if
         // any) flows into the result unless a test has explicitly overridden
         // saveSaleResult with its own customer.
@@ -148,6 +154,7 @@ class FakeSaleRepository(
         lastSaveQuickSaleCall = SaveQuickSaleCallArgs(product, qty, price, unit, customerName)
         saveQuickSaleThrowsStock?.let { throw it }
         saveQuickSaleThrowsInvalidQty?.let { throw it }
+        saveQuickSaleThrowsDuplicate?.let { throw it }
         return saveQuickSaleResult
     }
 }
