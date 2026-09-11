@@ -846,9 +846,18 @@ class SaleActivity : AppCompatActivity() {
     // ---- Keyboard flow: after customer is picked/confirmed, jump straight into
     // Sale Type so the rest (item -> qty -> rate -> Add Item) can be done without
     // touching the screen. ----
+    // FIX (auto-scroll not firing after Customer -> Sale Type): saleTypeSpinner's
+    // own OnTouchListener (which sets saleTypeUserInteracted = true) only fires on a
+    // direct touch of the closed spinner. When this flow opens the dropdown
+    // programmatically via performClick(), the user's subsequent tap lands on the
+    // popup list item instead, never touching the spinner view itself — so the flag
+    // stayed false and the auto-scroll-to-top in saleTypeSpinner's onItemSelected
+    // never ran. The tap here still represents a real user choice, so set the flag
+    // directly instead of relying on the touch listener for this path.
     private fun goToSaleTypeFromCustomer() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(customerName.windowToken, 0)
+        saleTypeUserInteracted = true
         saleTypeSpinner.requestFocus()
         saleTypeSpinner.performClick()
     }

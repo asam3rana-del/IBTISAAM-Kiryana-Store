@@ -248,6 +248,17 @@ class SaleHistoryActivity : ThemedActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(8, 0, 12, 0)
         })
+        // ---- FIX (reprint bug): previously there was no way to print a sale again
+        // after it was first saved — the row only toggled expand/collapse, and
+        // Return/Delete were the only per-row actions. Added a Print icon that
+        // pulls the full Sale + its items straight from the DB and opens
+        // BillPreviewActivity directly, mirroring SaleActivity.openBillPreview()'s
+        // extras/encoding exactly so the reprinted bill matches the original. ----
+        addView(ImageView(this@SaleHistoryActivity).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_printer, navy, 16))
+            setPadding(10, 0, 4, 0)
+            setOnClickListener { printSale(sale.invoice) }
+        })
         if (sale.status != "returned") {
             addView(TextView(this@SaleHistoryActivity).apply {
                 text = "↩"
@@ -262,6 +273,38 @@ class SaleHistoryActivity : ThemedActivity() {
             setPadding(10, 0, 4, 0)
             setOnClickListener { confirmDelete(sale.invoice) }
         })
+    }
+
+    // ---- FIX (reprint bug) — see comment above the Print icon in saleRow(). ----
+    private fun printSale(invoice: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SaleHistoryActivity)
+            val sale = db.saleDao().findSale(invoice) ?: return@launch
+            val items = loadedItems[invoice] ?: db.saleDao().itemsForInvoice(invoice).also { loadedItems[invoice] = it }
+            val customerName = groupedSales.firstOrNull { grp -> grp.second.any { it.invoice == invoice } }
+                ?.second?.firstOrNull { it.invoice == invoice }?.customerName ?: ""
+
+            val itemsEncoded = items.joinToString("\u0002") { item ->
+                val qtyText = if (item.qty == item.qty.toLong().toDouble()) item.qty.toLong().toString() else item.qty.toString()
+                listOf(item.product, qtyText, item.unit, item.unitPrice, item.amount).joinToString("\u0003")
+            }
+
+            val previewIntent = Intent(this@SaleHistoryActivity, BillPreviewActivity::class.java).apply {
+                putExtra(BillPreviewActivity.EXTRA_TYPE, "sale")
+                putExtra(BillPreviewActivity.EXTRA_REFERENCE, invoice)
+                putExtra(BillPreviewActivity.EXTRA_PARTY_NAME, customerName)
+                putExtra(BillPreviewActivity.EXTRA_PARTY_LABEL, "Customer")
+                if (sale.customerId != null) putExtra(BillPreviewActivity.EXTRA_PARTY_ID, sale.customerId)
+                putExtra(BillPreviewActivity.EXTRA_DATE_MILLIS, sale.createdAt)
+                putExtra(BillPreviewActivity.EXTRA_SUBTOTAL, sale.subtotal)
+                putExtra(BillPreviewActivity.EXTRA_DISCOUNT, sale.discount)
+                putExtra(BillPreviewActivity.EXTRA_TOTAL, sale.total)
+                putExtra(BillPreviewActivity.EXTRA_PAID, sale.paid)
+                putExtra(BillPreviewActivity.EXTRA_PAYMENT_METHOD, sale.paymentMethod)
+                putExtra(BillPreviewActivity.EXTRA_ITEMS_ENCODED, itemsEncoded)
+            }
+            startActivity(previewIntent)
+        }
     }
 
     private fun itemLine(text: String, muted: Boolean) = TextView(this).apply {
