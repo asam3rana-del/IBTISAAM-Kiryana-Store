@@ -1439,7 +1439,13 @@ val MIGRATION_31_32 = object : Migration(31, 32) {
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
         ZakatYear::class,ZakatPayment::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class],
-    version=32, exportSchema=false
+    // FIX (Improvement Pack P3 — migration testing): was exportSchema=false, so Room
+    // never wrote a schema JSON for any version — MigrationTestHelper needs those to
+    // validate a migration's resulting schema (not just that it runs without an
+    // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
+    // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
+    // for versions 13-32 (which predate this change).
+    version=32, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
