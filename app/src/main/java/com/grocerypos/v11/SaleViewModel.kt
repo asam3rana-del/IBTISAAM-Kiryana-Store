@@ -48,6 +48,9 @@ sealed class SaleEvent {
     data class QuickSaleSuccess(val invoice: String, val isCredit: Boolean) : SaleEvent()
     data class QuickSaleStockIssue(val message: String) : SaleEvent()
     data class QuickSaleInvalidQty(val message: String) : SaleEvent()
+    // NEW (Improvement Pack P6): duplicate-invoice guard in RoomSaleRepository.
+    data class DuplicateInvoice(val message: String) : SaleEvent()
+    data class QuickSaleDuplicateInvoice(val message: String) : SaleEvent()
     object SaleDeleted : SaleEvent()
     object BillHeld : SaleEvent()
     data class CustomerAdded(val name: String) : SaleEvent()
@@ -128,6 +131,7 @@ class SaleViewModel(
                 is SaveSaleResult.EmptyItems -> _events.emit(SaleEvent.EmptyItems)
                 is SaveSaleResult.CustomerRequiredForDue -> _events.emit(SaleEvent.CustomerRequiredForDue)
                 is SaveSaleResult.StockIssue -> _events.emit(SaleEvent.StockIssue(result.message))
+                is SaveSaleResult.DuplicateInvoice -> _events.emit(SaleEvent.DuplicateInvoice(result.message))
             }
         }
     }
@@ -138,6 +142,7 @@ class SaleViewModel(
                 is QuickSaleResult.Success -> _events.emit(SaleEvent.QuickSaleSuccess(result.invoice, result.isCredit))
                 is QuickSaleResult.StockIssue -> _events.emit(SaleEvent.QuickSaleStockIssue(result.message))
                 is QuickSaleResult.InvalidQty -> _events.emit(SaleEvent.QuickSaleInvalidQty(result.message))
+                is QuickSaleResult.DuplicateInvoice -> _events.emit(SaleEvent.QuickSaleDuplicateInvoice(result.message))
             }
         }
     }

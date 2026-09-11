@@ -6,6 +6,7 @@ import com.grocerypos.v11.HeldBill
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.Sale
 import com.grocerypos.v11.SaleItem
+import com.grocerypos.v11.data.DuplicateInvoiceException
 import com.grocerypos.v11.data.InvalidQuantityException
 import com.grocerypos.v11.data.SaleRepository
 import com.grocerypos.v11.data.StockUnavailableException
@@ -70,6 +71,10 @@ sealed class SaveSaleResult {
     object EmptyItems : SaveSaleResult()
     object CustomerRequiredForDue : SaveSaleResult()
     data class StockIssue(val message: String) : SaveSaleResult()
+    // NEW (Improvement Pack P6): mirrors StockIssue — same shape, distinct case
+    // so the Activity/ViewModel can tell a stock problem apart from a duplicate
+    // invoice if it ever wants to react differently (e.g. regenerate + retry).
+    data class DuplicateInvoice(val message: String) : SaveSaleResult()
 }
 
 /** Result of a Quick Sale (single-item, no draft workflow). */
@@ -77,6 +82,8 @@ sealed class QuickSaleResult {
     data class Success(val invoice: String, val isCredit: Boolean) : QuickSaleResult()
     data class StockIssue(val message: String) : QuickSaleResult()
     data class InvalidQty(val message: String) : QuickSaleResult()
+    // NEW (Improvement Pack P6): see SaveSaleResult.DuplicateInvoice.
+    data class DuplicateInvoice(val message: String) : QuickSaleResult()
 }
 
 class ObserveCustomersForSaleUseCase(private val repository: SaleRepository) {
@@ -191,6 +198,8 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
             )
         } catch (e: StockUnavailableException) {
             SaveSaleResult.StockIssue(e.message ?: "")
+        } catch (e: DuplicateInvoiceException) {
+            SaveSaleResult.DuplicateInvoice(e.message ?: "")
         }
     }
 }
@@ -210,6 +219,8 @@ class SaveQuickSaleUseCase(private val repository: SaleRepository) {
             QuickSaleResult.StockIssue(e.message ?: "")
         } catch (e: InvalidQuantityException) {
             QuickSaleResult.InvalidQty(e.message ?: "")
+        } catch (e: DuplicateInvoiceException) {
+            QuickSaleResult.DuplicateInvoice(e.message ?: "")
         }
     }
 }

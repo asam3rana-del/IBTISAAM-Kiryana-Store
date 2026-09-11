@@ -148,6 +148,16 @@ class RoomSaleRepository(
                 SyncQueueHelper.enqueueCustomer(db, customer!!)
             }
 
+            // FIX (Improvement Pack P6): reject a duplicate invoice for a brand-new
+            // sale (original == null — the edit path above already deletes any
+            // existing row for this invoice first, so it's exempt). Without this,
+            // a re-submitted Save (double-tap, retry after a timeout, etc.) would
+            // hit the sales table's plain @Insert and surface a raw
+            // SQLiteConstraintException instead of a clear, catchable error.
+            if (original == null && db.saleDao().findSale(invoice) != null) {
+                throw DuplicateInvoiceException("Invoice number \"$invoice\" pehle se mojood hai. Dobara try karen.")
+            }
+
             db.saleDao().sale(
                 Sale(
                     invoice = invoice,
@@ -305,6 +315,13 @@ class RoomSaleRepository(
 
             val paid = if (isCredit) 0.0 else amount
             val method = if (isCredit) "credit" else "cash"
+
+            // FIX (Improvement Pack P6): same duplicate-invoice guard as saveSale()
+            // above — protects against a retried/double-tapped Quick Sale hitting
+            // the sales table's plain @Insert with a raw SQLiteConstraintException.
+            if (db.saleDao().findSale(invoice) != null) {
+                throw DuplicateInvoiceException("Invoice number \"$invoice\" pehle se mojood hai. Dobara try karen.")
+            }
 
             db.saleDao().sale(
                 Sale(

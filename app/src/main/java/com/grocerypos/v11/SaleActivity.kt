@@ -1160,6 +1160,8 @@ class SaleActivity : AppCompatActivity() {
                 Toast.makeText(this, "Due amount ke liye Customer zaroori hai", Toast.LENGTH_SHORT).show()
             is SaleEvent.StockIssue ->
                 Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
+            is SaleEvent.DuplicateInvoice ->
+                Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
             is SaleEvent.SaveSuccess -> {
                 val result = event.result
                 result.stockWarnings.forEach { warning ->
@@ -1196,6 +1198,8 @@ class SaleActivity : AppCompatActivity() {
             is SaleEvent.QuickSaleStockIssue ->
                 Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
             is SaleEvent.QuickSaleInvalidQty ->
+                Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
+            is SaleEvent.QuickSaleDuplicateInvoice ->
                 Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
             is SaleEvent.SaleDeleted -> {
                 Toast.makeText(this, "Sale deleted", Toast.LENGTH_SHORT).show()

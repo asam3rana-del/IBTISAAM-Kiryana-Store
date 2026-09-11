@@ -18,6 +18,14 @@ class StockUnavailableException(message: String) : Exception(message)
  * convert to a whole smallest-unit quantity for a non-fractional item. */
 class InvalidQuantityException(message: String) : Exception(message)
 
+/** Thrown by [SaleRepository.saveSale] when saving a NEW sale (not an edit)
+ * whose invoice number already exists in the database — e.g. a double-tap on
+ * Save re-submitting the same generated invoice, or (very unlikely with the
+ * DeviceTag-suffixed generator) two saves landing on the identical string.
+ * Without this check a plain @Insert would instead surface a raw
+ * SQLiteConstraintException to the cashier (Improvement Pack P6). */
+class DuplicateInvoiceException(message: String) : Exception(message)
+
 data class SaleSaveResult(val customer: Customer?, val stockWarnings: List<String>)
 data class QuickSaleSaveResult(val invoice: String, val isCredit: Boolean)
 
