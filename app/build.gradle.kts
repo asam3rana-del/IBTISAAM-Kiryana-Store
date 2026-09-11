@@ -18,6 +18,9 @@ android {
         targetSdk = 35
         versionCode = 10
         versionName = "10.0"
+        // Needed to run app/src/androidTest (incl. MigrationTest) with
+        // ./gradlew connectedAndroidTest / from Android Studio's test runner.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Branch identity is configured securely at runtime from Settings > Cloud Sync
         // Setup. Do not bake a branch into the APK; the same APK can now be installed
         // on every device/branch. Server-side Firestore rules remain the authority.
@@ -124,4 +127,15 @@ dependencies {
 
     // ===== Unit testing (app/src/test — runs on the JVM, no device/emulator) =====
     testImplementation("junit:junit:4.13.2")
+
+    // ===== Instrumented testing (app/src/androidTest — runs on a device/emulator) =====
+    // P3 (Improvement Pack): Room migration tests (MigrationTest.kt) need a real
+    // SQLite implementation to create/upgrade a database file, which the plain JVM
+    // unit-test sourceset above doesn't have — hence androidTest, not test.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    // room-testing pulls in MigrationTestHelper + the SupportSQLiteOpenHelper APIs
+    // MigrationTest.kt uses to hand-build the oldest supported (v13) schema.
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
 }
