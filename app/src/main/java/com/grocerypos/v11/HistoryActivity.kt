@@ -19,6 +19,7 @@ import com.grocerypos.v11.R
 import com.grocerypos.v11.ReturnLine
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.data.PurchaseRepository
+import com.grocerypos.v11.data.RoomPurchaseRepository
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.smallestQty
 import com.grocerypos.v11.toSmallestUnits
@@ -50,7 +51,7 @@ class HistoryActivity : AppCompatActivity() {
     // Routing through the repository's own deletePurchase() removes the copy
     // and the bug at the same time — one implementation to keep correct.
     private val purchaseRepository: PurchaseRepository by lazy {
-        PurchaseRepository(PosDatabase.get(this), applicationContext)
+        RoomPurchaseRepository(PosDatabase.get(this), applicationContext)
     }
 
     companion object {

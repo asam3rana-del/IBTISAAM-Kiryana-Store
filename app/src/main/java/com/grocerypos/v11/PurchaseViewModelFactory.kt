@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.data.PurchaseRepository
+import com.grocerypos.v11.data.RoomPurchaseRepository
 import com.grocerypos.v11.domain.AddProductUseCase
 import com.grocerypos.v11.domain.AddSupplierUseCase
 import com.grocerypos.v11.domain.AddUnitUseCase
@@ -27,7 +28,7 @@ import com.grocerypos.v11.domain.SavePurchaseUseCase
  */
 class PurchaseViewModelFactory(context: Context) : ViewModelProvider.Factory {
 
-    private val repository = PurchaseRepository(PosDatabase.get(context), context.applicationContext)
+    private val repository: PurchaseRepository = RoomPurchaseRepository(PosDatabase.get(context), context.applicationContext)
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {

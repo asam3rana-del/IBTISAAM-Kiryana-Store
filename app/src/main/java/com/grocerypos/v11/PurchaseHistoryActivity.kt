@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
 import com.grocerypos.v11.*
 import com.grocerypos.v11.data.PurchaseRepository
+import com.grocerypos.v11.data.RoomPurchaseRepository
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -46,7 +47,7 @@ class PurchaseHistoryActivity : ThemedActivity() {
     // synced the deletion elsewhere. Routing through the repository's own
     // deletePurchase() removes the copy and the bug at the same time.
     private val purchaseRepository: PurchaseRepository by lazy {
-        PurchaseRepository(PosDatabase.get(this), applicationContext)
+        RoomPurchaseRepository(PosDatabase.get(this), applicationContext)
     }
 
     // ---- Own inline copies of the premium styling helpers, mirroring how ProductActivity
