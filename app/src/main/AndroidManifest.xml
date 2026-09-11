@@ -15,11 +15,35 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- FIX (Improvement Pack P5 — Android backup policy for POS business data):
+         allowBackup deliberately set to false. This app's Room database and
+         SharedPreferences hold live business data (sales, purchases, customer/
+         supplier balances) plus several device-scoped values that must never be
+         silently copied onto another device or restored from an OS/cloud backup:
+           - device_prefs (DeviceTag): a per-installation random tag that keeps
+             two devices' sync IDs/invoice numbers from colliding (see DeviceTag.kt,
+             Improvement Pack P2). Restoring it onto a second device would hand
+             that device the SAME tag as the original, silently reintroducing the
+             exact multi-device collision bug P2 fixed.
+           - backup_prefs (BackupPasswordStore): the local backup password,
+             encrypted with an Android Keystore key that is hardware-bound to the
+             ORIGINAL device. Restored on another device it decrypts to garbage.
+           - session / sync_prefs: per-device login session and sync cursor state
+             that would leave a restored device logged in as the wrong user or
+             pointing at a stale sync position.
+         The app already ships its own explicit, owner-password-protected backup/
+         restore flow (BackupHelper, BackupExportActivity, BackupCrypto) which is
+         the only supported way to move or archive this business data — so
+         implicit OS-level Auto Backup (Google Drive/cloud), adb backup, and the
+         Android device-to-device migration wizard are all disabled here rather
+         than partially allow-listed, since none of them are how this app can
+         safely reconstruct its cross-device-unique state. See
+         SECURITY-FIX-README.md / IMPROVEMENTS_APPLIED.md for the full writeup. -->
     <application
         android:name=".PosApplication"
         android:theme="@style/Theme.GroceryPOS"
         android:label="IBTISAAM TRADERS POS"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:supportsRtl="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
