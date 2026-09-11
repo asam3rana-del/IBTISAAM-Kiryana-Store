@@ -344,18 +344,26 @@ class PartyTransactionActivity : AppCompatActivity() {
             val reasonText = (if (isCustomer) "Payment received from $partyName" else "Payment made to $partyName") +
                 if (note.isNotEmpty()) " | $note" else ""
 
-            val payment = Payment(reference = reference, partyType = partyType, partyId = partyId, amount = amount, method = method, note = note)
-            val paymentId = db.paymentDao().insert(payment)
-            SyncQueueHelper.enqueuePayment(db, payment.copy(id = paymentId))
+            // FIX (P7 code review): payment insert, balance adjustment, and the
+            // matching cash transaction now run inside one db.withTransaction —
+            // same atomicity guarantee as RoomSaleRepository.saveSale() /
+            // RoomPurchaseRepository.savePurchase(). Previously these were three
+            // separate sequential writes, so a crash/kill mid-save could record
+            // the payment without adjusting the party's balance (or vice versa).
+            db.withTransaction {
+                val payment = Payment(reference = reference, partyType = partyType, partyId = partyId, amount = amount, method = method, note = note)
+                val paymentId = db.paymentDao().insert(payment)
+                SyncQueueHelper.enqueuePayment(db, payment.copy(id = paymentId))
 
-            // A customer paying us reduces what they owe (balance goes down); us paying a
-            // supplier reduces what we owe them — both are a negative adjustment.
-            if (isCustomer) SyncQueueHelper.adjustCustomerBalance(db, partyId, -amount)
-            else SyncQueueHelper.adjustSupplierBalance(db, partyId, -amount)
+                // A customer paying us reduces what they owe (balance goes down); us paying a
+                // supplier reduces what we owe them — both are a negative adjustment.
+                if (isCustomer) SyncQueueHelper.adjustCustomerBalance(db, partyId, -amount)
+                else SyncQueueHelper.adjustSupplierBalance(db, partyId, -amount)
 
-            val cashTx = CashTransaction(type = if (isCustomer) "IN" else "OUT", method = method.lowercase(), amount = amount, reason = reasonText, reference = reference)
-            val cashTxId = db.cashTransactionDao().insert(cashTx)
-            SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
+                val cashTx = CashTransaction(type = if (isCustomer) "IN" else "OUT", method = method.lowercase(), amount = amount, reason = reasonText, reference = reference)
+                val cashTxId = db.cashTransactionDao().insert(cashTx)
+                SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
+            }
             SyncQueueHelper.trigger(this@PartyTransactionActivity)
 
             Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Payment saved", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0645\u062D\u0641\u0648\u0638 \u06C1\u0648 \u06AF\u0626\u06CC"), Toast.LENGTH_SHORT).show()
