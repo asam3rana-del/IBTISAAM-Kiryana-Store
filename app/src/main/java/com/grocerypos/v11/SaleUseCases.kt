@@ -1,6 +1,7 @@
 package com.grocerypos.v11.domain
 
 import com.grocerypos.v11.Customer
+import com.grocerypos.v11.DeviceTag
 import com.grocerypos.v11.HeldBill
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.Sale
