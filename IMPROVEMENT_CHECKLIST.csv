@@ -9,5 +9,5 @@ P5,DONE,Review Android backup policy for POS business data
 P6,DONE,Add strict sale/purchase input validation (duplicate invoice/bill, empty bill, qty>0, rate>=0 all added; discount/paid<=total already safe)
 P7,VERIFY,Keep business writes atomic with Room transactions
 P8,TODO,Refactor SaleActivity into ViewModel/use cases
-P9,PARTIAL,Expand sales/purchase/sync automated tests (Sale-side P6 validation now covered; no FakePurchaseRepository/purchase tests yet, sync tests still open)
+P9,PARTIAL,Expand sales/purchase/sync automated tests (Sale-side and Purchase-side P6 validation now covered via FakeSaleRepository/FakePurchaseRepository; sync tests still open)
 P10,TODO,Complete production release checklist

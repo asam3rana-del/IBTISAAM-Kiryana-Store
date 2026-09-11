@@ -106,9 +106,28 @@ Applied fixes from the full assessment:
     - `SaveQuickSaleUseCaseTest`: zero qty, negative qty, negative price (all
       asserting `InvalidQty` without a repository call), and a
       duplicate-invoice-from-repository case.
-    - Not yet covered: `SavePurchaseUseCase`'s equivalent P6 validation has no
-      test yet — there's no `FakePurchaseRepository` in the test suite yet to
-      build it on top of (see Remaining operational checks / P9 in the
+12. **Unit test coverage for the Purchase-side P6 validation (Improvement Pack P9, continued)**
+    - `PurchaseRepository` (`data/PurchaseRepository.kt`) was a concrete class
+      tied directly to `PosDatabase`/`Context`, so `SavePurchaseUseCase` could
+      not be unit tested without a real Room database — unlike the Sale side,
+      which already had `SaleRepository` as an interface. Split it the same
+      way: `PurchaseRepository` is now an interface (data classes `PurchaseLine`
+      / `PurchaseEditData` / `SavePurchaseResult` unchanged), and the old
+      implementation moved unchanged into a new `RoomPurchaseRepository`
+      class. `PurchaseViewModelFactory`, `HistoryActivity`, and
+      `PurchaseHistoryActivity` (the three places that used to construct
+      `PurchaseRepository(db, context)` directly) now construct
+      `RoomPurchaseRepository(db, context)` instead; everywhere else in the
+      app already referred to the type as `PurchaseRepository`, so nothing
+      else changed.
+    - Added `FakePurchaseRepository`, mirroring `FakeSaleRepository`.
+    - `SavePurchaseUseCaseTest`: empty bill, zero qty, negative qty, negative
+      rate (each asserts `SavePurchaseResult.Error` AND that the repository
+      was never called), a mixed-lines case where one bad line blocks the
+      whole bill, a valid-bill-is-forwarded-and-Success-returned case, and a
+      repository-level `Error` (e.g. a costing refusal) passed through
+      unchanged.
+    - Still open: sync tests (see Remaining operational checks / P9 in the
       checklist).
 
 ## Remaining operational checks
