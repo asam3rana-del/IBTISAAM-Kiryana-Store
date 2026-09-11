@@ -8,6 +8,6 @@ P4,TODO,Run two-device offline sync stress tests
 P5,DONE,Review Android backup policy for POS business data
 P6,DONE,Add strict sale/purchase input validation (duplicate invoice/bill, empty bill, qty>0, rate>=0 all added; discount/paid<=total already safe)
 P7,VERIFY,Keep business writes atomic with Room transactions
-P8,TODO,Refactor SaleActivity into ViewModel/use cases
+P8,DONE,Refactor SaleActivity into ViewModel/use cases (verified: SaleActivity has zero direct Room/repository access — all business logic already routes through SaleViewModel -> SaveSaleUseCase/DeleteSaleUseCase/etc; remaining ~1350 lines are UI construction only)
 P9,PARTIAL,Expand sales/purchase/sync automated tests (Sale-side and Purchase-side P6 validation now covered via FakeSaleRepository/FakePurchaseRepository; sync tests still open)
 P10,TODO,Complete production release checklist

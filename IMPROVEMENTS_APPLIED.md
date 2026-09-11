@@ -130,6 +130,26 @@ Applied fixes from the full assessment:
     - Still open: sync tests (see Remaining operational checks / P9 in the
       checklist).
 
+13. **SaleActivity/ViewModel separation verified (Improvement Pack P8)**
+    - Checklist had P8 marked TODO ("Refactor SaleActivity into ViewModel/use
+      cases"), but on inspection this was already done in an earlier pass and
+      the checklist simply hadn't been updated to match.
+    - `SaleActivity.kt` (1353 lines) has zero direct `PosDatabase`/
+      `SaleRepository` access — every business operation goes through
+      `SaleViewModel` (`viewModel.saveSale()`, `.deleteSale()`, `.loadForEdit()`,
+      `.addCustomer()`, `.holdBill()`, `.deleteHeldBill()`), which in turn only
+      calls into `SaveSaleUseCase`/`SaveQuickSaleUseCase`/`DeleteSaleUseCase`/
+      etc. — it holds no business logic itself, just translates UseCase
+      results into `SaleEvent`s.
+    - Validation (empty items, qty>0/rate>=0, duplicate invoice, customer-
+      required-for-due) all lives in the UseCase layer, not the Activity.
+    - The remaining lines in `SaleActivity.kt` are UI construction only:
+      themed view builders (`premiumCard`/`innerField`/`pillChip`/
+      `circleIcon`), dialogs, the date picker, the overflow menu, text
+      watchers, and draft save/restore (SharedPreferences — UI state, not
+      business data). No further extraction needed here.
+    - Status updated to DONE in the checklist.
+
 ## Remaining operational checks
 
 - Run `gradle lintDebug`, `gradle testDebugUnitTest`, and `gradle assembleDebug` in a network-enabled Android/Gradle environment.
