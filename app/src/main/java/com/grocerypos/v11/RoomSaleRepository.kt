@@ -298,7 +298,9 @@ class RoomSaleRepository(
 
             val now = System.currentTimeMillis()
             val mmYY = SimpleDateFormat("MMyy", Locale.getDefault()).format(Date(now))
-            val invoice = mmYY + now.toString().takeLast(8)
+            // FIX (Improvement Pack P2): same collision-safety fix as SaleUseCases.kt's
+            // main-sale-flow invoice generator — see the comment there.
+            val invoice = mmYY + now.toString().takeLast(8) + "-" + DeviceTag.current
 
             val paid = if (isCredit) 0.0 else amount
             val method = if (isCredit) "credit" else "cash"

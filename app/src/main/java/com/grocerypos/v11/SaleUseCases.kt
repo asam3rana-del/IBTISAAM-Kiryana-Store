@@ -148,8 +148,16 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
         val existingCustomer = knownCustomers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
         val saleType = if (saleTypeLabel == "Wholesale") "wholesale" else "retail"
         val invoice = editInvoice ?: run {
+            // FIX (Improvement Pack P2): was mmYY + timestamp-tail alone — two devices
+            // saving a sale in the same millisecond (or with any clock skew between
+            // them) could generate the exact identical invoice string, and since
+            // `invoice` is the sales table's primary key with REPLACE-on-conflict sync
+            // semantics, one sale would silently overwrite the other. Suffixing the
+            // same per-install DeviceTag already used by PurchaseRepository.genBillNo()
+            // makes it impossible for two devices to collide, matching that
+            // already-established, already-proven-safe pattern.
             val mmYY = SimpleDateFormat("MMyy", Locale.getDefault()).format(Date(saleDateMillis))
-            mmYY + System.currentTimeMillis().toString().takeLast(8)
+            mmYY + System.currentTimeMillis().toString().takeLast(8) + "-" + DeviceTag.current
         }
 
         return try {

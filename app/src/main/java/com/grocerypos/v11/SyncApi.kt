@@ -533,7 +533,11 @@ object SyncApi {
                 updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
                 dirty = false,
                 // NEW (Due Date Reminders): pull the reminder date set on either device.
-                dueDate = (row["dueDate"] as? Number)?.toLong() ?: 0L
+                dueDate = (row["dueDate"] as? Number)?.toLong() ?: 0L,
+                // NEW (Improvement Pack P2): keep whatever saleUid the creating device
+                // assigned, instead of generating a fresh one here — a fresh fallback is
+                // only used for a sale synced from before this field existed.
+                saleUid = (row["saleUid"] as? String)?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
             )
             saleDao.upsertSale(sale)
 
@@ -550,7 +554,9 @@ object SyncApi {
                         unitPrice = (im["unitPrice"] as? Number)?.toDouble() ?: 0.0,
                         cost = (im["cost"] as? Number)?.toDouble() ?: 0.0,
                         amount = (im["amount"] as? Number)?.toDouble() ?: 0.0,
-                        conversionFactor = (im["conversionFactor"] as? Number)?.toDouble() ?: 0.0
+                        conversionFactor = (im["conversionFactor"] as? Number)?.toDouble() ?: 0.0,
+                        // NEW (Improvement Pack P2): see the Sale.saleUid pull above.
+                        lineUid = (im["lineUid"] as? String)?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
                     )
                 }
                 if (items.isNotEmpty()) {
@@ -580,7 +586,9 @@ object SyncApi {
                 discount = (row["discount"] as? Number)?.toDouble() ?: 0.0,
                 status = row["status"] as? String ?: "active",
                 updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
-                dirty = false
+                dirty = false,
+                // NEW (Improvement Pack P2): see the Sale.saleUid pull above.
+                purchaseUid = (row["purchaseUid"] as? String)?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
             )
             purchaseDao.upsertPurchase(purchase)
 
@@ -595,7 +603,9 @@ object SyncApi {
                         unitCost = (im["unitCost"] as? Number)?.toDouble() ?: 0.0,
                         amount = (im["amount"] as? Number)?.toDouble() ?: 0.0,
                         unit = im["unit"] as? String ?: "",
-                        conversionFactor = (im["conversionFactor"] as? Number)?.toDouble() ?: 0.0
+                        conversionFactor = (im["conversionFactor"] as? Number)?.toDouble() ?: 0.0,
+                        // NEW (Improvement Pack P2): see the Sale.saleUid pull above.
+                        lineUid = (im["lineUid"] as? String)?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
                     )
                 }
                 if (items.isNotEmpty()) {

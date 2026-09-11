@@ -6,6 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import kotlin.math.roundToInt
+import java.util.UUID
 
 data class DailySales(val day:String,val total:Double)
 data class TopProduct(val product:String,val totalQty:Double)
@@ -386,7 +387,18 @@ data class Sale(
     // as an epoch-millis midnight timestamp. 0L means "no reminder set yet" — set/changed
     // from DueRemindersActivity, never touched by the normal checkout flow in SaleActivity.
     // See MIGRATION_29_30 for the matching ALTER TABLE.
-    @ColumnInfo(defaultValue="0") val dueDate:Long=0L
+    @ColumnInfo(defaultValue="0") val dueDate:Long=0L,
+    // NEW (Improvement Pack P2 — safe unique sale identifiers): a permanent,
+    // globally-unique id for this sale that is completely independent of the
+    // human-readable `invoice` string. `invoice` stays the primary key and the
+    // number printed on receipts (unchanged), but invoice numbers are still
+    // partly time-based text meant for humans — this field is the real,
+    // collision-proof identity of the sale for any future cross-device
+    // reconciliation. Auto-generated for every new Sale object unless
+    // explicitly overridden (e.g. when reconstructing one pulled from Firestore
+    // in SyncApi.kt, so the same sale keeps the same saleUid on every device).
+    // See MIGRATION_31_32 for the matching ALTER TABLE + backfill of existing rows.
+    @ColumnInfo(defaultValue="") val saleUid:String=UUID.randomUUID().toString()
 )
 
 // FIX (fractional qty consistency): qty is REAL/Double, matching PurchaseItem.qty,
@@ -412,7 +424,12 @@ data class SaleItem(
     // in which case callers fall back to re-deriving it from the CURRENT product
     // config (the old, sometimes-wrong behaviour). See smallestQty() below and the
     // "Best solution" comment above MIGRATION_25_26.
-    val conversionFactor:Double=0.0
+    val conversionFactor:Double=0.0,
+    // NEW (Improvement Pack P2): same reasoning as Sale.saleUid above, but for
+    // this individual line — a permanent id independent of the local
+    // autoGenerate `id` (which is only unique on this device) and independent
+    // of `invoice`. See MIGRATION_31_32.
+    @ColumnInfo(defaultValue="") val lineUid:String=UUID.randomUUID().toString()
 )
 
 @Entity(tableName="payments")
@@ -441,7 +458,10 @@ data class Purchase(
     val discount:Double=0.0,
     val status:String="active",
     val updatedAt:Long=0L,
-    val dirty:Boolean=true
+    val dirty:Boolean=true,
+    // NEW (Improvement Pack P2): same reasoning as Sale.saleUid — a permanent
+    // id independent of the human-readable `billNo`. See MIGRATION_31_32.
+    @ColumnInfo(defaultValue="") val purchaseUid:String=UUID.randomUUID().toString()
 )
 
 @Entity(tableName="purchase_items")
@@ -456,7 +476,9 @@ data class PurchaseItem(
     // FIX (historical unit conversion bug): same as SaleItem.conversionFactor —
     // how many smallest-units ONE of `unit` equaled AT THE TIME this line was
     // purchased. 0.0 means "not captured" (pre-migration row); see smallestQty().
-    val conversionFactor:Double=0.0
+    val conversionFactor:Double=0.0,
+    // NEW (Improvement Pack P2): same reasoning as SaleItem.lineUid above.
+    @ColumnInfo(defaultValue="") val lineUid:String=UUID.randomUUID().toString()
 )
 
 @Entity(tableName="returns")
@@ -1368,13 +1390,56 @@ val MIGRATION_30_31 = object : Migration(30, 31) {
     }
 }
 
+val MIGRATION_31_32 = object : Migration(31, 32) {
+    // Improvement Pack P2 — safe unique sale identifiers: add a permanent
+    // UUID column to sales/sale_items/purchases/purchase_items, independent of
+    // the human-readable invoice/billNo. Purely additive (default '' via
+    // ALTER TABLE, matching every other backward-compatible migration in this
+    // file) then backfilled row-by-row below so pre-existing records get a
+    // real UUID too instead of staying blank forever.
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE sales ADD COLUMN saleUid TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE sale_items ADD COLUMN lineUid TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE purchases ADD COLUMN purchaseUid TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE purchase_items ADD COLUMN lineUid TEXT NOT NULL DEFAULT ''")
+
+        backfillUidText(database, "sales", "invoice", "saleUid")
+        backfillUidLong(database, "sale_items", "id", "lineUid")
+        backfillUidText(database, "purchases", "billNo", "purchaseUid")
+        backfillUidLong(database, "purchase_items", "id", "lineUid")
+    }
+
+    // Two variants (TEXT key vs INTEGER key) so the bound WHERE parameter's type
+    // always matches the key column's real affinity, instead of relying on
+    // SQLite's text/integer comparison coercion to do the right thing.
+    private fun backfillUidText(database: SupportSQLiteDatabase, table: String, keyColumn: String, uidColumn: String) {
+        val cursor = database.query("SELECT $keyColumn FROM $table WHERE $uidColumn='' OR $uidColumn IS NULL")
+        cursor.use {
+            while (it.moveToNext()) {
+                val key = it.getString(0)
+                database.execSQL("UPDATE $table SET $uidColumn=? WHERE $keyColumn=?", arrayOf<Any>(UUID.randomUUID().toString(), key))
+            }
+        }
+    }
+
+    private fun backfillUidLong(database: SupportSQLiteDatabase, table: String, keyColumn: String, uidColumn: String) {
+        val cursor = database.query("SELECT $keyColumn FROM $table WHERE $uidColumn='' OR $uidColumn IS NULL")
+        cursor.use {
+            while (it.moveToNext()) {
+                val key = it.getLong(0)
+                database.execSQL("UPDATE $table SET $uidColumn=? WHERE $keyColumn=?", arrayOf<Any>(UUID.randomUUID().toString(), key))
+            }
+        }
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
         ZakatYear::class,ZakatPayment::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class],
-    version=31, exportSchema=false
+    version=32, exportSchema=false
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1401,7 +1466,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
                 // Never destructively recreate a POS database on downgrade. A silent
                 // database wipe would destroy sales, purchases, stock and balances.
                 // Downgrades must be handled as an explicit supported migration or by

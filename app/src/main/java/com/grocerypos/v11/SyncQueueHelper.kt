@@ -366,13 +366,19 @@ object SyncQueueHelper {
                 // device's later delete/edit/return would silently fall back to ITS
                 // current (possibly different) product config. See Database.kt's
                 // SaleItem.smallestQty() comment.
-                "conversionFactor" to it.conversionFactor
+                "conversionFactor" to it.conversionFactor,
+                // NEW (Improvement Pack P2): carry each line's permanent UID across
+                // devices too, so it stays the same everywhere instead of a fresh
+                // random one being generated on every device that pulls this sale.
+                "lineUid" to it.lineUid
             )
         }
         val customerServerId = sale.customerId?.let { db.customerDao().find(it)?.let { c -> customerEntityId(c) } }
         val map = mapOf(
             "serverId" to saleEntityId(sale),
             "invoice" to sale.invoice,
+            // NEW (Improvement Pack P2): see Sale.saleUid in Database.kt.
+            "saleUid" to sale.saleUid,
             "customerServerId" to customerServerId,
             "subtotal" to sale.subtotal,
             "discount" to sale.discount,
@@ -400,13 +406,17 @@ object SyncQueueHelper {
                 "barcode" to it.barcode, "qty" to it.qty, "unit" to it.unit,
                 "unitCost" to it.unitCost, "amount" to it.amount,
                 // FIX (historical unit conversion bug): see saleJson()'s itemMaps above.
-                "conversionFactor" to it.conversionFactor
+                "conversionFactor" to it.conversionFactor,
+                // NEW (Improvement Pack P2): see PurchaseItem.lineUid in Database.kt.
+                "lineUid" to it.lineUid
             )
         }
         val supplierServerId = purchase.supplierId?.let { db.supplierDao().find(it)?.let { s -> supplierEntityId(s) } }
         val map = mapOf(
             "serverId" to purchaseEntityId(purchase),
             "billNo" to purchase.billNo,
+            // NEW (Improvement Pack P2): see Purchase.purchaseUid in Database.kt.
+            "purchaseUid" to purchase.purchaseUid,
             "supplierServerId" to supplierServerId,
             "subtotal" to purchase.subtotal,
             "discount" to purchase.discount,
