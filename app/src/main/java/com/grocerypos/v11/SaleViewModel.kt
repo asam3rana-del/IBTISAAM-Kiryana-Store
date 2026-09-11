@@ -51,6 +51,8 @@ sealed class SaleEvent {
     // NEW (Improvement Pack P6): duplicate-invoice guard in RoomSaleRepository.
     data class DuplicateInvoice(val message: String) : SaleEvent()
     data class QuickSaleDuplicateInvoice(val message: String) : SaleEvent()
+    // NEW (Improvement Pack P6): qty<=0 / negative-rate line rejected before save.
+    data class InvalidLine(val message: String) : SaleEvent()
     object SaleDeleted : SaleEvent()
     object BillHeld : SaleEvent()
     data class CustomerAdded(val name: String) : SaleEvent()
@@ -132,6 +134,7 @@ class SaleViewModel(
                 is SaveSaleResult.CustomerRequiredForDue -> _events.emit(SaleEvent.CustomerRequiredForDue)
                 is SaveSaleResult.StockIssue -> _events.emit(SaleEvent.StockIssue(result.message))
                 is SaveSaleResult.DuplicateInvoice -> _events.emit(SaleEvent.DuplicateInvoice(result.message))
+                is SaveSaleResult.InvalidLine -> _events.emit(SaleEvent.InvalidLine(result.message))
             }
         }
     }

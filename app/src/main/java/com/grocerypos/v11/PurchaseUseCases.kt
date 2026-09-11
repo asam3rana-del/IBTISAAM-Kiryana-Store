@@ -106,10 +106,27 @@ class SavePurchaseUseCase(private val repository: PurchaseRepository) {
         original: Purchase?,
         originalItems: List<PurchaseItem>,
         suppliers: List<Supplier>
-    ): SavePurchaseResult = repository.savePurchase(
-        editBillNo, party, grandTotal, amountPaid, discount, paymentMethod,
-        purchaseDateMillis, lines, original, originalItems, suppliers
-    )
+    ): SavePurchaseResult {
+        // FIX (Improvement Pack P6): PurchaseRepository.savePurchase had no
+        // empty-bill or per-line qty>0/rate>=0 guard at all (unlike the Sale
+        // side) — a bill with zero lines, or a line with qty<=0/negative rate,
+        // would sail straight into the stock/cost math. Reuses the existing
+        // SavePurchaseResult.Error case, already wired through
+        // PurchaseViewModel/PurchaseActivity, so no new event plumbing needed.
+        if (lines.isEmpty()) return SavePurchaseResult.Error("Kam az kam ek item add karen")
+        for (line in lines) {
+            if (line.qty <= 0.0) {
+                return SavePurchaseResult.Error("\"${line.itemName}\" ki qty 0 se zyada honi chahiye")
+            }
+            if (line.rate < 0.0) {
+                return SavePurchaseResult.Error("\"${line.itemName}\" ka rate negative nahi ho sakta")
+            }
+        }
+        return repository.savePurchase(
+            editBillNo, party, grandTotal, amountPaid, discount, paymentMethod,
+            purchaseDateMillis, lines, original, originalItems, suppliers
+        )
+    }
 }
 
 class DeletePurchaseUseCase(private val repository: PurchaseRepository) {

@@ -1162,6 +1162,8 @@ class SaleActivity : AppCompatActivity() {
                 Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
             is SaleEvent.DuplicateInvoice ->
                 Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
+            is SaleEvent.InvalidLine ->
+                Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
             is SaleEvent.SaveSuccess -> {
                 val result = event.result
                 result.stockWarnings.forEach { warning ->

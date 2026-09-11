@@ -75,6 +75,10 @@ sealed class SaveSaleResult {
     // so the Activity/ViewModel can tell a stock problem apart from a duplicate
     // invoice if it ever wants to react differently (e.g. regenerate + retry).
     data class DuplicateInvoice(val message: String) : SaveSaleResult()
+    // NEW (Improvement Pack P6): a line with qty <= 0 or a negative rate —
+    // checked before the bill is even sent to the repository, since a bad
+    // qty/rate corrupts subtotal/stock math no matter how it got into `lines`.
+    data class InvalidLine(val message: String) : SaveSaleResult()
 }
 
 /** Result of a Quick Sale (single-item, no draft workflow). */
@@ -146,6 +150,18 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
     ): SaveSaleResult {
         if (lines.isEmpty()) return SaveSaleResult.EmptyItems
 
+        // FIX (Improvement Pack P6): reject qty <= 0 or a negative rate on any
+        // line before it can reach the subtotal/stock-decrement math below —
+        // neither the repository nor the on-screen cart checked this before.
+        for (line in lines) {
+            if (line.qty <= 0.0) {
+                return SaveSaleResult.InvalidLine("\"${line.itemName}\" ki qty 0 se zyada honi chahiye")
+            }
+            if (line.unitPrice < 0.0) {
+                return SaveSaleResult.InvalidLine("\"${line.itemName}\" ka rate negative nahi ho sakta")
+            }
+        }
+
         val subtotal = lines.sumOf { it.amount }
         val totals = DiscountCalculator.compute(subtotal, discountInput, paidInput)
         val enteredCustomer = enteredCustomerName.trim()
@@ -212,6 +228,11 @@ class SaveQuickSaleUseCase(private val repository: SaleRepository) {
         unit: String,
         customerName: String
     ): QuickSaleResult {
+        // FIX (Improvement Pack P6): same qty>0/rate>=0 guard as SaveSaleUseCase
+        // — reuses InvalidQty since the Activity/ViewModel already Toast its
+        // message for this screen.
+        if (qty <= 0.0) return QuickSaleResult.InvalidQty("Qty 0 se zyada honi chahiye")
+        if (price < 0.0) return QuickSaleResult.InvalidQty("Rate negative nahi ho sakta")
         return try {
             val result = repository.saveQuickSale(product, qty, price, unit, customerName.trim())
             QuickSaleResult.Success(result.invoice, result.isCredit)
