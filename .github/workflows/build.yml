@@ -30,9 +30,24 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Decode debug keystore
+      - name: Validate and decode debug keystore
         run: |
+          if [ -z "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "::error::DEBUG_KEYSTORE_BASE64 secret is empty or not set. Refusing to create an empty/invalid keystore."
+            exit 1
+          fi
           echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
+          if [ ! -s debug.keystore ]; then
+            echo "::error::Decoded debug.keystore is empty — DEBUG_KEYSTORE_BASE64 secret is likely invalid base64."
+            exit 1
+          fi
+          # A real JKS/PKCS12 keystore is a zip-like binary; a bad secret usually
+          # decodes to plain/short garbage. Catch that case explicitly too.
+          if ! file debug.keystore | grep -qiE 'zip|java keystore|data'; then
+            echo "::error::Decoded debug.keystore does not look like a valid keystore file."
+            exit 1
+          fi
+          echo "debug.keystore decoded and looks valid ($(stat -c%s debug.keystore) bytes)"
 
       - name: Verify project configuration
         run: |
@@ -40,8 +55,19 @@ jobs:
           grep -q 'com.google.gms.google-services' app/build.gradle.kts
           echo "Firebase config present"
 
+      - name: Select Gradle command
+        id: gradle_cmd
+        run: |
+          if [ -x ./gradlew ]; then
+            echo "cmd=./gradlew" >> "$GITHUB_OUTPUT"
+            echo "Using project Gradle wrapper (./gradlew)"
+          else
+            echo "cmd=gradle" >> "$GITHUB_OUTPUT"
+            echo "::warning::gradlew not found in repo — falling back to the Gradle installed by setup-gradle. Run the 'Generate Gradle Wrapper' workflow to add it."
+          fi
+
       - name: Run lint
-        run: gradle lintDebug
+        run: ${{ steps.gradle_cmd.outputs.cmd }} lintDebug
 
       - name: Upload lint results
         if: always()
@@ -52,7 +78,7 @@ jobs:
           retention-days: 5
 
       - name: Run unit tests
-        run: gradle testDebugUnitTest
+        run: ${{ steps.gradle_cmd.outputs.cmd }} testDebugUnitTest
 
       - name: Upload test results
         if: always()
@@ -63,7 +89,7 @@ jobs:
           retention-days: 5
 
       - name: Build Debug APK
-        run: gradle assembleDebug
+        run: ${{ steps.gradle_cmd.outputs.cmd }} assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

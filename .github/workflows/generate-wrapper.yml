@@ -1,0 +1,61 @@
+name: Generate Gradle Wrapper
+
+# One-off / re-run-as-needed job. Run this manually from the Actions tab
+# (Actions > Generate Gradle Wrapper > Run workflow) whenever the wrapper
+# files (gradlew, gradlew.bat, gradle/wrapper/gradle-wrapper.jar,
+# gradle/wrapper/gradle-wrapper.properties) are missing or need to be
+# bumped to a new Gradle version. It commits the generated files straight
+# back to the branch you run it on.
+on:
+  workflow_dispatch:
+    inputs:
+      gradle_version:
+        description: 'Gradle version to generate the wrapper for'
+        required: true
+        default: '8.9'
+
+permissions:
+  contents: write
+
+jobs:
+  generate-wrapper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Generate wrapper files
+        run: gradle wrapper --gradle-version "${{ github.event.inputs.gradle_version }}" --distribution-type bin
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Verify wrapper was generated
+        run: |
+          test -f gradlew
+          test -f gradlew.bat
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+          echo "Wrapper files present."
+
+      - name: Commit and push wrapper files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gradlew gradlew.bat gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          if git diff --cached --quiet; then
+            echo "Wrapper files already up to date, nothing to commit."
+          else
+            git commit -m "Add/update Gradle wrapper (${{ github.event.inputs.gradle_version }})"
+            git push
+          fi
