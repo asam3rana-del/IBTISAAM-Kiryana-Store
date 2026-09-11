@@ -3,11 +3,11 @@ P1,DONE,Restore Gradle wrapper and verify release build
 P1,DONE,Validate CI debug keystore secret
 P2,DONE,Add UUID saleId independent of invoice number
 P2,DONE,Make invoice numbering collision-safe across devices
-P3,TODO,Test Room migrations from oldest supported version to 32
+P3,DONE,Test Room migrations from oldest supported version to 32 (see MIGRATION_TEST_PLAN.md: exportSchema enabled + androidTest infra added + MigrationTest.kt runs the full 13->32 chain with 2 data-integrity checks; v13 base schema is a best-effort reconstruction from the migration diffs since exportSchema was off historically -- needs verification against a real old backup/APK before being a full release gate, see the plan doc)
 P4,TODO,Run two-device offline sync stress tests
 P5,DONE,Review Android backup policy for POS business data
 P6,DONE,Add strict sale/purchase input validation (duplicate invoice/bill, empty bill, qty>0, rate>=0 all added; discount/paid<=total already safe)
-P7,VERIFY,Keep business writes atomic with Room transactions
+P7,DONE,Keep business writes atomic with Room transactions (code review: RoomSaleRepository/RoomPurchaseRepository/HistoryActivity/PurchaseHistoryActivity/SaleHistoryActivity all correctly wrap composite writes in db.withTransaction; found and fixed one gap in PartyTransactionActivity.savePayment() which ran payment insert + balance adjust + cash transaction as unguarded sequential writes; NOTE: SyncQueueHelper.kt is not present in this zip, so adjustCustomerBalance/adjustSupplierBalance internals could not be verified)
 P8,DONE,Refactor SaleActivity into ViewModel/use cases (verified: SaleActivity has zero direct Room/repository access — all business logic already routes through SaleViewModel -> SaveSaleUseCase/DeleteSaleUseCase/etc; remaining ~1350 lines are UI construction only)
-P9,PARTIAL,Expand sales/purchase/sync automated tests (Sale-side and Purchase-side P6 validation now covered via FakeSaleRepository/FakePurchaseRepository; sync tests still open)
+P9,PARTIAL,Expand sales/purchase/sync automated tests (Sale-side and Purchase-side P6 validation covered via FakeSaleRepository/FakePurchaseRepository; SyncQueueHelperTest now covers entity-id generation + all 7 JSON payload builders, incl. regression guards that balance/stock/passwordHash never leak into a full-snapshot payload; still open: enqueue/trigger/adjustBalance/stock-delta functions and saleJson/purchaseJson, which need a real or in-memory Room DB (Robolectric/instrumented), not plain JVM tests)
 P10,TODO,Complete production release checklist

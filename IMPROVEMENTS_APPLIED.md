@@ -150,6 +150,89 @@ Applied fixes from the full assessment:
       business data). No further extraction needed here.
     - Status updated to DONE in the checklist.
 
+14. **Room transaction atomicity verified across the app (Improvement Pack P7)**
+    - Checked every screen/repository with 2+ sequential DAO writes for a
+      missing `db.withTransaction` around a composite business operation
+      (money + stock + a linked record).
+    - Confirmed already correct: `RoomSaleRepository` (saveSale/deleteSale/
+      saveQuickSale), `RoomPurchaseRepository` (savePurchase/deletePurchase),
+      `HistoryActivity`, `PurchaseHistoryActivity`, and `SaleHistoryActivity`
+      (returns/edits/deletes) — all wrap their stock + balance + record
+      writes in one transaction.
+    - **Found and fixed a real gap:** `PartyTransactionActivity.savePayment()`
+      (the manual "Receive Payment" / "Make Payment" dialog) ran the payment
+      insert, the customer/supplier balance adjustment, and the matching cash
+      transaction insert as three unguarded sequential writes. A crash or
+      app-kill between them could leave a payment recorded with no balance
+      change, or a balance changed with no cash-transaction/payment record.
+      Now wrapped in `db.withTransaction { ... }`, matching the pattern
+      already used in the sale/purchase repositories.
+    - Lower-priority, non-money gaps noted but **not** changed (cosmetic data
+      only, low crash-window risk): category/unit "rename" in `ItemsActivity`
+      and `BulkTranslateActivity` does an insert-new + delete-old instead of
+      a single update, outside any transaction.
+    - **Could not fully verify:** `SyncQueueHelper.kt` (referenced by every
+      repository for `adjustCustomerBalance`/`adjustSupplierBalance`/
+      `enqueue*`) is not included in this zip, so its internals weren't
+      reviewed. Since every other write above is already inside
+      `db.withTransaction`, Room will fold SyncQueueHelper's writes into the
+      same transaction as long as it just uses the `db` passed in — but this
+      should be double-checked once that file is available.
+
+15. **Sync tests started — SyncQueueHelperTest.kt (Improvement Pack P9)**
+    - `SyncQueueHelper.kt` and the previously-written `FakeSaleRepository.kt`/
+      `FakePurchaseRepository.kt` were missing from this working copy and have
+      been restored under `app/src/test/java/com/grocerypos/v11/` (unchanged,
+      as supplied) so the test source set is complete again.
+    - New `SyncQueueHelperTest.kt` (21 tests): covers every entity-id function
+      (`customerEntityId`/`supplierEntityId`/`productEntityId`/`saleEntityId`/
+      `purchaseEntityId`/`paymentEntityId`/`expenseEntityId`/
+      `cashTransactionEntityId`/`userEntityId`) and every JSON payload builder
+      (`customerJson`/`supplierJson`/`productJson`/`paymentJson`/
+      `expenseJson`/`cashTransactionJson`/`userJson`).
+    - Three tests are deliberately regression guards for the conflict-safety
+      invariants documented in `SyncQueueHelper.kt`'s comments: `balance` must
+      never appear in `customerJson()`/`supplierJson()`, `stock`/
+      `openingStock` must never appear in `productJson()` (both are
+      increment-only fields — a snapshot leak would let one offline device's
+      routine edit silently overwrite another device's balance/stock change),
+      and `passwordHash` must never appear in `userJson()`.
+    - **Scope limit, on purpose:** only the PURE functions are covered (no
+      `suspend`, no `PosDatabase`/`Context` dependency) — these run as plain
+      JVM tests like the rest of this module. `enqueue()`/`trigger()`, every
+      `enqueueX()` wrapper, `adjustCustomerBalance()`/`adjustSupplierBalance()`,
+      the stock-delta functions, `updateProductCost()`, and `saleJson()`/
+      `purchaseJson()` (which query the DAO for line items) all touch a real
+      `PosDatabase` and need a Room in-memory database — either Robolectric or
+      an on-device instrumented test, not achievable in this no-Android-SDK
+      sandbox. That's the next chunk of P9 once a real Gradle/Android
+      environment is available.
+
+16. **Room migration testing set up — MigrationTest.kt (Improvement Pack P3)**
+    - `Database.kt`: `exportSchema` flipped `false -> true`; `app/build.gradle.kts`:
+      added the matching `room.schemaLocation` kapt arg (`app/schemas/`) and the
+      `androidx.test.ext:junit` / `androidx.test:runner` / `androidx.room:room-testing`
+      `androidTestImplementation` dependencies — none of this existed before, so no
+      migration could be tested at all.
+    - New `app/src/androidTest/java/com/grocerypos/v11/MigrationTest.kt`: runs the
+      real `MIGRATION_13_14` ... `MIGRATION_31_32` chain (all 19 migrations) against
+      a real on-device SQLite engine via Room's `MigrationTestHelper`, plus per-step
+      validation and two data-integrity checks — the unit-ladder stock conversion
+      (`MIGRATION_18_19`/`21_22`) and the `saleUid` UUID backfill (`MIGRATION_31_32`).
+    - New `MIGRATION_TEST_PLAN.md`: full write-up, including a manual upgrade
+      checklist to run once on a real/old-backup device.
+    - **Important, flagged caveat:** `exportSchema` was off from the start, so there's
+      no captured historical schema for versions 13-31. `MigrationTest.kt`'s v13
+      starting schema is a best-effort reconstruction (worked out column-by-column
+      from each migration's `ALTER TABLE`/`CREATE TABLE` diff), not a verified
+      historical snapshot — see the caveat block at the top of that file and the
+      "one thing this could NOT fix" section of `MIGRATION_TEST_PLAN.md` for exactly
+      what to double-check (an old backup `.db` file or an archived old APK) before
+      treating this as a release gate. Every migration from v32 onward is safe from
+      this same gap, since schemas now export automatically.
+    - Could not actually run this test in this environment — no Android SDK/device,
+      same limitation noted in `TESTS-README.md` for the unit tests.
+
 ## Remaining operational checks
 
 - Run `gradle lintDebug`, `gradle testDebugUnitTest`, and `gradle assembleDebug` in a network-enabled Android/Gradle environment.
