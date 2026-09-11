@@ -186,10 +186,10 @@ internal fun SaleActivity.addItem() {
     renderItemsList()
     updateTotals()
 
-    // FIX (UX): after adding an item, jump the ScrollView back to the very top so
-    // the rest of the form (Billed Items / Subtotal / Total / Payment / Save) is
-    // visible right away instead of staying wherever the keyboard had scrolled to.
-    scrollView.post { scrollView.smoothScrollTo(0, 0) }
+    // REMOVED (per request): this used to jump the ScrollView back to the very top
+    // after every item add. User wants the screen to stay exactly where it is —
+    // wherever they were scrolled to — no matter how many items they add in a row,
+    // instead of snapping back to top each time.
 
     itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
     selectedProduct = null
