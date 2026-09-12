@@ -99,6 +99,15 @@ SETUP — do these two things to actually turn sync on. Neither is inside this f
     }
 
 ===================================================================================
+NOTE (kept for history, now stale — see SyncQueueHelper.kt): the section below
+originally flagged that nothing enqueued rows into sync_queue. That gap is closed —
+SyncQueueHelper.kt's enqueueX()/adjustCustomerBalance()/adjustSupplierBalance()/
+increase|decreaseProductStock() wrappers are called from every insert/update call
+site across the app (PartyTransactionActivity, RoomSaleRepository,
+RoomPurchaseRepository, ExpenseActivity, etc. — see IMPROVEMENTS_APPLIED.md). Left
+here only so the historical reasoning isn't lost; safe to delete this whole comment
+block in a future cleanup pass.
+===================================================================================
 THE OTHER MISSING PIECE — nothing enqueues rows into sync_queue yet.
 ===================================================================================
 SyncRepository only PUSHES what's already sitting in the sync_queue table. Right
