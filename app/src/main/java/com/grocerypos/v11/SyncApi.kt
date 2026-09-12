@@ -178,7 +178,16 @@ object SyncApi {
                     val updateMap = mapOf(
                         fieldName to com.google.firebase.firestore.FieldValue.increment(delta),
                         "updatedAt" to (map["updatedAt"] ?: System.currentTimeMillis()),
-                        "branchId" to (map["branchId"] ?: BranchConfigStore.current)
+                        // FIX (bulk stuck-item repair): always stamp the CURRENT branch code,
+                        // never the one baked into this entry's payload at enqueue time. An
+                        // entry enqueued before Branch Code / branch_members was configured
+                        // correctly on this device would otherwise carry a blank or stale
+                        // branchId forever — retrying it verbatim (e.g. via "Retry Now") can
+                        // never succeed no matter how many times it's retried, since Firestore
+                        // Rules check this field against branch_members on every attempt. The
+                        // device's branch code rarely if ever changes after setup, so re-stamping
+                        // it fresh on every push is always correct, not just a one-time patch.
+                        "branchId" to BranchConfigStore.current
                     )
                     db.collection(collection).document(entry.entityId)
                         .set(updateMap, com.google.firebase.firestore.SetOptions.merge())
@@ -186,7 +195,16 @@ object SyncApi {
                 }
                 else -> {
                     @Suppress("UNCHECKED_CAST")
-                    val map = gson.fromJson(entry.payloadJson, Map::class.java) as Map<String, Any?>
+                    val rawMap = gson.fromJson(entry.payloadJson, Map::class.java) as Map<String, Any?>
+                    // FIX (bulk stuck-item repair): see the increment_stock/increment_balance
+                    // branch above for why this is always re-stamped with the CURRENT branch
+                    // code rather than trusting whatever was in the payload when this entry
+                    // was originally queued (which may predate correct Branch Code / cloud
+                    // project setup on this device, e.g. items stuck permanently on
+                    // PERMISSION_DENIED after 10 retries — see stuck()/resetAllStuck() in
+                    // SyncQueueDao). This heals old bad entries automatically on their next
+                    // successful push, no manual per-item edit needed.
+                    val map = rawMap + mapOf("branchId" to BranchConfigStore.current)
                     val incomingUpdatedAt = (map["updatedAt"] as? Number)?.toDouble() ?: 0.0
                     val docRef = db.collection(collection).document(entry.entityId)
                     val applied = db.runTransaction { txn ->
