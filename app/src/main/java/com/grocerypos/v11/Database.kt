@@ -368,7 +368,7 @@ data class Supplier(
     val dirty:Boolean=true
 )
 
-@Entity(tableName="sales")
+@Entity(tableName="sales", indices=[Index(value=["saleUid"], unique=true)])
 data class Sale(
     @PrimaryKey val invoice:String,
     val customerId:Long?=null,
@@ -407,7 +407,7 @@ data class Sale(
 // the moment a sale was saved — the printed bill, sale history, item reports, and any
 // later edit/return/delete of that sale all worked off the rounded number instead of
 // what was actually sold. See MIGRATION_23_24 for the matching DB-side change.
-@Entity(tableName="sale_items")
+@Entity(tableName="sale_items", indices=[Index(value=["lineUid"], unique=true)])
 data class SaleItem(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val invoice:String,
@@ -447,7 +447,7 @@ data class Payment(
     val dirty:Boolean=true
 )
 
-@Entity(tableName="purchases")
+@Entity(tableName="purchases", indices=[Index(value=["purchaseUid"], unique=true)])
 data class Purchase(
     @PrimaryKey val billNo:String,
     val supplierId:Long?,
@@ -464,7 +464,7 @@ data class Purchase(
     @ColumnInfo(defaultValue="") val purchaseUid:String=UUID.randomUUID().toString()
 )
 
-@Entity(tableName="purchase_items")
+@Entity(tableName="purchase_items", indices=[Index(value=["lineUid"], unique=true)])
 data class PurchaseItem(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
     val billNo:String,
@@ -1455,6 +1455,22 @@ val MIGRATION_31_32 = object : Migration(31, 32) {
     }
 }
 
+// NEW (safer sync identity — 2nd AI review, "UUID unique indexes"): saleUid/lineUid/
+// purchaseUid/lineUid were added in MIGRATION_31_32 as plain columns with no uniqueness
+// enforced at the database level — a bug anywhere in the backfill/generation logic
+// could silently produce a duplicate UUID and nothing would catch it. By the time this
+// runs, MIGRATION_31_32 has already backfilled every row with a real (non-empty)
+// randomUUID(), so creating these as unique indexes now is safe and just adds a hard
+// guarantee going forward.
+val MIGRATION_32_33 = object : Migration(32, 33) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sales_saleUid ON sales(saleUid)")
+        database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sale_items_lineUid ON sale_items(lineUid)")
+        database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_purchases_purchaseUid ON purchases(purchaseUid)")
+        database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_purchase_items_lineUid ON purchase_items(lineUid)")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1467,7 +1483,7 @@ val MIGRATION_31_32 = object : Migration(31, 32) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=32, exportSchema=true
+    version=33, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1494,7 +1510,18 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
+                // FIX (crash on very old installs): versions 1-12 predate any explicit
+                // Migration object (those builds only ever used a blanket
+                // fallbackToDestructiveMigration()), so there is no real upgrade path
+                // from them to 13. Without this, a device still sitting on DB version
+                // 1-12 that installs this build would crash on first launch with
+                // "Migration didn't properly handle...". Scoping the destructive
+                // fallback to exactly those old starting versions keeps that same
+                // wipe-and-recreate behavior those builds already had — nothing new is
+                // lost that wasn't already at risk on them — while every device on 13+
+                // still goes through the real, data-preserving migrations above.
+                .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
                 // Never destructively recreate a POS database on downgrade. A silent
                 // database wipe would destroy sales, purchases, stock and balances.
                 // Downgrades must be handled as an explicit supported migration or by
