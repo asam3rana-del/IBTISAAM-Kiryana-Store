@@ -205,25 +205,19 @@ object SyncApi {
                     // SyncQueueDao). This heals old bad entries automatically on their next
                     // successful push, no manual per-item edit needed.
                     val map = rawMap + mapOf("branchId" to BranchConfigStore.current)
-                    val incomingUpdatedAt = (map["updatedAt"] as? Number)?.toDouble() ?: 0.0
-                    val docRef = db.collection(collection).document(entry.entityId)
-                    val applied = db.runTransaction { txn ->
-                        val snap = txn.get(docRef)
-                        val serverUpdatedAt = (snap.get("updatedAt") as? Number)?.toDouble() ?: 0.0
-                        if (!snap.exists() || incomingUpdatedAt >= serverUpdatedAt) {
-                            txn.set(docRef, map, com.google.firebase.firestore.SetOptions.merge())
-                            true
-                        } else {
-                            false
-                        }
-                    }.await()
-                    if (!applied) {
-                        logAudit(
-                            localDb, "sync_conflict",
-                            reference = "${entry.entityType}:${entry.entityId}",
-                            details = "Local edit was older than the server's — server version kept. Local change was NOT applied to the cloud."
-                        )
-                    }
+                    // CHANGED (local data is authoritative): this used to compare
+                    // incomingUpdatedAt against the server's updatedAt inside a
+                    // transaction and skip the write ("conflict — server version
+                    // kept") whenever the server's timestamp looked newer. On this
+                    // deployment the device's local data is the real/source-of-truth
+                    // data, so pushes must always overwrite whatever is on the
+                    // server rather than sometimes silently keeping the server copy.
+                    // Plain set() (no transaction, no read-then-compare) also avoids
+                    // the extra Firestore "get" that previously needed its own read
+                    // permission for documents that didn't exist yet.
+                    db.collection(collection).document(entry.entityId)
+                        .set(map, com.google.firebase.firestore.SetOptions.merge())
+                        .await()
                 }
             }
             true
