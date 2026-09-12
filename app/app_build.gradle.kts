@@ -16,8 +16,8 @@ android {
         applicationId = "com.grocerypos.v11"
         minSdk = 24
         targetSdk = 35
-        versionCode = 10
-        versionName = "10.0"
+        versionCode = 11
+        versionName = "11.0-syncfix"
         // Branch identity is configured securely at runtime from Settings > Cloud Sync
         // Setup. Do not bake a branch into the APK; the same APK can now be installed
         // on every device/branch. Server-side Firestore rules remain the authority.
