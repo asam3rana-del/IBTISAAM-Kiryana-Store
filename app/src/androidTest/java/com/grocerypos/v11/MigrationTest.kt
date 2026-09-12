@@ -13,7 +13,7 @@ import org.junit.runner.RunWith
 
 /**
  * Instrumented Room migration test (Improvement Pack P3 — checklist item
- * "Test Room migrations from oldest supported version to 32").
+ * "Test Room migrations from oldest supported version to 33").
  *
  * Runs on a device/emulator: `./gradlew connectedDebugAndroidTest` (or
  * Android Studio: right-click this file -> Run). Cannot run in a plain
@@ -58,7 +58,7 @@ class MigrationTest {
         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
         MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
         MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28,
-        MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32
+        MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33
     )
 
     @get:Rule
@@ -200,7 +200,7 @@ class MigrationTest {
 
     /**
      * The headline test for this checklist item: every migration from the
-     * oldest supported version (13) to the current version (32) runs, in
+     * oldest supported version (13) to the current version (33) runs, in
      * order, without throwing — on a real on-device SQLite engine, not a
      * mock. `validateDroppedTables = true` also fails the test if any
      * migration accidentally leaves a stray `_new`/`_old` table behind from
@@ -210,9 +210,9 @@ class MigrationTest {
      * DROP/RENAME step).
      */
     @Test
-    fun migrateFromV13AllTheWayTo32_runsCleanly() {
+    fun migrateFromV13AllTheWayTo33_runsCleanly() {
         createV13Database()
-        helper.runMigrationsAndValidate(TEST_DB, 32, true, *allMigrations)
+        helper.runMigrationsAndValidate(TEST_DB, 33, true, *allMigrations)
     }
 
     /**
@@ -229,7 +229,7 @@ class MigrationTest {
             helper.runMigrationsAndValidate(TEST_DB, nextVersion, true, migration)
             version = nextVersion
         }
-        assertEquals(32, version)
+        assertEquals(33, version)
     }
 
     /**
@@ -283,15 +283,66 @@ class MigrationTest {
         )
         v13.close()
 
-        helper.runMigrationsAndValidate(TEST_DB, 32, true, *allMigrations)
+        helper.runMigrationsAndValidate(TEST_DB, 33, true, *allMigrations)
 
-        val after = helper.runMigrationsAndValidate(TEST_DB, 32, true)
+        val after = helper.runMigrationsAndValidate(TEST_DB, 33, true)
         val cursor = after.query("SELECT saleUid FROM sales WHERE invoice='PRE-EXISTING-INV'")
         cursor.use {
             assertTrue(it.moveToFirst())
             val saleUid = it.getString(0)
             assertTrue("pre-existing sale must be backfilled with a non-blank saleUid, was: '$saleUid'", saleUid.isNotBlank())
         }
+    }
+
+    /**
+     * Data-integrity + enforcement check for MIGRATION_32_33 (2nd AI review,
+     * "UUID unique indexes"): saleUid/lineUid/purchaseUid/lineUid previously had
+     * no database-level uniqueness constraint — a bug anywhere upstream (backfill,
+     * enqueue helpers, a future edit) could silently produce a duplicate and
+     * nothing would ever catch it. This confirms two things on a real on-device
+     * SQLite engine: (1) two pre-existing, genuinely-distinct sales survive the
+     * migration with their own saleUid intact, and (2) the resulting index truly
+     * is UNIQUE — inserting a second row that reuses an existing saleUid must
+     * throw, not silently succeed.
+     */
+    @Test
+    fun migration32to33_addsWorkingUniqueIndexOnSaleUid() {
+        val v13 = createV13Database()
+        v13.execSQL(
+            "INSERT INTO sales (invoice, customerId, subtotal, discount, tax, total, paid, paymentMethod, saleType, createdAt) " +
+                "VALUES ('INV-ONE', NULL, 50.0, 0.0, 0.0, 50.0, 50.0, 'cash', 'retail', 1690000000000)"
+        )
+        v13.execSQL(
+            "INSERT INTO sales (invoice, customerId, subtotal, discount, tax, total, paid, paymentMethod, saleType, createdAt) " +
+                "VALUES ('INV-TWO', NULL, 75.0, 0.0, 0.0, 75.0, 75.0, 'cash', 'retail', 1690000000001)"
+        )
+        v13.close()
+
+        val after = helper.runMigrationsAndValidate(TEST_DB, 33, true, *allMigrations)
+
+        // Both pre-existing sales kept their own distinct, non-blank saleUid.
+        val uids = mutableListOf<String>()
+        after.query("SELECT invoice, saleUid FROM sales ORDER BY invoice").use { c ->
+            while (c.moveToNext()) uids.add(c.getString(1))
+        }
+        assertEquals(2, uids.size)
+        assertTrue("both backfilled saleUids must be non-blank", uids.all { it.isNotBlank() })
+        assertTrue("the two pre-existing sales must not share a saleUid", uids[0] != uids[1])
+
+        // The index must actually be UNIQUE, not just present: reusing an
+        // existing saleUid on a brand-new row must be rejected by SQLite itself.
+        val duplicateUid = uids[0]
+        var threw = false
+        try {
+            after.execSQL(
+                "INSERT INTO sales (invoice, customerId, subtotal, discount, tax, total, paid, paymentMethod, saleType, createdAt, status, updatedAt, dirty, dueDate, saleUid) " +
+                    "VALUES ('INV-DUPLICATE', NULL, 10.0, 0.0, 0.0, 10.0, 10.0, 'cash', 'retail', 1690000000002, 'active', 0, 1, 0, ?)",
+                arrayOf<Any>(duplicateUid)
+            )
+        } catch (e: Exception) {
+            threw = true
+        }
+        assertTrue("inserting a duplicate saleUid must be rejected by the unique index", threw)
     }
 
     companion object {
