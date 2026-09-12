@@ -285,14 +285,14 @@ class MainActivity : ThemedActivity() {
             // New Sale screen — for fast single/couple-item counter sales.
             QuickAction("Quick Sale", "Fast single-item sale", R.drawable.ic_stopwatch, flatPurpleBg, flatPurpleFg) {
                 startActivity(Intent(this@MainActivity, SaleActivity::class.java).putExtra(SaleActivity.EXTRA_OPEN_QUICK_SALE, true))
-            },
-            QuickAction("Cash", "Cash in / cash out", R.drawable.ic_wallet, flatAmberBg, flatAmberFg) {
-                startActivity(Intent(this@MainActivity, CashActivity::class.java))
             }
         )
         // UPDATED: Purchase editing restricted to admin only (manager access removed —
         // every kind of editing in the app is now admin-only). Button hidden for manager
         // too, matching the enforcement inside PurchaseActivity itself.
+        // NOTE: Purchase is added BEFORE Cash on purpose — user asked for Purchase to
+        // sit in Cash's old grid position (i.e. right after Quick Sale), with Cash
+        // shifting to where Purchase used to be.
         if (role == "admin") {
             quickActions.add(
                 QuickAction("Purchase", "Record a purchase", R.drawable.ic_box, flatCoralBg, flatCoralFg) {
@@ -300,6 +300,11 @@ class MainActivity : ThemedActivity() {
                 }
             )
         }
+        quickActions.add(
+            QuickAction("Cash", "Cash in / cash out", R.drawable.ic_wallet, flatAmberBg, flatAmberFg) {
+                startActivity(Intent(this@MainActivity, CashActivity::class.java))
+            }
+        )
         quickActions.add(
             QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
                 startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
