@@ -510,7 +510,8 @@ class PurchaseHistoryActivity : ThemedActivity() {
         dialog.show()
     }
 
-    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+    // ---- REMOVED (code maintainability — DRY): shared via UiHelpers.kt now (see
+    // comment there) — import com.grocerypos.v11.ui.components.*.
 
     private fun confirmDeletePurchase(billNo: String) {
         android.app.AlertDialog.Builder(this)

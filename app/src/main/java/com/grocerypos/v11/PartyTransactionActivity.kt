@@ -29,6 +29,7 @@ import com.grocerypos.v11.smallestPerUnitOf
 import com.grocerypos.v11.smallestQty
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.toSmallestUnits
+import com.grocerypos.v11.ui.components.formatQty
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -1162,7 +1163,8 @@ class PartyTransactionActivity : AppCompatActivity() {
         }
     }
 
-    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+    // ---- REMOVED (code maintainability — DRY): formatQty() shared via
+    // com.grocerypos.v11.ui.components (see UiHelpers.kt) — imported above.
 
     private fun row(amount: Double, dateText: String, typeLabel: String, status: String, accent: String, emoji: String, onClick: () -> Unit): LinearLayout {
         return LinearLayout(this).apply {

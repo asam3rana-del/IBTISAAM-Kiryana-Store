@@ -180,6 +180,19 @@ class DueRemindersActivity : AppCompatActivity() {
             bottomRow.addView(leftInfo)
 
             if (s.customerPhone.isNotBlank()) {
+                // ---- ADDED (Accounts/Party 10/10): a one-tap WhatsApp reminder next to
+                // the existing call button — the call icon lets you talk, but calling to
+                // ask for money is awkward for a lot of shopkeepers; a pre-written
+                // WhatsApp message is the far more commonly used option in practice.
+                // Uses the wa.me link (no image, no jid trick needed for plain text) so
+                // it works even if the customer's number isn't saved as a contact.
+                bottomRow.addView(ImageView(this).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_send, "#25D366", 18))
+                    setPadding(20, 10, 20, 10)
+                    background = ovalBg("#DDF6E8")
+                    setOnClickListener { sendWhatsAppReminder(s, due) }
+                })
+                bottomRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
                 bottomRow.addView(ImageView(this).apply {
                     setImageDrawable(tintedDrawable(R.drawable.ic_phone, primary, 18))
                     setPadding(20, 10, 20, 10)
@@ -193,6 +206,25 @@ class DueRemindersActivity : AppCompatActivity() {
 
             card.setOnClickListener { showDatePicker(s) }
             resultsBox.addView(card)
+        }
+    }
+
+    // ---- ADDED (Accounts/Party 10/10): pre-fills a polite Urdu/English reminder with
+    // the customer's name, invoice and amount still due, and opens WhatsApp straight to
+    // that chat via the wa.me link. Same Pakistan-default digit cleanup as
+    // BillPreviewActivity.cleanPhoneToJid(), just without the "@s.whatsapp.net" suffix
+    // since wa.me wants plain digits.
+    private fun sendWhatsAppReminder(sale: DueSale, due: Double) {
+        var digits = sale.customerPhone.replace(Regex("[^0-9]"), "")
+        if (digits.startsWith("0")) digits = "92" + digits.substring(1)
+        else if (!digits.startsWith("92") && digits.length <= 10) digits = "92$digits"
+
+        val message = "Assalam o Alaikum ${sale.customerName}, aapka bill (Invoice ${sale.invoice}) mein Rs %.0f abhi baaki hai. Barah-e-karam jald ada karein. Shukriya!".format(due)
+        val uri = Uri.parse("https://wa.me/$digits?text=${Uri.encode(message)}")
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (e: Exception) {
+            Toast.makeText(this, "WhatsApp nahi khul saka. Installed hai?", Toast.LENGTH_LONG).show()
         }
     }
 

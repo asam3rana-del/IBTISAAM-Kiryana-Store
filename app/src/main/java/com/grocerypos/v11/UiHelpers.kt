@@ -93,6 +93,17 @@ fun Context.spacerH(widthDp: Int): View = View(this).apply {
     layoutParams = LinearLayout.LayoutParams(px, LinearLayout.LayoutParams.MATCH_PARENT)
 }
 
+// ---- ADDED (code maintainability — DRY): byte-identical
+// `private fun formatQty(v: Double) = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()`
+// was copy-pasted into 6 separate UI Activities (Sale, Purchase, History,
+// PurchaseHistory, PartyReports, PartyTransaction) — same dedup pattern as
+// strokedBg/spacer/etc above (item #24). Deliberately NOT moved into
+// RoomSaleRepository.kt's copy: that file lives in the `data` package, and
+// pulling in `ui.components` from there would be a backwards data->ui
+// dependency, not a real duplication fix.
+fun formatQty(v: Double): String =
+    if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+
 fun lighten(hex: String, factor: Float): Int {
     val base = Color.parseColor(hex)
     val r = (Color.red(base) + (255 - Color.red(base)) * factor).toInt()

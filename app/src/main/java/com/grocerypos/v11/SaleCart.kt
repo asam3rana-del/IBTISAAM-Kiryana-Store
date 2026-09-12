@@ -138,7 +138,11 @@ internal fun SaleActivity.addItem() {
 
     val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
 
-    val alreadyInCartSmallest = lines.filter { it.barcode == product.barcode }
+    // ---- CHANGED (inline edit): when updating an existing line, that line's own
+    // qty must not count against itself in the stock check, or editing (e.g.
+    // raising the qty) could be wrongly rejected as "stock kam hai".
+    val editIndex = editingLineIndex
+    val alreadyInCartSmallest = lines.filterIndexed { i, l -> l.barcode == product.barcode && i != editIndex }
         .sumOf { product.toSmallestUnits(it.qty, it.unit) }
     val neededSmallest = product.toSmallestUnits(q, chosenUnit)
 
@@ -167,22 +171,28 @@ internal fun SaleActivity.addItem() {
     val costPerSmallest = if (factor > 0) product.cost / factor else product.cost
     val lineCost = smallestQtyForCost * costPerSmallest
 
-    lines.add(
-        SaleLine(
-            barcode = product.barcode,
-            itemName = product.name,
-            qty = q,
-            unit = chosenUnit,
-            unitPrice = price,
-            cost = lineCost,
-            amount = amount,
-            mainUnit = product.unit,
-            secondaryUnit = product.secondaryUnit,
-            secondaryUnitQty = product.secondaryUnitQty,
-            tertiaryUnit = product.tertiaryUnit,
-            tertiaryUnitQty = product.tertiaryUnitQty
-        )
+    val newLine = SaleLine(
+        barcode = product.barcode,
+        itemName = product.name,
+        qty = q,
+        unit = chosenUnit,
+        unitPrice = price,
+        cost = lineCost,
+        amount = amount,
+        mainUnit = product.unit,
+        secondaryUnit = product.secondaryUnit,
+        secondaryUnitQty = product.secondaryUnitQty,
+        tertiaryUnit = product.tertiaryUnit,
+        tertiaryUnitQty = product.tertiaryUnitQty
     )
+    // ---- ADDED (Billed Items inline edit): editing an existing line updates it
+    // in place instead of appending a duplicate.
+    if (editIndex != null && editIndex in lines.indices) {
+        lines[editIndex] = newLine
+    } else {
+        lines.add(newLine)
+    }
+    endLineEdit()
     renderItemsList()
     updateTotals()
 
@@ -239,13 +249,38 @@ internal fun SaleActivity.renderItemsList() {
                 setTextColor(Color.parseColor(textGray))
                 setPadding(0, 6, 0, 0)
             })
-            addView(TextView(this@renderItemsList).apply {
-                text = "\u2715 " + com.grocerypos.v11.util.Loc.t(this@renderItemsList, "Remove", "ہٹائیں")
+            val actionsRow = LinearLayout(this@renderItemsList).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            // ---- ADDED (Billed Items inline edit): ✎ refills the entry fields with
+            // this line so qty/rate/unit can be corrected without delete + re-add —
+            // matches the pattern already in PurchaseActivity's billed items list.
+            actionsRow.addView(TextView(this@renderItemsList).apply {
+                text = "\u270E " + com.grocerypos.v11.util.Loc.t(this@renderItemsList, "Edit", "ترمیم")
+                textSize = 12f
+                setTextColor(Color.parseColor(teal))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 10, 0, 10)
+                setOnClickListener {
+                    billedItemsDialog?.dismiss()
+                    editLine(index)
+                }
+            })
+            actionsRow.addView(TextView(this@renderItemsList).apply {
+                text = "   \u2715 " + com.grocerypos.v11.util.Loc.t(this@renderItemsList, "Remove", "ہٹائیں")
                 textSize = 12f
                 setTextColor(Color.parseColor(red))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(0, 10, 0, 0)
+                setPadding(0, 10, 0, 10)
                 setOnClickListener {
+                    // Keep an in-progress edit pointed at the right line if a row
+                    // earlier in the list gets removed out from under it.
+                    val editing = editingLineIndex
+                    when {
+                        editing == index -> endLineEdit()
+                        editing != null && editing > index -> editingLineIndex = editing - 1
+                    }
                     lines.removeAt(index)
                     renderItemsList()
                     updateTotals()
@@ -253,9 +288,68 @@ internal fun SaleActivity.renderItemsList() {
                     if (lines.isEmpty()) billedItemsDialog?.dismiss()
                 }
             })
+            addView(actionsRow)
         })
     }
     updateBilledItemsTrigger()
+}
+
+// ---- ADDED (Billed Items inline edit): populates the item-entry fields from an
+// already-billed line so the user can correct a mistake instead of deleting the
+// line and retyping it — mirrors PurchaseActivity.editLine().
+internal fun SaleActivity.editLine(index: Int) {
+    if (index !in lines.indices) return
+    val line = lines[index]
+    editingLineIndex = index
+
+    val product = products.find { it.barcode == line.barcode } ?: products.find { it.name.equals(line.itemName, ignoreCase = true) }
+    if (product != null) {
+        selectedProduct = product
+        itemName.setText(product.name)
+        val unitChoices = mutableListOf(product.unit)
+        if (product.secondaryUnit.isNotEmpty()) {
+            unitChoices.add(product.secondaryUnit)
+            if (product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0) {
+                unitChoices.add(product.tertiaryUnit)
+            }
+        }
+        unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitChoices)
+        val unitIndex = unitChoices.indexOf(line.unit).let { if (it >= 0) it else 0 }
+        unitSpinner.setSelection(unitIndex)
+        buildUnitChips(unitChoices, unitChoices.getOrElse(unitIndex) { line.unit })
+        conversionInfo.text = buildString {
+            if (unitChoices.size > 1 && product.secondaryUnitQty > 0) append("1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}")
+            if (unitChoices.size > 2 && product.tertiaryUnitQty > 0) { if (isNotEmpty()) append("   •   "); append("1 ${product.secondaryUnit} = ${product.tertiaryUnitQty} ${product.tertiaryUnit}") }
+        }
+        conversionInfo.visibility = if (conversionInfo.text.isNotEmpty()) View.VISIBLE else View.GONE
+    } else {
+        // Product no longer in the catalog (renamed/removed) — still let the
+        // qty/rate be corrected, just without unit-conversion assist.
+        itemName.setText(line.itemName)
+    }
+
+    qty.setText(formatQty(line.qty))
+    lastMainPrice = 0.0
+    suppressPriceWatcher = true
+    unitPrice.setText(if (line.unitPrice == line.unitPrice.toLong().toDouble()) line.unitPrice.toLong().toString() else line.unitPrice.toString())
+    suppressPriceWatcher = false
+    updateItemLineTotal()
+
+    addItemButton.text = com.grocerypos.v11.util.Loc.t(this, "UPDATE ITEM", "آئٹم اپ ڈیٹ کریں")
+    cancelEditButton.visibility = View.VISIBLE
+    scrollView.post { scrollView.smoothScrollTo(0, 0) }
+    qty.requestFocus()
+    qty.selectAll()
+    qty.post {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.showSoftInput(qty, InputMethodManager.SHOW_IMPLICIT)
+    }
+}
+
+internal fun SaleActivity.endLineEdit() {
+    editingLineIndex = null
+    addItemButton.text = com.grocerypos.v11.util.Loc.t(this, "ADD ITEM", "آئٹم شامل کریں")
+    cancelEditButton.visibility = View.GONE
 }
 
 internal fun SaleActivity.updateBilledItemsTrigger() {
@@ -354,6 +448,7 @@ internal fun SaleActivity.refreshDue() {
 
 internal fun SaleActivity.clearAll() {
     lines.clear()
+    endLineEdit()
     renderItemsList()
     customerName.text.clear()
     discountInput.text.clear()

@@ -493,7 +493,9 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+    // ---- REMOVED (code maintainability — DRY): this was a byte-identical copy of
+    // formatQty() duplicated across 6 files; now shared via UiHelpers.kt (see comment
+    // there) — import com.grocerypos.v11.ui.components.*.
 
     // Does the actual line-level return picked in openReturnPurchaseDialog() — see
     // PurchaseHistoryActivity.processPartialReturn() for the full reasoning (identical

@@ -105,6 +105,12 @@ class SaleActivity : AppCompatActivity() {
     internal lateinit var unitPrice: EditText
     internal lateinit var conversionInfo: TextView
     internal lateinit var itemLineTotalText: TextView
+    // ---- ADDED (Billed Items inline edit — brings Sale up to Purchase's existing
+    // pattern): ✎ on a billed line refills the entry fields instead of only
+    // allowing delete-and-retype. ----
+    internal lateinit var addItemButton: Button
+    internal lateinit var cancelEditButton: TextView
+    internal var editingLineIndex: Int? = null
     internal lateinit var itemsContainer: LinearLayout
     private lateinit var billedItemsHeader: LinearLayout
     internal lateinit var billedItemsTrigger: TextView
@@ -450,7 +456,7 @@ class SaleActivity : AppCompatActivity() {
         itemLineTotalText = TextView(this).apply { text = "Total Amount: Rs 0"; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)); setPadding(6, 8, 0, 10) }
         itemEntrySection.addView(itemLineTotalText)
 
-        itemEntrySection.addView(Button(this).apply {
+        addItemButton = Button(this).apply {
             text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "ADD ITEM", "آئٹم شامل کریں")
             setTextColor(Color.WHITE)
             textSize = 14.5f
@@ -460,7 +466,27 @@ class SaleActivity : AppCompatActivity() {
             setPadding(0, 26, 0, 26)
             applyElevation(this, 3f)
             setOnClickListener { addItem() }
-        })
+        }
+        itemEntrySection.addView(addItemButton)
+        cancelEditButton = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Cancel Edit", "ترمیم منسوخ کریں")
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(red))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 16, 0, 0)
+            visibility = View.GONE
+            setOnClickListener {
+                endLineEdit()
+                itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
+                selectedProduct = null; lastMainPrice = 0.0
+                conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
+                itemLineTotalText.text = "Total Amount: Rs 0"
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.hideSoftInputFromWindow(currentFocus?.windowToken, 0)
+            }
+        }
+        itemEntrySection.addView(cancelEditButton)
         root.addView(itemEntrySection)
 
         // ---- ADDED (tablet / desktop-style layout): from here on, everything

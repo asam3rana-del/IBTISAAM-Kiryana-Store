@@ -1367,7 +1367,13 @@ class ProductActivity : ThemedActivity() {
 
     // ---------------- Save ----------------
 
-    private fun saveProduct() {
+    // ---- ADDED (Inventory: duplicate item protection): mirrors PurchaseActivity's
+    // "Possible Duplicate Bill" confirm-before-save pattern. Products are matched by
+    // name everywhere (Sale/Purchase both do `products.find { it.name.equals(...) }`),
+    // so two products silently saved with the same name would make stock/price
+    // lookups ambiguous — this catches that at save time instead of leaving it to be
+    // discovered later at checkout.
+    private fun saveProduct(confirmedDuplicate: Boolean = false) {
         val productName = name.text.toString().trim()
 
         if (productName.isEmpty()) {
@@ -1378,6 +1384,27 @@ class ProductActivity : ThemedActivity() {
             ).show()
             name.requestFocus()
             return
+        }
+
+        if (!confirmedDuplicate) {
+            val dupe = allProducts.firstOrNull {
+                it.name.equals(productName, ignoreCase = true) && it.barcode != editingProduct?.barcode
+            }
+            if (dupe != null) {
+                AlertDialog.Builder(this)
+                    .setTitle(Loc.t(this, "Possible Duplicate Item", "ممکنہ ڈپلیکیٹ آئٹم"))
+                    .setMessage(
+                        Loc.t(
+                            this,
+                            "An item named \"${dupe.name}\" already exists (stock: ${trimNum(dupe.stock)} ${dupe.unit}).\n\nSaving this as a new item will make two products with the same name, which can cause the wrong one to be picked during Sale/Purchase.\n\nSave this one anyway?",
+                            "\"${dupe.name}\" نام کا آئٹم پہلے سے موجود ہے (اسٹاک: ${trimNum(dupe.stock)} ${dupe.unit})۔\n\nاسے نئے آئٹم کے طور پر محفوظ کرنے سے ایک ہی نام کے دو پروڈکٹس بن جائیں گے، جس سے Sale/Purchase کے دوران غلط آئٹم منتخب ہو سکتا ہے۔\n\nپھر بھی محفوظ کریں؟"
+                        )
+                    )
+                    .setPositiveButton(Loc.t(this, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ -> saveProduct(confirmedDuplicate = true) }
+                    .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+                    .show()
+                return
+            }
         }
 
         if (selectedPrimaryUnit.isBlank()) {

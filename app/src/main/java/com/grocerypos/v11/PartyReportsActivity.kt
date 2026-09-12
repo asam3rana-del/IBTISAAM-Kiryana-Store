@@ -800,7 +800,8 @@ class PartyReportsActivity : AppCompatActivity() {
         }
     }
 
-    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+    // ---- REMOVED (code maintainability — DRY): shared via UiHelpers.kt now (see
+    // comment there) — import com.grocerypos.v11.ui.components.*.
 
     // ================= PREMIUM HEADER (matches Reports/Stock Report exactly) =================
 
