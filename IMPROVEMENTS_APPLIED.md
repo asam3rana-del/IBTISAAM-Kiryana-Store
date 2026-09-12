@@ -233,6 +233,37 @@ Applied fixes from the full assessment:
     - Could not actually run this test in this environment — no Android SDK/device,
       same limitation noted in `TESTS-README.md` for the unit tests.
 
+17. **Two-device offline sync stress test plan — SYNC_STRESS_TEST_PLAN.md (Improvement Pack P4)**
+    - Cannot be executed here (needs 2 real/emulator devices, a live Firebase
+      project, and real offline wall-clock time). Wrote a 10-scenario plan that
+      expands on `SYNC-CONFLICT-TESTS.md`'s existing 9-item list with genuine
+      *stress* cases: high-volume offline batches (~90 records) and how long the
+      queue takes to drain, 3-way stock/balance contention (not just a single
+      conflicting pair), a delete-vs-edit race, clock skew between devices,
+      app-force-killed mid-sync, the `retryCount>=10` stuck-row ceiling
+      (`SyncQueueDao.resetAllStuck()`), and a genuine 24h+ offline window (the
+      scenario most likely to hit a WorkManager Doze-mode issue a short test
+      wouldn't catch).
+    - **Flagged gap:** `SyncWorker.kt`, `SyncApi.kt`, and `SyncRepository.kt` are
+      still missing from this working copy (same as `SyncQueueHelper.kt` was
+      before it got restored under P9) — several scenario details (retry/backoff
+      timing, which timestamp drives last-write-wins, whether `resetAllStuck()`
+      is actually called anywhere) are marked `[ASSUMED]` in the plan pending
+      those files.
+
+    - **Update:** `SyncWorker.kt`, `SyncApi.kt`, and `SyncRepository.kt` (the three
+      files flagged as missing above) were supplied and restored under
+      `app/src/main/java/com/grocerypos/v11/sync/`. Every previously-`[ASSUMED]`
+      mechanic in `SYNC_STRESS_TEST_PLAN.md` is now confirmed from the real code and
+      the plan updated accordingly — most notably: sync batches cap at 200 rows/cycle
+      (`pending(limit=200)`), there is no exponential backoff for a single failed row
+      (it just waits for the next cycle), the `retryCount>=10` ceiling is genuinely
+      enforced by `pending()`'s own SQL (not merely intended to be), and — the
+      important one — last-write-wins conflict resolution compares each device's own
+      local clock (`System.currentTimeMillis()` at payload-build time), NOT a
+      Firestore server timestamp, so the clock-skew scenario in the plan is a
+      confirmed real risk, not a hypothetical to rule out.
+
 ## Remaining operational checks
 
 - Run `gradle lintDebug`, `gradle testDebugUnitTest`, and `gradle assembleDebug` in a network-enabled Android/Gradle environment.
