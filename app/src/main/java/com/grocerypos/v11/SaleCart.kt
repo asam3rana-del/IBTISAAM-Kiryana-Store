@@ -363,11 +363,14 @@ internal fun SaleActivity.updateBilledItemsTrigger() {
     ) + "  ($count)  ·  Rs %.0f".format(total)
 }
 
-// ---- Purchase-style billed items dialog: a plain AlertDialog with a Close
-// button, restoring focus to the Paid field on dismiss.
-// ---- CHANGED (billed items -> paid amount flow): the ScrollView now also scrolls
-// down to the Payment section on dismiss (in addition to focusing paidInput), so
-// the field the keyboard is about to fill is actually visible on screen. ----
+// ---- CHANGED (per user feedback: checking Billed Items mid-sale is routine, not
+// an "I'm done" signal — a normal sale has several items, and being force-jumped
+// to Paid Amount every time you glance at Billed Items meant scrolling all the way
+// back up to add the next item. Dismiss now just cleans up and leaves focus where
+// it was (usually back on the item-name field), instead of stealing focus/keyboard
+// to Paid Amount. The orange highlight on the Payment section (see updateTotals())
+// already nudges toward Paid once items exist and it's still blank — that's a
+// enough of a reminder without hijacking the cursor. ----
 internal fun SaleActivity.openBilledItemsDialog() {
     if (lines.isEmpty()) {
         Toast.makeText(
@@ -392,13 +395,6 @@ internal fun SaleActivity.openBilledItemsDialog() {
         .setOnDismissListener {
             (itemsContainer.parent as? ViewGroup)?.removeView(itemsContainer)
             billedItemsDialog = null
-            scrollView.post { scrollView.smoothScrollTo(0, paymentSection.top) }
-            paidInput.requestFocus()
-            paidInput.post {
-                paidInput.selectAll()
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                imm?.showSoftInput(paidInput, InputMethodManager.SHOW_IMPLICIT)
-            }
         }
         .create()
     billedItemsDialog = dialog
