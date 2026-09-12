@@ -14,6 +14,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.HorizontalScrollView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -124,12 +125,48 @@ class ItemsActivity : ThemedActivity() {
 
         // ================= HEADER (matches Items/Categories/Reports) =================
         val header = premiumHeader(R.drawable.ic_box, "Items", "Products, Categories & Units", primary, primaryDark)
+        root.addView(header)
+
+        // ================= HEADER ACTION BUTTONS (Rate List / Import / Translate) =================
+        // ---- FIX (mobile layout bug): these 3 pills used to be added directly onto the
+        // header's own horizontal row (back-chevron + icon + title/subtitle). On narrow phone
+        // screens that row had too many children to fit; the title/subtitle column (width=0dp,
+        // weight=1, meant to take the leftover space) got squeezed down to ~0 width, which made
+        // its text wrap onto many lines instead of being clipped — and since the header's own
+        // height always matches its tallest child, the whole header ballooned to that wrapped
+        // text's height. With everything centered (gravity = CENTER_VERTICAL) inside that now-
+        // huge header, the pills appeared to float in a sea of empty purple, and "Translate"
+        // got pushed off the right edge of the screen. A tablet's wider screen never triggered
+        // the squeeze, so it looked fine there. Fix: give these pills their own row, in a
+        // HorizontalScrollView, completely separate from the title's flexible column — the
+        // title can never be squeezed by them again, and if the pills themselves ever don't
+        // fit, this row scrolls sideways instead of clipping or blowing up in height. ----
+        val actionsBar = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(primary), Color.parseColor(primaryDark))
+            ).apply { cornerRadius = 18f }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 16) }
+        }
+        val actionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(
+                (10 * resources.displayMetrics.density).toInt(),
+                (8 * resources.displayMetrics.density).toInt(),
+                (10 * resources.displayMetrics.density).toInt(),
+                (8 * resources.displayMetrics.density).toInt()
+            )
+        }
+        actionsBar.addView(actionsRow)
 
         // ---- Rate List export — dumps every product's unit/wholesale/retail rate
         // (all 3 unit tiers) into one CSV, so rates can be reviewed/audited in one
         // glance in Excel/Sheets instead of scrolling and opening each product card
         // one by one on this screen. ----
-        header.addView(TextView(this).apply {
+        actionsRow.addView(TextView(this).apply {
             text = "Rate List"
             textSize = 11f
             setTextColor(Color.WHITE)
@@ -144,14 +181,14 @@ class ItemsActivity : ThemedActivity() {
             setOnClickListener { exportRateListCsv() }
         })
 
-        header.addView(View(this).apply {
+        actionsRow.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1)
         })
 
         // ---- Import edited Rate List back — reads the CSV (after it was opened &
         // edited in Excel/Sheets) and applies the new rates/units onto the matching
         // products in this POS, so edits don't require re-entering each item by hand. ----
-        header.addView(TextView(this).apply {
+        actionsRow.addView(TextView(this).apply {
             text = "Import"
             textSize = 11f
             setTextColor(Color.WHITE)
@@ -168,14 +205,14 @@ class ItemsActivity : ThemedActivity() {
             }
         })
 
-        header.addView(View(this).apply {
+        actionsRow.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1)
         })
 
-        // ---- NEW: "Translate" pill button — launches BulkTranslateActivity so Urdu
+        // ---- "Translate" pill button — launches BulkTranslateActivity so Urdu
         // category/unit values already saved can be renamed to English once each,
         // instead of editing every product individually. ----
-        header.addView(TextView(this).apply {
+        actionsRow.addView(TextView(this).apply {
             text = "Translate"
             textSize = 11f
             setTextColor(Color.WHITE)
@@ -192,7 +229,7 @@ class ItemsActivity : ThemedActivity() {
             }
         })
 
-        root.addView(header)
+        root.addView(actionsBar)
 
         // ================= TABS =================
         tabRow = LinearLayout(this).apply {
