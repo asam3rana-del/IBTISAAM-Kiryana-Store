@@ -110,10 +110,10 @@ internal fun SettingsActivity.buildSyncRow(): LinearLayout {
     row.addView(textCol)
 
     row.setOnClickListener { onSyncNowClicked() }
-    // NEW: long-press "Sync Now" to rewind the pull checkpoint to a chosen date/time
-    // and immediately resync from there — recovers a window where sync wasn't working
-    // (e.g. "yesterday 11am onward") without needing a full re-install/clear-data.
-    row.setOnLongClickListener { showResyncFromDialog(); true }
+    // NEW: long-press "Sync Now" opens a small menu — either rewind the pull
+    // checkpoint to a chosen date/time (existing), or force-push every local record
+    // again from scratch (new — see resyncAllLocalDataClicked() below).
+    row.setOnLongClickListener { showSyncNowLongPressMenu(); true }
 
     refreshSyncStatus()
     return row
@@ -150,6 +150,52 @@ internal fun SettingsActivity.onSyncNowClicked() {
             refreshSyncStatus()
         }
     }
+}
+
+/** Long-press "Sync Now" → small menu: rewind-and-repull from a date/time (existing),
+ *  or force every local record to be pushed again from scratch (new). */
+internal fun SettingsActivity.showSyncNowLongPressMenu() {
+    val options = arrayOf(
+        "Resync from a date/time (pull)",
+        "Force full push — resend ALL local data (push)"
+    )
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Sync Now — more options")
+        .setItems(options) { _, which ->
+            when (which) {
+                0 -> showResyncFromDialog()
+                1 -> resyncAllLocalDataClicked()
+            }
+        }
+        .show()
+}
+
+/** Re-queues every local customer/supplier/product/sale/purchase/payment/expense/
+ *  cash_transaction/user for a fresh push, then runs Sync Now. Use when this
+ *  device's local data is the one that should win over whatever is currently on
+ *  the server (see SyncQueueHelper.resyncAllLocalData for the full reasoning) —
+ *  e.g. old records got stuck as unresolved "conflicts" on a previous build and
+ *  their queue rows are long gone, so a normal Sync Now has nothing left to retry. */
+internal fun SettingsActivity.resyncAllLocalDataClicked() {
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Force full push?")
+        .setMessage(
+            "Ye is device ka SARA local data (customers, products, sales, purchases, " +
+            "payments, expenses, cash transactions, users) dobara Firebase par bhejega " +
+            "— cloud par jo bhi maujooda data hai, is device ka data usay overwrite kar " +
+            "dega. Sirf tab use karo jab is device ka data 'asal' (sahi) ho aur cloud ka " +
+            "data purana/galat ho. Continue?"
+        )
+        .setPositiveButton("Continue") { _, _ ->
+            Toast.makeText(this, "Queuing all local data…", Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                val db = com.grocerypos.v11.PosDatabase.get(this@resyncAllLocalDataClicked)
+                com.grocerypos.v11.SyncQueueHelper.resyncAllLocalData(db)
+                onSyncNowClicked()
+            }
+        }
+        .setNegativeButton("Cancel", null)
+        .show()
 }
 
 /** Long-press "Sync Now" → pick a date & time → rewinds the pull checkpoint to that

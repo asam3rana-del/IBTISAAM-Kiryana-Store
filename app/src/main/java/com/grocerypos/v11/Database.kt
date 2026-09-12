@@ -679,6 +679,10 @@ interface ProductDao {
     fun expiring():Flow<List<Product>>
     @Query("SELECT * FROM products ORDER BY name")
     fun all():Flow<List<Product>>
+    // ADDED (force full resync): one-shot suspend equivalent of all() above — the
+    // resync helper runs inside a plain coroutine, not a Flow collector.
+    @Query("SELECT * FROM products ORDER BY name")
+    suspend fun allList():List<Product>
     // ADDED (Balance Sheet): current stock value at cost, for the "Stock in Hand" asset line.
     @Query("SELECT COALESCE(SUM(stock*cost),0) FROM products")
     suspend fun stockValueTotal():Double
@@ -754,6 +758,8 @@ interface ProductDao {
     @Query("SELECT * FROM customers WHERE id=:id LIMIT 1") suspend fun find(id:Long):Customer?
     @Query("SELECT * FROM customers WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Customer?
     @Query("SELECT * FROM customers ORDER BY name") fun all():Flow<List<Customer>>
+    // ADDED (force full resync): one-shot suspend list, for the resync helper.
+    @Query("SELECT * FROM customers ORDER BY name") suspend fun allList():List<Customer>
     @Query("UPDATE customers SET balance=balance+:amt WHERE id=:id")
     suspend fun addBalance(id:Long,amt:Double)
     @Query("SELECT COALESCE(name,'Walk-in') as customerName, SUM(total) as total FROM sales LEFT JOIN customers ON sales.customerId=customers.id GROUP BY customerId ORDER BY total DESC")
@@ -775,6 +781,8 @@ interface ProductDao {
     @Query("SELECT * FROM suppliers WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Supplier?
     @Query("UPDATE suppliers SET balance=balance+:amt WHERE id=:id") suspend fun addBalance(id:Long,amt:Double)
     @Query("SELECT * FROM suppliers ORDER BY name") fun all():Flow<List<Supplier>>
+    // ADDED (force full resync): one-shot suspend list, for the resync helper.
+    @Query("SELECT * FROM suppliers ORDER BY name") suspend fun allList():List<Supplier>
     @Query("SELECT COALESCE(name,'Cash Purchase') as supplierName, SUM(total) as total FROM purchases LEFT JOIN suppliers ON purchases.supplierId=suppliers.id GROUP BY supplierId ORDER BY total DESC")
     suspend fun purchaseTotalsBySupplier():List<SupplierPurchaseTotal>
     // ADDED (Balance Sheet): balance>0 = we owe the supplier (Accounts Payable, a Liability).
@@ -798,6 +806,9 @@ interface ProductDao {
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC LIMIT 100") suspend fun allSales():List<SaleWithCustomer>
     @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun salesByCustomer(customerId:Long):List<Sale>
     @Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1") suspend fun findSale(invoice:String):Sale?
+    // ADDED (force full resync): every local sale row, unfiltered/unjoined — allSales()
+    // above returns a display-only join (SaleWithCustomer), not usable for re-pushing.
+    @Query("SELECT * FROM sales ORDER BY createdAt DESC") suspend fun allRaw():List<Sale>
     @Query("SELECT * FROM sale_items WHERE invoice=:invoice") suspend fun itemsForInvoice(invoice:String):List<SaleItem>
     @Query("DELETE FROM sale_items WHERE invoice=:invoice") suspend fun deleteItems(invoice:String)
     @Query("DELETE FROM sales WHERE invoice=:invoice") suspend fun deleteSale(invoice:String)
@@ -896,6 +907,8 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses") suspend fun total():Double
     @Query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE createdAt BETWEEN :start AND :end") suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT * FROM expenses ORDER BY createdAt DESC") fun all():Flow<List<Expense>>
+    // ADDED (force full resync): one-shot suspend list, for the resync helper.
+    @Query("SELECT * FROM expenses ORDER BY createdAt DESC") suspend fun allList():List<Expense>
     @Query("SELECT * FROM expenses WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun between(start:Long,end:Long):List<Expense>
     // ADDED (multi-device two-way sync): needed so a pulled expense that this same
     // device already pushed gets updated in place instead of inserted as a duplicate.
@@ -947,6 +960,8 @@ interface ProductDao {
     // (PartyTransactionActivity) find and adjust the one payment tied to a bill
     // instead of only being able to delete or total them.
     @Query("SELECT * FROM payments WHERE reference=:ref LIMIT 1") suspend fun findByReference(ref:String):Payment?
+    // ADDED (force full resync): every local payment row, unfiltered.
+    @Query("SELECT * FROM payments ORDER BY createdAt DESC") suspend fun allRaw():List<Payment>
     // ADDED (multi-device two-way sync): needed so a pulled payment that this same
     // device already pushed gets updated in place instead of inserted as a duplicate,
     // same reasoning as ExpenseDao/CashTransactionDao above.
@@ -967,6 +982,9 @@ interface ProductDao {
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC LIMIT 100") suspend fun allPurchases():List<PurchaseWithSupplier>
     @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC") suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
     @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1") suspend fun findPurchase(bill:String):Purchase?
+    // ADDED (force full resync): every local purchase row, unfiltered/unjoined —
+    // allPurchases() above returns a display-only join (PurchaseWithSupplier).
+    @Query("SELECT * FROM purchases ORDER BY createdAt DESC") suspend fun allRaw():List<Purchase>
     @Query("SELECT * FROM purchase_items WHERE billNo=:bill") suspend fun itemsForBill(bill:String):List<PurchaseItem>
     @Query("DELETE FROM purchase_items WHERE billNo=:bill") suspend fun deleteItems(bill:String)
     @Query("DELETE FROM purchases WHERE billNo=:bill") suspend fun deletePurchase(bill:String)
@@ -1003,6 +1021,8 @@ interface ProductDao {
     @Query("SELECT * FROM users WHERE username=:u LIMIT 1") suspend fun findByUsername(u:String):User?
     @Query("SELECT * FROM users WHERE phone=:phone AND active=1 LIMIT 1") suspend fun findByPhone(phone:String):User?
     @Query("SELECT * FROM users ORDER BY username") fun all():Flow<List<User>>
+    // ADDED (force full resync): one-shot suspend list, for the resync helper.
+    @Query("SELECT * FROM users ORDER BY username") suspend fun allList():List<User>
     @Query("DELETE FROM users WHERE username=:u") suspend fun delete(u:String)
     // FIX (OTP first-link deadlock): a phone that Firebase already verified but that
     // isn't linked to any user has no in-app way to get linked, since Manage Users
@@ -1024,6 +1044,8 @@ interface ProductDao {
 @Dao interface CashTransactionDao {
     @Insert suspend fun insert(t:CashTransaction): Long
     @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") fun all():Flow<List<CashTransaction>>
+    // ADDED (force full resync): one-shot suspend list, for the resync helper.
+    @Query("SELECT * FROM cash_transactions ORDER BY createdAt DESC") suspend fun allList():List<CashTransaction>
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method AND createdAt BETWEEN :start AND :end") suspend fun totalBetween(type:String,method:String,start:Long,end:Long):Double
     // ADDED (Balance Sheet): all-time IN/OUT total per method, for the Cash/Bank asset lines.
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method") suspend fun totalAll(type:String,method:String):Double

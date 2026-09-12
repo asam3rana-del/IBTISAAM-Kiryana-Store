@@ -490,4 +490,30 @@ object SyncQueueHelper {
         )
         return gson.toJson(map)
     }
+
+    // ADDED (force full resync): re-queues EVERY row currently in the local database
+    // for a fresh push, regardless of whether it was ever marked "synced" before.
+    //
+    // Why this exists: older builds treated a push "conflict" (server's updatedAt
+    // looked newer) as if it had succeeded — the queue row was removed either way —
+    // so records that hit a conflict were silently never retried, forever, even
+    // though they were never actually written to Firestore. On a device whose local
+    // data is the one that should win (e.g. after wiping and reinstalling on another
+    // device with stale/test cloud data), those old queue rows are long gone and
+    // "Sync Now" has nothing left to push. This walks every local table directly and
+    // re-enqueues it via the normal enqueueX() helpers, so the next sync pushes
+    // everything this device has, from scratch. Safe to run more than once — it just
+    // re-sends the current local state again.
+    suspend fun resyncAllLocalData(db: PosDatabase, context: Context? = null) {
+        for (c in db.customerDao().allList()) enqueueCustomer(db, c)
+        for (s in db.supplierDao().allList()) enqueueSupplier(db, s)
+        for (p in db.productDao().allList()) enqueueProduct(db, p)
+        for (u in db.userDao().allList()) enqueueUser(db, u)
+        for (sale in db.saleDao().allRaw()) enqueueSale(db, sale)
+        for (purchase in db.purchaseDao().allRaw()) enqueuePurchase(db, purchase)
+        for (payment in db.paymentDao().allRaw()) enqueuePayment(db, payment)
+        for (expense in db.expenseDao().allList()) enqueueExpense(db, expense)
+        for (t in db.cashTransactionDao().allList()) enqueueCashTransaction(db, t)
+        context?.let { trigger(it) }
+    }
 }
