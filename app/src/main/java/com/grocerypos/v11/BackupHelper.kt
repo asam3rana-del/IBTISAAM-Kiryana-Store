@@ -46,6 +46,8 @@ import javax.crypto.spec.SecretKeySpec
  */
 object BackupHelper {
 
+    var lastError: String? = null
+
     private const val DB_NAME = "grocery_pos_v11.db"
     private const val FOLDER_NAME = "IBTISAAM POS Backups"
     private const val THROTTLE_PREFS = "backup_throttle_prefs"
@@ -171,6 +173,7 @@ object BackupHelper {
             destFile
         } catch (e: Exception) {
             e.printStackTrace()
+            lastError = e.message ?: e.toString()
             null
         }
     }

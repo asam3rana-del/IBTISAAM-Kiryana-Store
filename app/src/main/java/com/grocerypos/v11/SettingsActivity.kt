@@ -1006,7 +1006,7 @@ class SettingsActivity : AppCompatActivity() {
                 Toast.makeText(this@SettingsActivity, "Backup ho gaya: ${file.name}", Toast.LENGTH_LONG).show()
                 BackupHelper.shareBackup(this@SettingsActivity, file)
             } else {
-                Toast.makeText(this@SettingsActivity, "Backup fail ho gaya", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@SettingsActivity, "Backup fail: ${BackupHelper.lastError}", Toast.LENGTH_LONG).show()
             }
         }
     }
