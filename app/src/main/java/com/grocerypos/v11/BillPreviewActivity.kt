@@ -289,6 +289,32 @@ class BillPreviewActivity : ThemedActivity() {
         })
         root.addView(spacer(12))
 
+        // ---- "Add Another Bill" — lets the user jump straight back into a fresh
+        // Purchase/Sale screen instead of finishing all the way to the Dashboard,
+        // so entering several bills back-to-back doesn't need a Dashboard round-trip. ----
+        if (type == "purchase" || type == "sale") {
+            root.addView(Button(this).apply {
+                text = if (type == "purchase") "+ NAYA PURCHASE BILL" else "+ NAYI SALE BILL"
+                setLeadingIcon(R.drawable.ic_check, "#FFFFFF", 18, 8)
+                setTextColor(Color.WHITE)
+                textSize = 14.5f
+                isAllCaps = false
+                setTypeface(typeface, Typeface.BOLD)
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor(greenDark))
+                    cornerRadius = 16f
+                }
+                setPadding(0, 26, 0, 26)
+                applyElevation(this, 4f)
+                setOnClickListener {
+                    val next = if (type == "purchase") com.grocerypos.v11.ui.PurchaseActivity::class.java else com.grocerypos.v11.ui.SaleActivity::class.java
+                    startActivity(Intent(this@BillPreviewActivity, next))
+                    finish()
+                }
+            })
+            root.addView(spacer(12))
+        }
+
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         btnRow.addView(Button(this).apply {
             text = "PRINT"
