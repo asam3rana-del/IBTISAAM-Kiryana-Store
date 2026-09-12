@@ -418,7 +418,11 @@ internal fun SettingsActivity.openCloudSyncSetupDialog() {
     val scroll = ScrollView(this).apply { addView(container) }
 
     val dialogBuilder = AlertDialog.Builder(this)
-        .setTitle("Cloud Sync Setup")
+        // ADDED (build verification): app version shown right in the dialog title,
+        // so after installing a new build it's a one-glance check whether this
+        // device is actually running it — no guessing whether a rebuild/reinstall
+        // actually took effect. See BuildConfig.VERSION_NAME (app/build.gradle.kts).
+        .setTitle("Cloud Sync Setup (v${com.grocerypos.v11.BuildConfig.VERSION_NAME})")
         .setView(scroll)
         .setPositiveButton("Save") { _, _ ->
             val projectId = projectIdField.text.toString().trim()
