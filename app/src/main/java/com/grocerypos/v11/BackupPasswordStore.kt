@@ -62,9 +62,13 @@ object BackupPasswordStore {
     }
 
     private fun encrypt(value: String): String {
-        val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+        // AndroidKeyStore AES/GCM keys are created with randomized encryption required
+        // (the default), so the Keystore refuses a caller-supplied IV on ENCRYPT_MODE
+        // ("Caller-provided IV not permitted"). Let the cipher generate its own IV
+        // instead, then read it back via cipher.iv for storage alongside the ciphertext.
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key(), GCMParameterSpec(128, iv))
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        val iv = cipher.iv
         val cipherText = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
         return Base64.encodeToString(iv + cipherText, Base64.NO_WRAP)
     }
