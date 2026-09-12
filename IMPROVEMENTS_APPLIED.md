@@ -264,6 +264,25 @@ Applied fixes from the full assessment:
       Firestore server timestamp, so the clock-skew scenario in the plan is a
       confirmed real risk, not a hypothetical to rule out.
 
+18. **Release checklist expanded — RELEASE_CHECKLIST.md (Improvement Pack P10)**
+    - Rewrote the previously light `RELEASE_CHECKLIST.md` to cross-reference every
+      concrete artifact produced by P3/P4/P7/P9: exact test commands (`testDebugUnitTest`,
+      `connectedDebugAndroidTest`), the `MigrationTest.kt` v13-reconstruction caveat,
+      the `SYNC_STRESS_TEST_PLAN.md` scenarios (with 3 called out by number as
+      needing special attention: clock skew, retry ceiling, batch cap), and a direct
+      spot-check for the `PartyTransactionActivity.savePayment()` transaction fix.
+    - New findings surfaced while writing it, added as their own checklist items:
+      **no `firestore.rules` file exists in this repo** (rules apparently only live
+      in the Firebase console by hand — a real "get this into version control"
+      gap); **R8/ProGuard is off for release builds** with no sign this was a
+      deliberate choice; a reminder that `versionCode`/`versionName` (currently
+      `10`/`"10.0"`) need bumping per release, not left over from the last one.
+    - Added a "Sign-off" section requiring evidence (screenshot/test run/log) per
+      item, not just a checked box, plus a final re-read of
+      `IMPROVEMENT_CHECKLIST.csv` immediately before tagging.
+    - Like P4, this is **plan/checklist work, not an executed release** — someone
+      still has to go through every box on real hardware before shipping.
+
 ## Remaining operational checks
 
 - Run `gradle lintDebug`, `gradle testDebugUnitTest`, and `gradle assembleDebug` in a network-enabled Android/Gradle environment.
