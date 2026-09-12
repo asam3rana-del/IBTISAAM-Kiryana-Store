@@ -1,22 +1,42 @@
 package com.grocerypos.v11.sync
 
 import android.content.Context
+import androidx.lifecycle.LiveData
 import androidx.work.*
 import java.util.concurrent.TimeUnit
 
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    // FIX (Job-was-cancelled bug): the actual network work now happens entirely
+    // inside this CoroutineWorker's own scope, which WorkManager keeps alive
+    // independently of any Activity — it is NOT cancelled just because Settings
+    // gets closed, the screen rotates, or the app goes to the background. Previously
+    // "Sync Now" ran SyncRepository.syncNow() directly inside SettingsActivity's
+    // lifecycleScope, so leaving that screen mid-sync (easy to do with hundreds of
+    // queued rows) killed the sync with a "Job was cancelled" error that had nothing
+    // to do with Firestore rules or connectivity. Routing every manual sync through
+    // here (see syncNowOnce()) fixes that regardless of which screen triggers it.
     override suspend fun doWork(): Result {
         return try {
             val result = SyncRepository.syncNow(applicationContext)
-            if (result.pulledOk) Result.success() else Result.retry()
+            // Stash a human-readable summary in the output data so a caller that's
+            // still around (e.g. Settings' "Sync Now" row, via observeManualSync())
+            // can show the user what actually happened — same text SyncResult.summary()
+            // always produced, just no longer computed on a scope that might vanish
+            // before it gets used.
+            val output = workDataOf(KEY_SUMMARY to result.summary())
+            if (result.pulledOk) Result.success(output) else Result.failure(output)
         } catch (e: Exception) {
-            Result.retry()
+            Result.failure(workDataOf(KEY_SUMMARY to "Sync failed: ${e.message ?: "unknown error"}"))
         }
     }
 
     companion object {
         private const val PERIODIC_WORK_NAME = "grocery_pos_periodic_sync"
         private const val ONE_TIME_WORK_NAME = "grocery_pos_manual_sync"
+
+        /** Key into WorkInfo.outputData for the human-readable result of a manual
+         *  sync — see observeManualSync(). */
+        const val KEY_SUMMARY = "summary"
 
         /**
          * Call this once, e.g. in your Application.onCreate() or MainActivity.onCreate(),
@@ -59,6 +79,29 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 request
             )
         }
+
+        /**
+         * ADDED (Job-was-cancelled fix): lets a screen that just triggered
+         * syncNowOnce() watch it finish and show the result — WITHOUT tying the
+         * sync itself to that screen's lifecycle. Safe to call `.observe(this, ...)`
+         * on the returned LiveData from any LifecycleOwner (e.g. an Activity): if
+         * that screen is destroyed while the sync is still running, the OBSERVER is
+         * torn down (as normal for LiveData), but the sync keeps running to
+         * completion in WorkManager regardless — there's just nobody left to show a
+         * toast to, which is the correct behavior (no crash, no wasted work).
+         *
+         * Typical use from an Activity:
+         *   SyncWorker.syncNowOnce(this)
+         *   SyncWorker.observeManualSync(this).observe(this) { infos ->
+         *       val info = infos.firstOrNull() ?: return@observe
+         *       if (info.state.isFinished) {
+         *           val summary = info.outputData.getString(SyncWorker.KEY_SUMMARY) ?: "Sync complete"
+         *           Toast.makeText(this, summary, Toast.LENGTH_LONG).show()
+         *       }
+         *   }
+         */
+        fun observeManualSync(context: Context): LiveData<List<WorkInfo>> =
+            WorkManager.getInstance(context).getWorkInfosForUniqueWorkLiveData(ONE_TIME_WORK_NAME)
 
         // ---- ADDED: NetworkMonitor.kt calls SyncWorker.triggerNow(context) from its
         // onAvailable() callback the moment connectivity comes back, so any sale/purchase/

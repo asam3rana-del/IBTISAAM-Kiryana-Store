@@ -125,23 +125,30 @@ internal fun SettingsActivity.onSyncNowClicked() {
         refreshSyncStatus()
         return
     }
-    // FIX (sync diagnostics): this used to just enqueue a background WorkManager job
-    // and immediately show a static "Syncing…" toast with no idea whether it actually
-    // worked — a real failure (missing Firestore index, wrong Firebase project,
-    // permission error, etc.) looked identical to success. Run it directly here and
-    // await the real result so the user (and anyone debugging this) can actually see
-    // what happened.
+    // FIX (was: "Sync failed: Job was cancelled"): this used to run
+    // SyncRepository.syncNow() directly inside lifecycleScope.launch { ... }, which
+    // is cancelled the instant this Activity is destroyed — leaving Settings,
+    // rotating the screen, switching apps, or the screen turning off while a big
+    // sync (e.g. hundreds of queued rows) was still mid-flight. That killed the
+    // sync outright and surfaced as "Job was cancelled", which had nothing to do
+    // with Firestore rules, the branch code, or connectivity — purely which
+    // coroutine scope the work happened to be running on.
+    //
+    // The sync itself now runs inside a WorkManager job (SyncWorker.syncNowOnce),
+    // which keeps running to completion regardless of what this screen does. We
+    // just observe it here to show a toast — if the screen closes before it
+    // finishes, the observer quietly stops (no crash) and the sync still completes
+    // normally in the background; it just does so without a toast to show it to.
     Toast.makeText(this, "Syncing…", Toast.LENGTH_SHORT).show()
-    lifecycleScope.launch {
-        val result = try {
-            com.grocerypos.v11.sync.SyncRepository.syncNow(this@onSyncNowClicked)
-        } catch (e: Exception) {
-            Toast.makeText(this@onSyncNowClicked, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
+    com.grocerypos.v11.sync.SyncWorker.syncNowOnce(this)
+    com.grocerypos.v11.sync.SyncWorker.observeManualSync(this).observe(this) { infos ->
+        val info = infos.firstOrNull() ?: return@observe
+        if (info.state.isFinished) {
+            val summary = info.outputData.getString(com.grocerypos.v11.sync.SyncWorker.KEY_SUMMARY)
+                ?: if (info.state == androidx.work.WorkInfo.State.SUCCEEDED) "Sync complete" else "Sync failed"
+            Toast.makeText(this, summary, Toast.LENGTH_LONG).show()
             refreshSyncStatus()
-            return@launch
         }
-        Toast.makeText(this@onSyncNowClicked, result.summary(), Toast.LENGTH_LONG).show()
-        refreshSyncStatus()
     }
 }
 
