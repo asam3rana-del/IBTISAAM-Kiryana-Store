@@ -1462,12 +1462,53 @@ val MIGRATION_31_32 = object : Migration(31, 32) {
 // runs, MIGRATION_31_32 has already backfilled every row with a real (non-empty)
 // randomUUID(), so creating these as unique indexes now is safe and just adds a hard
 // guarantee going forward.
+//
+// FIX (crash-loop on CREATE UNIQUE INDEX — real-world crash report): the assumption
+// above ("every row already has a unique UUID") turned out not to hold for every
+// device — e.g. a multi-device sync pull/edit race can leave two local sale_items (or
+// purchase_items) rows sharing one lineUid on a device that's still on schema 32,
+// where nothing enforced uniqueness yet. CREATE UNIQUE INDEX then throws
+// SQLiteConstraintException, the migration never completes, and the app crashes on
+// every single launch from then on with no way to recover short of a reinstall.
+// Deduping each *Uid column down to one winner per duplicate value, right before its
+// index is created, makes this migration self-healing regardless of how a duplicate
+// got there — the loser rows keep all their real data and just get a fresh random UUID
+// instead of losing anything.
 val MIGRATION_32_33 = object : Migration(32, 33) {
     override fun migrate(database: SupportSQLiteDatabase) {
+        dedupeUidColumn(database, "sales", "id", "saleUid")
+        dedupeUidColumn(database, "sale_items", "id", "lineUid")
+        dedupeUidColumn(database, "purchases", "rowid", "purchaseUid")
+        dedupeUidColumn(database, "purchase_items", "id", "lineUid")
+
         database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sales_saleUid ON sales(saleUid)")
         database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sale_items_lineUid ON sale_items(lineUid)")
         database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_purchases_purchaseUid ON purchases(purchaseUid)")
         database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_purchase_items_lineUid ON purchase_items(lineUid)")
+    }
+
+    // For every uidColumn value shared by more than one row, keeps it on the
+    // lowest-rowid row (arbitrary but deterministic) and assigns every other row a
+    // brand-new random UUID, so a UNIQUE index can then be created without conflict.
+    // keyColumn/rowid identifies rows individually; `purchases` has no autoGenerate id
+    // so its own implicit rowid is used instead.
+    private fun dedupeUidColumn(database: SupportSQLiteDatabase, table: String, keyColumn: String, uidColumn: String) {
+        val cursor = database.query(
+            "SELECT $keyColumn FROM $table WHERE $uidColumn IN (" +
+                "SELECT $uidColumn FROM $table GROUP BY $uidColumn HAVING COUNT(*) > 1" +
+            ") AND $keyColumn NOT IN (" +
+                "SELECT MIN($keyColumn) FROM $table GROUP BY $uidColumn HAVING COUNT(*) > 1" +
+            ")"
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                val key = it.getLong(0)
+                database.execSQL(
+                    "UPDATE $table SET $uidColumn=? WHERE $keyColumn=?",
+                    arrayOf<Any>(UUID.randomUUID().toString(), key)
+                )
+            }
+        }
     }
 }
 
