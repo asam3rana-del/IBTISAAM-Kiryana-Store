@@ -93,6 +93,13 @@ class SaleHistoryActivity : ThemedActivity() {
     private lateinit var recyclerView: RecyclerView
     private val adapter = RowAdapter()
     private lateinit var emptyText: TextView
+    // ADDED (Khatabook-style summary cards + search — matches PartyDashboardActivity/
+    // PurchaseHistoryActivity): total sales amount + total returned amount, plus a
+    // search box to filter by customer name.
+    private lateinit var totalSalesValue: TextView
+    private lateinit var totalReturnedValue: TextView
+    private lateinit var searchField: EditText
+    private var searchQuery: String = ""
 
     // invoice -> whether its item breakdown is currently expanded
     private val expandedSales = mutableSetOf<String>()
@@ -134,6 +141,36 @@ class SaleHistoryActivity : ThemedActivity() {
             })
         })
 
+        // ADDED (Khatabook-style summary cards): Total Sales / Total Returned, same
+        // visual language as PartyDashboardActivity's You'll Get/You'll Give cards.
+        root.addView(buildSummaryCards())
+        root.addView(spacer(16))
+
+        // ADDED (Khatabook-style search box): filter the party-grouped list by
+        // customer name, matching PartyDashboardActivity/PurchaseHistoryActivity.
+        val searchBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 8, 18, 8)
+            background = strokedBg(border, cardWhite, 24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 16) }
+        }
+        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(navy)) })
+        searchField = EditText(this).apply {
+            hint = "Search customer"
+            background = null
+            textSize = 13.5f
+            setHintTextColor(Color.parseColor(textMuted))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { searchQuery = s?.toString().orEmpty(); rebuildRows() }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
+        }
+        searchBox.addView(searchField)
+        root.addView(searchBox)
+
         recyclerView = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@SaleHistoryActivity)
             adapter = this@SaleHistoryActivity.adapter
@@ -162,6 +199,56 @@ class SaleHistoryActivity : ThemedActivity() {
         refresh()
     }
 
+    // ADDED (Khatabook-style summary cards): two elevated cards side-by-side, same
+    // layout as PartyDashboardActivity.buildSummaryCards()/summaryCard() — teal for
+    // total sold, red for total returned across all sales.
+    private fun buildSummaryCards(): LinearLayout {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        val salesCard = summaryCard("\u2193", "Total Sales", teal)
+        val returnedCard = summaryCard("\u2191", "Total Returned", red)
+        totalSalesValue = salesCard.second
+        totalReturnedValue = returnedCard.second
+
+        salesCard.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
+        returnedCard.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
+
+        row.addView(salesCard.first)
+        row.addView(returnedCard.first)
+        return row
+    }
+
+    private fun summaryCard(arrow: String, label: String, accentHex: String): Pair<LinearLayout, TextView> {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 18, 20, 18)
+            background = strokedBg(border, cardWhite, 16)
+            applyElevation(this, 3f)
+        }
+        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        topRow.addView(TextView(this).apply {
+            text = arrow
+            setTextColor(Color.parseColor(accentHex))
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        topRow.addView(TextView(this).apply {
+            text = "  $label"
+            setTextColor(Color.parseColor(textMuted))
+            textSize = 12.5f
+        })
+        card.addView(topRow)
+        val value = TextView(this).apply {
+            text = "Rs 0"
+            textSize = 19f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 8, 0, 0)
+        }
+        card.addView(value)
+        return Pair(card, value)
+    }
+
     private fun refresh() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleHistoryActivity)
@@ -170,6 +257,11 @@ class SaleHistoryActivity : ThemedActivity() {
             groupedSales = allSales.groupBy { it.customerName }
                 .toList()
                 .sortedByDescending { (_, sales) -> sales.maxOf { it.createdAt } }
+
+            // ADDED (Khatabook-style summary cards): active sales count toward Total
+            // Sales; returned sales count toward Total Returned instead.
+            totalSalesValue.text = "Rs %.2f".format(allSales.filter { it.status != "returned" }.sumOf { it.total })
+            totalReturnedValue.text = "Rs %.2f".format(allSales.filter { it.status == "returned" }.sumOf { it.total })
 
             loadedItems.clear()
             emptyText.visibility = if (allSales.isEmpty()) View.VISIBLE else View.GONE
@@ -181,7 +273,10 @@ class SaleHistoryActivity : ThemedActivity() {
     // expand/collapse state + whatever item rows are already cached — no DB hit.
     private fun rebuildRows() {
         val rows = mutableListOf<Row>()
-        groupedSales.forEach { (customerName, sales) ->
+        val q = searchQuery.trim().lowercase()
+        groupedSales
+            .filter { (customerName, _) -> q.isEmpty() || customerName.lowercase().contains(q) }
+            .forEach { (customerName, sales) ->
             val customerTotal = sales.sumOf { it.total }
             rows.add(Row.Header(customerName, sales.size, customerTotal))
             sales.sortedByDescending { it.createdAt }.forEach { sale ->
@@ -244,7 +339,7 @@ class SaleHistoryActivity : ThemedActivity() {
         addView(TextView(this@SaleHistoryActivity).apply {
             text = "Rs %.2f".format(sale.total)
             textSize = 13f
-            setTextColor(Color.parseColor(textDark))
+            setTextColor(Color.parseColor(if (sale.status == "returned") red else teal))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(8, 0, 12, 0)
         })
@@ -423,6 +518,7 @@ class SaleHistoryActivity : ThemedActivity() {
     private fun outlinedBox() = LinearLayout(this).apply {
         setPadding(20, 14, 12, 14)
         background = strokedBg(border, cardWhite, 12)
+        applyElevation(this, 2f)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, 0, 0, 8) }

@@ -94,6 +94,11 @@ class PurchaseHistoryActivity : ThemedActivity() {
     private lateinit var listContainer: LinearLayout
     private lateinit var searchField: EditText
     private lateinit var emptyStateText: TextView
+    // ADDED (Khatabook-style summary cards — matches PartyDashboardActivity's
+    // "You'll Get / You'll Give" cards): total purchase amount + total outstanding
+    // due across all bills, so this screen gets the same at-a-glance totals.
+    private lateinit var totalPurchasesValue: TextView
+    private lateinit var totalDueValue: TextView
 
     // billNo/supplierName/total/createdAt/status come straight from the joined query;
     // paid is fetched separately per bill (allPurchases() doesn't project it) so we can
@@ -173,6 +178,11 @@ class PurchaseHistoryActivity : ThemedActivity() {
         header.addView(headerCol)
         root.addView(header)
 
+        // ADDED (Khatabook-style summary cards): Total Purchases / Total Due, same
+        // visual language as PartyDashboardActivity's You'll Get/You'll Give cards.
+        root.addView(buildSummaryCards())
+        root.addView(spacer(16))
+
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -224,6 +234,56 @@ class PurchaseHistoryActivity : ThemedActivity() {
         })
     }
 
+    // ADDED (Khatabook-style summary cards): two elevated cards side-by-side, same
+    // layout as PartyDashboardActivity.buildSummaryCards()/summaryCard() — navy for
+    // total purchased, red for total still owed to suppliers across all bills.
+    private fun buildSummaryCards(): LinearLayout {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        val purchasesCard = summaryCard("\u2193", com.grocerypos.v11.util.Loc.t(this, "Total Purchases", "\u06A9\u0644 \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC"), navy)
+        val dueCard = summaryCard("\u2191", com.grocerypos.v11.util.Loc.t(this, "Total Due", "\u06A9\u0644 \u0628\u0627\u0642\u06CC"), red)
+        totalPurchasesValue = purchasesCard.second
+        totalDueValue = dueCard.second
+
+        purchasesCard.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
+        dueCard.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
+
+        row.addView(purchasesCard.first)
+        row.addView(dueCard.first)
+        return row
+    }
+
+    private fun summaryCard(arrow: String, label: String, accentHex: String): Pair<LinearLayout, TextView> {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 18, 20, 18)
+            background = strokedBg(border, cardWhite, 16)
+            applyElevation(this, 3f)
+        }
+        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        topRow.addView(TextView(this).apply {
+            text = arrow
+            setTextColor(Color.parseColor(accentHex))
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        topRow.addView(TextView(this).apply {
+            text = "  $label"
+            setTextColor(Color.parseColor(textMuted))
+            textSize = 12.5f
+        })
+        card.addView(topRow)
+        val value = TextView(this).apply {
+            text = "Rs 0"
+            textSize = 19f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 8, 0, 0)
+        }
+        card.addView(value)
+        return Pair(card, value)
+    }
+
     private fun loadPurchases() = safeLaunch("loadPurchases") {
         val db = PosDatabase.get(this@PurchaseHistoryActivity)
         val purchases = db.purchaseDao().allPurchases()
@@ -235,6 +295,11 @@ class PurchaseHistoryActivity : ThemedActivity() {
                 }
                 HistoryRow(pws.billNo, pws.supplierName, pws.total, pws.createdAt, pws.status, paid)
             }
+        // ADDED (Khatabook-style summary cards): active (non-returned) bills only —
+        // a returned bill's total is no longer real spend or real debt.
+        val activeRows = rows.filter { it.status != "returned" }
+        totalPurchasesValue.text = "Rs %.2f".format(activeRows.sumOf { it.total })
+        totalDueValue.text = "Rs %.2f".format(activeRows.sumOf { (it.total - it.paid).coerceAtLeast(0.0) })
         renderList(searchField.text?.toString().orEmpty())
     }
 
