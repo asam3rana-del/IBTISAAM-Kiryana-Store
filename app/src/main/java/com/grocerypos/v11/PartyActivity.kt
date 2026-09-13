@@ -2,6 +2,7 @@ package com.grocerypos.v11.ui
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -74,6 +75,15 @@ class PartyActivity : AppCompatActivity() {
     private lateinit var listContainer: LinearLayout
     private lateinit var saveButton: Button
     private lateinit var sectionAccentText: TextView
+
+    // ---- IMPROVEMENT PACK (Party 10/10): search box + "Dues only" chip above the
+    // list. Both are pure UI-side filters — they never touch the ViewModel's
+    // uiState, they just narrow what render() draws from the last state it got. ----
+    private lateinit var searchField: EditText
+    private lateinit var duesOnlyChip: TextView
+    private var searchQuery: String = ""
+    private var duesOnly: Boolean = false
+    private var lastState: PartyUiState? = null
 
     // ---- Contact picker launchers ----
     private lateinit var contactPickerLauncher: ActivityResultLauncher<Void?>
@@ -256,6 +266,50 @@ class PartyActivity : AppCompatActivity() {
         })
         root.addView(listHeaderRow)
 
+        // ---- IMPROVEMENT PACK (Party 10/10): search box + "Dues only" filter chip.
+        // Lets a shop with a long party list actually find someone instead of
+        // scrolling, and instantly see who still owes / is owed money. ----
+        val filterRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 12)
+        }
+        val searchBox = innerField().apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        searchField = EditText(this).apply {
+            hint = Loc.t(this@PartyActivity, "Search by name or phone", "نام یا فون سے تلاش کریں")
+            background = null
+            textSize = 14f
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    searchQuery = s?.toString().orEmpty()
+                    lastState?.let { render(it) }
+                }
+            })
+        }
+        searchBox.addView(searchField)
+        filterRow.addView(searchBox)
+        filterRow.addView(spacer(10).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+        })
+        duesOnlyChip = TextView(this).apply {
+            text = "\uD83D\uDCB0 " + Loc.t(this@PartyActivity, "Dues only", "صرف واجبات")
+            textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding((16 * d).toInt(), (14 * d).toInt(), (16 * d).toInt(), (14 * d).toInt())
+            background = roundedBackground("#EEF0F7", 24)
+            setTextColor(Color.parseColor("#6B7280"))
+            setOnClickListener {
+                duesOnly = !duesOnly
+                lastState?.let { render(it) }
+            }
+        }
+        filterRow.addView(duesOnlyChip)
+        root.addView(filterRow)
+
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
 
@@ -279,6 +333,7 @@ class PartyActivity : AppCompatActivity() {
      * party list all follow from this one source of truth instead of being
      * mutated ad hoc from separate click handlers. */
     private fun render(state: PartyUiState) {
+        lastState = state
         buildTabs(state.showingCustomers)
         creditLimitBox.visibility = if (state.showingCustomers) View.VISIBLE else View.GONE
         sectionAccentText.text = if (state.showingCustomers)
@@ -288,30 +343,51 @@ class PartyActivity : AppCompatActivity() {
         sectionAccentText.setTextColor(Color.parseColor(if (state.showingCustomers) blue else orange))
         saveButton.background = roundedBackground(if (state.showingCustomers) blue else orange, 14)
 
+        // ---- IMPROVEMENT PACK (Party 10/10): active-chip styling + the actual
+        // search/dues filtering, applied to whichever list is currently showing. ----
+        duesOnlyChip.background = roundedBackground(if (duesOnly) (if (state.showingCustomers) blue else orange) else "#EEF0F7", 24)
+        duesOnlyChip.setTextColor(if (duesOnly) Color.WHITE else Color.parseColor("#6B7280"))
+
+        val query = searchQuery.trim()
+        fun matches(name: String, phone: String) =
+            query.isEmpty() || name.contains(query, ignoreCase = true) || phone.contains(query, ignoreCase = true)
+
         listContainer.removeAllViews()
         if (state.showingCustomers) {
-            if (state.customers.isEmpty()) {
-                listContainer.addView(emptyCard(Loc.t(this, "No customers yet", "کوئی کسٹمر نہیں ہے")))
+            val filtered = state.customers.filter {
+                matches(it.name, it.phone) && (!duesOnly || (it.openingBalance + it.balance) != 0.0)
             }
-            for (c in state.customers) {
+            if (filtered.isEmpty()) {
+                val msg = if (state.customers.isEmpty()) Loc.t(this, "No customers yet", "کوئی کسٹمر نہیں ہے")
+                          else Loc.t(this, "No matching customers", "کوئی مماثل کسٹمر نہیں")
+                listContainer.addView(emptyCard(msg))
+            }
+            for (c in filtered) {
                 listContainer.addView(
                     partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64", isCustomer = true,
                         onClick = { openCustomerHistory(c) },
                         onEdit = { editCustomerDialog(c) },
-                        onDelete = { confirmDeleteCustomer(c) }
+                        onDelete = { confirmDeleteCustomer(c) },
+                        onCall = { dialPhone(c.phone) }
                     )
                 )
             }
         } else {
-            if (state.suppliers.isEmpty()) {
-                listContainer.addView(emptyCard(Loc.t(this, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
+            val filtered = state.suppliers.filter {
+                matches(it.name, it.phone) && (!duesOnly || (it.openingBalance + it.balance) != 0.0)
             }
-            for (s in state.suppliers) {
+            if (filtered.isEmpty()) {
+                val msg = if (state.suppliers.isEmpty()) Loc.t(this, "No suppliers yet", "کوئی سپلائر نہیں ہے")
+                          else Loc.t(this, "No matching suppliers", "کوئی مماثل سپلائر نہیں")
+                listContainer.addView(emptyCard(msg))
+            }
+            for (s in filtered) {
                 listContainer.addView(
                     partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6", isCustomer = false,
                         onClick = { openSupplierHistory(s) },
                         onEdit = { editSupplierDialog(s) },
-                        onDelete = { confirmDeleteSupplier(s) }
+                        onDelete = { confirmDeleteSupplier(s) },
+                        onCall = { dialPhone(s.phone) }
                     )
                 )
             }
@@ -386,6 +462,19 @@ class PartyActivity : AppCompatActivity() {
         }
     }
 
+    // ---- IMPROVEMENT PACK (Party 10/10): one-tap dial from the party row. Uses
+    // ACTION_DIAL (opens the dialer pre-filled) rather than ACTION_CALL, so it
+    // needs no CALL_PHONE permission and the person still confirms before it
+    // actually dials. ----
+    private fun dialPhone(phone: String) {
+        if (phone.isBlank()) return
+        try {
+            startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
+        } catch (e: Exception) {
+            Toast.makeText(this, Loc.t(this, "Couldn't open dialer", "ڈائلر نہیں کھل سکا"), Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // ================= Tabs =================
     private fun buildTabs(showingCustomers: Boolean) {
         tabRow.removeAllViews()
@@ -412,9 +501,38 @@ class PartyActivity : AppCompatActivity() {
         val phone = phoneField.text.toString()
         val limit = creditLimitField.text.toString().toDoubleOrNull() ?: 0.0
         val opening = openingBalanceField.text.toString().toDoubleOrNull() ?: 0.0
-        // ViewModel decides customer vs supplier from its own state and ignores
-        // creditLimit on the supplier path, so this call doesn't need to branch.
-        viewModel.addParty(name, phone, limit, opening)
+
+        // ---- IMPROVEMENT PACK (Party 10/10): warn on an exact-name collision before
+        // creating a second party with the same name — the #1 cause of a shop
+        // splitting one customer's dues across two rows by accident. Doesn't block
+        // it outright (two real people can share a name), just makes it a deliberate
+        // choice instead of a silent typo. ----
+        val trimmed = name.trim()
+        val state = lastState
+        val duplicate = if (trimmed.isNotEmpty() && state != null) {
+            if (state.showingCustomers) state.customers.any { it.name.equals(trimmed, ignoreCase = true) }
+            else state.suppliers.any { it.name.equals(trimmed, ignoreCase = true) }
+        } else false
+
+        if (duplicate) {
+            AlertDialog.Builder(this)
+                .setTitle(Loc.t(this, "Name already exists", "یہ نام پہلے سے موجود ہے"))
+                .setMessage(Loc.t(
+                    this,
+                    "A party named \"$trimmed\" already exists. Add another one with the same name?",
+                    "\"$trimmed\" نام کی ایک پارٹی پہلے سے موجود ہے۔ کیا اسی نام سے ایک اور شامل کی جائے؟"
+                ))
+                .setPositiveButton(Loc.t(this, "Add anyway", "پھر بھی شامل کریں")) { d, _ ->
+                    viewModel.addParty(name, phone, limit, opening)
+                    d.dismiss()
+                }
+                .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+                .show()
+        } else {
+            // ViewModel decides customer vs supplier from its own state and ignores
+            // creditLimit on the supplier path, so this call doesn't need to branch.
+            viewModel.addParty(name, phone, limit, opening)
+        }
     }
 
     // ================= Premium party row card =================
@@ -435,7 +553,8 @@ class PartyActivity : AppCompatActivity() {
         isCustomer: Boolean,
         onClick: () -> Unit,
         onEdit: () -> Unit,
-        onDelete: () -> Unit
+        onDelete: () -> Unit,
+        onCall: (() -> Unit)? = null
     ): LinearLayout {
         val closing = opening + running
         val isGive = if (isCustomer) closing < 0 else closing > 0
@@ -513,6 +632,12 @@ class PartyActivity : AppCompatActivity() {
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
+        }
+        // ---- IMPROVEMENT PACK (Party 10/10): one-tap call, only shown when a
+        // phone number is actually on file. ----
+        if (phone.isNotEmpty() && onCall != null) {
+            actionRow.addView(actionChip("\uD83D\uDCDE", Loc.t(this@PartyActivity, "Call", "کال کریں"), green, isDelete = false) { onCall() })
+            actionRow.addView(spacer(10).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT) })
         }
         actionRow.addView(actionChip("\u270F\uFE0F", Loc.t(this@PartyActivity, "Edit", "ترمیم"), accentHex, isDelete = false) { onEdit() })
         actionRow.addView(spacer(10).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT) })
@@ -614,10 +739,30 @@ class PartyActivity : AppCompatActivity() {
     }
 
     // ================= Delete confirmations =================
+    // ---- IMPROVEMENT PACK (Party 10/10): if the party still has a non-zero
+    // balance, say so — and which direction — right in the confirmation, instead
+    // of a generic "cannot be undone." Deleting a party with dues doesn't touch
+    // their past sales/purchases (still in history by name), but it permanently
+    // drops the running-balance tracking for money still owed either way, so the
+    // person should see that number before confirming, not discover it's gone. ----
     private fun confirmDeleteCustomer(c: Customer) {
+        val closing = c.openingBalance + c.balance
+        val message = if (closing != 0.0) {
+            val direction = if (closing > 0)
+                Loc.t(this, "you'll get from them", "آپ نے ان سے لینے ہیں")
+            else
+                Loc.t(this, "you'll give to them", "آپ نے انہیں دینے ہیں")
+            Loc.t(
+                this,
+                "${c.name} still has an outstanding balance of Rs %.2f (%s). Deleting this customer will permanently lose track of this due. Delete anyway?".format(kotlin.math.abs(closing), direction),
+                "${c.name} کا Rs %.2f (%s) کا واجب الادا بیلنس ہے۔ اس کسٹمر کو حذف کرنے سے یہ ریکارڈ ہمیشہ کے لیے ختم ہو جائے گا۔ پھر بھی حذف کریں؟".format(kotlin.math.abs(closing), direction)
+            )
+        } else {
+            Loc.t(this, "Delete ${c.name}? This cannot be undone.", "${c.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔")
+        }
         AlertDialog.Builder(this)
             .setTitle(Loc.t(this, "Delete Customer", "کسٹمر حذف کریں"))
-            .setMessage(Loc.t(this, "Delete ${c.name}? This cannot be undone.", "${c.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔"))
+            .setMessage(message)
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { d, _ ->
                 viewModel.removeCustomer(c)
                 d.dismiss()
@@ -627,9 +772,23 @@ class PartyActivity : AppCompatActivity() {
     }
 
     private fun confirmDeleteSupplier(s: Supplier) {
+        val closing = s.openingBalance + s.balance
+        val message = if (closing != 0.0) {
+            val direction = if (closing > 0)
+                Loc.t(this, "you'll give to them", "آپ نے انہیں دینے ہیں")
+            else
+                Loc.t(this, "you'll get from them", "آپ نے ان سے لینے ہیں")
+            Loc.t(
+                this,
+                "${s.name} still has an outstanding balance of Rs %.2f (%s). Deleting this supplier will permanently lose track of this due. Delete anyway?".format(kotlin.math.abs(closing), direction),
+                "${s.name} کا Rs %.2f (%s) کا واجب الادا بیلنس ہے۔ اس سپلائر کو حذف کرنے سے یہ ریکارڈ ہمیشہ کے لیے ختم ہو جائے گا۔ پھر بھی حذف کریں؟".format(kotlin.math.abs(closing), direction)
+            )
+        } else {
+            Loc.t(this, "Delete ${s.name}? This cannot be undone.", "${s.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔")
+        }
         AlertDialog.Builder(this)
             .setTitle(Loc.t(this, "Delete Supplier", "سپلائر حذف کریں"))
-            .setMessage(Loc.t(this, "Delete ${s.name}? This cannot be undone.", "${s.name} کو حذف کریں؟ اسے واپس نہیں لایا جا سکتا۔"))
+            .setMessage(message)
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { d, _ ->
                 viewModel.removeSupplier(s)
                 d.dismiss()
