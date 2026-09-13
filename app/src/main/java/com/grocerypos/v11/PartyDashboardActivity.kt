@@ -165,7 +165,11 @@ class PartyDashboardActivity : AppCompatActivity() {
         // ADDED (Khatabook-style party list — screenshot reference): most recent
         // sale/purchase/payment timestamp for this party, across all three tables.
         // null means the party has no transactions yet (freshly added party).
-        val lastActivityAt: Long? = null
+        val lastActivityAt: Long? = null,
+        // ADDED (Parties tab row redesign — chip+arrow / Total+Balance mix): all-time
+        // sales (customer) or purchases (supplier) total, for the row's "Total" column.
+        // Defaults to 0.0 for a party with no transactions yet.
+        val totalAmount: Double = 0.0
     )
 
     // OVERDUE: dueDate has passed. DUE_TODAY: dueDate is today. Anything further out
@@ -769,12 +773,17 @@ class PartyDashboardActivity : AppCompatActivity() {
                 db.purchaseDao().lastActivityBySupplier().forEach { supplierLastAt[it.partyId] = maxOf(supplierLastAt[it.partyId] ?: 0L, it.lastAt) }
                 db.paymentDao().lastActivityByPartyType("supplier").forEach { supplierLastAt[it.partyId] = maxOf(supplierLastAt[it.partyId] ?: 0L, it.lastAt) }
 
+                // ADDED (Parties tab row redesign — chip+arrow / Total+Balance mix):
+                // all-time transacted total per party, for the row's new "Total" column.
+                val customerTotal = db.customerDao().totalsByCustomer().associate { it.partyId to it.total }
+                val supplierTotal = db.supplierDao().totalsBySupplier().associate { it.partyId to it.total }
+
                 val items = mutableListOf<PartyItem>()
                 for (c in customers) {
-                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.openingBalance + c.balance, isCustomer = true, dueStatus = dueByCustomer[c.id], lastActivityAt = customerLastAt[c.id]))
+                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.openingBalance + c.balance, isCustomer = true, dueStatus = dueByCustomer[c.id], lastActivityAt = customerLastAt[c.id], totalAmount = customerTotal[c.id] ?: 0.0))
                 }
                 for (s in suppliers) {
-                    items.add(PartyItem(id = s.id, name = s.name, phone = s.phone, closing = s.openingBalance + s.balance, isCustomer = false, lastActivityAt = supplierLastAt[s.id]))
+                    items.add(PartyItem(id = s.id, name = s.name, phone = s.phone, closing = s.openingBalance + s.balance, isCustomer = false, lastActivityAt = supplierLastAt[s.id], totalAmount = supplierTotal[s.id] ?: 0.0))
                 }
                 // CHANGE (Khatabook-style party list — screenshot reference): sort by
                 // most recent activity first (matches the reference screenshot's order
@@ -845,6 +854,20 @@ class PartyDashboardActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * ---- REDESIGN (mix requested: Items-tab chip+arrow header + Transactions-tab
+     * Total/Balance columns) ----
+     * Row is now VERTICAL, three sections:
+     *  1. Header row: name (bold, left) + a "CUSTOMER"/"SUPPLIER" tag chip + a
+     *     forward/share icon (top-right), matching the chip+arrow corner treatment
+     *     from the Items tab reference screenshot.
+     *  2. Subtitle row: last-activity date (or Customer/Supplier fallback) + the
+     *     existing Overdue/Due Today badge, unchanged from before.
+     *  3. A thin divider, then a Total/Balance two-column footer — "Total" is the
+     *     party's all-time sales (customer) or purchases (supplier) amount from
+     *     PartyItem.totalAmount; "Balance" is the existing closing-balance amount,
+     *     colored/labelled exactly as before (You'll Get / You'll Give / settled).
+     */
     private fun dashboardPartyRow(item: PartyItem): LinearLayout {
         // ---- FIX: type-aware give/get, see updateSummaryTotals() comment above ----
         // ---- CHANGE (Khatabook-style party list — screenshot reference): a settled
@@ -855,11 +878,13 @@ class PartyDashboardActivity : AppCompatActivity() {
         val give = if (item.isCustomer) item.closing < 0 else item.closing > 0
         val amountColor = if (isZero) textDark else if (give) red else green
         val label = if (isZero) "" else if (give) Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA") else Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")
+        val chipColor = if (item.isCustomer) blue else orange
+        val chipBg = if (item.isCustomer) "#EAF0FF" else "#FFF3E7"
+        val chipText = if (item.isCustomer) Loc.t(this, "CUSTOMER", "\u06A9\u0633\u0679\u0645\u0631") else Loc.t(this, "SUPPLIER", "\u0633\u067E\u0644\u0627\u0626\u0631")
 
         return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 16, 18, 16)
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 14)
             background = elevatedCardBg()
             elevation = 2f
             layoutParams = LinearLayout.LayoutParams(
@@ -876,22 +901,45 @@ class PartyDashboardActivity : AppCompatActivity() {
                 })
             }
 
-            val infoCol = LinearLayout(this@PartyDashboardActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            // ---- Header row: name + tag chip + share/forward arrow ----
+            val headerRow = LinearLayout(this@PartyDashboardActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
             }
-            infoCol.addView(TextView(this@PartyDashboardActivity).apply {
+            headerRow.addView(TextView(this@PartyDashboardActivity).apply {
                 text = item.name
                 textSize = 15f
                 setTextColor(Color.parseColor("#2E3242"))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
+            headerRow.addView(TextView(this@PartyDashboardActivity).apply {
+                text = chipText
+                textSize = 10f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(chipColor))
+                setPadding(16, 6, 16, 6)
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor(chipBg))
+                    cornerRadius = 20f
+                }
+            })
+            headerRow.addView(spacerHoriz(10))
+            headerRow.addView(TextView(this@PartyDashboardActivity).apply {
+                text = "\u27A4"
+                textSize = 15f
+                setTextColor(Color.parseColor(labelGray))
+                setOnClickListener { sharePartySummary(item) }
+            })
+            addView(headerRow)
+
+            // ---- Subtitle row: last-activity date / Customer / Supplier fallback ----
             // ---- CHANGE (Khatabook-style party list — screenshot reference): show
             // the party's last transaction date (e.g. "05 Aug 2026") instead of a
             // static "Customer"/"Supplier" label, matching the reference design.
             // Falls back to Customer/Supplier for a brand-new party with no
             // transactions yet (lastActivityAt == null), since there's no date to show.
-            infoCol.addView(TextView(this@PartyDashboardActivity).apply {
+            addView(TextView(this@PartyDashboardActivity).apply {
                 text = item.lastActivityAt?.let { partyRowDateFmt.format(Date(it)) }
                     ?: if (item.isCustomer) Loc.t(this@PartyDashboardActivity, "Customer", "\u06A9\u0633\u0679\u0645\u0631") else Loc.t(this@PartyDashboardActivity, "Supplier", "\u0633\u067E\u0644\u0627\u0626\u0631")
                 textSize = 11.5f
@@ -908,7 +956,7 @@ class PartyDashboardActivity : AppCompatActivity() {
                     Loc.t(this@PartyDashboardActivity, "\u23F0 Overdue", "\u23F0 \u0645\u06CC\u0639\u0627\u062F \u06AF\u0632\u0631 \u06AF\u0626\u06CC")
                 else
                     Loc.t(this@PartyDashboardActivity, "\u23F0 Due Today", "\u23F0 \u0622\u062C \u0648\u0627\u062C\u0628 \u0627\u0644\u0627\u062F\u0627")
-                infoCol.addView(TextView(this@PartyDashboardActivity).apply {
+                addView(TextView(this@PartyDashboardActivity).apply {
                     text = badgeText
                     textSize = 10.5f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -918,31 +966,80 @@ class PartyDashboardActivity : AppCompatActivity() {
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 6 }
                 })
             }
-            addView(infoCol)
 
-            val amountCol = LinearLayout(this@PartyDashboardActivity).apply {
+            // ---- Divider ----
+            addView(View(this@PartyDashboardActivity).apply {
+                setBackgroundColor(Color.parseColor(cardBorder))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply { setMargins(0, 12, 0, 10) }
+            })
+
+            // ---- Footer row: Total (all-time) | Balance (closing) ----
+            val footerRow = LinearLayout(this@PartyDashboardActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            val totalCol = LinearLayout(this@PartyDashboardActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            totalCol.addView(TextView(this@PartyDashboardActivity).apply {
+                text = Loc.t(this@PartyDashboardActivity, "Total", "\u0679\u0648\u0679\u0644")
+                textSize = 11f
+                setTextColor(Color.parseColor(labelGray))
+            })
+            totalCol.addView(TextView(this@PartyDashboardActivity).apply {
+                text = "Rs %.2f".format(item.totalAmount)
+                textSize = 13.5f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(textDark))
+                setPadding(0, 2, 0, 0)
+            })
+            footerRow.addView(totalCol)
+
+            val balanceCol = LinearLayout(this@PartyDashboardActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.END
             }
-            amountCol.addView(TextView(this@PartyDashboardActivity).apply {
+            balanceCol.addView(TextView(this@PartyDashboardActivity).apply {
+                text = Loc.t(this@PartyDashboardActivity, "Balance", "\u0628\u06CC\u0644\u06CC\u0646\u0633")
+                textSize = 11f
+                setTextColor(Color.parseColor(labelGray))
+            })
+            balanceCol.addView(TextView(this@PartyDashboardActivity).apply {
                 // CHANGE: a settled balance shows the plain "Rs 0" the screenshot
                 // uses, instead of "Rs 0.00".
                 text = if (isZero) "Rs 0" else "Rs %.2f".format(kotlin.math.abs(item.closing))
-                textSize = 14.5f
+                textSize = 13.5f
+                gravity = Gravity.END
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(Color.parseColor(amountColor))
+                setPadding(0, 2, 0, 0)
             })
             // CHANGE: no You'll Get/Give caption under a settled Rs 0 balance.
             if (label.isNotEmpty()) {
-                amountCol.addView(TextView(this@PartyDashboardActivity).apply {
+                balanceCol.addView(TextView(this@PartyDashboardActivity).apply {
                     text = label
-                    textSize = 11f
+                    textSize = 10.5f
+                    gravity = Gravity.END
                     setTextColor(Color.parseColor(amountColor))
-                    setPadding(0, 2, 0, 0)
+                    setPadding(0, 1, 0, 0)
                 })
             }
-            addView(amountCol)
+            footerRow.addView(balanceCol)
+            addView(footerRow)
         }
+    }
+
+    /** Forward/share icon on a party row — shares that party's Total/Balance, same
+     * pattern as the header's shareSummary() but scoped to one party. */
+    private fun sharePartySummary(item: PartyItem) {
+        val isZero = kotlin.math.abs(item.closing) < 0.005
+        val give = if (item.isCustomer) item.closing < 0 else item.closing > 0
+        val balanceLine = if (isZero) "Rs 0" else "Rs %.2f (${if (give) Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA") else Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")})".format(kotlin.math.abs(item.closing))
+        val text = "${item.name}\n" +
+            Loc.t(this, "Total", "\u0679\u0648\u0679\u0644") + ": Rs %.2f\n".format(item.totalAmount) +
+            Loc.t(this, "Balance", "\u0628\u06CC\u0644\u06CC\u0646\u0633") + ": $balanceLine"
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }, Loc.t(this, "Share", "\u0634\u06CC\u0626\u0631 \u06A9\u0631\u06CC\u06BA")))
     }
 
     // ================= TRANSACTIONS TAB =================

@@ -13,6 +13,11 @@ import java.util.UUID
 // PaymentDao.lastActivityByPartyType, all of which return a bare (id, maxCreatedAt)
 // pair — see PartyDashboardActivity.loadParties() where the three are merged.
 data class PartyLastActivity(val partyId:Long, val lastAt:Long)
+// ADDED (Parties tab — supplier/customer row "Total" column, chip+arrow redesign):
+// same (id, aggregate) shape as PartyLastActivity but for the all-time transacted
+// total per party — see SaleDao.totalsByCustomer / PurchaseDao.totalsBySupplier and
+// PartyDashboardActivity.loadParties().
+data class PartyTotal(val partyId:Long, val total:Double)
 data class DailySales(val day:String,val total:Double)
 data class TopProduct(val product:String,val totalQty:Double)
 data class PurchaseWithSupplier(val billNo:String,val supplierName:String,val total:Double,val createdAt:Long,val status:String)
@@ -791,6 +796,10 @@ interface ProductDao {
     suspend fun receivablesTotal():Double
     @Query("SELECT COALESCE(SUM(-balance),0) FROM customers WHERE balance<0")
     suspend fun advancesReceivedTotal():Double
+    // ADDED (Parties tab row redesign — "Total" column): all-time sales total per
+    // customer id (excludes returned sales), for the new Total/Balance row layout.
+    @Query("SELECT customerId as partyId, COALESCE(SUM(total),0) as total FROM sales WHERE customerId IS NOT NULL AND status!='returned' GROUP BY customerId")
+    suspend fun totalsByCustomer():List<PartyTotal>
 }
 
 @Dao interface SupplierDao {
@@ -812,6 +821,10 @@ interface ProductDao {
     suspend fun payablesTotal():Double
     @Query("SELECT COALESCE(SUM(-balance),0) FROM suppliers WHERE balance<0")
     suspend fun advancesPaidTotal():Double
+    // ADDED (Parties tab row redesign — "Total" column): all-time purchases total per
+    // supplier id (excludes returned purchases), for the new Total/Balance row layout.
+    @Query("SELECT supplierId as partyId, COALESCE(SUM(total),0) as total FROM purchases WHERE supplierId IS NOT NULL AND status!='returned' GROUP BY supplierId")
+    suspend fun totalsBySupplier():List<PartyTotal>
 }
 
 @Dao interface SaleDao {
