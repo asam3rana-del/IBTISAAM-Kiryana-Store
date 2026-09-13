@@ -324,70 +324,151 @@ class PurchaseHistoryActivity : ThemedActivity() {
                     })
                 }
             }
-            val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val billCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            billCol.addView(TextView(this).apply { text = row.billNo; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
-            billCol.addView(TextView(this).apply { text = row.supplierName; textSize = 12.5f; setTextColor(Color.parseColor(textMuted)); setPadding(0, 3, 0, 0) })
-            topRow.addView(billCol)
-            topRow.addView(TextView(this).apply { text = "Rs %.0f".format(row.total); textSize = 15f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(navy)) })
-            card.addView(topRow)
-            card.addView(spacer(10))
-            val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            bottomRow.addView(TextView(this).apply {
-                text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(row.createdAt))
-                textSize = 11.5f
-                setTextColor(Color.parseColor(textMuted))
+            // ---- Card layout below follows the reference "party ledger" card pattern
+            // the user asked for: name + PAID/DUE pill on one line, the entry type and
+            // date right-aligned above it, the amount as its own bold line, a muted
+            // "Balance: Rs …" line, and a bottom-right row of Print / Share / More
+            // (⋮) icons — replacing the old bill-number-first layout and inline
+            // text-button Return/Delete row. ----
+            val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val nameCol = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            if (row.status != "active") {
-                bottomRow.addView(TextView(this).apply {
-                    text = row.status.replaceFirstChar { it.uppercase() }
-                    textSize = 11.5f
+            }
+            nameCol.addView(TextView(this).apply { text = row.supplierName; textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
+            if (row.status == "active") {
+                nameCol.addView(TextView(this).apply {
+                    text = if (due > 0) com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "DUE", "باقی") else com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "PAID", "ادا شدہ")
+                    textSize = 10.5f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.parseColor(textMuted))
-                    background = strokedBg(border, fieldFill, 8)
-                    setPadding(14, 5, 14, 5)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 8, 0) }
+                    setTextColor(Color.parseColor(if (due > 0) red else successGreen))
+                    background = strokedBg(if (due > 0) "#F4C7C8" else "#BFE7D3", if (due > 0) "#FDF1F1" else "#EEFBF4", 30)
+                    setPadding(16, 4, 16, 4)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(10, 0, 0, 0) }
                 })
             }
-            bottomRow.addView(TextView(this).apply {
-                text = if (due > 0) com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Due: Rs %.0f", "باقی: Rs %.0f").format(due) else com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Paid in full", "مکمل ادا شدہ")
+            topRow.addView(nameCol)
+            val typeDateCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
+            typeDateCol.addView(TextView(this).apply {
+                text = if (row.status == "active") com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Purchase", "خریداری") else row.status.replaceFirstChar { it.uppercase() }
                 textSize = 11.5f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(Color.parseColor(if (due > 0) red else successGreen))
-                background = strokedBg(if (due > 0) "#F4C7C8" else "#BFE7D3", if (due > 0) "#FDF1F1" else "#EEFBF4", 8)
-                setPadding(14, 5, 14, 5)
+                setTextColor(Color.parseColor(textMuted))
             })
-            card.addView(bottomRow)
+            typeDateCol.addView(TextView(this).apply {
+                text = SimpleDateFormat("dd MMM, yy", Locale.getDefault()).format(Date(row.createdAt))
+                textSize = 11.5f
+                setTextColor(Color.parseColor(textMuted))
+                setPadding(0, 2, 0, 0)
+            })
+            topRow.addView(typeDateCol)
+            card.addView(topRow)
+            card.addView(spacer(10))
+            card.addView(TextView(this).apply { text = "Rs %.2f".format(row.total); textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
+            card.addView(spacer(6))
+            card.addView(TextView(this).apply {
+                text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Balance: Rs %.2f", "باقی: Rs %.2f").format(due)
+                textSize = 12f
+                setTextColor(Color.parseColor(textMuted))
+            })
 
             if (row.status == "active") {
                 val actionsRow = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.END
-                    setPadding(0, 10, 0, 0)
+                    setPadding(0, 12, 0, 0)
                 }
-                actionsRow.addView(TextView(this).apply {
-                    text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "↩ Return", "↩ واپسی")
-                    textSize = 12.5f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.parseColor(teal))
-                    setPadding(14, 6, 14, 6)
-                    setOnClickListener { confirmReturnPurchase(row.billNo) }
+                actionsRow.addView(ImageView(this@PurchaseHistoryActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_printer, navy, 17))
+                    setPadding(10, 10, 10, 10)
+                    setOnClickListener { printPurchase(row.billNo) }
                 })
-                actionsRow.addView(TextView(this).apply {
-                    text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Delete", "حذف کریں")
-                    setLeadingIcon(R.drawable.ic_delete, red, 13, 5)
-                    textSize = 12.5f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.parseColor(red))
-                    setPadding(14, 6, 0, 6)
-                    setOnClickListener { confirmDeletePurchase(row.billNo) }
+                actionsRow.addView(ImageView(this@PurchaseHistoryActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_share, navy, 17))
+                    setPadding(10, 10, 10, 10)
+                    setOnClickListener { sharePurchase(row, due) }
+                })
+                actionsRow.addView(ImageView(this@PurchaseHistoryActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_more_vert, textMuted, 17))
+                    setPadding(10, 10, 0, 10)
+                    setOnClickListener { showRowMenu(this, row.billNo) }
                 })
                 card.addView(actionsRow)
             }
 
             listContainer.addView(card)
         }
+    }
+
+    // ADDED (card redesign — Print icon): mirrors SaleHistoryActivity.printSale(),
+    // reloading the bill fresh from the DB (rather than reusing any in-memory
+    // "lines" state, which this history screen never has) and resolving each
+    // line's product name from its barcode the same way confirmReturnPurchase()
+    // already does below, so a reprinted bill matches the original bill exactly.
+    private fun printPurchase(billNo: String) = safeLaunch("printPurchase") {
+        val db = PosDatabase.get(this@PurchaseHistoryActivity)
+        val purchase = db.purchaseDao().findPurchase(billNo) ?: return@safeLaunch
+        val items = db.purchaseDao().itemsForBill(billNo)
+        val row = rows.firstOrNull { it.billNo == billNo }
+
+        val itemsEncoded = items.joinToString("\u0002") { item ->
+            val product = db.productDao().find(item.barcode)
+            val qtyText = formatQty(item.qty)
+            listOf(product?.name ?: item.barcode, qtyText, item.unit.ifBlank { product?.unit ?: "" }, item.unitCost, item.amount).joinToString("\u0003")
+        }
+
+        val previewIntent = Intent(this@PurchaseHistoryActivity, BillPreviewActivity::class.java).apply {
+            putExtra(BillPreviewActivity.EXTRA_TYPE, "purchase")
+            putExtra(BillPreviewActivity.EXTRA_REFERENCE, billNo)
+            putExtra(BillPreviewActivity.EXTRA_PARTY_NAME, row?.supplierName ?: "")
+            putExtra(BillPreviewActivity.EXTRA_PARTY_LABEL, "Supplier")
+            if (purchase.supplierId != null) putExtra(BillPreviewActivity.EXTRA_PARTY_ID, purchase.supplierId)
+            putExtra(BillPreviewActivity.EXTRA_DATE_MILLIS, purchase.createdAt)
+            putExtra(BillPreviewActivity.EXTRA_SUBTOTAL, purchase.subtotal)
+            putExtra(BillPreviewActivity.EXTRA_DISCOUNT, purchase.discount)
+            putExtra(BillPreviewActivity.EXTRA_TOTAL, purchase.total)
+            putExtra(BillPreviewActivity.EXTRA_PAID, purchase.paid)
+            putExtra(BillPreviewActivity.EXTRA_PAYMENT_METHOD, "Cash")
+            putExtra(BillPreviewActivity.EXTRA_ITEMS_ENCODED, itemsEncoded)
+        }
+        startActivity(previewIntent)
+    }
+
+    // ADDED (card redesign — Share icon): same plain-text-via-ACTION_SEND approach
+    // as PartyTransactionActivity.shareReceipt() — hands off to whatever the device
+    // has (WhatsApp/SMS/etc.) rather than committing to one channel.
+    private fun sharePurchase(row: HistoryRow, due: Double) {
+        val dateText = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(row.createdAt))
+        val lines = listOf(
+            com.grocerypos.v11.util.Loc.t(this, "Purchase Bill", "خریداری کا بل"),
+            "${com.grocerypos.v11.util.Loc.t(this, "Supplier", "سپلائر")}: ${row.supplierName}",
+            "${com.grocerypos.v11.util.Loc.t(this, "Bill No", "بل نمبر")}: ${row.billNo}",
+            "${com.grocerypos.v11.util.Loc.t(this, "Amount", "رقم")}: Rs %.2f".format(row.total),
+            "${com.grocerypos.v11.util.Loc.t(this, "Balance", "باقی")}: Rs %.2f".format(due),
+            "${com.grocerypos.v11.util.Loc.t(this, "Date", "تاریخ")}: $dateText"
+        ).joinToString("\n")
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, lines)
+        }, com.grocerypos.v11.util.Loc.t(this, "Share purchase", "خریداری شیئر کریں")))
+    }
+
+    // ADDED (card redesign — ⋮ overflow icon): Return/Delete used to be their own
+    // always-visible text buttons on every active row; they now live behind this
+    // menu to match the reference card's icon-only action row, without dropping
+    // either action.
+    private fun showRowMenu(anchor: View, billNo: String) {
+        val popup = android.widget.PopupMenu(this, anchor)
+        popup.menu.add(0, 1, 0, com.grocerypos.v11.util.Loc.t(this, "Return", "واپسی"))
+        popup.menu.add(0, 2, 1, com.grocerypos.v11.util.Loc.t(this, "Delete", "حذف کریں"))
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> confirmReturnPurchase(billNo)
+                2 -> confirmDeletePurchase(billNo)
+            }
+            true
+        }
+        popup.show()
     }
 
     // FIX (partial purchase return): "Return" used to only offer returning the ENTIRE

@@ -233,7 +233,7 @@ internal fun SettingsActivity.showResyncFromDialog() {
         cal.get(java.util.Calendar.YEAR),
         cal.get(java.util.Calendar.MONTH),
         cal.get(java.util.Calendar.DAY_OF_MONTH)
-    ).show()
+    ).apply { datePicker.calendarViewShown = true; datePicker.spinnersShown = false }.show()
 }
 
 // ADDED (multi-tenant support): admin pastes their own Firebase project's 4

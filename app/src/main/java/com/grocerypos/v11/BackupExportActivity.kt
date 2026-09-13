@@ -231,9 +231,11 @@ class BackupExportActivity : AppCompatActivity() {
                 runBackup(startCal.timeInMillis, endCal.timeInMillis, Loc.t(this, "Range", "\u062F\u0648\u0631\u0627\u0646\u06CC\u06C1"), "Range")
             }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
                 setTitle(Loc.t(this@BackupExportActivity, "Select End Date", "\u0627\u062E\u062A\u062A\u0627\u0645\u06CC \u062A\u0627\u0631\u06CC\u062E \u0645\u0646\u062A\u062E\u0628 \u06A9\u0631\u06CC\u06BA"))
+                datePicker.calendarViewShown = true; datePicker.spinnersShown = false
             }.show()
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
             setTitle(Loc.t(this@BackupExportActivity, "Select Start Date", "\u0627\u0628\u062A\u062F\u0627\u0626\u06CC \u062A\u0627\u0631\u06CC\u062E \u0645\u0646\u062A\u062E\u0628 \u06A9\u0631\u06CC\u06BA"))
+            datePicker.calendarViewShown = true; datePicker.spinnersShown = false
         }.show()
     }
 

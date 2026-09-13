@@ -479,7 +479,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                         dateCal.get(java.util.Calendar.YEAR),
                         dateCal.get(java.util.Calendar.MONTH),
                         dateCal.get(java.util.Calendar.DAY_OF_MONTH)
-                    ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
+                    ).apply { datePicker.maxDate = System.currentTimeMillis(); datePicker.calendarViewShown = true; datePicker.spinnersShown = false }.show()
                 }
             }
             col.addView(dateField)

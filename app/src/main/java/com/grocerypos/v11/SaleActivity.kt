@@ -1138,7 +1138,13 @@ class SaleActivity : AppCompatActivity() {
             cal.set(y, m, d)
             saleDateMillis = cal.timeInMillis
             dateValueText.text = formatDate(saleDateMillis)
-        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
+            // FIX (consistent date picker style across the app): some OEM skins
+            // default android.app.DatePickerDialog to the old scrolling-spinner
+            // layout regardless of the app's Material theme. Forcing calendar
+            // mode here guarantees the same grid-calendar picker everywhere.
+            datePicker.calendarViewShown = true; datePicker.spinnersShown = false
+        }.show()
     }
 
     // ---- CHANGED: overflow "Share" now resolves the selected customer (if any) so

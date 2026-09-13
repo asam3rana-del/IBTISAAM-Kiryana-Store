@@ -1251,7 +1251,10 @@ class PurchaseActivity : ThemedActivity() {
     private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
     private fun openDatePicker() {
         val cal = Calendar.getInstance().apply { timeInMillis = purchaseDateMillis }
-        DatePickerDialog(this, { _, y, m, d -> cal.set(y, m, d); purchaseDateMillis = cal.timeInMillis; dateValueText.text = formatDate(purchaseDateMillis) }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+        // FIX (consistent date picker style across the app): force calendar mode
+        // so this always matches the grid-calendar picker used everywhere else,
+        // instead of falling back to an OEM's scrolling-spinner layout.
+        DatePickerDialog(this, { _, y, m, d -> cal.set(y, m, d); purchaseDateMillis = cal.timeInMillis; dateValueText.text = formatDate(purchaseDateMillis) }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply { datePicker.calendarViewShown = true; datePicker.spinnersShown = false }.show()
     }
     private fun hideKeyboard() {
         currentFocus?.let { focused -> val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager; imm?.hideSoftInputFromWindow(focused.windowToken, 0); focused.clearFocus() }
