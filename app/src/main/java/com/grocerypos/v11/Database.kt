@@ -1502,7 +1502,7 @@ val MIGRATION_31_32 = object : Migration(31, 32) {
 // instead of losing anything.
 val MIGRATION_32_33 = object : Migration(32, 33) {
     override fun migrate(database: SupportSQLiteDatabase) {
-        dedupeUidColumn(database, "sales", "id", "saleUid")
+        dedupeUidColumn(database, "sales", "rowid", "saleUid")
         dedupeUidColumn(database, "sale_items", "id", "lineUid")
         dedupeUidColumn(database, "purchases", "rowid", "purchaseUid")
         dedupeUidColumn(database, "purchase_items", "id", "lineUid")
