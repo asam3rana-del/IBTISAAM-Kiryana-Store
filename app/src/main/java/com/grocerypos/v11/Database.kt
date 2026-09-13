@@ -461,7 +461,13 @@ data class Purchase(
     val dirty:Boolean=true,
     // NEW (Improvement Pack P2): same reasoning as Sale.saleUid — a permanent
     // id independent of the human-readable `billNo`. See MIGRATION_31_32.
-    @ColumnInfo(defaultValue="") val purchaseUid:String=UUID.randomUUID().toString()
+    @ColumnInfo(defaultValue="") val purchaseUid:String=UUID.randomUUID().toString(),
+    // NEW ("10/10 Purchase screen" item #2): the SUPPLIER's own invoice/bill
+    // number (as printed on their paper bill), distinct from our own
+    // auto-generated `billNo`. Blank means not entered. Used for a stronger,
+    // exact duplicate-bill check (PurchaseDao.findDuplicateBySupplierInvoice)
+    // alongside the existing same-party+same-amount heuristic. See MIGRATION_33_34.
+    @ColumnInfo(defaultValue="") val supplierInvoiceNo:String=""
 )
 
 @Entity(tableName="purchase_items", indices=[Index(value=["lineUid"], unique=true)])
@@ -671,6 +677,11 @@ interface ProductDao {
     suspend fun increase(code:String,qty:Double)
     @Query("UPDATE products SET cost=:newCost WHERE barcode=:code")
     suspend fun updateCost(code:String,newCost:Double)
+    // NEW ("10/10 Purchase screen" item #7): lets the Purchase screen set/update a
+    // product's retail (salePrice) and wholesale rate at the moment it's purchased,
+    // instead of only ever being editable from the Product screen.
+    @Query("UPDATE products SET salePrice=:salePrice, wholesalePrice=:wholesalePrice WHERE barcode=:code")
+    suspend fun updatePrices(code:String,salePrice:Double,wholesalePrice:Double)
     @Query("UPDATE products SET unit=:unit WHERE barcode=:code")
     suspend fun updateUnit(code:String,unit:String)
     @Query("SELECT * FROM products WHERE stock<=reorderLevel ORDER BY name")
@@ -920,6 +931,13 @@ interface ProductDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun hold(h:HeldBill)
     @Query("SELECT * FROM held_bills ORDER BY createdAt DESC") fun all():Flow<List<HeldBill>>
     @Delete suspend fun delete(h:HeldBill)
+    // NEW ("10/10 Purchase screen" item #12): Sale and Purchase Hold/Recall now share
+    // this one held_bills table — holdId's prefix ("HOLD" for Sale, "PHOLD" for
+    // Purchase, set at creation time in SaleUseCases.HoldBillUseCase /
+    // PurchaseActivity.holdBill()) tells the two screens' recall lists apart so a
+    // held Purchase bill never shows up in the Sale recall dialog and vice versa.
+    @Query("SELECT * FROM held_bills WHERE holdId LIKE 'HOLD%' ORDER BY createdAt DESC") fun allSaleHolds():Flow<List<HeldBill>>
+    @Query("SELECT * FROM held_bills WHERE holdId LIKE 'PHOLD%' ORDER BY createdAt DESC") fun allPurchaseHolds():Flow<List<HeldBill>>
 }
 
 // NEW (Zakat tracker)
@@ -1006,6 +1024,14 @@ interface ProductDao {
     // billNo is the natural unique key, so REPLACE just means "update with server copy".
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertPurchase(p:Purchase)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertItems(items:List<PurchaseItem>)
+
+    // NEW ("10/10 Purchase screen" item #2): exact duplicate check on the SUPPLIER's
+    // own invoice number (blank supplierInvoiceNo never matches, so bills with no
+    // invoice number entered fall through to the existing same-party+same-amount
+    // heuristic in PurchaseActivity instead). excludeBillNo lets re-saving an edit of
+    // itself not trigger a false alarm — pass "" when not editing.
+    @Query("SELECT pu.* FROM purchases pu LEFT JOIN suppliers s ON pu.supplierId=s.id WHERE pu.supplierInvoiceNo=:invoiceNo AND pu.supplierInvoiceNo!='' AND pu.billNo!=:excludeBillNo AND s.name=:party COLLATE NOCASE LIMIT 1")
+    suspend fun findDuplicateBySupplierInvoice(party:String, invoiceNo:String, excludeBillNo:String):Purchase?
 }
 
 @Dao interface ReturnDao {
@@ -1512,6 +1538,16 @@ val MIGRATION_32_33 = object : Migration(32, 33) {
     }
 }
 
+// NEW ("10/10 Purchase screen" item #2): supplierInvoiceNo added to Purchase as a
+// plain column with a default — same low-risk shape as MIGRATION_31_32's
+// purchaseUid/lineUid columns, no backfill needed since a blank value is exactly the
+// correct "not entered" state for every pre-existing row.
+val MIGRATION_33_34 = object : Migration(33, 34) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE purchases ADD COLUMN supplierInvoiceNo TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1524,7 +1560,7 @@ val MIGRATION_32_33 = object : Migration(32, 33) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=33, exportSchema=true
+    version=34, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1551,7 +1587,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

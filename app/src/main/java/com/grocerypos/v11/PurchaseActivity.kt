@@ -31,6 +31,7 @@ import com.grocerypos.v11.domain.ScannedLine
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import android.util.Log
 import org.json.JSONArray
@@ -93,6 +94,10 @@ class PurchaseActivity : ThemedActivity() {
     private lateinit var supplierBalanceText: TextView
     private lateinit var partyBox: LinearLayout
     private lateinit var partyName: AutoCompleteTextView
+    // NEW ("10/10 Purchase screen" item #2): the SUPPLIER's own invoice/bill number
+    // (optional) — separate from our own auto-generated billNo, used for an exact
+    // duplicate-bill check.
+    private lateinit var supplierInvoiceNoInput: EditText
     private lateinit var itemEntrySection: LinearLayout
     private lateinit var addItemsTrigger: TextView
     private lateinit var itemName: AutoCompleteTextView
@@ -101,6 +106,13 @@ class PurchaseActivity : ThemedActivity() {
     private lateinit var unitToggleRow: LinearLayout
     private lateinit var rate: EditText
     private lateinit var totalLotPrice: EditText
+    // NEW ("10/10 Purchase screen" item #7): retail (salePrice) / wholesale rate,
+    // editable right here, so a purchase can also update what an item sells for.
+    private lateinit var retailRateInput: EditText
+    private lateinit var wholesaleRateInput: EditText
+    // NEW ("10/10 Purchase screen" item #15): live warning if this purchase rate
+    // would eat into or invert the item's current sale margin.
+    private lateinit var marginWarningText: TextView
     private lateinit var conversionInfo: TextView
     private lateinit var totalAmountText: TextView
     private lateinit var addItemButton: Button
@@ -141,6 +153,18 @@ class PurchaseActivity : ThemedActivity() {
     private var lastPurchaseMainRate: Double = 0.0
     private var suppressRateWatcher = false
     private var suppressTotalLotWatcher = false
+    // NEW ("10/10 Purchase screen" item #7): retail/wholesale rate state, mirroring
+    // lastMainRate above — main-unit-basis values the retail/wholesale fields
+    // currently represent, plus the product's rates as they stood BEFORE this
+    // purchase screen touched them (used by the item #15 margin warning, which
+    // must compare against the CURRENT stored sale price, not a value the user is
+    // mid-edit on).
+    private var lastMainRetailRate: Double = 0.0
+    private var lastMainWholesaleRate: Double = 0.0
+    private var suppressRetailRateWatcher = false
+    private var suppressWholesaleRateWatcher = false
+    private var currentProductSalePriceMain: Double = 0.0
+    private var currentProductWholesalePriceMain: Double = 0.0
     private var editBillNo: String? = null
     private var originalPurchase: Purchase? = null
     private var originalItems: List<PurchaseItem> = emptyList()
@@ -336,6 +360,19 @@ class PurchaseActivity : ThemedActivity() {
         partyRow.addView(partyName)
         partyRow.addView(circleIcon("+", teal, 32) { promptAddSupplier() })
         partyBox.addView(partyRow)
+        // NEW ("10/10 Purchase screen" item #2): supplier's own invoice/bill number.
+        partyBox.addView(spacer(10))
+        partyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Supplier Invoice/Bill No. (optional)", "سپلائر انوائس/بل نمبر (اختیاری)")))
+        supplierInvoiceNoInput = EditText(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "e.g. printed on their bill", "مثلاً ان کے بل پر چھپا نمبر")
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, fieldFill, 12)
+            setPadding(16, 12, 16, 12)
+            textSize = 14f
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+        }
+        partyBox.addView(supplierInvoiceNoInput)
         root.addView(partyBox)
         root.addView(spacer(18))
 
@@ -436,6 +473,46 @@ class PurchaseActivity : ThemedActivity() {
         rateRow.addView(totalLotBox)
         itemEntrySection.addView(rateRow)
 
+        // NEW ("10/10 Purchase screen" item #7): Retail/Wholesale rate, editable here —
+        // pre-filled from the picked product's current salePrice/wholesalePrice
+        // (see applyPickedProduct()/refillAutoRate()) and only written back to the
+        // product on save if the user changes it away from 0 (see PurchaseLine).
+        val priceRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val retailBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
+        retailBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Retail Rate", "ریٹیل ریٹ")))
+        retailRateInput = EditText(this).apply {
+            hint = "Sale Price"
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15.5f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+        }
+        retailBox.addView(retailRateInput)
+        val wholesaleBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) } }
+        wholesaleBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Wholesale Rate", "ہول سیل ریٹ")))
+        wholesaleRateInput = EditText(this).apply {
+            hint = "Wholesale Price"
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 15.5f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            imeOptions = EditorInfo.IME_ACTION_DONE
+        }
+        wholesaleBox.addView(wholesaleRateInput)
+        priceRow.addView(retailBox)
+        priceRow.addView(wholesaleBox)
+        itemEntrySection.addView(priceRow)
+
+        marginWarningText = TextView(this).apply {
+            text = ""; textSize = 12f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(16, 10, 16, 10); visibility = View.GONE
+        }
+        itemEntrySection.addView(marginWarningText)
+        itemEntrySection.addView(spacer(6))
+
         conversionInfo = TextView(this).apply {
             text = ""; textSize = 12f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(16, 10, 16, 10); visibility = View.GONE
@@ -469,7 +546,11 @@ class PurchaseActivity : ThemedActivity() {
             setOnClickListener {
                 endLineEdit()
                 itemName.setText(""); qty.setText(""); rate.setText(""); totalLotPrice.setText("")
+                retailRateInput.setText(""); wholesaleRateInput.setText("")
                 selectedProduct = null; lastMainQty = 0.0; lastMainRate = 0.0
+                lastMainRetailRate = 0.0; lastMainWholesaleRate = 0.0
+                currentProductSalePriceMain = 0.0; currentProductWholesalePriceMain = 0.0
+                marginWarningText.visibility = View.GONE
                 conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
                 totalAmountText.text = "Total Amount: Rs 0"
                 hideKeyboard()
@@ -797,6 +878,15 @@ class PurchaseActivity : ThemedActivity() {
                 suppressTotalLotWatcher = false
             }
             updateLineTotal()
+            updateMarginWarning()
+        })
+        retailRateInput.addTextChangedListener(simpleWatcher {
+            if (suppressRetailRateWatcher) return@simpleWatcher
+            lastMainRetailRate = toMainUnitRate(retailRateInput.text.toString().toDoubleOrNull() ?: 0.0)
+        })
+        wholesaleRateInput.addTextChangedListener(simpleWatcher {
+            if (suppressWholesaleRateWatcher) return@simpleWatcher
+            lastMainWholesaleRate = toMainUnitRate(wholesaleRateInput.text.toString().toDoubleOrNull() ?: 0.0)
         })
         totalLotPrice.addTextChangedListener(simpleWatcher {
             if (suppressTotalLotWatcher) return@simpleWatcher
@@ -809,6 +899,7 @@ class PurchaseActivity : ThemedActivity() {
                 suppressRateWatcher = false
                 lastMainRate = toMainUnitRate(newRate)
                 updateLineTotal()
+                updateMarginWarning()
             }
         })
         paidInput.addTextChangedListener(simpleWatcher { updateGrandTotal() })
@@ -862,10 +953,12 @@ class PurchaseActivity : ThemedActivity() {
                     put("itemName", line.itemName); put("barcode", line.barcode ?: ""); put("qty", line.qty); put("unit", line.unit); put("rate", line.rate); put("amount", line.amount)
                     put("mainUnit", line.mainUnit); put("secondaryUnit", line.secondaryUnit); put("secondaryUnitQty", line.secondaryUnitQty)
                     put("tertiaryUnit", line.tertiaryUnit); put("tertiaryUnitQty", line.tertiaryUnitQty)
+                    put("retailRate", line.retailRate); put("wholesaleRate", line.wholesaleRate)
                 })
             }
             val draft = JSONObject().apply {
                 put("party", partyName.text.toString()); put("paid", paidInput.text.toString()); put("dateMillis", purchaseDateMillis)
+                put("supplierInvoiceNo", supplierInvoiceNoInput.text.toString())
                 put("pendingItemName", itemName.text.toString()); put("pendingQty", qty.text.toString()); put("pendingRate", rate.text.toString()); put("lines", linesArray)
             }
             draftPrefs().edit().putString(KEY_DRAFT, draft.toString()).apply()
@@ -885,12 +978,13 @@ class PurchaseActivity : ThemedActivity() {
                 val party = draft.optString("party", ""); if (party.isNotBlank()) { partyName.setText(party); updateSupplierBalanceDisplay(party) }
                 val paid = draft.optString("paid", ""); if (paid.isNotBlank()) paidInput.setText(paid)
                 val savedDate = draft.optLong("dateMillis", 0L); if (savedDate > 0L) { purchaseDateMillis = savedDate; dateValueText.text = formatDate(purchaseDateMillis) }
+                val savedInvoiceNo = draft.optString("supplierInvoiceNo", ""); if (savedInvoiceNo.isNotBlank()) supplierInvoiceNoInput.setText(savedInvoiceNo)
                 val linesArray = draft.optJSONArray("lines")
                 if (linesArray != null) {
                     for (i in 0 until linesArray.length()) {
                         try {
                             val o = linesArray.getJSONObject(i)
-                            lines.add(PurchaseLine(o.optString("itemName"), o.optString("barcode").ifBlank { null }, o.optDouble("qty", 0.0), o.optString("unit"), o.optDouble("rate", 0.0), o.optDouble("amount", 0.0), o.optString("mainUnit"), o.optString("secondaryUnit"), o.optDouble("secondaryUnitQty", 0.0), o.optString("tertiaryUnit"), o.optDouble("tertiaryUnitQty", 0.0)))
+                            lines.add(PurchaseLine(o.optString("itemName"), o.optString("barcode").ifBlank { null }, o.optDouble("qty", 0.0), o.optString("unit"), o.optDouble("rate", 0.0), o.optDouble("amount", 0.0), o.optString("mainUnit"), o.optString("secondaryUnit"), o.optDouble("secondaryUnitQty", 0.0), o.optString("tertiaryUnit"), o.optDouble("tertiaryUnitQty", 0.0), o.optDouble("retailRate", 0.0), o.optDouble("wholesaleRate", 0.0)))
                         } catch (e: Exception) { Log.e(TAG, "restoreDraftIfAny: skipping bad line $i", e) }
                     }
                     renderItemsList(); updateGrandTotal()
@@ -1019,12 +1113,107 @@ class PurchaseActivity : ThemedActivity() {
         val popup = PopupMenu(this, anchor)
         popup.menu.add(com.grocerypos.v11.util.Loc.t(this, "Print", "پرنٹ"))
         popup.menu.add(com.grocerypos.v11.util.Loc.t(this, "Share", "شیئر کریں"))
-        popup.setOnMenuItemClickListener {
-            val billNo = editBillNo
-            if (billNo == null) { Toast.makeText(this, "Save the purchase first", Toast.LENGTH_SHORT).show() } else { openBillPreview(billNo, forSaving = false) }
+        // NEW ("10/10 Purchase screen" item #12): Hold/Recall, mirroring Sale's
+        // SaleHoldRecall.kt but as private methods on this Activity (Purchase's
+        // fields are `private`, not `internal` like Sale's, so an extension-function
+        // file the way SaleHoldRecall.kt is done isn't an option without a wider
+        // visibility change across the class).
+        val holdItem = popup.menu.add(com.grocerypos.v11.util.Loc.t(this, "Hold Bill", "بل ہولڈ کریں"))
+        val recallItem = popup.menu.add(com.grocerypos.v11.util.Loc.t(this, "Recall Bill", "بل واپس لائیں"))
+        popup.setOnMenuItemClickListener { item ->
+            when (item) {
+                holdItem -> holdBill()
+                recallItem -> openRecallDialog()
+                else -> {
+                    val billNo = editBillNo
+                    if (billNo == null) { Toast.makeText(this, "Save the purchase first", Toast.LENGTH_SHORT).show() } else { openBillPreview(billNo, forSaving = false) }
+                }
+            }
             true
         }
         popup.show()
+    }
+    // NEW ("10/10 Purchase screen" item #12): an incomplete purchase (e.g. supplier's
+    // bill has more items than there's time to enter right now) can be parked and
+    // picked back up later, instead of having to be finished or abandoned in one go.
+    // Reuses the same held_bills table as Sale's Hold/Recall — see HeldDao's
+    // allSaleHolds()/allPurchaseHolds() for how the two stay separate.
+    private fun encodeHold(): String {
+        val header = listOf(
+            partyName.text.toString(),
+            supplierInvoiceNoInput.text.toString(),
+            paidInput.text.toString(),
+            purchaseDateMillis.toString()
+        ).joinToString("\u0001")
+        val itemsPart = lines.joinToString("\u0002") { l ->
+            listOf(
+                l.barcode ?: "", l.itemName, l.qty, l.unit, l.rate, l.amount,
+                l.mainUnit, l.secondaryUnit, l.secondaryUnitQty, l.tertiaryUnit, l.tertiaryUnitQty,
+                l.retailRate, l.wholesaleRate
+            ).joinToString("\u0003")
+        }
+        return header + "\u0004" + itemsPart
+    }
+    private fun decodeHold(payload: String) {
+        val parts = payload.split("\u0004")
+        if (parts.isEmpty()) return
+        val header = parts[0].split("\u0001")
+        if (header.size >= 3) {
+            partyName.setText(header[0])
+            updateSupplierBalanceDisplay(header[0])
+            supplierInvoiceNoInput.setText(header[1])
+            paidInput.setText(header[2])
+            header.getOrNull(3)?.toLongOrNull()?.let { purchaseDateMillis = it; dateValueText.text = formatDate(purchaseDateMillis) }
+        }
+        lines.clear()
+        if (parts.size > 1 && parts[1].isNotEmpty()) {
+            parts[1].split("\u0002").forEach { row ->
+                val f = row.split("\u0003")
+                if (f.size >= 11) {
+                    lines.add(PurchaseLine(
+                        itemName = f[1], barcode = f[0].ifBlank { null }, qty = f[2].toDoubleOrNull() ?: 0.0,
+                        unit = f[3], rate = f[4].toDoubleOrNull() ?: 0.0, amount = f[5].toDoubleOrNull() ?: 0.0,
+                        mainUnit = f[6], secondaryUnit = f[7], secondaryUnitQty = f[8].toDoubleOrNull() ?: 0.0,
+                        tertiaryUnit = f.getOrNull(9) ?: "", tertiaryUnitQty = f.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
+                        retailRate = f.getOrNull(11)?.toDoubleOrNull() ?: 0.0, wholesaleRate = f.getOrNull(12)?.toDoubleOrNull() ?: 0.0
+                    ))
+                }
+            }
+        }
+        endLineEdit(); renderItemsList(); updateGrandTotal()
+        if (editBillNo == null) saveDraft()
+    }
+    private fun holdBill() {
+        if (lines.isEmpty()) { Toast.makeText(this, "Add items pehle, phir hold karen", Toast.LENGTH_SHORT).show(); return }
+        val holdId = "PHOLD" + System.currentTimeMillis()
+        val payload = encodeHold()
+        safeLaunch("holdPurchaseBill") {
+            PosDatabase.get(this@PurchaseActivity).heldDao().hold(HeldBill(holdId = holdId, payload = payload))
+            Toast.makeText(this@PurchaseActivity, "Purchase hold ho gayi", Toast.LENGTH_SHORT).show()
+            partyName.setText(""); supplierInvoiceNoInput.setText(""); paidInput.setText("")
+            endLineEdit(); lines.clear(); renderItemsList(); updateGrandTotal()
+        }
+    }
+    private fun openRecallDialog() {
+        safeLaunch("loadPurchaseHolds") {
+            val held = PosDatabase.get(this@PurchaseActivity).heldDao().allPurchaseHolds().first()
+            if (held.isEmpty()) { Toast.makeText(this@PurchaseActivity, "Koi held purchase nahi hai", Toast.LENGTH_SHORT).show(); return@safeLaunch }
+            val labels = held.map { h ->
+                val header = h.payload.split("\u0004").getOrNull(0)?.split("\u0001")
+                val partyLabel = header?.getOrNull(0)?.takeIf { it.isNotBlank() } ?: "Unknown Supplier"
+                val itemCount = h.payload.split("\u0004").getOrNull(1)?.let { if (it.isEmpty()) 0 else it.split("\u0002").size } ?: 0
+                "$partyLabel — $itemCount item(s)"
+            }.toTypedArray()
+            android.app.AlertDialog.Builder(this@PurchaseActivity)
+                .setTitle(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Recall Held Purchase", "ہولڈ کی گئی خریداری واپس لائیں"))
+                .setItems(labels) { _, which ->
+                    val chosen = held[which]
+                    decodeHold(chosen.payload)
+                    safeLaunch("deletePurchaseHold") { PosDatabase.get(this@PurchaseActivity).heldDao().delete(chosen) }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
     }
     // gradientBg() and spacer() now come from the shared UiHelpers.kt (item #24 dedup) —
     // both were byte-identical private copies here before.
@@ -1056,8 +1245,7 @@ class PurchaseActivity : ThemedActivity() {
     }
 
     private fun formatDate(millis: Long) = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(millis))
-    // ---- REMOVED (code maintainability — DRY): formatQty() shared via UiHelpers.kt
-    // now (see comment there) — import com.grocerypos.v11.ui.components.*.
+    private fun formatQty(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
     private fun openDatePicker() {
         val cal = Calendar.getInstance().apply { timeInMillis = purchaseDateMillis }
         DatePickerDialog(this, { _, y, m, d -> cal.set(y, m, d); purchaseDateMillis = cal.timeInMillis; dateValueText.text = formatDate(purchaseDateMillis) }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
@@ -1070,6 +1258,7 @@ class PurchaseActivity : ThemedActivity() {
         originalPurchase = data.purchase; originalItems = data.items
         purchaseDateMillis = data.purchase.createdAt; dateValueText.text = formatDate(purchaseDateMillis)
         partyName.setText(data.supplierName); updateSupplierBalanceDisplay(data.supplierName)
+        supplierInvoiceNoInput.setText(data.purchase.supplierInvoiceNo)
         paidInput.setText(if (data.purchase.paid > 0) Math.round(data.purchase.paid).toString() else "")
         endLineEdit(); lines.clear(); lines.addAll(data.lines)
         renderItemsList(); updateGrandTotal(); deleteButton.visibility = View.VISIBLE
@@ -1093,7 +1282,14 @@ class PurchaseActivity : ThemedActivity() {
         }
         conversionInfo.visibility = if (conversionInfo.text.isNotEmpty()) View.VISIBLE else View.GONE
         lastMainQty = 0.0; lastMainRate = 0.0; lastPurchaseMainRate = 0.0
-        refillAutoRate(); updateLineTotal()
+        // NEW ("10/10 Purchase screen" item #7/#15): remember the product's rates
+        // as they stand right now (before this purchase touches them) — the retail/
+        // wholesale fields prefill from these, and the margin warning always compares
+        // against these, not whatever the user is mid-typing.
+        currentProductSalePriceMain = product.salePrice
+        currentProductWholesalePriceMain = product.wholesalePrice
+        lastMainRetailRate = 0.0; lastMainWholesaleRate = 0.0
+        refillAutoRate(); updateLineTotal(); updateMarginWarning()
         qty.setText(""); totalLotPrice.setText(""); qty.requestFocus()
 
         // NEW: look up the actual last purchase rate for this product (not the running
@@ -1155,6 +1351,52 @@ class PurchaseActivity : ThemedActivity() {
         rate.setText(if (r > 0) "%.2f".format(r) else "")
         suppressRateWatcher = false
         if (r > 0) rate.post { rate.selectAll() }
+        // NEW ("10/10 Purchase screen" item #7): retail/wholesale fields follow the
+        // same "keep whatever the user already typed, else fall back" pattern as
+        // Rate above, falling back to the product's CURRENT salePrice/wholesalePrice
+        // instead of cost.
+        val retailBase = if (lastMainRetailRate > 0) lastMainRetailRate else currentProductSalePriceMain
+        val wholesaleBase = if (lastMainWholesaleRate > 0) lastMainWholesaleRate else currentProductWholesalePriceMain
+        suppressRetailRateWatcher = true
+        retailRateInput.setText(if (retailBase > 0) "%.2f".format(fromMainUnitRate(retailBase, chosenUnit)) else "")
+        suppressRetailRateWatcher = false
+        suppressWholesaleRateWatcher = true
+        wholesaleRateInput.setText(if (wholesaleBase > 0) "%.2f".format(fromMainUnitRate(wholesaleBase, chosenUnit)) else "")
+        suppressWholesaleRateWatcher = false
+        updateMarginWarning()
+    }
+    // NEW ("10/10 Purchase screen" item #15): warns — right where the rate is being
+    // typed — when today's purchase rate would eat into or invert the item's CURRENT
+    // sale margin, instead of that only being discoverable later on the Sale screen.
+    private fun updateMarginWarning() {
+        val sale = currentProductSalePriceMain
+        if (selectedProduct == null || sale <= 0.0 || lastMainRate <= 0.0) {
+            marginWarningText.visibility = View.GONE
+            return
+        }
+        val margin = sale - lastMainRate
+        val marginPct = (margin / sale) * 100.0
+        marginWarningText.visibility = View.VISIBLE
+        when {
+            margin <= 0 -> {
+                marginWarningText.setTextColor(Color.parseColor("#D32F2F"))
+                marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
+                    "⚠ Loss! Purchase rate ≥ current Sale Rate (Rs %.2f)".format(sale),
+                    "⚠ نقصان! خریداری ریٹ موجودہ سیل ریٹ (روپے %.2f) کے برابر یا زیادہ ہے".format(sale))
+            }
+            marginPct < 10.0 -> {
+                marginWarningText.setTextColor(Color.parseColor("#F57C00"))
+                marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
+                    "⚠ Low margin: Rs %.2f (%.1f%%) vs Sale Rate Rs %.2f".format(margin, marginPct, sale),
+                    "⚠ کم منافع: روپے %.2f (%.1f%%) بمقابلہ سیل ریٹ روپے %.2f".format(margin, marginPct, sale))
+            }
+            else -> {
+                marginWarningText.setTextColor(Color.parseColor(teal))
+                marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
+                    "Margin: Rs %.2f (%.1f%%) vs Sale Rate Rs %.2f".format(margin, marginPct, sale),
+                    "منافع: روپے %.2f (%.1f%%) بمقابلہ سیل ریٹ روپے %.2f".format(margin, marginPct, sale))
+            }
+        }
     }
     private fun buildUnitChips(options: List<String>, selected: String) {
         unitToggleRow.removeAllViews()
@@ -1196,7 +1438,7 @@ class PurchaseActivity : ThemedActivity() {
             Toast.makeText(this, "Qty ($q $unit) whole ${product.smallestUnitName()} mein convert nahi hoti", Toast.LENGTH_SHORT).show()
             return
         }
-        val line = PurchaseLine(product.name, product.barcode, q, unit, r, Math.round(q * r).toDouble(), product.unit, product.secondaryUnit, product.secondaryUnitQty, product.tertiaryUnit, product.tertiaryUnitQty)
+        val line = PurchaseLine(product.name, product.barcode, q, unit, r, Math.round(q * r).toDouble(), product.unit, product.secondaryUnit, product.secondaryUnitQty, product.tertiaryUnit, product.tertiaryUnitQty, lastMainRetailRate, lastMainWholesaleRate)
         // NEW: editing an existing billed item updates it in place instead of appending
         val editIndex = editingLineIndex
         if (editIndex != null && editIndex in lines.indices) {
@@ -1207,7 +1449,11 @@ class PurchaseActivity : ThemedActivity() {
         endLineEdit()
         renderItemsList(); updateGrandTotal()
         itemName.setText(""); qty.setText(""); rate.setText(""); totalLotPrice.setText("")
+        retailRateInput.setText(""); wholesaleRateInput.setText("")
         selectedProduct = null; lastMainQty = 0.0; lastMainRate = 0.0
+        lastMainRetailRate = 0.0; lastMainWholesaleRate = 0.0
+        currentProductSalePriceMain = 0.0; currentProductWholesalePriceMain = 0.0
+        marginWarningText.visibility = View.GONE
         conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
         totalAmountText.text = "Total Amount: Rs 0"
         itemName.requestFocus()
@@ -1226,6 +1472,12 @@ class PurchaseActivity : ThemedActivity() {
         editingLineIndex = index
         val product = products.find { it.name.equals(line.itemName, ignoreCase = true) }
         if (product != null) { applyPickedProduct(product) }
+        // NEW ("10/10 Purchase screen" item #7): restore this line's own retail/
+        // wholesale rate (if it had set one) instead of the product's current
+        // rate that applyPickedProduct() just prefilled.
+        if (line.retailRate > 0.0) { lastMainRetailRate = line.retailRate }
+        if (line.wholesaleRate > 0.0) { lastMainWholesaleRate = line.wholesaleRate }
+        if (line.retailRate > 0.0 || line.wholesaleRate > 0.0) { refillAutoRate() }
         itemName.setText(line.itemName)
         qty.setText(formatQty(line.qty))
         rate.setText(if (line.rate == line.rate.toLong().toDouble()) line.rate.toLong().toString() else line.rate.toString())
@@ -1438,7 +1690,17 @@ class PurchaseActivity : ThemedActivity() {
         val terQtyBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = strokedBg(border, fieldFill, 14); setPadding(16, 4, 16, 4) }
         val terQtyField = EditText(this).apply { hint = "1 Secondary = how many Tertiary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
         terQtyField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) terQtyField.post { terQtyField.selectAll() } }
-        terQtyBox.addView(terQtyField); body.addView(terQtyBox)
+        terQtyBox.addView(terQtyField); body.addView(terQtyBox); body.addView(spacer(20))
+        // NEW ("10/10 Purchase screen" item #7): a brand-new product created mid-purchase
+        // used to get salePrice=wholesalePrice=0.0 with no prompt at all — now defaults
+        // to the purchase rate being entered (a sane starting point) but stays editable.
+        val purchaseRateNow = rate.text.toString().toDoubleOrNull() ?: 0.0
+        body.addView(microLabel("RETAIL RATE (SALE PRICE)"))
+        val retailField = EditText(this).apply { setText(if (purchaseRateNow > 0) trimNum(purchaseRateNow) else ""); setTextColor(Color.parseColor(textDark)); background = strokedBg(border, fieldFill, 14); setPadding(18, 16, 18, 16); textSize = 15f; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
+        body.addView(retailField); body.addView(spacer(18))
+        body.addView(microLabel("WHOLESALE RATE"))
+        val wholesaleField = EditText(this).apply { setText(if (purchaseRateNow > 0) trimNum(purchaseRateNow) else ""); setTextColor(Color.parseColor(textDark)); background = strokedBg(border, fieldFill, 14); setPadding(18, 16, 18, 16); textSize = 15f; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
+        body.addView(wholesaleField)
         content.addView(scrollableBody, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         primarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
         val secondaryOptions = listOf("None") + allUnits; secondarySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, secondaryOptions)
@@ -1470,7 +1732,7 @@ class PurchaseActivity : ThemedActivity() {
                 if (secondaryUnit != "None" && secondaryQty <= 0) { secQtyField.error = "Enter qty"; return@setOnClickListener }
                 if (tertiaryUnit != "None" && secondaryUnit == "None") { Toast.makeText(this@PurchaseActivity, "Select Secondary first", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
                 if (secondaryUnit == "None") { tertiaryUnit = "None"; tertiaryQty = 0.0 }
-                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = 0.0, wholesalePrice = 0.0, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty)
+                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = retailField.text.toString().toDoubleOrNull() ?: 0.0, wholesalePrice = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty)
                 safeLaunch("saveNewProduct") { viewModel.addProduct(newProduct); Toast.makeText(this@PurchaseActivity, "Product added", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
             }
         })
@@ -1496,12 +1758,37 @@ class PurchaseActivity : ThemedActivity() {
             android.app.AlertDialog.Builder(this)
                 .setTitle("Confirm Credit Purchase")
                 .setMessage("You have not entered Paid Amount.\nTotal: Rs %.0f\n\nThis bill will be saved as CREDIT (Udhaar).\nSupplier balance will increase.\n\nAre you sure?".format(grandTotal))
-                .setPositiveButton("Yes, Save as Credit") { _, _ -> checkDuplicateAndProceed(party, grandTotal) }
+                .setPositiveButton("Yes, Save as Credit") { _, _ -> checkInvoiceDuplicateThenProceed(party, grandTotal) }
                 .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); if (isTabletWide) paidInput.requestFocus() else scrollArea.post { scrollArea.smoothScrollTo(0, paymentSection.top); paidInput.requestFocus() } }
                 .show()
             return
         }
-        checkDuplicateAndProceed(party, grandTotal)
+        checkInvoiceDuplicateThenProceed(party, grandTotal)
+    }
+    // NEW ("10/10 Purchase screen" item #2): an EXACT duplicate check on the
+    // supplier's own invoice number, run before the existing same-party+same-amount
+    // heuristic below. Only fires when an invoice number was actually entered —
+    // otherwise falls straight through to checkDuplicateAndProceed().
+    private fun checkInvoiceDuplicateThenProceed(party: String, grandTotal: Double) {
+        val invoiceNo = supplierInvoiceNoInput.text.toString().trim()
+        if (invoiceNo.isEmpty()) { checkDuplicateAndProceed(party, grandTotal); return }
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PurchaseActivity)
+            val duplicate = db.purchaseDao().findDuplicateBySupplierInvoice(party, invoiceNo, editBillNo ?: "")
+            if (duplicate == null) { checkDuplicateAndProceed(party, grandTotal); return@launch }
+            android.app.AlertDialog.Builder(this@PurchaseActivity)
+                .setTitle(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Duplicate Invoice Number", "ڈپلیکیٹ انوائس نمبر"))
+                .setMessage(
+                    com.grocerypos.v11.util.Loc.t(
+                        this@PurchaseActivity,
+                        "Invoice #$invoiceNo from $party is already recorded as Bill #${duplicate.billNo}.\n\nSave this one anyway?",
+                        "$party کا انوائس نمبر #$invoiceNo پہلے ہی بل نمبر #${duplicate.billNo} کے طور پر محفوظ ہے۔\n\nکیا پھر بھی محفوظ کریں؟"
+                    )
+                )
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ -> checkDuplicateAndProceed(party, grandTotal) }
+                .setNegativeButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Cancel", "منسوخ کریں"), null)
+                .show()
+        }
     }
     // NEW: before actually saving, look for a recent (last 24h), non-returned purchase
     // from the same supplier for the exact same total — a common sign the bill was
@@ -1562,7 +1849,8 @@ class PurchaseActivity : ThemedActivity() {
             purchaseDateMillis = purchaseDateMillis,
             lines = lines.toList(),
             original = originalPurchase,
-            originalItems = originalItems
+            originalItems = originalItems,
+            supplierInvoiceNo = supplierInvoiceNoInput.text.toString().trim()
         )
     }
 

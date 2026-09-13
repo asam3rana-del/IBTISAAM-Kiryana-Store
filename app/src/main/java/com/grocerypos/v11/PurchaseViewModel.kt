@@ -133,12 +133,13 @@ class PurchaseViewModel(
         purchaseDateMillis: Long,
         lines: List<PurchaseLine>,
         original: Purchase?,
-        originalItems: List<PurchaseItem>
+        originalItems: List<PurchaseItem>,
+        supplierInvoiceNo: String = ""
     ) {
         viewModelScope.launch {
             val result = savePurchaseUseCase(
                 editBillNo, party, grandTotal, amountPaid, discount, paymentMethod,
-                purchaseDateMillis, lines, original, originalItems, _uiState.value.suppliers
+                purchaseDateMillis, lines, original, originalItems, _uiState.value.suppliers, supplierInvoiceNo
             )
             when (result) {
                 is SavePurchaseResult.Success -> _events.emit(

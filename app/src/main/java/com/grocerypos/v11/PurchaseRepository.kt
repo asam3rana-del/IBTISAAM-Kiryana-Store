@@ -24,7 +24,15 @@ data class PurchaseLine(
     val secondaryUnit: String,
     val secondaryUnitQty: Double,
     val tertiaryUnit: String = "",
-    val tertiaryUnitQty: Double = 0.0
+    val tertiaryUnitQty: Double = 0.0,
+    // NEW ("10/10 Purchase screen" item #7): retail (salePrice) / wholesale rate
+    // entered on the Purchase screen for this line, in the product's PRIMARY-unit
+    // basis (same basis as Product.salePrice/wholesalePrice) — see
+    // PurchaseActivity's toMainUnitRate()/fromMainUnitRate(). 0.0 means "leave the
+    // product's current rate unchanged"; RoomPurchaseRepository.savePurchase only
+    // writes a new salePrice/wholesalePrice when the corresponding value is > 0.
+    val retailRate: Double = 0.0,
+    val wholesaleRate: Double = 0.0
 )
 
 /** Snapshot loaded for editing an existing purchase bill. */
@@ -121,6 +129,10 @@ interface PurchaseRepository {
         lines: List<PurchaseLine>,
         original: Purchase?,
         originalItems: List<PurchaseItem>,
-        suppliers: List<Supplier>
+        suppliers: List<Supplier>,
+        // NEW ("10/10 Purchase screen" item #2): the SUPPLIER's own invoice/bill
+        // number, stored on the Purchase record for the exact-match duplicate check
+        // (see PurchaseDao.findDuplicateBySupplierInvoice). Blank = not entered.
+        supplierInvoiceNo: String = ""
     ): SavePurchaseResult
 }

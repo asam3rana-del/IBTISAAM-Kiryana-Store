@@ -72,7 +72,7 @@ class RoomSaleRepository(
         return saved
     }
 
-    override suspend fun heldBills(): List<HeldBill> = db.heldDao().all().first()
+    override suspend fun heldBills(): List<HeldBill> = db.heldDao().allSaleHolds().first()
 
     override suspend fun holdBill(holdId: String, payload: String) {
         db.heldDao().hold(HeldBill(holdId = holdId, payload = payload))

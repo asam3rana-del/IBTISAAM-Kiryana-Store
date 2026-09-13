@@ -105,7 +105,10 @@ class SavePurchaseUseCase(private val repository: PurchaseRepository) {
         lines: List<PurchaseLine>,
         original: Purchase?,
         originalItems: List<PurchaseItem>,
-        suppliers: List<Supplier>
+        suppliers: List<Supplier>,
+        // Default keeps every existing caller (and SavePurchaseUseCaseTest) compiling
+        // unchanged — see PurchaseRepository.savePurchase for what this is.
+        supplierInvoiceNo: String = ""
     ): SavePurchaseResult {
         // FIX (Improvement Pack P6): PurchaseRepository.savePurchase had no
         // empty-bill or per-line qty>0/rate>=0 guard at all (unlike the Sale
@@ -124,7 +127,7 @@ class SavePurchaseUseCase(private val repository: PurchaseRepository) {
         }
         return repository.savePurchase(
             editBillNo, party, grandTotal, amountPaid, discount, paymentMethod,
-            purchaseDateMillis, lines, original, originalItems, suppliers
+            purchaseDateMillis, lines, original, originalItems, suppliers, supplierInvoiceNo
         )
     }
 }

@@ -236,7 +236,8 @@ class RoomPurchaseRepository(
         lines: List<PurchaseLine>,
         original: Purchase?,
         originalItems: List<PurchaseItem>,
-        suppliers: List<Supplier>
+        suppliers: List<Supplier>,
+        supplierInvoiceNo: String
     ): SavePurchaseResult {
         return try {
             val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
@@ -259,7 +260,8 @@ class RoomPurchaseRepository(
                 }
                 val purchaseRecord = Purchase(
                     billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid,
-                    createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount
+                    createdAt = purchaseDateMillis, subtotal = lines.sumOf { it.amount }, discount = discount,
+                    supplierInvoiceNo = supplierInvoiceNo
                 )
                 db.purchaseDao().purchase(purchaseRecord)
                 val purchaseItems = lines.map { line ->
@@ -306,6 +308,15 @@ class RoomPurchaseRepository(
                     SyncQueueHelper.increaseProductStock(db, barcode, purchasedSmallest, "PURCHASE", billNo, newCostForMovement)
                     if (purchasedSmallest > 0) {
                         SyncQueueHelper.updateProductCost(db, barcode, newCostForMovement)
+                    }
+                    // NEW ("10/10 Purchase screen" item #7): set/update the product's
+                    // retail (salePrice) / wholesale rate right here at purchase time —
+                    // 0.0 on either field means "leave that rate unchanged" (see
+                    // PurchaseLine.retailRate/wholesaleRate).
+                    if (line.retailRate > 0.0 || line.wholesaleRate > 0.0) {
+                        val newSalePrice = if (line.retailRate > 0.0) line.retailRate else before.salePrice
+                        val newWholesalePrice = if (line.wholesaleRate > 0.0) line.wholesaleRate else before.wholesalePrice
+                        SyncQueueHelper.updateProductPrices(db, barcode, newSalePrice, newWholesalePrice)
                     }
                 }
                 val outstanding = grandTotal - amountPaid

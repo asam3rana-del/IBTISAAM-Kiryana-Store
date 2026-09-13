@@ -199,6 +199,16 @@ object SyncQueueHelper {
         enqueue(db, "product", productEntityId(p), "upsert", productJson(p))
     }
 
+    // NEW ("10/10 Purchase screen" item #7): same reasoning as updateProductCost above —
+    // PurchaseActivity can now set/update a product's retail (salePrice) and wholesale
+    // rate right at purchase time, and that change needs to sync like any other product
+    // field edit (a plain upsert, not a delta).
+    suspend fun updateProductPrices(db: PosDatabase, barcode: String, salePrice: Double, wholesalePrice: Double) {
+        db.productDao().updatePrices(barcode, salePrice, wholesalePrice)
+        val p = db.productDao().find(barcode) ?: return
+        enqueue(db, "product", productEntityId(p), "upsert", productJson(p))
+    }
+
     // ADDED for the increment fix above: a new product's opening stock has nowhere
     // else to go now that productJson() never carries "stock" — this treats the
     // opening stock the same as any other delta, incrementing up from an implicit 0
