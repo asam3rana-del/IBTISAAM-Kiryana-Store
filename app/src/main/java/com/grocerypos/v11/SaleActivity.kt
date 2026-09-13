@@ -4,6 +4,7 @@ import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
 import com.grocerypos.v11.R
+import com.grocerypos.v11.util.keepContentAboveKeyboard
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -757,12 +758,14 @@ class SaleActivity : AppCompatActivity() {
             }
             scrollView = leftScroll
             setContentView(twoPane)
+            keepContentAboveKeyboard(twoPane)
         } else {
             scrollView = ScrollView(this).apply {
                 setBackgroundColor(Color.parseColor(bg))
                 addView(root)
             }
             setContentView(scrollView)
+            keepContentAboveKeyboard(scrollView)
         }
 
         observeViewModel()
