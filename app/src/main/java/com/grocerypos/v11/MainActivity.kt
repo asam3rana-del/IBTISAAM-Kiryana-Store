@@ -305,6 +305,16 @@ class MainActivity : ThemedActivity() {
                 startActivity(Intent(this@MainActivity, CashActivity::class.java))
             }
         )
+        // ---- IMPROVEMENT PACK (Payments 10/10): one tap straight from the home
+        // screen into "Receive/Make Payment", instead of Customers & Suppliers ->
+        // "+" -> Payment Received/Made -> pick party. Jumps into
+        // PartyDashboardActivity with quickPayment=true, which immediately shows
+        // the Received/Made chooser then the searchable party picker.
+        quickActions.add(
+            QuickAction("Payments", "Receive or make a payment", R.drawable.ic_bank, flatTealBg, flatTealFg) {
+                startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java).putExtra("quickPayment", true))
+            }
+        )
         quickActions.add(
             QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
                 startActivity(Intent(this@MainActivity, DayBookActivity::class.java))

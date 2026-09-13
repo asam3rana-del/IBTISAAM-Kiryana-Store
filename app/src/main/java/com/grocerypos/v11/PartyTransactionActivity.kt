@@ -70,6 +70,12 @@ import java.util.Locale
  * show the normal user-facing toast instead of the generic "unknown error" one. */
 private class InsufficientStockException(message: String) : Exception(message)
 
+// ---- IMPROVEMENT PACK (Party Transactions 10/10): filter mode for the merged
+// bills+payments feed, and a cached row so switching filters/typing a search
+// query re-renders instantly from memory instead of re-hitting Room. ----
+private enum class TxFilter { ALL, BILLS, PAYMENTS }
+private data class TxEntry(val createdAt: Long, val isPayment: Boolean, val searchText: String, val view: LinearLayout)
+
 class PartyTransactionActivity : AppCompatActivity() {
 
     // ---- Reports-style flat design — pulled from ThemeManager so this screen stays in
@@ -105,6 +111,19 @@ class PartyTransactionActivity : AppCompatActivity() {
     private var partyId: Long = -1
     private var partyName: String = ""
     private var isCustomer: Boolean = true
+
+    // ---- IMPROVEMENT PACK (Party Transactions 10/10): balance summary card +
+    // filter chips (All/Bills/Payments) + search box above the feed. ----
+    private lateinit var openingValueText: TextView
+    private lateinit var closingValueText: TextView
+    private lateinit var closingLabelText: TextView
+    private lateinit var chipAll: TextView
+    private lateinit var chipBills: TextView
+    private lateinit var chipPayments: TextView
+    private lateinit var txSearchField: EditText
+    private var allEntries: List<TxEntry> = emptyList()
+    private var txFilter: TxFilter = TxFilter.ALL
+    private var txQuery: String = ""
 
     // ---- FIX (duplicate-row race) ----
     // loadTransactions() used to be called from BOTH onCreate() and onResume(). On a
@@ -191,6 +210,123 @@ class PartyTransactionActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(labelGray))
             setPadding(28, 4, 0, 20)
         })
+
+        // ---- IMPROVEMENT PACK (Party Transactions 10/10): balance summary card.
+        // This screen showed the full money trail but never the party's actual
+        // current balance — the only place to see "You'll Get/Give" for this
+        // exact party was to back out of this screen to the dashboard list.
+        // Filled in from loadPartyBalance(), called by loadTransactions(). ----
+        val balanceCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(20, 16, 20, 16)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadius = 16f
+                setStroke(1, Color.parseColor(cardBorder))
+            }
+            elevation = 2f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 16) }
+        }
+        val openingCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        openingCol.addView(TextView(this).apply {
+            text = Loc.t(this@PartyTransactionActivity, "Opening", "\u0627\u0628\u062A\u062F\u0627\u0626\u06CC")
+            textSize = 11f
+            setTextColor(Color.parseColor(labelGray))
+        })
+        openingValueText = TextView(this).apply {
+            text = "Rs 0.00"
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 4, 0, 0)
+        }
+        openingCol.addView(openingValueText)
+        balanceCard.addView(openingCol)
+
+        val closingCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+        }
+        closingLabelText = TextView(this).apply {
+            text = Loc.t(this@PartyTransactionActivity, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")
+            textSize = 11f
+            setTextColor(Color.parseColor(green))
+        }
+        closingCol.addView(closingLabelText)
+        closingValueText = TextView(this).apply {
+            text = "Rs 0.00"
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(green))
+            setPadding(0, 4, 0, 0)
+        }
+        closingCol.addView(closingValueText)
+        balanceCard.addView(closingCol)
+        root.addView(balanceCard)
+
+        // ---- IMPROVEMENT PACK (Party Transactions 10/10): search box + filter
+        // chips (All/Bills/Payments) — a party with months of history otherwise
+        // has no way to jump to just their payments, or find one old bill. Both
+        // just re-filter allEntries in memory, no DB hit. ----
+        val txSearchBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 8, 18, 8)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F7F8FC"))
+                cornerRadius = 10f
+                setStroke(1, Color.parseColor(cardBorder))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 10) }
+        }
+        txSearchField = EditText(this).apply {
+            hint = Loc.t(this@PartyTransactionActivity, "Search this history (date, note, amount)", "\u0627\u0633 \u062A\u0627\u0631\u06CC\u062E \u0645\u06CC\u06BA \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA")
+            background = null
+            textSize = 14f
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    txQuery = s?.toString().orEmpty()
+                    renderEntries()
+                }
+            })
+        }
+        txSearchBox.addView(txSearchField)
+        root.addView(txSearchBox)
+
+        val filterChipRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, 14)
+        }
+        fun filterChip(label: String, mode: TxFilter): TextView = TextView(this).apply {
+            text = label
+            textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(24, 12, 24, 12)
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.marginEnd = 10
+            layoutParams = lp
+            setOnClickListener {
+                txFilter = mode
+                updateFilterChipStyles()
+                renderEntries()
+            }
+        }
+        chipAll = filterChip(Loc.t(this@PartyTransactionActivity, "All", "\u0633\u0628"), TxFilter.ALL)
+        chipBills = filterChip(Loc.t(this@PartyTransactionActivity, "Bills", "\u0628\u0644"), TxFilter.BILLS)
+        chipPayments = filterChip(Loc.t(this@PartyTransactionActivity, "Payments", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC\u0627\u06BA"), TxFilter.PAYMENTS)
+        filterChipRow.addView(chipAll)
+        filterChipRow.addView(chipBills)
+        filterChipRow.addView(chipPayments)
+        root.addView(filterChipRow)
+        updateFilterChipStyles()
 
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
@@ -310,6 +446,41 @@ class PartyTransactionActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
         col.addView(amountInput)
+        col.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (10 * resources.displayMetrics.density).toInt())
+        })
+
+        // ---- IMPROVEMENT PACK (Payments 10/10): date picker, defaulted to today.
+        // Previously every payment was silently timestamped "now" — no way to log
+        // a payment that actually happened yesterday or last week (e.g. entering
+        // the day's collections after closing, or catching up a missed entry).
+        // Capped at today since a payment can't happen in the future. ----
+        val dateCal = java.util.Calendar.getInstance()
+        val dateFmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+        val dateField = TextView(this).apply {
+            text = "\uD83D\uDCC5  " + dateFmt.format(dateCal.time)
+            textSize = 15f
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 18, 0, 18)
+            isClickable = true
+            setOnClickListener {
+                android.app.DatePickerDialog(
+                    this@PartyTransactionActivity,
+                    { _, year, month, dayOfMonth ->
+                        dateCal.set(year, month, dayOfMonth)
+                        text = "\uD83D\uDCC5  " + dateFmt.format(dateCal.time)
+                    },
+                    dateCal.get(java.util.Calendar.YEAR),
+                    dateCal.get(java.util.Calendar.MONTH),
+                    dateCal.get(java.util.Calendar.DAY_OF_MONTH)
+                ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
+            }
+        }
+        col.addView(dateField)
+        col.addView(View(this).apply {
+            setBackgroundColor(Color.parseColor(cardBorder))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { setMargins(0, 0, 0, 10) }
+        })
 
         val methodSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@PartyTransactionActivity, android.R.layout.simple_spinner_dropdown_item, listOf("cash", "bank"))
@@ -331,13 +502,13 @@ class PartyTransactionActivity : AppCompatActivity() {
                     Toast.makeText(this, Loc.t(this, "Enter a valid amount", "\u0635\u062D\u06CC\u062D \u0631\u0642\u0645 \u0644\u06A9\u06BE\u06CC\u06BA"), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                savePayment(amt, methodSpinner.selectedItem?.toString() ?: "cash", noteInput.text.toString().trim())
+                savePayment(amt, methodSpinner.selectedItem?.toString() ?: "cash", noteInput.text.toString().trim(), dateCal.timeInMillis)
             }
             .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
             .show()
     }
 
-    private fun savePayment(amount: Double, method: String, note: String) {
+    private fun savePayment(amount: Double, method: String, note: String, dateMillis: Long) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyTransactionActivity)
             val partyType = if (isCustomer) "customer" else "supplier"
@@ -352,7 +523,11 @@ class PartyTransactionActivity : AppCompatActivity() {
             // separate sequential writes, so a crash/kill mid-save could record
             // the payment without adjusting the party's balance (or vice versa).
             db.withTransaction {
-                val payment = Payment(reference = reference, partyType = partyType, partyId = partyId, amount = amount, method = method, note = note)
+                // ---- IMPROVEMENT PACK (Payments 10/10): both the payment row and its
+                // matching cash-ledger entry use the picked dateMillis (not "now"), so
+                // a backdated payment shows on the right day in both this party's
+                // history AND the Cash/Day Book screens — not just here.
+                val payment = Payment(reference = reference, partyType = partyType, partyId = partyId, amount = amount, method = method, note = note, createdAt = dateMillis)
                 val paymentId = db.paymentDao().insert(payment)
                 SyncQueueHelper.enqueuePayment(db, payment.copy(id = paymentId))
 
@@ -361,7 +536,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 if (isCustomer) SyncQueueHelper.adjustCustomerBalance(db, partyId, -amount)
                 else SyncQueueHelper.adjustSupplierBalance(db, partyId, -amount)
 
-                val cashTx = CashTransaction(type = if (isCustomer) "IN" else "OUT", method = method.lowercase(), amount = amount, reason = reasonText, reference = reference)
+                val cashTx = CashTransaction(type = if (isCustomer) "IN" else "OUT", method = method.lowercase(), amount = amount, reason = reasonText, reference = reference, createdAt = dateMillis)
                 val cashTxId = db.cashTransactionDao().insert(cashTx)
                 SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
             }
@@ -377,69 +552,154 @@ class PartyTransactionActivity : AppCompatActivity() {
         // never race with this one and duplicate rows — see loadJob comment above.
         loadJob?.cancel()
         loadJob = lifecycleScope.launch {
-            listContainer.removeAllViews()
             val db = PosDatabase.get(this@PartyTransactionActivity)
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+
+            // ---- IMPROVEMENT PACK (Party Transactions 10/10): balance summary,
+            // fetched alongside the transaction feed since both come from this
+            // same load pass (onResume / after a payment or bill edit). ----
+            val opening: Double
+            val running: Double
+            if (isCustomer) {
+                val customer = db.customerDao().find(partyId)
+                opening = customer?.openingBalance ?: 0.0
+                running = customer?.balance ?: 0.0
+            } else {
+                val supplier = db.supplierDao().find(partyId)
+                opening = supplier?.openingBalance ?: 0.0
+                running = supplier?.balance ?: 0.0
+            }
+            updateBalanceCard(opening, opening + running)
 
             // NEW: standalone payments recorded via the Receive Payment/Make Payment button
             // — merged chronologically with the sale/purchase bills below so the full money
             // trail for this party shows in one list instead of only ever showing bills.
             val payments = db.paymentDao().listByParty(if (isCustomer) "customer" else "supplier", partyId)
 
-            data class Entry(val createdAt: Long, val view: LinearLayout)
-            val entries = mutableListOf<Entry>()
+            val entries = mutableListOf<TxEntry>()
 
             if (isCustomer) {
                 db.saleDao().salesByCustomer(partyId).forEach { s ->
-                    entries.add(Entry(s.createdAt, row(
-                        amount = s.total,
-                        dateText = fmt.format(Date(s.createdAt)),
-                        typeLabel = Loc.t(this@PartyTransactionActivity, "Sale", "\u0633\u06CC\u0644"),
-                        status = s.status,
-                        accent = green,
-                        emoji = "\uD83D\uDED2"
-                    ) {
-                        // ---- CHANGE: opens billed items dialog with edit/delete
-                        // instead of the full SaleActivity edit screen. ----
-                        showBilledItemsDialog(isSale = true, invoice = s.invoice, billNo = "")
-                    }))
+                    val dateText = fmt.format(Date(s.createdAt))
+                    val typeLabel = Loc.t(this@PartyTransactionActivity, "Sale", "\u0633\u06CC\u0644")
+                    entries.add(TxEntry(
+                        createdAt = s.createdAt,
+                        isPayment = false,
+                        searchText = "$dateText $typeLabel ${s.total}".lowercase(),
+                        view = row(
+                            amount = s.total,
+                            dateText = dateText,
+                            typeLabel = typeLabel,
+                            status = s.status,
+                            accent = green,
+                            emoji = "\uD83D\uDED2"
+                        ) {
+                            // ---- CHANGE: opens billed items dialog with edit/delete
+                            // instead of the full SaleActivity edit screen. ----
+                            showBilledItemsDialog(isSale = true, invoice = s.invoice, billNo = "")
+                        }
+                    ))
                 }
             } else {
                 db.purchaseDao().purchasesBySupplier(partyId).forEach { p ->
-                    entries.add(Entry(p.createdAt, row(
-                        amount = p.total,
-                        dateText = fmt.format(Date(p.createdAt)),
-                        typeLabel = Loc.t(this@PartyTransactionActivity, "Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC"),
-                        status = p.status,
-                        accent = orange,
-                        emoji = "\uD83E\uDDFE"
-                    ) {
-                        // ---- CHANGE: opens billed items dialog with edit/delete
-                        // instead of the full PurchaseActivity edit screen. ----
-                        showBilledItemsDialog(isSale = false, invoice = "", billNo = p.billNo)
-                    }))
+                    val dateText = fmt.format(Date(p.createdAt))
+                    val typeLabel = Loc.t(this@PartyTransactionActivity, "Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC")
+                    entries.add(TxEntry(
+                        createdAt = p.createdAt,
+                        isPayment = false,
+                        searchText = "$dateText $typeLabel ${p.total}".lowercase(),
+                        view = row(
+                            amount = p.total,
+                            dateText = dateText,
+                            typeLabel = typeLabel,
+                            status = p.status,
+                            accent = orange,
+                            emoji = "\uD83E\uDDFE"
+                        ) {
+                            // ---- CHANGE: opens billed items dialog with edit/delete
+                            // instead of the full PurchaseActivity edit screen. ----
+                            showBilledItemsDialog(isSale = false, invoice = "", billNo = p.billNo)
+                        }
+                    ))
                 }
             }
             payments.forEach { pay ->
+                val dateText = fmt.format(Date(pay.createdAt))
                 val label = (if (isCustomer) Loc.t(this@PartyTransactionActivity, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC")
                     else Loc.t(this@PartyTransactionActivity, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC")) +
                     "  \u2022  " + pay.method.uppercase() + (if (pay.note.isNotEmpty()) "  \u2022  ${pay.note}" else "")
-                entries.add(Entry(pay.createdAt, row(
-                    amount = pay.amount,
-                    dateText = fmt.format(Date(pay.createdAt)),
-                    typeLabel = label,
-                    status = "",
-                    accent = teal,
-                    emoji = "\uD83D\uDCB5"
-                ) { }))
+                entries.add(TxEntry(
+                    createdAt = pay.createdAt,
+                    isPayment = true,
+                    searchText = "$dateText $label ${pay.amount} ${pay.method} ${pay.note}".lowercase(),
+                    view = row(
+                        amount = pay.amount,
+                        dateText = dateText,
+                        typeLabel = label,
+                        status = "",
+                        accent = teal,
+                        emoji = "\uD83D\uDCB5"
+                    ) { }
+                ))
             }
 
-            if (entries.isEmpty()) {
-                listContainer.addView(placeholderCard(Loc.t(this@PartyTransactionActivity, "No transactions yet", "\u0627\u0628\u06BE\u06CC \u062A\u06A9 \u06A9\u0648\u0626\u06CC \u0644\u06CC\u0646 \u062F\u06CC\u0646 \u0646\u06C1\u06CC\u06BA \u06C1\u06D2")))
-            } else {
-                entries.sortedByDescending { it.createdAt }.forEach { listContainer.addView(it.view) }
-            }
+            allEntries = entries.sortedByDescending { it.createdAt }
+            renderEntries()
         }
+    }
+
+    /** Re-filters [allEntries] by [txFilter] + [txQuery] and redraws — no DB hit,
+     * safe to call on every keystroke or chip tap. */
+    private fun renderEntries() {
+        listContainer.removeAllViews()
+        val q = txQuery.trim().lowercase()
+        val filtered = allEntries.filter { entry ->
+            val passesFilter = when (txFilter) {
+                TxFilter.ALL -> true
+                TxFilter.BILLS -> !entry.isPayment
+                TxFilter.PAYMENTS -> entry.isPayment
+            }
+            passesFilter && (q.isEmpty() || entry.searchText.contains(q))
+        }
+        if (filtered.isEmpty()) {
+            val msg = if (allEntries.isEmpty())
+                Loc.t(this, "No transactions yet", "\u0627\u0628\u06BE\u06CC \u062A\u06A9 \u06A9\u0648\u0626\u06CC \u0644\u06CC\u0646 \u062F\u06CC\u0646 \u0646\u06C1\u06CC\u06BA \u06C1\u06D2")
+            else
+                Loc.t(this, "No matching transactions", "\u06A9\u0648\u0626\u06CC \u0645\u0645\u0627\u062B\u0644 \u0644\u06CC\u0646 \u062F\u06CC\u0646 \u0646\u06C1\u06CC\u06BA")
+            listContainer.addView(placeholderCard(msg))
+        } else {
+            filtered.forEach { listContainer.addView(it.view) }
+        }
+    }
+
+    private fun updateFilterChipStyles() {
+        val accent = if (isCustomer) green else orange
+        fun style(chip: TextView, mode: TxFilter) {
+            val active = txFilter == mode
+            chip.background = GradientDrawable().apply {
+                setColor(Color.parseColor(if (active) accent else "#EEF0F7"))
+                cornerRadius = 24f
+            }
+            chip.setTextColor(if (active) Color.WHITE else Color.parseColor("#6B7280"))
+        }
+        style(chipAll, TxFilter.ALL)
+        style(chipBills, TxFilter.BILLS)
+        style(chipPayments, TxFilter.PAYMENTS)
+    }
+
+    /** Updates the opening/closing balance card. Closing direction mirrors the
+     * same type-aware give/get rule used everywhere else in the Party screens:
+     * customer closing > 0 = they owe us (green, You'll Get); supplier
+     * closing > 0 = we owe them (red, You'll Give). */
+    private fun updateBalanceCard(opening: Double, closing: Double) {
+        openingValueText.text = "Rs %.2f".format(opening)
+        val give = if (isCustomer) closing < 0 else closing > 0
+        val color = if (give) red else green
+        closingValueText.text = "Rs %.2f".format(kotlin.math.abs(closing))
+        closingValueText.setTextColor(Color.parseColor(color))
+        closingLabelText.text = if (give) Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA")
+            else Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")
+        closingLabelText.setTextColor(Color.parseColor(color))
     }
 
     // ---------------- Billed Items (editable / deletable) ----------------

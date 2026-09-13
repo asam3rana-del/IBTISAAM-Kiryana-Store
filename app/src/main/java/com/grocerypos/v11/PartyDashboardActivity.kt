@@ -241,6 +241,14 @@ class PartyDashboardActivity : AppCompatActivity() {
 
         renderSearchRow()
         loadParties()
+
+        // ---- IMPROVEMENT PACK (Payments 10/10): home screen's "Payments" quick
+        // action lands here with quickPayment=true — show the Received/Made
+        // chooser immediately instead of making the user find "+" -> Payment
+        // Received/Made themselves. ----
+        if (intent.getBooleanExtra("quickPayment", false)) {
+            showPaymentTypeChooser()
+        }
     }
 
     override fun onResume() {
@@ -251,6 +259,27 @@ class PartyDashboardActivity : AppCompatActivity() {
         // added elsewhere shows up next time the user visits those tabs.
         if (activeTab == Tab.TRANSACTIONS) renderTransactionsList(forceReload = true)
         if (activeTab == Tab.ITEMS) renderItemsList(forceReload = true)
+    }
+
+    // ---- IMPROVEMENT PACK (Payments 10/10): tiny Received/Made chooser shown when
+    // this screen is opened via the home screen's "Payments" quick action, then
+    // hands off to the existing searchable party picker (PartyQuickAddMenu.kt). ----
+    private fun showPaymentTypeChooser() {
+        showPremiumMenuSheet(
+            headerIcon = "\uD83D\uDCB0",
+            headerTitle = Loc.t(this, "Record Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u062F\u0631\u062C \u06A9\u0631\u06CC\u06BA"),
+            headerSubtitle = Loc.t(this, "Received or paid out?", "\u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC \u06CC\u0627 \u0627\u062F\u0627 \u06A9\u06CC \u06AF\u0626\u06CC\u061F"),
+            items = listOf(
+                QuickMenuItem("\uD83D\uDCB0", green, "#EAF7EC",
+                    Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
+                    Loc.t(this, "From a customer", "\u06A9\u0633\u0679\u0645\u0631 \u0633\u06D2")
+                ) { showPartyPickerForPayment(forCustomer = true) },
+                QuickMenuItem("\uD83D\uDCB8", gold, "#FBF3E3",
+                    Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC"),
+                    Loc.t(this, "To a supplier", "\u0633\u067E\u0644\u0627\u0626\u0631 \u06A9\u0648")
+                ) { showPartyPickerForPayment(forCustomer = false) }
+            )
+        )
     }
 
     // ================= HEADER (flat, Reports-style — no gradient) =================
