@@ -135,6 +135,10 @@ class PartyDashboardActivity : AppCompatActivity() {
     internal var allItems: List<PartyItem> = emptyList()
     private var role: String = "cashier"
 
+    // ADDED (Khatabook-style party list — screenshot reference): date format for
+    // each party row's last-activity date, e.g. "05 Aug 2026".
+    private val partyRowDateFmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+
     // ---- Transactions tab cache + search query (so typing doesn't re-hit the DB) ----
     private var txCache: List<TxRow> = emptyList()
     private var txQuery: String = ""
@@ -157,7 +161,11 @@ class PartyDashboardActivity : AppCompatActivity() {
         // null = no active due-date reminder on any of this customer's unpaid sales;
         // otherwise the most urgent one, so the party list can badge it. Always null
         // for suppliers — dueSales() only tracks money owed TO the shop. ----
-        val dueStatus: DueStatus? = null
+        val dueStatus: DueStatus? = null,
+        // ADDED (Khatabook-style party list — screenshot reference): most recent
+        // sale/purchase/payment timestamp for this party, across all three tables.
+        // null means the party has no transactions yet (freshly added party).
+        val lastActivityAt: Long? = null
     )
 
     // OVERDUE: dueDate has passed. DUE_TODAY: dueDate is today. Anything further out
@@ -747,14 +755,35 @@ class PartyDashboardActivity : AppCompatActivity() {
                     .groupBy { it.customerId!! }
                     .mapValues { (_, sales) -> if (sales.any { it.dueDate < today }) DueStatus.OVERDUE else DueStatus.DUE_TODAY }
 
+                // ---- ADDED (Khatabook-style party list — screenshot reference):
+                // most recent activity date per party, merged across sales/purchases
+                // and standalone payments so a party whose last touch was a payment
+                // (not a new sale/purchase) still shows the correct date. Kept as two
+                // separate maps (customer vs supplier) since the two tables have
+                // independent id spaces — a customerId and supplierId can collide. ----
+                val customerLastAt = mutableMapOf<Long, Long>()
+                db.saleDao().lastActivityByCustomer().forEach { customerLastAt[it.partyId] = maxOf(customerLastAt[it.partyId] ?: 0L, it.lastAt) }
+                db.paymentDao().lastActivityByPartyType("customer").forEach { customerLastAt[it.partyId] = maxOf(customerLastAt[it.partyId] ?: 0L, it.lastAt) }
+
+                val supplierLastAt = mutableMapOf<Long, Long>()
+                db.purchaseDao().lastActivityBySupplier().forEach { supplierLastAt[it.partyId] = maxOf(supplierLastAt[it.partyId] ?: 0L, it.lastAt) }
+                db.paymentDao().lastActivityByPartyType("supplier").forEach { supplierLastAt[it.partyId] = maxOf(supplierLastAt[it.partyId] ?: 0L, it.lastAt) }
+
                 val items = mutableListOf<PartyItem>()
                 for (c in customers) {
-                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.openingBalance + c.balance, isCustomer = true, dueStatus = dueByCustomer[c.id]))
+                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.openingBalance + c.balance, isCustomer = true, dueStatus = dueByCustomer[c.id], lastActivityAt = customerLastAt[c.id]))
                 }
                 for (s in suppliers) {
-                    items.add(PartyItem(id = s.id, name = s.name, phone = s.phone, closing = s.openingBalance + s.balance, isCustomer = false))
+                    items.add(PartyItem(id = s.id, name = s.name, phone = s.phone, closing = s.openingBalance + s.balance, isCustomer = false, lastActivityAt = supplierLastAt[s.id]))
                 }
-                allItems = items.sortedBy { it.name.lowercase() }
+                // CHANGE (Khatabook-style party list — screenshot reference): sort by
+                // most recent activity first (matches the reference screenshot's order
+                // — newest transaction date at top), falling back to name for parties
+                // with no transactions yet so they still appear in a stable order.
+                allItems = items.sortedWith(
+                    compareByDescending<PartyItem> { it.lastActivityAt ?: -1L }
+                        .thenBy { it.name.lowercase() }
+                )
                 updateSummaryTotals()
                 if (activeTab == Tab.PARTIES) renderPartyList()
             }
@@ -818,9 +847,14 @@ class PartyDashboardActivity : AppCompatActivity() {
 
     private fun dashboardPartyRow(item: PartyItem): LinearLayout {
         // ---- FIX: type-aware give/get, see updateSummaryTotals() comment above ----
+        // ---- CHANGE (Khatabook-style party list — screenshot reference): a settled
+        // party (closing == 0, e.g. "Cash purchase", "Rozgar technologies" in the
+        // screenshot) shows a plain black "Rs 0" with no You'll Get/Give caption,
+        // instead of being colored green/red like an actual balance. ----
+        val isZero = kotlin.math.abs(item.closing) < 0.005
         val give = if (item.isCustomer) item.closing < 0 else item.closing > 0
-        val amountColor = if (give) red else green
-        val label = if (give) Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA") else Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")
+        val amountColor = if (isZero) textDark else if (give) red else green
+        val label = if (isZero) "" else if (give) Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA") else Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -852,8 +886,14 @@ class PartyDashboardActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor("#2E3242"))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
+            // ---- CHANGE (Khatabook-style party list — screenshot reference): show
+            // the party's last transaction date (e.g. "05 Aug 2026") instead of a
+            // static "Customer"/"Supplier" label, matching the reference design.
+            // Falls back to Customer/Supplier for a brand-new party with no
+            // transactions yet (lastActivityAt == null), since there's no date to show.
             infoCol.addView(TextView(this@PartyDashboardActivity).apply {
-                text = if (item.isCustomer) Loc.t(this@PartyDashboardActivity, "Customer", "\u06A9\u0633\u0679\u0645\u0631") else Loc.t(this@PartyDashboardActivity, "Supplier", "\u0633\u067E\u0644\u0627\u0626\u0631")
+                text = item.lastActivityAt?.let { partyRowDateFmt.format(Date(it)) }
+                    ?: if (item.isCustomer) Loc.t(this@PartyDashboardActivity, "Customer", "\u06A9\u0633\u0679\u0645\u0631") else Loc.t(this@PartyDashboardActivity, "Supplier", "\u0633\u067E\u0644\u0627\u0626\u0631")
                 textSize = 11.5f
                 setTextColor(Color.parseColor(labelGray))
                 setPadding(0, 4, 0, 0)
@@ -885,17 +925,22 @@ class PartyDashboardActivity : AppCompatActivity() {
                 gravity = Gravity.END
             }
             amountCol.addView(TextView(this@PartyDashboardActivity).apply {
-                text = "Rs %.2f".format(kotlin.math.abs(item.closing))
+                // CHANGE: a settled balance shows the plain "Rs 0" the screenshot
+                // uses, instead of "Rs 0.00".
+                text = if (isZero) "Rs 0" else "Rs %.2f".format(kotlin.math.abs(item.closing))
                 textSize = 14.5f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(Color.parseColor(amountColor))
             })
-            amountCol.addView(TextView(this@PartyDashboardActivity).apply {
-                text = label
-                textSize = 11f
-                setTextColor(Color.parseColor(amountColor))
-                setPadding(0, 2, 0, 0)
-            })
+            // CHANGE: no You'll Get/Give caption under a settled Rs 0 balance.
+            if (label.isNotEmpty()) {
+                amountCol.addView(TextView(this@PartyDashboardActivity).apply {
+                    text = label
+                    textSize = 11f
+                    setTextColor(Color.parseColor(amountColor))
+                    setPadding(0, 2, 0, 0)
+                })
+            }
             addView(amountCol)
         }
     }

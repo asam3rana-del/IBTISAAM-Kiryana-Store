@@ -8,6 +8,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlin.math.roundToInt
 import java.util.UUID
 
+// ADDED (Parties tab — last transaction date per party): shared row shape for
+// SaleDao.lastActivityByCustomer / PurchaseDao.lastActivityBySupplier /
+// PaymentDao.lastActivityByPartyType, all of which return a bare (id, maxCreatedAt)
+// pair — see PartyDashboardActivity.loadParties() where the three are merged.
+data class PartyLastActivity(val partyId:Long, val lastAt:Long)
 data class DailySales(val day:String,val total:Double)
 data class TopProduct(val product:String,val totalQty:Double)
 data class PurchaseWithSupplier(val billNo:String,val supplierName:String,val total:Double,val createdAt:Long,val status:String)
@@ -820,6 +825,11 @@ interface ProductDao {
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned') GROUP BY product ORDER BY totalQty DESC LIMIT 5") suspend fun topProducts(start:Long,end:Long):List<TopProduct>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC LIMIT 100") suspend fun allSales():List<SaleWithCustomer>
     @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun salesByCustomer(customerId:Long):List<Sale>
+    // ADDED (Parties tab — show last transaction date instead of a static "Customer"
+    // label, matching the Khatabook-style party list design): most recent sale date
+    // per customer, so PartyDashboardActivity can badge each row with "05 Aug 2026"
+    // style text like the reference screenshot.
+    @Query("SELECT customerId as partyId, MAX(createdAt) as lastAt FROM sales WHERE customerId IS NOT NULL GROUP BY customerId") suspend fun lastActivityByCustomer():List<PartyLastActivity>
     @Query("SELECT * FROM sales WHERE invoice=:invoice LIMIT 1") suspend fun findSale(invoice:String):Sale?
     // ADDED (force full resync): every local sale row, unfiltered/unjoined — allSales()
     // above returns a display-only join (SaleWithCustomer), not usable for re-pushing.
@@ -994,6 +1004,10 @@ interface ProductDao {
     // show a party's manually-recorded "Receive Payment"/"Make Payment" entries (not tied to
     // a specific bill) alongside their sale/purchase history.
     @Query("SELECT * FROM payments WHERE partyType=:partyType AND partyId=:partyId ORDER BY createdAt DESC") suspend fun listByParty(partyType:String,partyId:Long):List<Payment>
+    // ADDED (Parties tab — last transaction date): so a party whose most recent
+    // activity is a standalone payment (not a sale/purchase) still shows the
+    // correct date, e.g. a customer who only made a payment against an old balance.
+    @Query("SELECT partyId as partyId, MAX(createdAt) as lastAt FROM payments WHERE partyType=:partyType AND partyId IS NOT NULL GROUP BY partyId") suspend fun lastActivityByPartyType(partyType:String):List<PartyLastActivity>
 }
 
 @Dao interface PurchaseDao {
@@ -1003,6 +1017,9 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC LIMIT 100") suspend fun allPurchases():List<PurchaseWithSupplier>
     @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC") suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
+    // ADDED (Parties tab — last transaction date, see SaleDao.lastActivityByCustomer
+    // for the matching customer-side query and rationale).
+    @Query("SELECT supplierId as partyId, MAX(createdAt) as lastAt FROM purchases WHERE supplierId IS NOT NULL GROUP BY supplierId") suspend fun lastActivityBySupplier():List<PartyLastActivity>
     @Query("SELECT * FROM purchases WHERE billNo=:bill LIMIT 1") suspend fun findPurchase(bill:String):Purchase?
     // ADDED (force full resync): every local purchase row, unfiltered/unjoined —
     // allPurchases() above returns a display-only join (PurchaseWithSupplier).
