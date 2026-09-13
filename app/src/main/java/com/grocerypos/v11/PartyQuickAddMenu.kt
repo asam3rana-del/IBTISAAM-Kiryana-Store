@@ -28,15 +28,15 @@ import com.grocerypos.v11.util.Loc
 
 internal fun PartyDashboardActivity.showQuickAddDialog() {
     showPremiumMenuSheet(
-        headerIcon = "\u2795",
+        headerIconRes = R.drawable.ic_add,
         headerTitle = Loc.t(this, "Quick Add", "\u0641\u0648\u0631\u06CC \u0627\u0646\u062F\u0631\u0627\u062C"),
         headerSubtitle = Loc.t(this, "Choose an action", "\u0627\u06CC\u06A9 \u0639\u0645\u0644 \u0645\u0646\u062A\u062E\u0628 \u06A9\u0631\u06CC\u06BA"),
         items = listOf(
-            QuickMenuItem("\uD83E\uDDFE", red, "#FDEDED",
+            QuickMenuItem(R.drawable.ic_receipt, red, "#FDEDED",
                 Loc.t(this, "Add Sale", "\u0633\u06CC\u0644 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
                 Loc.t(this, "Create a new sale invoice", "نیا سیل انوائس بنائیں")
             ) { startActivity(Intent(this, SaleActivity::class.java)) },
-            QuickMenuItem("\uD83D\uDED2", blue, "#EAF0FF",
+            QuickMenuItem(R.drawable.ic_cart, blue, "#EAF0FF",
                 Loc.t(this, "Add Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA"),
                 Loc.t(this, "Create a new purchase bill", "نیا خریداری بل بنائیں")
             ) { startActivity(Intent(this, PurchaseActivity::class.java)) },
@@ -44,23 +44,23 @@ internal fun PartyDashboardActivity.showQuickAddDialog() {
             // to the matching history list, which already has a ↩ Return action on
             // each row (see SaleHistoryActivity.saleRow() / PurchaseHistoryActivity's
             // per-card actions row), instead of duplicating that picker+logic here.
-            QuickMenuItem("\u21A9", orange, "#FFF3E7",
+            QuickMenuItem(R.drawable.ic_undo, orange, "#FFF3E7",
                 Loc.t(this, "Sale Return", "\u0633\u06CC\u0644 \u0648\u0627\u067E\u0633\u06CC"),
                 Loc.t(this, "Return items from a past sale", "پچھلی سیل سے آئٹمز واپس کریں")
             ) { startActivity(Intent(this, SaleHistoryActivity::class.java)) },
-            QuickMenuItem("\u21A9", teal, "#E6F7F5",
+            QuickMenuItem(R.drawable.ic_undo, teal, "#E6F7F5",
                 Loc.t(this, "Purchase Return", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC \u0648\u0627\u067E\u0633\u06CC"),
                 Loc.t(this, "Return items from a past purchase", "پچھلی خریداری سے آئٹمز واپس کریں")
             ) { startActivity(Intent(this, PurchaseHistoryActivity::class.java)) },
-            QuickMenuItem("\uD83D\uDC64", purple, "#F1EEFF",
+            QuickMenuItem(R.drawable.ic_person, purple, "#F1EEFF",
                 Loc.t(this, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC"),
                 Loc.t(this, "Add a customer or supplier", "کسٹمر یا سپلائر شامل کریں")
             ) { startActivity(Intent(this, PartyActivity::class.java)) },
-            QuickMenuItem("\uD83D\uDCB0", green, "#EAF7EC",
+            QuickMenuItem(R.drawable.ic_wallet, green, "#EAF7EC",
                 Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
                 Loc.t(this, "Record money received", "موصول ہونے والی رقم درج کریں")
             ) { showPartyPickerForPayment(forCustomer = true) },
-            QuickMenuItem("\uD83D\uDCB8", gold, "#FBF3E3",
+            QuickMenuItem(R.drawable.ic_bank, gold, "#FBF3E3",
                 Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC"),
                 Loc.t(this, "Record money paid out", "ادا کی گئی رقم درج کریں")
             ) { showPartyPickerForPayment(forCustomer = false) }
@@ -74,7 +74,7 @@ internal fun PartyDashboardActivity.showQuickAddDialog() {
 // chevron, divider between rows. Height is hard-capped so on a tall list the
 // rows scroll internally instead of ever pushing content off-screen.
 internal data class QuickMenuItem(
-    val icon: String,
+    val iconRes: Int,
     val accentHex: String,
     val tintHex: String,
     val title: String,
@@ -82,18 +82,14 @@ internal data class QuickMenuItem(
     val onClick: () -> Unit
 )
 
-internal fun PartyDashboardActivity.showPremiumMenuSheet(headerIcon: String, headerTitle: String, headerSubtitle: String, items: List<QuickMenuItem>) {
+internal fun PartyDashboardActivity.showPremiumMenuSheet(headerIconRes: Int, headerTitle: String, headerSubtitle: String, items: List<QuickMenuItem>) {
     val itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
     val header = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(28, 26, 28, 18)
-        addView(TextView(this@showPremiumMenuSheet).apply {
-            text = headerIcon
-            textSize = 20f
-            gravity = Gravity.CENTER
-            background = ovalBg("#EEF0F7")
+        addView(iconBadge(headerIconRes, navy, bgHex = "#EEF0F7", sizeDp = 44, iconSizeDp = 20).apply {
             layoutParams = LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (44 * resources.displayMetrics.density).toInt())
                 .apply { setMargins(0, 0, 24, 0) }
         })
@@ -134,12 +130,7 @@ internal fun PartyDashboardActivity.showPremiumMenuSheet(headerIcon: String, hea
             setBackgroundResource(outValue.resourceId)
             setOnClickListener { dialog.dismiss(); item.onClick() }
         }
-        row.addView(TextView(this).apply {
-            text = item.icon
-            textSize = 17f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor(item.accentHex))
-            background = ovalBg(item.tintHex)
+        row.addView(iconBadge(item.iconRes, item.accentHex, bgHex = item.tintHex, sizeDp = 40, iconSizeDp = 18).apply {
             layoutParams = LinearLayout.LayoutParams((40 * resources.displayMetrics.density).toInt(), (40 * resources.displayMetrics.density).toInt())
                 .apply { setMargins(0, 0, 22, 0) }
         })

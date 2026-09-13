@@ -29,6 +29,7 @@ import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
 import com.grocerypos.v11.ui.StockReportActivity
 import com.grocerypos.v11.ui.ThemedActivity
+import com.grocerypos.v11.ui.components.iconBadge
 import com.grocerypos.v11.util.Loc
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.flow.collectLatest
@@ -409,21 +410,12 @@ class MainActivity : ThemedActivity() {
         return d
     }
 
-    private fun premiumIconBadge(iconRes: Int, bgHex: String, fgHex: String, sizeDp: Int, iconSizeDp: Int): FrameLayout {
-        val size = (sizeDp * resources.displayMetrics.density).toInt()
-        return FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(bgHex))
-            }
-            addView(ImageView(this@MainActivity).apply {
-                setImageDrawable(tintedDrawable(iconRes, fgHex, iconSizeDp))
-                scaleType = ImageView.ScaleType.CENTER
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-            })
-        }
-    }
+    // ---- Now a thin wrapper around the shared iconBadge() (ui/components/MenuRow.kt) so this
+    // screen's badges are pixel-identical to Settings' menu-row badges and every other screen
+    // that has been migrated onto the shared component, instead of a private local copy of the
+    // same oval-drawing code. bgHex/fgHex order flips vs iconBadge(iconRes, fgHex, bgHex, ...). ----
+    private fun premiumIconBadge(iconRes: Int, bgHex: String, fgHex: String, sizeDp: Int, iconSizeDp: Int): ImageView =
+        iconBadge(iconRes, fgHex, bgHex, sizeDp, iconSizeDp)
 
     // ---- flat circular logo badge — solid soft-purple fill, no gradient rings ----
     private fun premiumLogoBadge(sizeDp: Int): FrameLayout {
@@ -621,18 +613,11 @@ class MainActivity : ThemedActivity() {
             isClickable = true
             isFocusable = true
 
-            val iconSize = (36 * resources.displayMetrics.density).toInt()
-            addView(FrameLayout(this@MainActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { bottomMargin = 14 }
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(Color.parseColor(action.bgHex))
-                }
-                addView(ImageView(this@MainActivity).apply {
-                    setImageDrawable(tintedDrawable(action.iconRes, action.fgHex, 16))
-                    scaleType = ImageView.ScaleType.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-                })
+            addView(iconBadge(action.iconRes, action.fgHex, action.bgHex, 36, 16).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    (36 * resources.displayMetrics.density).toInt(),
+                    (36 * resources.displayMetrics.density).toInt()
+                ).apply { bottomMargin = 14 }
             })
             addView(TextView(this@MainActivity).apply {
                 text = action.title

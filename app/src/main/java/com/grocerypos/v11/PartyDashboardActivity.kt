@@ -96,6 +96,7 @@ class PartyDashboardActivity : AppCompatActivity() {
     // hues below (purple/teal/gold) come straight from the same shared flat palette
     // so each quick-menu row keeps its own distinct icon-badge color. ----
     private var bg = "#F4F6F8"
+    internal var navy = "#0B2545"       // app-wide accent (header + main-menu chrome)
     internal var blue = "#993556"       // primary chrome — flatPinkFg
     internal var orange = "#993C1D"     // flatCoralFg
     internal var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
@@ -115,6 +116,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         cardBorder = p.border
         labelGray = p.textMuted
         textDark = p.textDark
+        navy = p.navy
         blue = p.flatPinkFg
         orange = p.flatCoralFg
         green = p.flatTealFg
@@ -284,15 +286,15 @@ class PartyDashboardActivity : AppCompatActivity() {
     // hands off to the existing searchable party picker (PartyQuickAddMenu.kt). ----
     private fun showPaymentTypeChooser() {
         showPremiumMenuSheet(
-            headerIcon = "\uD83D\uDCB0",
+            headerIconRes = R.drawable.ic_wallet,
             headerTitle = Loc.t(this, "Record Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u062F\u0631\u062C \u06A9\u0631\u06CC\u06BA"),
             headerSubtitle = Loc.t(this, "Received or paid out?", "\u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC \u06CC\u0627 \u0627\u062F\u0627 \u06A9\u06CC \u06AF\u0626\u06CC\u061F"),
             items = listOf(
-                QuickMenuItem("\uD83D\uDCB0", green, "#EAF7EC",
+                QuickMenuItem(R.drawable.ic_wallet, green, "#EAF7EC",
                     Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC"),
                     Loc.t(this, "From a customer", "\u06A9\u0633\u0679\u0645\u0631 \u0633\u06D2")
                 ) { showPartyPickerForPayment(forCustomer = true) },
-                QuickMenuItem("\uD83D\uDCB8", gold, "#FBF3E3",
+                QuickMenuItem(R.drawable.ic_bank, gold, "#FBF3E3",
                     Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC"),
                     Loc.t(this, "To a supplier", "\u0633\u067E\u0644\u0627\u0626\u0631 \u06A9\u0648")
                 ) { showPartyPickerForPayment(forCustomer = false) }
@@ -308,13 +310,11 @@ class PartyDashboardActivity : AppCompatActivity() {
             setPadding(28, 46, 24, 32)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(blue), Color.parseColor(blue))
+                intArrayOf(Color.parseColor(navy), Color.parseColor(navy))
             )
 
-            addView(TextView(this@PartyDashboardActivity).apply {
-                text = "\u2630"
-                textSize = 20f
-                setTextColor(Color.WHITE)
+            addView(ImageView(this@PartyDashboardActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_menu, "#FFFFFF", 20))
                 setPadding(4, 0, 20, 0)
                 setOnClickListener { showMainMenu() }
             })
@@ -327,19 +327,16 @@ class PartyDashboardActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
 
-            addView(TextView(this@PartyDashboardActivity).apply {
-                text = "\uD83D\uDD14"
-                textSize = 18f
+            addView(ImageView(this@PartyDashboardActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_notifications, "#FFFFFF", 20))
                 setPadding(0, 0, 24, 0)
                 setOnClickListener {
                     Toast.makeText(this@PartyDashboardActivity, Loc.t(this@PartyDashboardActivity, "No new notifications", "\u06A9\u0648\u0626\u06CC \u0646\u0626\u06CC \u0627\u0637\u0644\u0627\u0639 \u0646\u06C1\u06CC\u06BA"), Toast.LENGTH_SHORT).show()
                 }
             })
 
-            addView(TextView(this@PartyDashboardActivity).apply {
-                text = "\u27A4"
-                textSize = 18f
-                setTextColor(Color.parseColor("#FF5252"))
+            addView(ImageView(this@PartyDashboardActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_send, "#FF5252", 20))
                 setOnClickListener { shareSummary() }
             })
         }
@@ -351,31 +348,31 @@ class PartyDashboardActivity : AppCompatActivity() {
     // Stock screens — colored circular icon, bold title + gray subtitle, chevron.
     private fun showMainMenu() {
         showPremiumMenuSheet(
-            headerIcon = "\u2630",
+            headerIconRes = R.drawable.ic_menu,
             headerTitle = Loc.t(this, "Menu", "\u0645\u06CC\u0646\u0648"),
             headerSubtitle = Loc.t(this, "Jump to any section", "\u06A9\u0633\u06CC \u0628\u06BE\u06CC \u0633\u06CC\u06A9\u0634\u0646 \u067E\u0631 \u062C\u0627\u0626\u06CC\u06BA"),
             items = listOf(
-                QuickMenuItem("\uD83D\uDCE6", blue, "#EAF0FF",
+                QuickMenuItem(R.drawable.ic_box, blue, "#EAF0FF",
                     Loc.t(this, "Products", "\u067E\u0631\u0648\u0688\u06A9\u0679\u0633"),
                     Loc.t(this, "Manage your inventory items", "اپنے انوینٹری آئٹمز کا انتظام کریں")
                 ) { startActivity(Intent(this, ProductActivity::class.java)) },
-                QuickMenuItem("\uD83D\uDCCA", purple, "#F1EEFF",
+                QuickMenuItem(R.drawable.ic_trending, purple, "#F1EEFF",
                     Loc.t(this, "Reports", "\u0631\u067E\u0648\u0631\u0679\u0633"),
                     Loc.t(this, "Sales, stock & financial overview", "سیل، اسٹاک اور مالیاتی جائزہ")
                 ) { startActivity(Intent(this, ReportsActivity::class.java)) },
-                QuickMenuItem("\uD83D\uDCB5", green, "#EAF7EC",
+                QuickMenuItem(R.drawable.ic_wallet, green, "#EAF7EC",
                     Loc.t(this, "Cash In/Out", "\u06A9\u06CC\u0634 \u0627\u0646/\u0622\u0624\u0679"),
                     Loc.t(this, "Record cash movements", "کیش کی آمد و رفت درج کریں")
                 ) { startActivity(Intent(this, CashActivity::class.java)) },
-                QuickMenuItem("\uD83D\uDD0E", teal, "#E6F7F5",
+                QuickMenuItem(R.drawable.ic_search, teal, "#E6F7F5",
                     Loc.t(this, "Item Rate Search", "\u0622\u0626\u0679\u0645 \u0631\u06CC\u0679 \u0633\u0631\u0686"),
                     Loc.t(this, "Look up any item's price", "کسی بھی آئٹم کی قیمت دیکھیں")
                 ) { startActivity(Intent(this, ItemSearchActivity::class.java)) },
-                QuickMenuItem("\u2699", orange, "#FFF3E7",
+                QuickMenuItem(R.drawable.ic_settings, orange, "#FFF3E7",
                     Loc.t(this, "Settings", "\u0633\u06CC\u0679\u0646\u06AF\u0632"),
                     Loc.t(this, "App preferences & account", "ایپ کی ترتیبات اور اکاؤنٹ")
                 ) { startActivity(Intent(this, SettingsActivity::class.java)) },
-                QuickMenuItem("\uD83D\uDEAA", red, "#FDEDED",
+                QuickMenuItem(R.drawable.ic_logout, red, "#FDEDED",
                     Loc.t(this, "Logout", "\u0644\u0627\u06AF \u0622\u0624\u0679"),
                     Loc.t(this, "Sign out of this session", "اس سیشن سے سائن آؤٹ کریں")
                 ) { doLogout() }
@@ -548,7 +545,7 @@ class PartyDashboardActivity : AppCompatActivity() {
             background = pillBg("#F0F1F5", radius = 18f)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(labelGray)) })
+        searchBox.addView(ImageView(this).apply { setImageDrawable(tintedDrawable(R.drawable.ic_search, labelGray, 15)); setPadding(0, 0, 10, 0) })
         searchBox.addView(EditText(this).apply {
             hint = Loc.t(this@PartyDashboardActivity, "Search party", "\u067E\u0627\u0631\u0679\u06CC \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA")
             background = null
@@ -563,15 +560,12 @@ class PartyDashboardActivity : AppCompatActivity() {
         row.addView(searchBox)
         row.addView(spacerHoriz(10))
 
-        row.addView(TextView(this).apply {
-            text = "\u2630"
-            textSize = 15f
-            setTextColor(Color.parseColor(labelGray))
-            gravity = Gravity.CENTER
+        row.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_filter, labelGray, 17))
+            scaleType = ImageView.ScaleType.CENTER
             // CHANGE: borderless filled circle instead of white+stroke oval.
             background = pillBg("#F0F1F5", radius = 20f)
-            width = (40 * resources.displayMetrics.density).toInt()
-            height = (40 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams((40 * resources.displayMetrics.density).toInt(), (40 * resources.displayMetrics.density).toInt())
             setOnClickListener { showFilterDialog() }
         })
         row.addView(spacerHoriz(10))
@@ -606,7 +600,7 @@ class PartyDashboardActivity : AppCompatActivity() {
             background = pillBg("#F0F1F5", radius = 18f)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(labelGray)) })
+        searchBox.addView(ImageView(this).apply { setImageDrawable(tintedDrawable(R.drawable.ic_search, labelGray, 15)); setPadding(0, 0, 10, 0) })
         searchBox.addView(EditText(this).apply {
             this.hint = hint
             background = null
@@ -636,7 +630,7 @@ class PartyDashboardActivity : AppCompatActivity() {
             background = pillBg("#F0F1F5", radius = 18f)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(labelGray)) })
+        searchBox.addView(ImageView(this).apply { setImageDrawable(tintedDrawable(R.drawable.ic_search, labelGray, 15)); setPadding(0, 0, 10, 0) })
         searchBox.addView(EditText(this).apply {
             hint = Loc.t(this@PartyDashboardActivity, "Search item", "\u0622\u0626\u0679\u0645 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA")
             background = null
@@ -719,14 +713,11 @@ class PartyDashboardActivity : AppCompatActivity() {
             setOnClickListener { startActivity(Intent(this@PartyDashboardActivity, PurchaseActivity::class.java)) }
         })
 
-        bar.addView(TextView(this).apply {
-            text = "+"
-            textSize = 22f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+        bar.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_add, "#FFFFFF", 22))
+            scaleType = ImageView.ScaleType.CENTER
             background = ovalBg(blue)
-            width = (52 * resources.displayMetrics.density).toInt()
-            height = (52 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams((52 * resources.displayMetrics.density).toInt(), (52 * resources.displayMetrics.density).toInt())
             setOnClickListener { showQuickAddDialog() }
         })
 
@@ -924,9 +915,9 @@ class PartyDashboardActivity : AppCompatActivity() {
             item.dueStatus?.let { status ->
                 val badgeColor = if (status == DueStatus.OVERDUE) red else gold
                 val badgeText = if (status == DueStatus.OVERDUE)
-                    Loc.t(this@PartyDashboardActivity, "\u23F0 Overdue", "\u23F0 \u0645\u06CC\u0639\u0627\u062F \u06AF\u0632\u0631 \u06AF\u0626\u06CC")
+                    Loc.t(this@PartyDashboardActivity, "Overdue", "\u0645\u06CC\u0639\u0627\u062F \u06AF\u0632\u0631 \u06AF\u0626\u06CC")
                 else
-                    Loc.t(this@PartyDashboardActivity, "\u23F0 Due Today", "\u23F0 \u0622\u062C \u0648\u0627\u062C\u0628 \u0627\u0644\u0627\u062F\u0627")
+                    Loc.t(this@PartyDashboardActivity, "Due Today", "\u0622\u062C \u0648\u0627\u062C\u0628 \u0627\u0644\u0627\u062F\u0627")
                 infoCol.addView(TextView(this@PartyDashboardActivity).apply {
                     text = badgeText
                     textSize = 10.5f
@@ -934,6 +925,7 @@ class PartyDashboardActivity : AppCompatActivity() {
                     setTextColor(Color.WHITE)
                     setPadding(16, 6, 16, 6)
                     background = roundedBackground(badgeColor, 20)
+                    setLeadingIcon(R.drawable.ic_alarm, "#FFFFFF", 12, 5)
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 6 }
                 })
             }
@@ -1032,14 +1024,7 @@ class PartyDashboardActivity : AppCompatActivity() {
                 startActivity(intent)
             }
 
-            addView(TextView(this@PartyDashboardActivity).apply {
-                text = if (row.isSale) "\uD83D\uDED2" else "\uD83E\uDDFE"
-                textSize = 16f
-                gravity = Gravity.CENTER
-                background = ovalBg(accent)
-                width = (38 * resources.displayMetrics.density).toInt()
-                height = (38 * resources.displayMetrics.density).toInt()
-            })
+            addView(iconBadge(if (row.isSale) R.drawable.ic_cart else R.drawable.ic_receipt, accent, sizeDp = 38, iconSizeDp = 17))
 
             val infoCol = LinearLayout(this@PartyDashboardActivity).apply {
                 orientation = LinearLayout.VERTICAL

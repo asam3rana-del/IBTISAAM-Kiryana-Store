@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
+import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
@@ -45,8 +46,9 @@ class PartyActivity : AppCompatActivity() {
     // per ThemeManager's documented category convention (matches MainActivity's
     // "Customers & Suppliers" tile). ----
     private var bg = "#F4F6F8"
-    private var blue = "#993556"       // primary chrome — flatPinkFg
-    private var orange = "#993C1D"     // secondary accent — flatCoralFg
+    private var navy = "#0B2545"       // app-wide accent (header + primary chrome)
+    private var blue = "#993556"       // customer accent — flatPinkFg (kept distinct for tab/icon tinting)
+    private var orange = "#993C1D"     // supplier accent — flatCoralFg (kept distinct for tab/icon tinting)
     private var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
     private var red = "#D32F4A"
     private var cardWhite = "#FFFFFF"
@@ -59,6 +61,7 @@ class PartyActivity : AppCompatActivity() {
         cardWhite = p.cardWhite
         cardBorder = p.border
         labelGray = p.textMuted
+        navy = p.navy
         blue = p.flatPinkFg
         orange = p.flatCoralFg
         green = p.flatTealFg
@@ -120,42 +123,14 @@ class PartyActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        // ================= FLAT HEADER (Reports-style, no gradient) =================
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((28 * d).toInt(), (44 * d).toInt(), (24 * d).toInt(), (32 * d).toInt())
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor(blue), Color.parseColor(blue))
-            )
-        }
-        header.addView(TextView(this).apply {
-            text = "\uD83D\uDC65"
-            textSize = 22f
-            gravity = Gravity.CENTER
-            background = ovalBg(cardWhite)
-            width = (48 * resources.displayMetrics.density).toInt()
-            height = (48 * resources.displayMetrics.density).toInt()
-        })
-        val headerText = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(20, 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerText.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Customers & Suppliers", "کسٹمرز اور سپلائرز")
-            textSize = 19f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        headerText.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Manage parties & view ledgers", "پارٹیز کا انتظام اور کھاتے دیکھیں")
-            textSize = 12f
-            setTextColor(Color.parseColor("#EDEFFC"))
-        })
-        header.addView(headerText)
-        outer.addView(header)
+        // ================= HEADER (shared premiumHeader — same as History/Reports/Settings) =================
+        outer.addView(premiumHeader(
+            icon = R.drawable.ic_people,
+            title = Loc.t(this@PartyActivity, "Customers & Suppliers", "کسٹمرز اور سپلائرز"),
+            subtitle = Loc.t(this@PartyActivity, "Manage parties & view ledgers", "پارٹیز کا انتظام اور کھاتے دیکھیں"),
+            primaryHex = navy,
+            primaryDarkHex = navy
+        ))
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -173,11 +148,12 @@ class PartyActivity : AppCompatActivity() {
         formCard = premiumCard().apply { setPadding(22, 20, 22, 20) }
 
         sectionAccentText = TextView(this).apply {
-            text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "Add Customer", "کسٹمر شامل کریں")
+            text = Loc.t(this@PartyActivity, "Add Customer", "کسٹمر شامل کریں")
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor(blue))
             setPadding(0, 0, 0, 12)
+            setLeadingIcon(R.drawable.ic_person, blue, 14, 8)
         }
         formCard.addView(sectionAccentText)
 
@@ -200,9 +176,8 @@ class PartyActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         phoneBox.addView(phoneField)
-        phoneBox.addView(TextView(this).apply {
-            text = "\uD83D\uDC64\u200D\uD83D\uDCDE"
-            textSize = 18f
+        phoneBox.addView(ImageView(this).apply {
+            setImageDrawable(tintedDrawable(R.drawable.ic_person, blue, 20))
             setPadding(12, 0, 4, 0)
             setOnClickListener { openContactPicker() }
         })
@@ -250,13 +225,10 @@ class PartyActivity : AppCompatActivity() {
             setPadding(4, 0, 4, 10)
         }
         listHeaderRow.addView(TextView(this).apply {
-            text = "\uD83D\uDCCB  "
-            textSize = 15f
-        })
-        listHeaderRow.addView(TextView(this).apply {
             text = Loc.t(this@PartyActivity, "Party List", "پارٹی لسٹ")
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setLeadingIcon(R.drawable.ic_list, navy, 15, 8)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         listHeaderRow.addView(TextView(this).apply {
@@ -296,12 +268,13 @@ class PartyActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams((10 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
         })
         duesOnlyChip = TextView(this).apply {
-            text = "\uD83D\uDCB0 " + Loc.t(this@PartyActivity, "Dues only", "صرف واجبات")
+            text = Loc.t(this@PartyActivity, "Dues only", "صرف واجبات")
             textSize = 12f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding((16 * d).toInt(), (14 * d).toInt(), (16 * d).toInt(), (14 * d).toInt())
             background = roundedBackground("#EEF0F7", 24)
             setTextColor(Color.parseColor("#6B7280"))
+            setLeadingIcon(R.drawable.ic_wallet, "#6B7280", 14, 6)
             setOnClickListener {
                 duesOnly = !duesOnly
                 lastState?.let { render(it) }
@@ -337,10 +310,15 @@ class PartyActivity : AppCompatActivity() {
         buildTabs(state.showingCustomers)
         creditLimitBox.visibility = if (state.showingCustomers) View.VISIBLE else View.GONE
         sectionAccentText.text = if (state.showingCustomers)
-            "\uD83D\uDC64  " + Loc.t(this, "Add Customer", "کسٹمر شامل کریں")
+            Loc.t(this, "Add Customer", "کسٹمر شامل کریں")
         else
-            "\uD83D\uDCE6  " + Loc.t(this, "Add Supplier", "سپلائر شامل کریں")
-        sectionAccentText.setTextColor(Color.parseColor(if (state.showingCustomers) blue else orange))
+            Loc.t(this, "Add Supplier", "سپلائر شامل کریں")
+        val sectionAccentColor = if (state.showingCustomers) blue else orange
+        sectionAccentText.setTextColor(Color.parseColor(sectionAccentColor))
+        sectionAccentText.setLeadingIcon(
+            if (state.showingCustomers) R.drawable.ic_person else R.drawable.ic_shopping_bag,
+            sectionAccentColor, 14, 8
+        )
         saveButton.background = roundedBackground(if (state.showingCustomers) blue else orange, 14)
 
         // ---- IMPROVEMENT PACK (Party 10/10): active-chip styling + the actual
@@ -364,7 +342,7 @@ class PartyActivity : AppCompatActivity() {
             }
             for (c in filtered) {
                 listContainer.addView(
-                    partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, "\uD83D\uDC64", isCustomer = true,
+                    partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, R.drawable.ic_person, isCustomer = true,
                         onClick = { openCustomerHistory(c) },
                         onEdit = { editCustomerDialog(c) },
                         onDelete = { confirmDeleteCustomer(c) },
@@ -383,7 +361,7 @@ class PartyActivity : AppCompatActivity() {
             }
             for (s in filtered) {
                 listContainer.addView(
-                    partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, "\uD83D\uDCE6", isCustomer = false,
+                    partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, R.drawable.ic_shopping_bag, isCustomer = false,
                         onClick = { openSupplierHistory(s) },
                         onEdit = { editSupplierDialog(s) },
                         onDelete = { confirmDeleteSupplier(s) },
@@ -479,18 +457,20 @@ class PartyActivity : AppCompatActivity() {
     private fun buildTabs(showingCustomers: Boolean) {
         tabRow.removeAllViews()
         tabRow.addView(Button(this).apply {
-            text = "\uD83D\uDC64  " + Loc.t(this@PartyActivity, "CUSTOMERS", "کسٹمرز")
+            text = Loc.t(this@PartyActivity, "CUSTOMERS", "کسٹمرز")
             setTextColor(if (showingCustomers) Color.WHITE else Color.parseColor("#6B7280"))
             textSize = 12f
             background = roundedBackground(if (showingCustomers) blue else "#EEF0F7", 24)
+            setLeadingIcon(R.drawable.ic_person, if (showingCustomers) "#FFFFFF" else "#6B7280", 14, 6)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
             setOnClickListener { viewModel.showCustomers() }
         })
         tabRow.addView(Button(this).apply {
-            text = "\uD83D\uDCE6  " + Loc.t(this@PartyActivity, "SUPPLIERS", "سپلائرز")
+            text = Loc.t(this@PartyActivity, "SUPPLIERS", "سپلائرز")
             setTextColor(if (!showingCustomers) Color.WHITE else Color.parseColor("#6B7280"))
             textSize = 12f
             background = roundedBackground(if (!showingCustomers) orange else "#EEF0F7", 24)
+            setLeadingIcon(R.drawable.ic_shopping_bag, if (!showingCustomers) "#FFFFFF" else "#6B7280", 14, 6)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
             setOnClickListener { viewModel.showSuppliers() }
         })
@@ -549,7 +529,7 @@ class PartyActivity : AppCompatActivity() {
         opening: Double,
         running: Double,
         accentHex: String,
-        icon: String,
+        iconRes: Int,
         isCustomer: Boolean,
         onClick: () -> Unit,
         onEdit: () -> Unit,
@@ -569,14 +549,7 @@ class PartyActivity : AppCompatActivity() {
             setOnClickListener { onClick() }
         }
 
-        topRow.addView(TextView(this).apply {
-            text = icon
-            textSize = 18f
-            gravity = Gravity.CENTER
-            background = ovalBg(accentHex)
-            width = (42 * resources.displayMetrics.density).toInt()
-            height = (42 * resources.displayMetrics.density).toInt()
-        })
+        topRow.addView(iconBadge(iconRes, accentHex, sizeDp = 42, iconSizeDp = 19))
 
         val infoCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -636,18 +609,18 @@ class PartyActivity : AppCompatActivity() {
         // ---- IMPROVEMENT PACK (Party 10/10): one-tap call, only shown when a
         // phone number is actually on file. ----
         if (phone.isNotEmpty() && onCall != null) {
-            actionRow.addView(actionChip("\uD83D\uDCDE", Loc.t(this@PartyActivity, "Call", "کال کریں"), green, isDelete = false) { onCall() })
+            actionRow.addView(actionChip(R.drawable.ic_phone, Loc.t(this@PartyActivity, "Call", "کال کریں"), green, isDelete = false) { onCall() })
             actionRow.addView(spacer(10).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT) })
         }
-        actionRow.addView(actionChip("\u270F\uFE0F", Loc.t(this@PartyActivity, "Edit", "ترمیم"), accentHex, isDelete = false) { onEdit() })
+        actionRow.addView(actionChip(R.drawable.ic_edit, Loc.t(this@PartyActivity, "Edit", "ترمیم"), accentHex, isDelete = false) { onEdit() })
         actionRow.addView(spacer(10).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT) })
-        actionRow.addView(actionChip("\uD83D\uDDD1\uFE0F", Loc.t(this@PartyActivity, "Delete", "حذف کریں"), red, isDelete = true) { onDelete() })
+        actionRow.addView(actionChip(R.drawable.ic_delete, Loc.t(this@PartyActivity, "Delete", "حذف کریں"), red, isDelete = true) { onDelete() })
         outerRow.addView(actionRow)
 
         return outerRow
     }
 
-    private fun actionChip(icon: String, label: String, colorHex: String, isDelete: Boolean, onClick: () -> Unit): LinearLayout {
+    private fun actionChip(iconRes: Int, label: String, colorHex: String, isDelete: Boolean, onClick: () -> Unit): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -656,7 +629,9 @@ class PartyActivity : AppCompatActivity() {
                 setColor(Color.parseColor(if (isDelete) "#FDEDED" else "#EEF0FF"))
                 cornerRadius = 20f
             }
-            addView(TextView(this@PartyActivity).apply { text = icon; textSize = 12f })
+            addView(ImageView(this@PartyActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, colorHex, 14))
+            })
             addView(TextView(this@PartyActivity).apply {
                 text = "  $label"
                 textSize = 12f
@@ -801,7 +776,7 @@ class PartyActivity : AppCompatActivity() {
     private fun openCustomerHistory(c: Customer) {
         lifecycleScope.launch {
             val sales = viewModel.customerHistory(c)
-            val content = historyDialogContainer(c.name, blue, "\uD83D\uDC64", c.openingBalance, c.balance)
+            val content = historyDialogContainer(c.name, blue, R.drawable.ic_person, c.openingBalance, c.balance)
             val body = content.getChildAt(1) as LinearLayout
 
             if (sales.isEmpty()) {
@@ -829,7 +804,7 @@ class PartyActivity : AppCompatActivity() {
     private fun openSupplierHistory(s: Supplier) {
         lifecycleScope.launch {
             val purchases = viewModel.supplierHistory(s)
-            val content = historyDialogContainer(s.name, orange, "\uD83D\uDCE6", s.openingBalance, s.balance)
+            val content = historyDialogContainer(s.name, orange, R.drawable.ic_shopping_bag, s.openingBalance, s.balance)
             val body = content.getChildAt(1) as LinearLayout
 
             if (purchases.isEmpty()) {
@@ -854,7 +829,7 @@ class PartyActivity : AppCompatActivity() {
     }
 
     // ================= shared dialog helpers (premium gradient header dialog) =================
-    private fun historyDialogContainer(name: String, colorHex: String, icon: String, opening: Double, running: Double): LinearLayout {
+    private fun historyDialogContainer(name: String, colorHex: String, iconRes: Int, opening: Double, running: Double): LinearLayout {
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -874,14 +849,7 @@ class PartyActivity : AppCompatActivity() {
                 cornerRadii = floatArrayOf(20f, 20f, 20f, 20f, 0f, 0f, 0f, 0f)
             }
         }
-        header.addView(TextView(this).apply {
-            text = icon
-            textSize = 18f
-            gravity = Gravity.CENTER
-            background = ovalBg(cardWhite)
-            width = (40 * resources.displayMetrics.density).toInt()
-            height = (40 * resources.displayMetrics.density).toInt()
-        })
+        header.addView(iconBadge(iconRes, colorHex, bgHex = cardWhite, sizeDp = 40, iconSizeDp = 18))
         val headerTextCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 0, 0, 0)
