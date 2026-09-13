@@ -228,9 +228,18 @@ class DayBookActivity : AppCompatActivity() {
             val sales = db.saleDao().salesBetween(start, end)
             val purchases = db.purchaseDao().purchasesBetween(start, end)
             val expenses = db.expenseDao().between(start, end)
-            // Only manual cash entries (no reference) — sale/purchase payments are
-            // already represented by the sale/purchase rows below, via their "Paid" line.
-            val cashTx = db.cashTransactionDao().between(start, end).filter { it.reference.isBlank() }
+            // Only manual cash entries — sale/purchase payments are already represented
+            // by the sale/purchase rows above, via their "Paid" line, so those (whose
+            // reference is set to the invoice/billNo) are excluded here.
+            // FIX (Payments 10/10): this used to be `it.reference.isBlank()`, which also
+            // excluded the standalone "Receive Payment"/"Make Payment" entries from
+            // PartyTransactionActivity — those always carry a non-blank "manual-…"
+            // reference (so a delete/edit can find their matching Payment row), but
+            // they are NOT represented anywhere else in this list, so they were
+            // silently missing from Day Book entirely. Now only cash entries tied to
+            // an actual sale/purchase bill (reference = that bill's invoice/billNo,
+            // never "manual-…") are excluded.
+            val cashTx = db.cashTransactionDao().between(start, end).filter { it.reference.isBlank() || it.reference.startsWith("manual-") }
 
             val entries = mutableListOf<DayBookEntry>()
 

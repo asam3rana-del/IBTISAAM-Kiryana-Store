@@ -669,6 +669,7 @@ object SyncApi {
             val amount = (row["amount"] as? Number)?.toDouble() ?: 0.0
             val method = row["method"] as? String ?: ""
             val note = row["note"] as? String ?: ""
+            val billReference = row["billReference"] as? String ?: ""
             val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
 
             val existing = paymentDao.findByServerId(serverId)
@@ -676,7 +677,7 @@ object SyncApi {
                 paymentDao.update(
                     existing.copy(
                         reference = reference, partyType = partyType, partyId = partyId,
-                        amount = amount, method = method, note = note, createdAt = createdAt,
+                        amount = amount, method = method, note = note, billReference = billReference, createdAt = createdAt,
                         updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )
@@ -684,7 +685,7 @@ object SyncApi {
                 paymentDao.insert(
                     Payment(
                         reference = reference, partyType = partyType, partyId = partyId,
-                        amount = amount, method = method, note = note, createdAt = createdAt,
+                        amount = amount, method = method, note = note, billReference = billReference, createdAt = createdAt,
                         serverId = serverId, updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )

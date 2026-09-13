@@ -152,8 +152,18 @@ class PartyDashboardActivity : AppCompatActivity() {
         val name: String,
         val phone: String,
         val closing: Double,
-        val isCustomer: Boolean
+        val isCustomer: Boolean,
+        // ---- IMPROVEMENT PACK (Payments 10/10 — link due reminders to Payments):
+        // null = no active due-date reminder on any of this customer's unpaid sales;
+        // otherwise the most urgent one, so the party list can badge it. Always null
+        // for suppliers — dueSales() only tracks money owed TO the shop. ----
+        val dueStatus: DueStatus? = null
     )
+
+    // OVERDUE: dueDate has passed. DUE_TODAY: dueDate is today. Anything further out
+    // isn't badged — the list would just get noisy — but still shows on Due Date
+    // Reminders (Reports > Due Date Reminders) same as always.
+    internal enum class DueStatus { OVERDUE, DUE_TODAY }
 
     private data class TxRow(
         val reference: String,   // invoice (sale) or billNo (purchase)
@@ -722,9 +732,24 @@ class PartyDashboardActivity : AppCompatActivity() {
             combine(db.customerDao().all(), db.supplierDao().all()) { customers, suppliers ->
                 Pair(customers, suppliers)
             }.collectLatest { (customers, suppliers) ->
+                // ---- IMPROVEMENT PACK (Payments 10/10 — link due reminders to Payments):
+                // one dueSales() call, reduced to the single most urgent (overdue, else
+                // due-today) reminder per customer, so the Parties tab can badge exactly
+                // who to chase for a payment without opening Due Date Reminders first. ----
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+                }
+                val today = cal.timeInMillis
+                val tomorrow = today + 24 * 60 * 60 * 1000L
+                val dueByCustomer = db.saleDao().dueSales()
+                    .filter { it.dueDate in 1 until tomorrow && it.customerId != null }
+                    .groupBy { it.customerId!! }
+                    .mapValues { (_, sales) -> if (sales.any { it.dueDate < today }) DueStatus.OVERDUE else DueStatus.DUE_TODAY }
+
                 val items = mutableListOf<PartyItem>()
                 for (c in customers) {
-                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.openingBalance + c.balance, isCustomer = true))
+                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.openingBalance + c.balance, isCustomer = true, dueStatus = dueByCustomer[c.id]))
                 }
                 for (s in suppliers) {
                     items.add(PartyItem(id = s.id, name = s.name, phone = s.phone, closing = s.openingBalance + s.balance, isCustomer = false))
@@ -833,6 +858,26 @@ class PartyDashboardActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(labelGray))
                 setPadding(0, 4, 0, 0)
             })
+            // ---- IMPROVEMENT PACK (Payments 10/10 — link due reminders to Payments):
+            // small badge when this customer has an active reminder due today or
+            // overdue, so the person doing collections can see who to call for a
+            // payment right from this list, without opening Due Date Reminders. ----
+            item.dueStatus?.let { status ->
+                val badgeColor = if (status == DueStatus.OVERDUE) red else gold
+                val badgeText = if (status == DueStatus.OVERDUE)
+                    Loc.t(this@PartyDashboardActivity, "\u23F0 Overdue", "\u23F0 \u0645\u06CC\u0639\u0627\u062F \u06AF\u0632\u0631 \u06AF\u0626\u06CC")
+                else
+                    Loc.t(this@PartyDashboardActivity, "\u23F0 Due Today", "\u23F0 \u0622\u062C \u0648\u0627\u062C\u0628 \u0627\u0644\u0627\u062F\u0627")
+                infoCol.addView(TextView(this@PartyDashboardActivity).apply {
+                    text = badgeText
+                    textSize = 10.5f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                    setPadding(16, 6, 16, 6)
+                    background = roundedBackground(badgeColor, 20)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 6 }
+                })
+            }
             addView(infoCol)
 
             val amountCol = LinearLayout(this@PartyDashboardActivity).apply {

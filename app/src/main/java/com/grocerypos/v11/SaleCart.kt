@@ -112,49 +112,6 @@ internal fun SaleActivity.refillAutoPrice() {
     unitPrice.setText(if (price > 0) "%.2f".format(price) else "")
     suppressPriceWatcher = false
     updateItemLineTotal()
-    updateMarginWarning()
-}
-
-// NEW ("10/10 Sale screen" — loss protection, mirrors PurchaseActivity's
-// updateMarginWarning()): warns right where the rate is being typed if it's at or
-// below this item's cost, instead of that only being discoverable later in reports.
-internal fun SaleActivity.updateMarginWarning() {
-    val product = selectedProduct
-    val cost = product?.cost ?: 0.0
-    if (product == null || cost <= 0.0) {
-        marginWarningText.visibility = View.GONE
-        return
-    }
-    val typedPrice = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
-    if (typedPrice <= 0.0) {
-        marginWarningText.visibility = View.GONE
-        return
-    }
-    val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
-    val costInChosenUnit = fromMainUnitPrice(cost, chosenUnit)
-    val margin = typedPrice - costInChosenUnit
-    val marginPct = if (costInChosenUnit > 0) (margin / costInChosenUnit) * 100.0 else 0.0
-    marginWarningText.visibility = View.VISIBLE
-    when {
-        margin <= 0 -> {
-            marginWarningText.setTextColor(Color.parseColor("#D32F2F"))
-            marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
-                "⚠ Loss! Sale rate ≤ Cost (Rs %.2f)".format(costInChosenUnit),
-                "⚠ نقصان! سیل ریٹ لاگت (روپے %.2f) کے برابر یا کم ہے".format(costInChosenUnit))
-        }
-        marginPct < 10.0 -> {
-            marginWarningText.setTextColor(Color.parseColor("#F57C00"))
-            marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
-                "⚠ Low margin: Rs %.2f (%.1f%%) vs Cost Rs %.2f".format(margin, marginPct, costInChosenUnit),
-                "⚠ کم منافع: روپے %.2f (%.1f%%) بمقابلہ لاگت روپے %.2f".format(margin, marginPct, costInChosenUnit))
-        }
-        else -> {
-            marginWarningText.setTextColor(Color.parseColor(teal))
-            marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
-                "Margin: Rs %.2f (%.1f%%) vs Cost Rs %.2f".format(margin, marginPct, costInChosenUnit),
-                "منافع: روپے %.2f (%.1f%%) بمقابلہ لاگت روپے %.2f".format(margin, marginPct, costInChosenUnit))
-        }
-    }
 }
 
 internal fun SaleActivity.updateItemLineTotal() {
@@ -250,7 +207,6 @@ internal fun SaleActivity.addItem() {
     unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
     conversionInfo.visibility = View.GONE
     unitToggleRow.visibility = View.GONE
-    marginWarningText.visibility = View.GONE
     itemLineTotalText.text = "Total Amount: Rs 0"
     itemName.requestFocus()
 
@@ -378,7 +334,6 @@ internal fun SaleActivity.editLine(index: Int) {
     unitPrice.setText(if (line.unitPrice == line.unitPrice.toLong().toDouble()) line.unitPrice.toLong().toString() else line.unitPrice.toString())
     suppressPriceWatcher = false
     updateItemLineTotal()
-    updateMarginWarning()
 
     addItemButton.text = com.grocerypos.v11.util.Loc.t(this, "UPDATE ITEM", "آئٹم اپ ڈیٹ کریں")
     cancelEditButton.visibility = View.VISIBLE
@@ -498,7 +453,6 @@ internal fun SaleActivity.clearAll() {
     lastMainPrice = 0.0
     conversionInfo.visibility = View.GONE
     unitToggleRow.visibility = View.GONE
-    marginWarningText.visibility = View.GONE
     itemLineTotalText.text = "Total Amount: Rs 0"
     paidInput.text.clear()
     updateTotals()

@@ -259,21 +259,6 @@ class SaleHistoryActivity : ThemedActivity() {
             setPadding(10, 0, 4, 0)
             setOnClickListener { printSale(sale.invoice) }
         })
-        // NEW ("10/10 Sale screen" — mirrors PurchaseHistoryActivity's edit-to-correct
-        // flow): previously Sale History had Print/Return/Delete but no way to fix a
-        // mistake (wrong qty/rate) without deleting the whole sale and re-entering it.
-        // Not shown on a returned sale — same as the Return icon below.
-        if (sale.status != "returned") {
-            addView(ImageView(this@SaleHistoryActivity).apply {
-                setImageDrawable(tintedDrawable(R.drawable.ic_edit, teal, 16))
-                setPadding(10, 0, 4, 0)
-                setOnClickListener {
-                    startActivity(Intent(this@SaleHistoryActivity, SaleActivity::class.java).apply {
-                        putExtra(SaleActivity.EXTRA_INVOICE, sale.invoice)
-                    })
-                }
-            })
-        }
         if (sale.status != "returned") {
             addView(TextView(this@SaleHistoryActivity).apply {
                 text = "↩"

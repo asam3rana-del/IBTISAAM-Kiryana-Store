@@ -16,17 +16,8 @@ data class SaleWithCustomer(val invoice:String,val customerName:String,val total
 data class CustomerSalesTotal(val customerName:String,val total:Double)
 data class DailyProfit(val day:String,val profit:Double)
 data class PartyItemReport(val product:String,val totalAmount:Double,val totalQty:Double)
-// FIX (unit mislabel + wrong rate breakdown bug): these read-models now carry the
-// ACTUAL unit that qty/rate were recorded in (`si.unit`/`pi.unit`). Previously the
-// unit wasn't selected at all, so ItemSearchActivity had no way to know a line was
-// entered in e.g. "Dzn" and would (a) label the qty with product.unit (the PRIMARY
-// unit) regardless of what unit was actually used, and (b) feed the raw per-Dzn
-// rate straight into rateBreakdownLabel()/fromPrimaryUnitRate() as if it were
-// already a primary-unit rate — silently dividing it by the wrong conversion
-// factor. See Product.toPrimaryUnitRate() which must be used to normalize this
-// rate before any cross-unit display or comparison.
-data class ItemSaleRecord(val customerName:String,val qty:Double,val unitPrice:Double,val createdAt:Long,val unit:String="")
-data class ItemPurchaseRecord(val supplierName:String,val qty:Double,val unitCost:Double,val createdAt:Long,val unit:String="")
+data class ItemSaleRecord(val customerName:String,val qty:Double,val unitPrice:Double,val createdAt:Long)
+data class ItemPurchaseRecord(val supplierName:String,val qty:Double,val unitCost:Double,val createdAt:Long)
 
 // ---- Day Book (Roznamcha) — merged chronological ledger read models ----
 data class DayBookSale(val invoice:String,val customerName:String,val total:Double,val paid:Double,val createdAt:Long,val status:String)
@@ -450,6 +441,10 @@ data class Payment(
     val amount:Double,
     val method:String,
     val note:String="",
+    // NEW (Payments 10/10): optional link to the specific sale invoice / purchase
+    // billNo this payment is against. Blank means it's a general payment against
+    // the party's overall balance, not tied to one bill — the original behavior.
+    val billReference:String="",
     val createdAt:Long=System.currentTimeMillis(),
     val serverId:String?=null,
     val updatedAt:Long=0L,
@@ -867,7 +862,7 @@ interface ProductDao {
     suspend fun dailyProfit(start:Long,end:Long):List<DailyProfit>
     @Query("SELECT COALESCE(SUM(si.cost),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'") suspend fun cogsBetween(start:Long,end:Long):Double
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId AND s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
-    @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt, si.unit as unit FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC") suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
+    @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC") suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
     @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')") suspend fun totalActiveQtySold(barcode:String):Int
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paid, createdAt, status FROM sales WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun salesBetween(start:Long,end:Long):List<DayBookSale>
@@ -1017,7 +1012,7 @@ interface ProductDao {
     @Query("DELETE FROM purchases WHERE billNo=:bill") suspend fun deletePurchase(bill:String)
     @Query("UPDATE purchases SET status='returned' WHERE billNo=:bill") suspend fun markReturned(bill:String)
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.supplierId=:supplierId AND pu.status!='returned' GROUP BY p.name ORDER BY totalAmount DESC") suspend fun itemReportBySupplier(supplierId:Long):List<PartyItemReport>
-    @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt, pi.unit as unit FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC") suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
+    @Query("SELECT COALESCE((SELECT name FROM suppliers WHERE suppliers.id=p.supplierId),'Cash Purchase') as supplierName, pi.qty as qty, pi.unitCost as unitCost, p.createdAt as createdAt FROM purchase_items pi JOIN purchases p ON pi.billNo=p.billNo WHERE pi.barcode=:barcode ORDER BY p.createdAt DESC") suspend fun purchaseRecordsForItem(barcode:String):List<ItemPurchaseRecord>
     @Query("SELECT p.name as product, COALESCE(SUM(pi.amount),0) as totalAmount, COALESCE(SUM(pi.qty),0) as totalQty FROM purchase_items pi JOIN purchases pu ON pi.billNo=pu.billNo JOIN products p ON pi.barcode=p.barcode WHERE pu.status!='returned' GROUP BY p.name ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, paid, createdAt, status FROM purchases WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun purchasesBetween(start:Long,end:Long):List<DayBookPurchase>
 
@@ -1557,6 +1552,16 @@ val MIGRATION_33_34 = object : Migration(33, 34) {
     }
 }
 
+// NEW (Payments 10/10 — link a standalone payment to a specific bill): same
+// low-risk shape as MIGRATION_33_34's supplierInvoiceNo — a plain TEXT column
+// with a '' default, no backfill needed since blank is exactly the correct
+// "not linked to any particular bill" state for every existing payment row.
+val MIGRATION_34_35 = object : Migration(34, 35) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE payments ADD COLUMN billReference TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1569,7 +1574,7 @@ val MIGRATION_33_34 = object : Migration(33, 34) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=34, exportSchema=true
+    version=35, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1596,7 +1601,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

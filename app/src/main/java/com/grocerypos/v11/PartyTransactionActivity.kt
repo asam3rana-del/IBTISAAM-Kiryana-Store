@@ -437,78 +437,136 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     // NEW: small dialog to record money actually paid/received against this party's
     // balance, without needing a full sale or purchase bill.
-    private fun showPaymentDialog() {
-        val padding = (24 * resources.displayMetrics.density).toInt()
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
+    // ---- IMPROVEMENT PACK (Payments 10/10): now doubles as the Edit dialog — pass
+    // an existing Payment to pre-fill every field and save via updatePayment()
+    // instead of creating a new one. Also adds an optional "Link to a bill" picker
+    // so a payment can be tied to one specific sale/purchase instead of only ever
+    // adjusting the party's general balance. ----
+    private fun showPaymentDialog(existing: Payment? = null) {
+        lifecycleScope.launch {
+            val billOptions = loadBillOptionsForParty()
+            val padding = (24 * resources.displayMetrics.density).toInt()
+            val col = LinearLayout(this@PartyTransactionActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
 
-        val amountInput = EditText(this).apply {
-            hint = Loc.t(this@PartyTransactionActivity, "Amount", "\u0631\u0642\u0645")
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        }
-        col.addView(amountInput)
-        col.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (10 * resources.displayMetrics.density).toInt())
-        })
-
-        // ---- IMPROVEMENT PACK (Payments 10/10): date picker, defaulted to today.
-        // Previously every payment was silently timestamped "now" — no way to log
-        // a payment that actually happened yesterday or last week (e.g. entering
-        // the day's collections after closing, or catching up a missed entry).
-        // Capped at today since a payment can't happen in the future. ----
-        val dateCal = java.util.Calendar.getInstance()
-        val dateFmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-        val dateField = TextView(this).apply {
-            text = "\uD83D\uDCC5  " + dateFmt.format(dateCal.time)
-            textSize = 15f
-            setTextColor(Color.parseColor(textDark))
-            setPadding(0, 18, 0, 18)
-            isClickable = true
-            setOnClickListener {
-                android.app.DatePickerDialog(
-                    this@PartyTransactionActivity,
-                    { _, year, month, dayOfMonth ->
-                        dateCal.set(year, month, dayOfMonth)
-                        text = "\uD83D\uDCC5  " + dateFmt.format(dateCal.time)
-                    },
-                    dateCal.get(java.util.Calendar.YEAR),
-                    dateCal.get(java.util.Calendar.MONTH),
-                    dateCal.get(java.util.Calendar.DAY_OF_MONTH)
-                ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
+            val amountInput = EditText(this@PartyTransactionActivity).apply {
+                hint = Loc.t(this@PartyTransactionActivity, "Amount", "\u0631\u0642\u0645")
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                if (existing != null) setText(if (existing.amount == existing.amount.toLong().toDouble()) existing.amount.toLong().toString() else existing.amount.toString())
             }
-        }
-        col.addView(dateField)
-        col.addView(View(this).apply {
-            setBackgroundColor(Color.parseColor(cardBorder))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { setMargins(0, 0, 0, 10) }
-        })
+            col.addView(amountInput)
+            col.addView(View(this@PartyTransactionActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (10 * resources.displayMetrics.density).toInt())
+            })
 
-        val methodSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@PartyTransactionActivity, android.R.layout.simple_spinner_dropdown_item, listOf("cash", "bank"))
-        }
-        col.addView(methodSpinner)
-
-        val noteInput = EditText(this).apply {
-            hint = Loc.t(this@PartyTransactionActivity, "Note (optional)", "\u0646\u0648\u0679 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)")
-        }
-        col.addView(noteInput)
-
-        AlertDialog.Builder(this)
-            .setTitle(if (isCustomer) Loc.t(this, "Receive Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06A9\u0631\u06CC\u06BA")
-                else Loc.t(this, "Make Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06A9\u0631\u06CC\u06BA"))
-            .setView(col)
-            .setPositiveButton(Loc.t(this, "Save", "\u0645\u062D\u0641\u0648\u0638 \u06A9\u0631\u06CC\u06BA")) { _, _ ->
-                val amt = amountInput.text.toString().toDoubleOrNull()
-                if (amt == null || amt <= 0.0) {
-                    Toast.makeText(this, Loc.t(this, "Enter a valid amount", "\u0635\u062D\u06CC\u062D \u0631\u0642\u0645 \u0644\u06A9\u06BE\u06CC\u06BA"), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+            // ---- Date picker, defaulted to today (or the existing payment's date
+            // when editing). Capped at today since a payment can't happen in the
+            // future. ----
+            val dateCal = java.util.Calendar.getInstance().apply { if (existing != null) timeInMillis = existing.createdAt }
+            val dateFmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+            val dateField = TextView(this@PartyTransactionActivity).apply {
+                text = "\uD83D\uDCC5  " + dateFmt.format(dateCal.time)
+                textSize = 15f
+                setTextColor(Color.parseColor(textDark))
+                setPadding(0, 18, 0, 18)
+                isClickable = true
+                setOnClickListener {
+                    android.app.DatePickerDialog(
+                        this@PartyTransactionActivity,
+                        { _, year, month, dayOfMonth ->
+                            dateCal.set(year, month, dayOfMonth)
+                            text = "\uD83D\uDCC5  " + dateFmt.format(dateCal.time)
+                        },
+                        dateCal.get(java.util.Calendar.YEAR),
+                        dateCal.get(java.util.Calendar.MONTH),
+                        dateCal.get(java.util.Calendar.DAY_OF_MONTH)
+                    ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
                 }
-                savePayment(amt, methodSpinner.selectedItem?.toString() ?: "cash", noteInput.text.toString().trim(), dateCal.timeInMillis)
             }
-            .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
-            .show()
+            col.addView(dateField)
+            col.addView(View(this@PartyTransactionActivity).apply {
+                setBackgroundColor(Color.parseColor(cardBorder))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { setMargins(0, 0, 0, 10) }
+            })
+
+            val methodSpinner = Spinner(this@PartyTransactionActivity).apply {
+                adapter = ArrayAdapter(this@PartyTransactionActivity, android.R.layout.simple_spinner_dropdown_item, listOf("cash", "bank"))
+                if (existing != null && existing.method.equals("bank", ignoreCase = true)) setSelection(1)
+            }
+            col.addView(methodSpinner)
+            col.addView(View(this@PartyTransactionActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (10 * resources.displayMetrics.density).toInt())
+            })
+
+            // ---- IMPROVEMENT PACK (Payments 10/10): optional "Link to a bill" picker.
+            // Index 0 is always "General (not linked)" — the original, still-default
+            // behavior of adjusting the party's overall balance only. ----
+            val generalLabel = Loc.t(this@PartyTransactionActivity, "General (not linked to a bill)", "\u0639\u0627\u0645 (\u06A9\u0633\u06CC \u0628\u0644 \u0633\u06D2 \u0645\u0646\u0633\u0644\u06A9 \u0646\u06C1\u06CC\u06BA)")
+            val billLabels = listOf(generalLabel) + billOptions.map { it.label }
+            val billSpinner = Spinner(this@PartyTransactionActivity).apply {
+                adapter = ArrayAdapter(this@PartyTransactionActivity, android.R.layout.simple_spinner_dropdown_item, billLabels)
+                val preselect = existing?.billReference?.takeIf { it.isNotEmpty() }?.let { ref -> billOptions.indexOfFirst { it.ref == ref } }
+                if (preselect != null && preselect >= 0) setSelection(preselect + 1)
+            }
+            col.addView(billSpinner)
+            col.addView(View(this@PartyTransactionActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (10 * resources.displayMetrics.density).toInt())
+            })
+
+            val noteInput = EditText(this@PartyTransactionActivity).apply {
+                hint = Loc.t(this@PartyTransactionActivity, "Note (optional)", "\u0646\u0648\u0679 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)")
+                if (existing != null) setText(existing.note)
+            }
+            col.addView(noteInput)
+
+            AlertDialog.Builder(this@PartyTransactionActivity)
+                .setTitle(
+                    if (existing != null) Loc.t(this@PartyTransactionActivity, "Edit Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0645\u06CC\u06BA \u062A\u0631\u0645\u06CC\u0645")
+                    else if (isCustomer) Loc.t(this@PartyTransactionActivity, "Receive Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06A9\u0631\u06CC\u06BA")
+                    else Loc.t(this@PartyTransactionActivity, "Make Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06A9\u0631\u06CC\u06BA")
+                )
+                .setView(col)
+                .setPositiveButton(Loc.t(this@PartyTransactionActivity, "Save", "\u0645\u062D\u0641\u0648\u0638 \u06A9\u0631\u06CC\u06BA")) { _, _ ->
+                    val amt = amountInput.text.toString().toDoubleOrNull()
+                    if (amt == null || amt <= 0.0) {
+                        Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Enter a valid amount", "\u0635\u062D\u06CC\u062D \u0631\u0642\u0645 \u0644\u06A9\u06BE\u06CC\u06BA"), Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    val method = methodSpinner.selectedItem?.toString() ?: "cash"
+                    val note = noteInput.text.toString().trim()
+                    val billRef = if (billSpinner.selectedItemPosition <= 0) "" else billOptions[billSpinner.selectedItemPosition - 1].ref
+                    if (existing != null) {
+                        updatePayment(existing, amt, method, note, dateCal.timeInMillis, billRef)
+                    } else {
+                        savePayment(amt, method, note, dateCal.timeInMillis, billRef)
+                    }
+                }
+                .setNegativeButton(Loc.t(this@PartyTransactionActivity, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
+                .show()
+        }
     }
 
-    private fun savePayment(amount: Double, method: String, note: String, dateMillis: Long) {
+    private class BillOption(val label: String, val ref: String)
+
+    /** Recent (unreturned) bills for this party, newest first, for the payment
+     * dialog's optional "Link to a bill" picker. */
+    private suspend fun loadBillOptionsForParty(): List<BillOption> {
+        val db = PosDatabase.get(this)
+        return if (isCustomer) {
+            db.saleDao().salesByCustomer(partyId)
+                .filter { it.status != "returned" }
+                .sortedByDescending { it.createdAt }
+                .take(50)
+                .map { BillOption("${it.invoice} \u2022 Rs %.2f".format(it.total), it.invoice) }
+        } else {
+            db.purchaseDao().purchasesBySupplier(partyId)
+                .filter { it.status != "returned" }
+                .sortedByDescending { it.createdAt }
+                .take(50)
+                .map { BillOption("${it.billNo} \u2022 Rs %.2f".format(it.total), it.billNo) }
+        }
+    }
+
+    private fun savePayment(amount: Double, method: String, note: String, dateMillis: Long, billRef: String = "") {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyTransactionActivity)
             val partyType = if (isCustomer) "customer" else "supplier"
@@ -527,7 +585,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 // matching cash-ledger entry use the picked dateMillis (not "now"), so
                 // a backdated payment shows on the right day in both this party's
                 // history AND the Cash/Day Book screens — not just here.
-                val payment = Payment(reference = reference, partyType = partyType, partyId = partyId, amount = amount, method = method, note = note, createdAt = dateMillis)
+                val payment = Payment(reference = reference, partyType = partyType, partyId = partyId, amount = amount, method = method, note = note, billReference = billRef, createdAt = dateMillis)
                 val paymentId = db.paymentDao().insert(payment)
                 SyncQueueHelper.enqueuePayment(db, payment.copy(id = paymentId))
 
@@ -544,7 +602,120 @@ class PartyTransactionActivity : AppCompatActivity() {
 
             Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Payment saved", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0645\u062D\u0641\u0648\u0638 \u06C1\u0648 \u06AF\u0626\u06CC"), Toast.LENGTH_SHORT).show()
             loadTransactions()
+
+            // ---- IMPROVEMENT PACK (Payments 10/10): offer to share a receipt right
+            // after saving — this is the moment the amount/date/method are freshest
+            // in mind, and it's when a customer/supplier is most likely waiting for
+            // a confirmation message. ----
+            offerToShareReceipt(amount, method, note, dateMillis, billRef)
         }
+    }
+
+    /** ---- IMPROVEMENT PACK (Payments 10/10): edits an existing payment in place —
+     * updates the Payment row, adjusts the party's balance by only the *change* in
+     * amount (not the full amount again), and updates the matching cash-ledger
+     * entry (found by the shared `reference`) so Cash/Day Book stays in sync too. */
+    private fun updatePayment(original: Payment, newAmount: Double, newMethod: String, newNote: String, newDateMillis: Long, newBillRef: String) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyTransactionActivity)
+            val delta = newAmount - original.amount
+            val reasonText = (if (isCustomer) "Payment received from $partyName" else "Payment made to $partyName") +
+                if (newNote.isNotEmpty()) " | $newNote" else ""
+
+            db.withTransaction {
+                val updatedPayment = original.copy(amount = newAmount, method = newMethod, note = newNote, billReference = newBillRef, createdAt = newDateMillis, dirty = true)
+                db.paymentDao().update(updatedPayment)
+                SyncQueueHelper.enqueuePayment(db, updatedPayment)
+
+                if (delta != 0.0) {
+                    // Same sign convention as the original insert: a bigger payment
+                    // reduces the balance further; a smaller one gives some back.
+                    if (isCustomer) SyncQueueHelper.adjustCustomerBalance(db, partyId, -delta)
+                    else SyncQueueHelper.adjustSupplierBalance(db, partyId, -delta)
+                }
+
+                db.cashTransactionDao().findByReference(original.reference)?.let { tx ->
+                    val updatedTx = tx.copy(amount = newAmount, method = newMethod.lowercase(), reason = reasonText, createdAt = newDateMillis, dirty = true)
+                    db.cashTransactionDao().update(updatedTx)
+                    SyncQueueHelper.enqueueCashTransaction(db, updatedTx)
+                }
+            }
+            SyncQueueHelper.trigger(this@PartyTransactionActivity)
+            Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Payment updated", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0627\u067E \u0688\u06CC\u0679 \u06C1\u0648 \u06AF\u0626\u06CC"), Toast.LENGTH_SHORT).show()
+            loadTransactions()
+        }
+    }
+
+    /** ---- IMPROVEMENT PACK (Payments 10/10): deletes a payment, reversing exactly
+     * what it did — the balance adjustment and its matching cash-ledger entry —
+     * instead of leaving the party's balance permanently off by that amount. */
+    private fun confirmDeletePayment(payment: Payment) {
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Delete Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0688\u06CC\u0644\u06CC\u0679 \u06A9\u0631\u06CC\u06BA"))
+            .setMessage(Loc.t(
+                this,
+                "Delete this Rs %.2f payment? The party's balance will be adjusted back.".format(payment.amount),
+                "\u06A9\u06CC\u0627 \u06CC\u06C1 Rs %.2f \u06A9\u06CC \u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u062D\u0630\u0641 \u06A9\u06CC \u062C\u0627\u0626\u06D2\u061F \u067E\u0627\u0631\u0679\u06CC \u06A9\u0627 \u0628\u06CC\u0644\u06CC\u0646\u0633 \u0648\u0627\u067E\u0633 \u0627\u06CC\u0688\u062C\u0633\u0679 \u06C1\u0648 \u062C\u0627\u0626\u06D2 \u06AF\u0627\u06D4".format(payment.amount)
+            ))
+            .setPositiveButton(Loc.t(this, "Delete", "\u062D\u0630\u0641 \u06A9\u0631\u06CC\u06BA")) { _, _ -> deletePayment(payment) }
+            .setNegativeButton(Loc.t(this, "Cancel", "\u0645\u0646\u0633\u0648\u062E \u06A9\u0631\u06CC\u06BA"), null)
+            .show()
+    }
+
+    private fun deletePayment(payment: Payment) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@PartyTransactionActivity)
+            db.withTransaction {
+                db.paymentDao().deleteByReference(payment.reference)
+                SyncQueueHelper.enqueueDelete(db, "payment", SyncQueueHelper.paymentEntityId(payment))
+
+                db.cashTransactionDao().findByReference(payment.reference)?.let { tx ->
+                    db.cashTransactionDao().deleteByReference(payment.reference)
+                    SyncQueueHelper.enqueueDelete(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(tx))
+                }
+
+                // Reverse exactly what savePayment() applied: it adjusted by -amount,
+                // so undoing it is +amount.
+                if (isCustomer) SyncQueueHelper.adjustCustomerBalance(db, partyId, payment.amount)
+                else SyncQueueHelper.adjustSupplierBalance(db, partyId, payment.amount)
+            }
+            SyncQueueHelper.trigger(this@PartyTransactionActivity)
+            Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Payment deleted", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u062D\u0630\u0641 \u06C1\u0648 \u06AF\u0626\u06CC"), Toast.LENGTH_SHORT).show()
+            loadTransactions()
+        }
+    }
+
+    /** ---- IMPROVEMENT PACK (Payments 10/10): asks whether to share a receipt for
+     * a just-saved payment, then builds a plain-text message and hands it to
+     * Intent.ACTION_SEND (chooser includes WhatsApp/SMS/etc. — whatever the
+     * device has) rather than sending directly through any one channel. */
+    private fun offerToShareReceipt(amount: Double, method: String, note: String, dateMillis: Long, billRef: String) {
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Share receipt?", "\u0631\u0633\u06CC\u062F \u0634\u06CC\u0626\u0631 \u06A9\u0631\u06CC\u06BA\u061F"))
+            .setMessage(Loc.t(this, "Send a payment confirmation to $partyName?", "$partyName \u06A9\u0648 \u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06A9\u06CC \u062A\u0635\u062F\u06CC\u0642 \u0628\u06BE\u06CC\u062C\u06CC\u06BA\u061F"))
+            .setPositiveButton(Loc.t(this, "Share", "\u0634\u06CC\u0626\u0631 \u06A9\u0631\u06CC\u06BA")) { _, _ -> shareReceipt(amount, method, note, dateMillis, billRef) }
+            .setNegativeButton(Loc.t(this, "Not now", "ابھی نہیں"), null)
+            .show()
+    }
+
+    private fun shareReceipt(amount: Double, method: String, note: String, dateMillis: Long, billRef: String) {
+        val dateText = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(dateMillis))
+        val verb = if (isCustomer) Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC")
+            else Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC")
+        val lines = mutableListOf(
+            "$verb",
+            "${Loc.t(this, "Party", "\u067E\u0627\u0631\u0679\u06CC")}: $partyName",
+            "${Loc.t(this, "Amount", "\u0631\u0642\u0645")}: Rs %.2f".format(amount),
+            "${Loc.t(this, "Date", "\u062A\u0627\u0631\u06CC\u062E")}: $dateText",
+            "${Loc.t(this, "Method", "\u0630\u0631\u06CC\u0639\u06C1")}: ${method.uppercase()}"
+        )
+        if (billRef.isNotEmpty()) lines.add("${Loc.t(this, "Against Bill", "\u0628\u0644 \u0646\u0645\u0628\u0631")}: $billRef")
+        if (note.isNotEmpty()) lines.add("${Loc.t(this, "Note", "\u0646\u0648\u0679")}: $note")
+        val text = lines.joinToString("\n")
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }, Loc.t(this, "Share receipt", "\u0631\u0633\u06CC\u062F \u0634\u06CC\u0626\u0631 \u06A9\u0631\u06CC\u06BA")))
     }
 
     private fun loadTransactions() {
@@ -627,19 +798,17 @@ class PartyTransactionActivity : AppCompatActivity() {
                 val dateText = fmt.format(Date(pay.createdAt))
                 val label = (if (isCustomer) Loc.t(this@PartyTransactionActivity, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC")
                     else Loc.t(this@PartyTransactionActivity, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC")) +
-                    "  \u2022  " + pay.method.uppercase() + (if (pay.note.isNotEmpty()) "  \u2022  ${pay.note}" else "")
+                    "  \u2022  " + pay.method.uppercase() + (if (pay.note.isNotEmpty()) "  \u2022  ${pay.note}" else "") +
+                    (if (pay.billReference.isNotEmpty()) "  \u2022  " + Loc.t(this@PartyTransactionActivity, "Against", "\u0628\u0631\u0627\u06D2 \u0631\u0627\u0633\u062A") + " ${pay.billReference}" else "")
                 entries.add(TxEntry(
                     createdAt = pay.createdAt,
                     isPayment = true,
-                    searchText = "$dateText $label ${pay.amount} ${pay.method} ${pay.note}".lowercase(),
-                    view = row(
-                        amount = pay.amount,
-                        dateText = dateText,
-                        typeLabel = label,
-                        status = "",
-                        accent = teal,
-                        emoji = "\uD83D\uDCB5"
-                    ) { }
+                    searchText = "$dateText $label ${pay.amount} ${pay.method} ${pay.note} ${pay.billReference}".lowercase(),
+                    // ---- IMPROVEMENT PACK (Payments 10/10): payments now get their own
+                    // row with Edit/Delete/Share actions, instead of the plain tap-only
+                    // `row()` used for bills — a wrong amount/date/method could never be
+                    // corrected before, only deleted-and-redone by hand outside the app. ----
+                    view = paymentRow(pay, dateText, label)
                 ))
             }
 
@@ -1478,6 +1647,96 @@ class PartyTransactionActivity : AppCompatActivity() {
             })
         }
     }
+
+    /** ---- IMPROVEMENT PACK (Payments 10/10): dedicated row for payment entries,
+     * with Edit/Delete/Share actions — unlike bill rows (still handled by row()
+     * above), a payment previously had no way to be corrected or reshared once
+     * saved. Visual shape (icon circle + info column + amount) matches row() so
+     * the merged feed still reads as one consistent list. */
+    private fun paymentRow(payment: Payment, dateText: String, typeLabel: String): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 14, 18, 10)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadius = 16f
+                setStroke(1, Color.parseColor(cardBorder))
+            }
+            elevation = 2f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 10) }
+
+            val topRow = LinearLayout(this@PartyTransactionActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            topRow.addView(TextView(this@PartyTransactionActivity).apply {
+                text = "\uD83D\uDCB5"
+                textSize = 16f
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(teal)) }
+                width = (38 * resources.displayMetrics.density).toInt()
+                height = (38 * resources.displayMetrics.density).toInt()
+            })
+            val infoCol = LinearLayout(this@PartyTransactionActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(16, 0, 12, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            infoCol.addView(TextView(this@PartyTransactionActivity).apply {
+                text = dateText
+                textSize = 13.5f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(textDark))
+            })
+            infoCol.addView(TextView(this@PartyTransactionActivity).apply {
+                text = typeLabel
+                textSize = 11f
+                setTextColor(Color.parseColor(labelGray))
+            })
+            topRow.addView(infoCol)
+            topRow.addView(TextView(this@PartyTransactionActivity).apply {
+                text = "Rs %.2f".format(payment.amount)
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(teal))
+            })
+            addView(topRow)
+
+            fun chip(emoji: String, label: String, colorHex: String, onTap: () -> Unit): TextView =
+                TextView(this@PartyTransactionActivity).apply {
+                    text = "$emoji $label"
+                    textSize = 11.5f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(colorHex))
+                    setPadding(20, 12, 20, 12)
+                    background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#F7F8FC"))
+                        cornerRadius = 20f
+                    }
+                    val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    lp.marginEnd = 8
+                    layoutParams = lp
+                    gravity = Gravity.CENTER
+                    isClickable = true
+                    setOnClickListener { onTap() }
+                }
+
+            val actionRow = LinearLayout(this@PartyTransactionActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 10, 0, 0)
+            }
+            actionRow.addView(chip("\u270F\uFE0F", Loc.t(this@PartyTransactionActivity, "Edit", "\u062A\u0631\u0645\u06CC\u0645"), textDark) { showPaymentDialog(existing = payment) })
+            actionRow.addView(chip("\uD83D\uDCE4", Loc.t(this@PartyTransactionActivity, "Share", "\u0634\u06CC\u0626\u0631"), teal) {
+                shareReceipt(payment.amount, payment.method, payment.note, payment.createdAt, payment.billReference)
+            })
+            actionRow.addView(chip("\uD83D\uDDD1\uFE0F", Loc.t(this@PartyTransactionActivity, "Delete", "\u062D\u0630\u0641"), red) { confirmDeletePayment(payment) })
+            (actionRow.getChildAt(2) as TextView).layoutParams = (actionRow.getChildAt(2).layoutParams as LinearLayout.LayoutParams).apply { marginEnd = 0 }
+            addView(actionRow)
+        }
+    }
+
 
     private fun placeholderCard(text: String) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL

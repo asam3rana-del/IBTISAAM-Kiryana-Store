@@ -451,6 +451,7 @@ object SyncQueueHelper {
             "amount" to payment.amount,
             "method" to payment.method,
             "note" to payment.note,
+            "billReference" to payment.billReference,
             "createdAt" to payment.createdAt,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current

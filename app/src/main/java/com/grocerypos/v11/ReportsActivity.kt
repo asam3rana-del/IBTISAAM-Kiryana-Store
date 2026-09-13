@@ -125,6 +125,18 @@ class ReportsActivity : AppCompatActivity() {
 
         navCard.addView(navDivider())
 
+        // NEW (Payments 10/10 — suggestion #3): all-parties Payments Received vs
+        // Made, by Today/Week/Month/All Time — separate from Day Book (mixes
+        // payments with sales/purchases/expenses) and Party Reports' Payment
+        // History (scoped to one party at a time).
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_wallet, accentHex = teal, tintHex = "#E1F5EE",
+            title = Loc.t(this, "Payments Report", "ادائیگیوں کی رپورٹ"),
+            subtitle = Loc.t(this, "Payments received vs made, by period", "ادائیگیاں وصول اور ادا، مدت کے مطابق")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, PaymentsReportActivity::class.java)) })
+
+        navCard.addView(navDivider())
+
         navCard.addView(navRow(
             iconRes = R.drawable.ic_box, accentHex = amber, tintHex = "#FAEEDA",
             title = Loc.t(this, "Stock Report", "اسٹاک رپورٹ"),
