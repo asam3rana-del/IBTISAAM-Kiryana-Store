@@ -104,6 +104,10 @@ class SaleActivity : AppCompatActivity() {
     internal lateinit var unitSpinner: Spinner
     internal lateinit var unitToggleRow: LinearLayout
     internal lateinit var unitPrice: EditText
+    // NEW ("10/10 Sale screen" — loss protection, mirrors PurchaseActivity's
+    // updateMarginWarning()): warns live if the rate being typed is at or below
+    // this item's cost, instead of that only being discoverable later in reports.
+    internal lateinit var marginWarningText: TextView
     internal lateinit var conversionInfo: TextView
     internal lateinit var itemLineTotalText: TextView
     // ---- ADDED (Billed Items inline edit — brings Sale up to Purchase's existing
@@ -446,6 +450,13 @@ class SaleActivity : AppCompatActivity() {
         rateBox.addView(unitPrice)
         itemEntrySection.addView(rateBox)
 
+        marginWarningText = TextView(this).apply {
+            text = ""; textSize = 12f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(16, 10, 16, 10); visibility = View.GONE
+        }
+        itemEntrySection.addView(marginWarningText)
+        itemEntrySection.addView(spacer(6))
+
         conversionInfo = TextView(this).apply {
             text = ""; textSize = 12f; setTextColor(Color.parseColor(teal)); setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(16, 10, 16, 10); visibility = View.GONE
@@ -482,6 +493,7 @@ class SaleActivity : AppCompatActivity() {
                 itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
                 selectedProduct = null; lastMainPrice = 0.0
                 conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
+                marginWarningText.visibility = View.GONE
                 itemLineTotalText.text = "Total Amount: Rs 0"
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
                 imm?.hideSoftInputFromWindow(currentFocus?.windowToken, 0)
@@ -825,6 +837,7 @@ class SaleActivity : AppCompatActivity() {
                 lastMainPrice = toMainUnitPrice(entered)
             }
             updateItemLineTotal()
+            updateMarginWarning()
         })
         unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { refillAutoPrice() }
