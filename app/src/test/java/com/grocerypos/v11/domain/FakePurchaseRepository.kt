@@ -111,7 +111,8 @@ class FakePurchaseRepository(
         lines: List<PurchaseLine>,
         original: Purchase?,
         originalItems: List<PurchaseItem>,
-        suppliers: List<Supplier>
+        suppliers: List<Supplier>,
+        supplierInvoiceNo: String
     ): SavePurchaseResult {
         lastSavePurchaseCall = SavePurchaseCallArgs(
             editBillNo = editBillNo,
