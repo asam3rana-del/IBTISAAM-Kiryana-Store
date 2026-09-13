@@ -411,11 +411,21 @@ class PurchaseHistoryActivity : ThemedActivity() {
         val items = db.purchaseDao().itemsForBill(billNo)
         val row = rows.firstOrNull { it.billNo == billNo }
 
-        val itemsEncoded = items.joinToString("\u0002") { item ->
+        // FIX (build error — "Suspension functions can only be called within
+        // coroutine body", PurchaseHistoryActivity.kt:415): joinToString's
+        // `transform` lambda is a plain (non-inline) function type, so it cannot
+        // call a suspend function like productDao().find() even though this
+        // whole block already runs inside safeLaunch's coroutine. Resolving each
+        // line with a plain for-loop first — which, unlike the lambda, preserves
+        // the surrounding suspend context — then joining the finished strings
+        // fixes it.
+        val lineTexts = mutableListOf<String>()
+        for (item in items) {
             val product = db.productDao().find(item.barcode)
             val qtyText = formatQty(item.qty)
-            listOf(product?.name ?: item.barcode, qtyText, item.unit.ifBlank { product?.unit ?: "" }, item.unitCost, item.amount).joinToString("\u0003")
+            lineTexts.add(listOf(product?.name ?: item.barcode, qtyText, item.unit.ifBlank { product?.unit ?: "" }, item.unitCost, item.amount).joinToString("\u0003"))
         }
+        val itemsEncoded = lineTexts.joinToString("\u0002")
 
         val previewIntent = Intent(this@PurchaseHistoryActivity, BillPreviewActivity::class.java).apply {
             putExtra(BillPreviewActivity.EXTRA_TYPE, "purchase")
