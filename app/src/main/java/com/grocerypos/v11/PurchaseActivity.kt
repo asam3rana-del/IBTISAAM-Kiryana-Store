@@ -1486,7 +1486,22 @@ class PurchaseActivity : ThemedActivity() {
         if (line.retailRate > 0.0 || line.wholesaleRate > 0.0) { refillAutoRate() }
         itemName.setText(line.itemName)
         qty.setText(formatQty(line.qty))
+        // FIX (edited rate silently corrupted — e.g. Rs 2405/Outer turning into
+        // Rs 48.10 after hitting UPDATE ITEM): rate.setText() below fires the rate
+        // TextWatcher, which recomputes lastMainRate by reading unitSpinner's
+        // CURRENTLY selected unit — still whatever applyPickedProduct() defaulted
+        // it to (e.g. "Ctn"), not this line's own unit ("Outer"), since the spinner
+        // isn't switched to line.unit until a few lines below. That mismatched
+        // lastMainRate then gets converted AGAIN when the spinner selection change
+        // below fires refillAutoRate(), compounding a wrong unit-conversion (÷50
+        // here) into the visible rate. Precomputing lastMainRate directly from
+        // line.rate/line.unit — before either the unit switch or the rate text is
+        // set — makes both of those follow-on triggers land back on the same
+        // correct number instead of drifting from it.
+        if (product != null) { lastMainRate = product.toPrimaryUnitRate(line.rate, line.unit) }
+        suppressRateWatcher = true
         rate.setText(if (line.rate == line.rate.toLong().toDouble()) line.rate.toLong().toString() else line.rate.toString())
+        suppressRateWatcher = false
         totalLotPrice.setText("")
         val unitOptions = (unitSpinner.adapter as? ArrayAdapter<*>)?.let { adapter -> (0 until adapter.count).map { adapter.getItem(it).toString() } } ?: listOf(line.unit)
         val unitIndex = unitOptions.indexOf(line.unit)
