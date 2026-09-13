@@ -428,19 +428,29 @@ class PartyDashboardActivity : AppCompatActivity() {
         return row
     }
 
+    // ---- CHANGE (modern minimal UI pass): airier padding (18->22 vertical), the
+    // arrow glyph now sits in a small tinted circular dot instead of loose bold text
+    // (a common "minimal fintech card" motif), and a slightly lower elevation (3f -> 2f)
+    // since the border removal already does most of the work of making the card read
+    // as a distinct surface — a lighter shadow keeps the whole screen feeling calm
+    // rather than "boxy".
     private fun summaryCard(arrow: String, label: String, accentHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 18, 20, 18)
+            setPadding(22, 20, 22, 20)
             background = elevatedCardBg()
-            elevation = 3f
+            elevation = 2f
         }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         topRow.addView(TextView(this).apply {
             text = arrow
-            setTextColor(Color.parseColor(accentHex))
-            textSize = 14f
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            gravity = Gravity.CENTER
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = pillBg(accentHex, radius = 20f)
+            width = (26 * resources.displayMetrics.density).toInt()
+            height = (26 * resources.displayMetrics.density).toInt()
         })
         topRow.addView(TextView(this).apply {
             text = "  $label"
@@ -450,18 +460,32 @@ class PartyDashboardActivity : AppCompatActivity() {
         card.addView(topRow)
         val value = TextView(this).apply {
             text = "Rs 0"
-            textSize = 19f
+            textSize = 20f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor("#2E3242"))
-            setPadding(0, 8, 0, 0)
+            setPadding(0, 10, 0, 0)
         }
         card.addView(value)
         return Pair(card, value)
     }
 
     // ================= TABS =================
+    // ---- CHANGE (modern minimal UI pass): the old design gave every tab its own
+    // white bordered pill (bold red outline on the active one) — three separate cards
+    // sitting side by side. Replaced with a single segmented-control container (flat
+    // light-gray track, no border) where only the ACTIVE tab gets a white pill with a
+    // soft shadow; inactive tabs are plain text on the track. This is the standard
+    // "modern minimal" tab pattern (iOS segmented control / Khatabook's own tab bar)
+    // and reads as one cohesive control instead of three separate buttons.
     private fun buildTabs(): LinearLayout {
-        tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        tabRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(6, 6, 6, 6)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#ECEEF2"))
+                cornerRadius = 24f
+            }
+        }
         renderTabs()
         return tabRow
     }
@@ -479,18 +503,14 @@ class PartyDashboardActivity : AppCompatActivity() {
                 text = label
                 textSize = 13f
                 gravity = Gravity.CENTER
-                setPadding(0, 18, 0, 18)
+                setPadding(0, 16, 0, 16)
                 setTypeface(typeface, if (isActive) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-                setTextColor(Color.parseColor(if (isActive) red else labelGray))
-                background = GradientDrawable().apply {
-                    setColor(Color.parseColor(cardWhite))
-                    cornerRadius = 22f
-                    if (isActive) setStroke(3, Color.parseColor(red)) else setStroke(2, Color.parseColor(cardBorder))
+                setTextColor(Color.parseColor(if (isActive) textDark else labelGray))
+                if (isActive) {
+                    background = pillBg(cardWhite, radius = 18f)
+                    elevation = 2f
                 }
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    val m = 6
-                    setMargins(if (idx == 0) 0 else m, 0, if (idx == entries.lastIndex) 0 else m, 0)
-                }
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener {
                     activeTab = tab
                     renderTabs()
@@ -518,18 +538,17 @@ class PartyDashboardActivity : AppCompatActivity() {
     private fun buildPartySearchRow(): LinearLayout {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
 
+        // ---- CHANGE (modern minimal UI pass): filled, borderless field (light-gray
+        // fill instead of white+stroke) — see buildSearchOnlyRow() below for the
+        // shared rationale.
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 8, 18, 8)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(cardWhite))
-                cornerRadius = 24f
-                setStroke(2, Color.parseColor(cardBorder))
-            }
+            setPadding(18, 10, 18, 10)
+            background = pillBg("#F0F1F5", radius = 18f)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(blue)) })
+        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(labelGray)) })
         searchBox.addView(EditText(this).apply {
             hint = Loc.t(this@PartyDashboardActivity, "Search party", "\u067E\u0627\u0631\u0679\u06CC \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA")
             background = null
@@ -549,7 +568,8 @@ class PartyDashboardActivity : AppCompatActivity() {
             textSize = 15f
             setTextColor(Color.parseColor(labelGray))
             gravity = Gravity.CENTER
-            background = ovalBg(cardWhite, strokeHex = cardBorder)
+            // CHANGE: borderless filled circle instead of white+stroke oval.
+            background = pillBg("#F0F1F5", radius = 20f)
             width = (40 * resources.displayMetrics.density).toInt()
             height = (40 * resources.displayMetrics.density).toInt()
             setOnClickListener { showFilterDialog() }
@@ -559,13 +579,13 @@ class PartyDashboardActivity : AppCompatActivity() {
         row.addView(TextView(this).apply {
             text = "+ " + Loc.t(this@PartyDashboardActivity, "New Party", "\u0646\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC")
             textSize = 13f
-            setTextColor(Color.parseColor(blue))
+            setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(20, 14, 20, 14)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#E9EBFF"))
-                cornerRadius = 22f
-            }
+            // CHANGE: solid accent fill instead of a pale tint — a single confident
+            // accent-colored action button reads more "modern app" than a light-tint
+            // button, and matches the bottom Add Purchase/Add Sale buttons' treatment.
+            background = pillBg(blue, radius = 20f)
             setOnClickListener { startActivity(Intent(this@PartyDashboardActivity, PartyActivity::class.java)) }
         })
 
@@ -573,20 +593,20 @@ class PartyDashboardActivity : AppCompatActivity() {
     }
 
     /** Search box only — used for the Transactions tab (no add button, no filter). */
+    // ---- CHANGE (modern minimal UI pass): filled light-gray pill instead of a white
+    // card with a visible border. A flat filled search field (no stroke) is the more
+    // contemporary pattern — the border was doing the same "separate this from the
+    // background" job the fill now does on its own, just with a harder edge.
     private fun buildSearchOnlyRow(hint: String, onQueryChanged: (String) -> Unit): LinearLayout {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 8, 18, 8)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(cardWhite))
-                cornerRadius = 24f
-                setStroke(2, Color.parseColor(cardBorder))
-            }
+            setPadding(18, 10, 18, 10)
+            background = pillBg("#F0F1F5", radius = 18f)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(blue)) })
+        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(labelGray)) })
         searchBox.addView(EditText(this).apply {
             this.hint = hint
             background = null
@@ -607,18 +627,16 @@ class PartyDashboardActivity : AppCompatActivity() {
     private fun buildItemSearchRow(): LinearLayout {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
 
+        // ---- CHANGE (modern minimal UI pass): same filled borderless field + solid
+        // accent button treatment as the Parties/Transactions search rows above.
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 8, 18, 8)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(cardWhite))
-                cornerRadius = 24f
-                setStroke(2, Color.parseColor(cardBorder))
-            }
+            setPadding(18, 10, 18, 10)
+            background = pillBg("#F0F1F5", radius = 18f)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(blue)) })
+        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(labelGray)) })
         searchBox.addView(EditText(this).apply {
             hint = Loc.t(this@PartyDashboardActivity, "Search item", "\u0622\u0626\u0679\u0645 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA")
             background = null
@@ -636,13 +654,10 @@ class PartyDashboardActivity : AppCompatActivity() {
         row.addView(TextView(this).apply {
             text = "+ " + Loc.t(this@PartyDashboardActivity, "Add Item", "\u0622\u0626\u0679\u0645 \u0634\u0627\u0645\u0644 \u06A9\u0631\u06CC\u06BA")
             textSize = 13f
-            setTextColor(Color.parseColor(blue))
+            setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(20, 14, 20, 14)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#E9EBFF"))
-                cornerRadius = 22f
-            }
+            background = pillBg(blue, radius = 20f)
             setOnClickListener { startActivity(Intent(this@PartyDashboardActivity, ProductActivity::class.java)) }
         })
 
@@ -856,15 +871,19 @@ class PartyDashboardActivity : AppCompatActivity() {
         val amountColor = if (isZero) textDark else if (give) red else green
         val label = if (isZero) "" else if (give) Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA") else Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")
 
+        // ---- CHANGE (modern minimal UI pass): a touch more breathing room per row
+        // (padding 16->18, gap between cards 10->12) now that the border is gone —
+        // borderless cards need slightly more space between them so the eye can still
+        // tell where one ends and the next begins, using whitespace instead of a line.
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 16, 18, 16)
+            setPadding(20, 18, 20, 18)
             background = elevatedCardBg()
-            elevation = 2f
+            elevation = 1.5f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 10) }
+            ).apply { setMargins(0, 0, 0, 12) }
             isClickable = true
             // ---- CHANGE: opens PartyTransactionActivity filtered to this party,
             // instead of the generic PartyActivity. ----
@@ -991,12 +1010,12 @@ class PartyDashboardActivity : AppCompatActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 14, 18, 14)
+            setPadding(18, 16, 18, 16)
             background = elevatedCardBg()
-            elevation = 2f
+            elevation = 1.5f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 10) }
+            ).apply { setMargins(0, 0, 0, 12) }
             isClickable = true
             // ---- CHANGE: tapping a transaction opens it. ADJUST-EXTRA-KEY if
             // SaleActivity/PurchaseActivity expect a different extra name. ----
@@ -1115,12 +1134,12 @@ class PartyDashboardActivity : AppCompatActivity() {
     private fun itemRow(c: ItemAgg): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18, 14, 18, 14)
+            setPadding(18, 16, 18, 16)
             background = elevatedCardBg()
-            elevation = 2f
+            elevation = 1.5f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 10) }
+            ).apply { setMargins(0, 0, 0, 12) }
             isClickable = true
             setOnClickListener { showItemDetailDialog(c) }
 
@@ -1320,10 +1339,24 @@ class PartyDashboardActivity : AppCompatActivity() {
     }
 
     // ================= UI helpers =================
+    // ---- CHANGE (modern minimal UI pass): dropped the 1px border stroke every card
+    // used to have — a bordered-white-square look reads as "form UI", not modern. Cards
+    // now float on the off-white background purely on a soft shadow (elevation), with
+    // a bigger corner radius (16f -> 20f) for a softer, more contemporary shape. This
+    // one shared helper feeds every card on this screen (summary cards, party rows,
+    // transaction rows, item rows, placeholders) so the whole screen re-themes together.
     private fun elevatedCardBg() = GradientDrawable().apply {
         setColor(Color.parseColor(cardWhite))
-        cornerRadius = 16f
-        setStroke(1, Color.parseColor(cardBorder))
+        cornerRadius = 20f
+    }
+
+    // ---- ADDED (modern minimal UI pass): flat, borderless "chip" pill — used for the
+    // segmented tab control's active pill and can be reused anywhere a filled pill
+    // (no stroke) is wanted, as opposed to roundedBackground() which is also stroke-free
+    // but named for full-bleed accent backgrounds rather than small pills.
+    private fun pillBg(colorHex: String, radius: Float = 22f) = GradientDrawable().apply {
+        setColor(Color.parseColor(colorHex))
+        cornerRadius = radius
     }
 
     internal fun roundedBackground(colorHex: String, cornerRadius: Int) = GradientDrawable().apply {
