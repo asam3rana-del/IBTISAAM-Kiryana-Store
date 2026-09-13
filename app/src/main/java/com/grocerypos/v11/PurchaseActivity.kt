@@ -1519,9 +1519,15 @@ class PurchaseActivity : ThemedActivity() {
                         setTextColor(Color.parseColor(textMuted)); textSize = 13.5f
                     })
                 } else {
+                    // FIX (same bug as ItemSearchActivity's Compare Suppliers): normalize
+                    // each record to the product's PRIMARY unit before comparing/averaging,
+                    // since two suppliers (or two purchases from the same supplier) may
+                    // have used different units — raw unitCost isn't apples-to-apples.
                     val bySupplier = records.groupBy { it.supplierName }
+                    fun normalized(r: ItemPurchaseRecord) =
+                        product.toPrimaryUnitRate(r.unitCost, r.unit.ifBlank { product.unit })
                     val summaries = bySupplier.map { (supplier, rows) ->
-                        Triple(supplier, rows.first().unitCost, Pair(rows.sumOf { it.unitCost } / rows.size, rows.size))
+                        Triple(supplier, normalized(rows.first()), Pair(rows.sumOf { normalized(it) } / rows.size, rows.size))
                     }.sortedBy { it.second }
                     val cheapest = summaries.minOf { it.second }
                     summaries.forEach { (supplier, lastRate, avgAndCount) ->
@@ -1543,7 +1549,8 @@ class PurchaseActivity : ThemedActivity() {
                             })
                             top.addView(View(this@PurchaseActivity).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
                             top.addView(TextView(this@PurchaseActivity).apply {
-                                text = "Rs %.2f".format(lastRate); textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                                // FIX: lastRate is now normalized to the product's PRIMARY unit — label it.
+                                text = "Rs %.2f / ${product.unit}".format(lastRate); textSize = 14.5f; setTypeface(typeface, android.graphics.Typeface.BOLD)
                                 setTextColor(Color.parseColor(if (isBest) navy else textDark))
                             })
                             addView(top)

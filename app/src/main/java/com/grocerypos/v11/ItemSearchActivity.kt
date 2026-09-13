@@ -245,11 +245,23 @@ class ItemSearchActivity : ThemedActivity() {
                 detailContainer.addView(emptyRow("No sales of this item yet"))
             } else {
                 saleRecords.forEachIndexed { index, r ->
+                    // FIX: label the qty with the unit it was actually SOLD in
+                    // (r.unit), not always product.unit — a line sold in "Dzn"
+                    // on a Carton-primary product was being mislabeled "Ctn".
+                    val recordUnit = r.unit.ifBlank { product.unit }
                     detailContainer.addView(
                         rateRow(
                             party = r.customerName,
-                            qtyLabel = "${r.qty} ${product.unit}",
-                            rate = r.unitPrice,
+                            qtyLabel = "${r.qty} $recordUnit",
+                            // FIX: normalize to the product's PRIMARY unit before
+                            // display — rateRow/unitBreakdownRow assume the rate
+                            // they're given is already a primary-unit rate (see
+                            // rateBreakdownLabel's doc comment). Passing the raw
+                            // per-recordUnit price straight through silently
+                            // divided it by the wrong conversion factor whenever
+                            // recordUnit != product.unit (e.g. Rs 1799/Dzn was
+                            // shown as Rs 299.67/Dzn after a bogus /6 and /72).
+                            rate = product.toPrimaryUnitRate(r.unitPrice, recordUnit),
                             date = fmt.format(Date(r.createdAt)),
                             colorHex = teal,
                             isLatest = index == 0,
@@ -273,8 +285,16 @@ class ItemSearchActivity : ThemedActivity() {
                 val summaries = bySupplier.map { (supplier, records) ->
                     // records are already newest-first (query orders by createdAt DESC),
                     // so the first one per supplier is that supplier's latest rate.
-                    val lastRate = records.first().unitCost
-                    val avgRate = records.sumOf { it.unitCost } / records.size
+                    // FIX: normalize every record to the product's PRIMARY unit
+                    // before comparing/averaging. Two suppliers who happen to
+                    // sell the same item in different units (one in "Dzn", one
+                    // in "Ctn") were being compared on raw unitCost, which isn't
+                    // an apples-to-apples rate and also fed the wrong number into
+                    // unitBreakdownRow() below.
+                    fun normalized(r: ItemPurchaseRecord) =
+                        product.toPrimaryUnitRate(r.unitCost, r.unit.ifBlank { product.unit })
+                    val lastRate = normalized(records.first())
+                    val avgRate = records.sumOf { normalized(it) } / records.size
                     Triple(supplier, lastRate, Pair(avgRate, records.size))
                 }.sortedBy { it.second }
                 val cheapestRate = summaries.minOf { it.second }
@@ -300,11 +320,12 @@ class ItemSearchActivity : ThemedActivity() {
                 detailContainer.addView(emptyRow("No purchases of this item yet"))
             } else {
                 purchaseRecords.forEachIndexed { index, r ->
+                    val recordUnit = r.unit.ifBlank { product.unit }
                     detailContainer.addView(
                         rateRow(
                             party = r.supplierName,
-                            qtyLabel = "${r.qty} ${product.unit}",
-                            rate = r.unitCost,
+                            qtyLabel = "${r.qty} $recordUnit",
+                            rate = product.toPrimaryUnitRate(r.unitCost, recordUnit),
                             date = fmt.format(Date(r.createdAt)),
                             colorHex = orange,
                             isLatest = index == 0,
@@ -376,7 +397,8 @@ class ItemSearchActivity : ThemedActivity() {
                 top.addView(View(this@ItemSearchActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
             }
             top.addView(TextView(this@ItemSearchActivity).apply {
-                text = "Rs %.2f".format(lastRate)
+                // FIX: lastRate is now normalized to product's PRIMARY unit — label it.
+                text = "Rs %.2f / ${product.unit}".format(lastRate)
                 textSize = 14f
                 setTextColor(Color.parseColor(if (isBest) navy else textDark))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -437,7 +459,11 @@ class ItemSearchActivity : ThemedActivity() {
                 top.addView(View(this@ItemSearchActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
             }
             top.addView(TextView(this@ItemSearchActivity).apply {
-                text = "Rs %.2f".format(rate)
+                // FIX: `rate` is now normalized to the product's PRIMARY unit
+                // (see call sites), so label it as such — otherwise this figure
+                // looks like it's per the unit shown in qtyLabel below, when it
+                // may not be (e.g. a "1 Dzn" line's headline is the per-Ctn rate).
+                text = "Rs %.2f / ${product.unit}".format(rate)
                 textSize = 14f
                 setTextColor(Color.parseColor(colorHex))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
