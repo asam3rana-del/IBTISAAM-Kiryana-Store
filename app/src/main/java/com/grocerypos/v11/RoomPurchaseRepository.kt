@@ -324,7 +324,15 @@ class RoomPurchaseRepository(
             val skipStockTouch = original != null && itemsUnchanged(lines, originalItems)
             db.withTransaction {
                 if (supplierId == null && party.isNotEmpty()) {
-                    supplierId = db.supplierDao().insert(Supplier(name = party))
+                    val newSupplier = Supplier(name = party)
+                    val newId = db.supplierDao().insert(newSupplier)
+                    supplierId = newId
+                    // FIX (supplier name edited from Purchase screen not syncing):
+                    // this inline supplier insert was never enqueued for sync, so a
+                    // renamed/new supplier typed here stayed local-only — the purchase
+                    // itself synced fine (hence other data looked fine), but the other
+                    // device could never resolve supplierServerId to a name.
+                    SyncQueueHelper.enqueueSupplier(db, newSupplier.copy(id = newId))
                 }
                 if (original != null) {
                     if (!skipStockTouch) {
