@@ -82,18 +82,23 @@ interface PurchaseRepository {
 
     suspend fun addUnit(name: String)
 
-    /** Quick-add from the purchase screen's "+" button — matches the original
-     * inline behaviour, which (unlike Party's supplier add) does not enqueue
-     * this insert for sync. */
+    /** Quick-add from the purchase screen's "+" button. Enqueued for sync just like
+     * Party's own supplier add (see RoomPurchaseRepository.addSupplier) — this used
+     * to skip sync entirely, which meant a supplier created here was invisible on
+     * every other device along with its whole payable balance. See the FIX comment
+     * on the implementation for the full story. */
     suspend fun addSupplier(name: String): Supplier
 
     /** Quick-add-product paths (the manual "+ Add New Product" dialog and
-     * bill-scan auto-create) — same no-sync-enqueue behaviour as [addSupplier]. */
+     * bill-scan auto-create) — enqueued for sync just like [addSupplier], for the
+     * same reason: this used to skip sync entirely, leaving the product (and
+     * later its stock/cost) invisible on every other device. */
     suspend fun addProduct(product: Product)
 
     /** Auto-creates a Product for a scanned bill item that doesn't match any
      * existing product, exactly as PurchaseActivity's handleScannedItems used
-     * to inline. [seed] disambiguates the generated barcode across a batch. */
+     * to inline. [seed] disambiguates the generated barcode across a batch.
+     * Enqueued for sync — see [addProduct]'s comment. */
     suspend fun createProductForScan(name: String, cost: Double, seed: Int): Product
 
     suspend fun loadForEdit(billNo: String): PurchaseEditData?

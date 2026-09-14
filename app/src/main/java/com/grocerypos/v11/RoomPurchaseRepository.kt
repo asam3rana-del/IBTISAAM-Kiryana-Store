@@ -63,11 +63,44 @@ class RoomPurchaseRepository(
     override suspend fun addSupplier(name: String): Supplier {
         val supplier = Supplier(name = name)
         val id = db.supplierDao().insert(supplier)
-        return supplier.copy(id = id)
+        val saved = supplier.copy(id = id)
+        // FIX (cross-device "Give"/payables mismatch): this used to only insert the
+        // supplier LOCALLY and never enqueue it for sync at all — unlike
+        // RoomSaleRepository.createCustomer()'s identical quick-add path, which
+        // correctly does. Since every later adjustSupplierBalance() call for this
+        // supplier's purchases pushes an "increment_balance" delta keyed to THIS
+        // supplier's own entity id, and SyncApi's pull-side skips any supplier
+        // document with no "name" field (see the `?: continue` in applyRemoteChanges),
+        // a supplier added via this screen's "+" button silently never reached the
+        // other device — its whole balance (and thus that amount of "You'll Give")
+        // was invisible there, while it still counted normally on this device.
+        SyncQueueHelper.enqueueSupplier(db, saved)
+        SyncQueueHelper.trigger(appContext)
+        return saved
     }
 
     override suspend fun addProduct(product: Product) {
         db.productDao().upsert(product)
+        // FIX (cross-device product/stock mismatch — same root cause as addSupplier
+        // above): this used to only insert the product LOCALLY, exactly like the
+        // pre-fix addSupplier bug. A product quick-added via the Purchase screen's
+        // manual "+ Add New Product" dialog never reached the other device at all —
+        // not its name, price, unit config, or (once this purchase's own
+        // increaseProductStock/updateProductCost calls run) its stock and cost either,
+        // since those are keyed to a barcode that only exists locally. Mirrors the
+        // exact enqueue+trigger pattern ProductActivity's own "Save Product" already
+        // uses.
+        SyncQueueHelper.enqueue(
+            db, "product", SyncQueueHelper.productEntityId(product), "create",
+            SyncQueueHelper.productJson(product)
+        )
+        // Stock is deliberately excluded from productJson()'s snapshot (see the big
+        // comment on adjustCustomerBalance/adjustSupplierBalance above) — a brand-new
+        // product's opening stock must be sent as its own increment. Both quick-add
+        // paths always create with stock=0.0, so this is a no-op today, but keeps this
+        // in step with ProductActivity's pattern if that ever changes.
+        SyncQueueHelper.enqueueProductOpeningStock(db, product.barcode, product.stock, product.cost)
+        SyncQueueHelper.trigger(appContext)
     }
 
     override suspend fun createProductForScan(name: String, cost: Double, seed: Int): Product {
@@ -78,6 +111,17 @@ class RoomPurchaseRepository(
             tertiaryUnit = "", tertiaryUnitQty = 0.0
         )
         db.productDao().upsert(newProduct)
+        // FIX (cross-device product mismatch): same reasoning as addProduct() above —
+        // a bill-scan auto-created product used to exist only on the scanning device,
+        // so the other device would never see this product at all (and later, once
+        // this purchase updates its stock/cost, those changes would target a barcode
+        // that doesn't exist there either).
+        SyncQueueHelper.enqueue(
+            db, "product", SyncQueueHelper.productEntityId(newProduct), "create",
+            SyncQueueHelper.productJson(newProduct)
+        )
+        SyncQueueHelper.enqueueProductOpeningStock(db, newProduct.barcode, newProduct.stock, newProduct.cost)
+        SyncQueueHelper.trigger(appContext)
         return newProduct
     }
 
