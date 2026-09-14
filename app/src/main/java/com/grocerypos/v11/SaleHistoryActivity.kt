@@ -113,21 +113,28 @@ class SaleHistoryActivity : ThemedActivity() {
         super.onCreate(b)
         loadThemeColors()
 
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor(bg))
+        }
+        outer.addView(premiumHeader(
+            icon = R.drawable.ic_receipt,
+            title = "Sale History",
+            subtitle = "All past sales, grouped by customer",
+            primaryHex = navy,
+            primaryDarkHex = navy
+        ))
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 28, 24, 28)
-            setBackgroundColor(Color.parseColor(bg))
+            setPadding(24, 22, 24, 28)
         }
 
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(4, 0, 4, 18)
-            addView(TextView(this@SaleHistoryActivity).apply {
-                text = "Sale History"
-                textSize = 20f
-                setTextColor(Color.parseColor(textDark))
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            addView(View(this@SaleHistoryActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(TextView(this@SaleHistoryActivity).apply {
@@ -135,6 +142,7 @@ class SaleHistoryActivity : ThemedActivity() {
                 textSize = 13f
                 setTextColor(Color.parseColor(teal))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setLeadingIcon(R.drawable.ic_add, teal, 14, 5)
                 setOnClickListener {
                     startActivity(Intent(this@SaleHistoryActivity, SaleActivity::class.java))
                 }
@@ -155,7 +163,7 @@ class SaleHistoryActivity : ThemedActivity() {
             background = strokedBg(border, cardWhite, 24)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 16) }
         }
-        searchBox.addView(TextView(this).apply { text = "\uD83D\uDD0D  "; textSize = 14f; setTextColor(Color.parseColor(navy)) })
+        searchBox.addView(ImageView(this).apply { setImageDrawable(tintedDrawable(R.drawable.ic_search, navy, 15)); setPadding(0, 0, 10, 0) })
         searchField = EditText(this).apply {
             hint = "Search customer"
             background = null
@@ -188,10 +196,11 @@ class SaleHistoryActivity : ThemedActivity() {
         }
         root.addView(emptyText)
 
-        setContentView(ScrollView(this).apply {
+        outer.addView(ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bg))
             addView(root)
         })
+        setContentView(outer)
     }
 
     override fun onResume() {
@@ -370,10 +379,8 @@ class SaleHistoryActivity : ThemedActivity() {
             })
         }
         if (sale.status != "returned") {
-            addView(TextView(this@SaleHistoryActivity).apply {
-                text = "↩"
-                textSize = 16f
-                setTextColor(Color.parseColor(teal))
+            addView(ImageView(this@SaleHistoryActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_undo, teal, 16))
                 setPadding(10, 0, 4, 0)
                 setOnClickListener { confirmReturn(sale.invoice) }
             })

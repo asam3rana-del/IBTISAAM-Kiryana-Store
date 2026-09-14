@@ -11,6 +11,7 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -21,7 +22,7 @@ import com.grocerypos.v11.ui.components.*
 
 private data class DayBookEntry(
     val time: Long,
-    val icon: String,
+    val iconRes: Int,
     val title: String,
     val subtitle: String,
     val amount: Double,
@@ -85,6 +86,8 @@ class DayBookActivity : AppCompatActivity() {
             setPadding(26, 40, 22, 26)
             background = gradientBg(teal, teal)
         }
+        header.addView(iconBadge(R.drawable.ic_book, "#FFFFFF", bgHex = headerOverlay, sizeDp = 40, iconSizeDp = 18))
+        header.addView(spacer(12).apply { layoutParams = LinearLayout.LayoutParams((12 * resources.displayMetrics.density).toInt(), 1) })
         header.addView(TextView(this).apply {
             text = Loc.t(this@DayBookActivity, "Day Book", "روزنامچہ")
             textSize = 20f
@@ -127,7 +130,7 @@ class DayBookActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 18) }
             setOnClickListener { openDatePicker() }
         }
-        dateChip.addView(TextView(this).apply { text = "\uD83D\uDCC5  "; textSize = 14f })
+        dateChip.addView(ImageView(this).apply { setImageDrawable(tintedDrawable(R.drawable.ic_calendar, teal, 15)); setPadding(0, 0, 10, 0) })
         dateValueText = TextView(this).apply {
             text = formatDate(dayMillis)
             textSize = 14f
@@ -252,7 +255,7 @@ class DayBookActivity : AppCompatActivity() {
                 entries.add(
                     DayBookEntry(
                         time = s.createdAt,
-                        icon = "\uD83D\uDED2",
+                        iconRes = R.drawable.ic_cart,
                         title = Loc.t(this@DayBookActivity, "Sale", "سیل") + " \u2022 ${s.customerName}",
                         subtitle = (Loc.t(this@DayBookActivity, "Paid", "ادا شدہ") + ": Rs %.0f".format(s.paid)) + statusNote,
                         amount = s.total,
@@ -267,7 +270,7 @@ class DayBookActivity : AppCompatActivity() {
                 entries.add(
                     DayBookEntry(
                         time = p.createdAt,
-                        icon = "\uD83D\uDCE6",
+                        iconRes = R.drawable.ic_box,
                         title = Loc.t(this@DayBookActivity, "Purchase", "خریداری") + " \u2022 ${p.supplierName}",
                         subtitle = (Loc.t(this@DayBookActivity, "Paid", "ادا شدہ") + ": Rs %.0f".format(p.paid)) + statusNote,
                         amount = p.total,
@@ -281,7 +284,7 @@ class DayBookActivity : AppCompatActivity() {
                 entries.add(
                     DayBookEntry(
                         time = e.createdAt,
-                        icon = "\uD83D\uDCB8",
+                        iconRes = R.drawable.ic_wallet,
                         title = e.category,
                         subtitle = e.description.ifBlank { Loc.t(this@DayBookActivity, "Expense", "خرچہ") },
                         amount = e.amount,
@@ -293,7 +296,7 @@ class DayBookActivity : AppCompatActivity() {
                 entries.add(
                     DayBookEntry(
                         time = c.createdAt,
-                        icon = if (c.type == "IN") "\uD83D\uDCB0" else "\uD83D\uDCB8",
+                        iconRes = if (c.type == "IN") R.drawable.ic_trending else R.drawable.ic_trending_down,
                         title = (if (c.type == "IN") Loc.t(this@DayBookActivity, "Cash In", "کیش ان") else Loc.t(this@DayBookActivity, "Cash Out", "کیش آؤٹ")) + " \u2022 ${c.method.uppercase()}",
                         subtitle = c.reason.ifBlank { Loc.t(this@DayBookActivity, "Manual entry", "دستی اندراج") },
                         amount = c.amount,
@@ -322,24 +325,24 @@ class DayBookActivity : AppCompatActivity() {
     private fun renderSummary(sales: Double, purchases: Double, expenses: Double, cashIn: Double, cashOut: Double) {
         summaryRow.removeAllViews()
         val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row1.addView(statCard("\uD83D\uDED2", Loc.t(this, "Sales", "سیل"), sales, green).apply {
+        row1.addView(statCard(R.drawable.ic_cart, Loc.t(this, "Sales", "سیل"), sales, green).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 10) }
         })
-        row1.addView(statCard("\uD83D\uDCE6", Loc.t(this, "Purchases", "خریداری"), purchases, amber).apply {
+        row1.addView(statCard(R.drawable.ic_box, Loc.t(this, "Purchases", "خریداری"), purchases, amber).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 10) }
         })
         summaryRow.addView(row1)
         val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row2.addView(statCard("\uD83D\uDCB0", Loc.t(this, "Cash In", "کیش ان"), cashIn, green).apply {
+        row2.addView(statCard(R.drawable.ic_trending, Loc.t(this, "Cash In", "کیش ان"), cashIn, green).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 10) }
         })
-        row2.addView(statCard("\uD83D\uDCB8", Loc.t(this, "Cash Out", "کیش آؤٹ"), cashOut + expenses, red).apply {
+        row2.addView(statCard(R.drawable.ic_trending_down, Loc.t(this, "Cash Out", "کیش آؤٹ"), cashOut + expenses, red).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 10) }
         })
         summaryRow.addView(row2)
     }
 
-    private fun statCard(emoji: String, label: String, value: Double, accentHex: String): LinearLayout {
+    private fun statCard(iconRes: Int, label: String, value: Double, accentHex: String): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 16, 18, 16)
@@ -347,10 +350,11 @@ class DayBookActivity : AppCompatActivity() {
             elevation = 2f
         }
         card.addView(TextView(this).apply {
-            text = "$emoji  $label"
+            text = "  $label"
             textSize = 11.5f
             setTextColor(Color.parseColor(textMuted))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setLeadingIcon(iconRes, textMuted, 14, 6)
         })
         card.addView(TextView(this).apply {
             text = "Rs %.0f".format(value)
@@ -384,13 +388,7 @@ class DayBookActivity : AppCompatActivity() {
                     }
                 }
 
-                addView(TextView(this@DayBookActivity).apply {
-                    text = e.icon
-                    textSize = 18f
-                    gravity = Gravity.CENTER
-                    background = ovalBg(if (e.isInflow) lightenHex(green) else lightenHex(red))
-                    val px = (40 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
-                })
+                addView(iconBadge(e.iconRes, if (e.isInflow) green else red, sizeDp = 40, iconSizeDp = 18))
 
                 val infoCol = LinearLayout(this@DayBookActivity).apply {
                     orientation = LinearLayout.VERTICAL

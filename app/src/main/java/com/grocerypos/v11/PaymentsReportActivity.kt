@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Payment
 import com.grocerypos.v11.PosDatabase
+import com.grocerypos.v11.R
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -97,6 +98,8 @@ class PaymentsReportActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = 14 }
             setOnClickListener { finish() }
         })
+        header.addView(iconBadge(R.drawable.ic_wallet, "#FFFFFF", bgHex = headerOverlay, sizeDp = 40, iconSizeDp = 18))
+        header.addView(spacer(12).apply { layoutParams = LinearLayout.LayoutParams((12 * resources.displayMetrics.density).toInt(), 1) })
         header.addView(TextView(this).apply {
             text = Loc.t(this@PaymentsReportActivity, "Payments Report", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC\u0648\u06BA \u06A9\u06CC \u0631\u067E\u0648\u0631\u0679")
             textSize = 19f
@@ -380,14 +383,7 @@ class PaymentsReportActivity : AppCompatActivity() {
                 }
             }
 
-            addView(TextView(this@PaymentsReportActivity).apply {
-                text = if (row.isCustomer) "\uD83D\uDCB0" else "\uD83D\uDCB8"
-                textSize = 16f
-                gravity = Gravity.CENTER
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(accent)) }
-                width = (38 * resources.displayMetrics.density).toInt()
-                height = (38 * resources.displayMetrics.density).toInt()
-            })
+            addView(iconBadge(if (row.isCustomer) R.drawable.ic_trending else R.drawable.ic_trending_down, accent, sizeDp = 38, iconSizeDp = 17))
 
             val infoCol = LinearLayout(this@PaymentsReportActivity).apply {
                 orientation = LinearLayout.VERTICAL
