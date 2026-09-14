@@ -681,26 +681,21 @@ class HistoryActivity : AppCompatActivity() {
             isClickable = true
             setOnClickListener { onClick() }
 
-            addView(FrameLayout(this@HistoryActivity).apply {
-                val size = (38 * resources.displayMetrics.density).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size)
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(tintHex)) }
-                addView(ImageView(this@HistoryActivity).apply {
-                    setImageDrawable(tintedDrawable(iconRes, accentHex, 17))
-                    scaleType = ImageView.ScaleType.CENTER
-                    layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-                })
-            })
-
+            // NOTE: leading cart/receipt icon circle removed and the bill/invoice
+            // number (reference) is no longer shown — the party name is now the
+            // prominent bold line instead. See HistoryActivity chat request:
+            // trolley icon aur purchase/invoice number hata kar name prominent
+            // kiya gaya (same treatment for both Sale and Purchase rows since
+            // they share this one row() renderer).
             val infoCol = LinearLayout(this@HistoryActivity).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(14, 0, 8, 0)
+                setPadding(0, 0, 8, 0)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             val nameRow = LinearLayout(this@HistoryActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             nameRow.addView(TextView(this@HistoryActivity).apply {
-                text = reference
-                textSize = 14f
+                text = subtitle
+                textSize = 15f
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(Color.parseColor(textDark))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -717,16 +712,10 @@ class HistoryActivity : AppCompatActivity() {
             }
             infoCol.addView(nameRow)
             infoCol.addView(TextView(this@HistoryActivity).apply {
-                text = subtitle
-                textSize = 12f
+                text = date
+                textSize = 11.5f
                 setTextColor(Color.parseColor(textGray))
                 setPadding(0, 3, 0, 0)
-            })
-            infoCol.addView(TextView(this@HistoryActivity).apply {
-                text = date
-                textSize = 11f
-                setTextColor(Color.parseColor(textGray))
-                setPadding(0, 2, 0, 0)
             })
             addView(infoCol)
 
