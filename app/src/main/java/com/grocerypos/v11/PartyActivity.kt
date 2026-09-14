@@ -462,6 +462,11 @@ class PartyActivity : AppCompatActivity() {
             PartyEvent.Saved -> Loc.t(this, "Saved", "محفوظ ہو گیا")
             PartyEvent.Updated -> Loc.t(this, "Updated", "اپ ڈیٹ ہو گیا")
             PartyEvent.Deleted -> Loc.t(this, "Deleted", "حذف ہو گیا")
+            // Both already handled (and returned from) above — these two branches only
+            // exist so the `when` stays exhaustive over the sealed PartyEvent class;
+            // they're unreachable in practice.
+            is PartyEvent.DuplicatePaymentsFound -> return
+            is PartyEvent.DuplicatePaymentsCleaned -> return
             is PartyEvent.BalancesRecalculated -> {
                 val total = event.customersFixed + event.suppliersFixed
                 if (total == 0) {
