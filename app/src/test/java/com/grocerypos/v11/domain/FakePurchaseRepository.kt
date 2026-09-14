@@ -71,8 +71,8 @@ class FakePurchaseRepository(
         units.add(UnitType(name))
     }
 
-    override suspend fun addSupplier(name: String): Supplier {
-        val newSupplier = Supplier(id = (suppliers.size + 1).toLong(), name = name)
+    override suspend fun addSupplier(name: String, phone: String, openingBalance: Double): Supplier {
+        val newSupplier = Supplier(id = (suppliers.size + 1).toLong(), name = name, phone = phone, openingBalance = openingBalance)
         suppliers.add(newSupplier)
         return newSupplier
     }

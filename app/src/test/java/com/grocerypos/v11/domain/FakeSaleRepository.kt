@@ -92,8 +92,8 @@ class FakeSaleRepository(
 
     override suspend fun topProductNames(sinceMillis: Long, uptoMillis: Long): List<String> = emptyList()
 
-    override suspend fun createCustomer(name: String): Customer {
-        val newCustomer = Customer(id = (customers.size + 1).toLong(), name = name)
+    override suspend fun createCustomer(name: String, phone: String, creditLimit: Double, openingBalance: Double): Customer {
+        val newCustomer = Customer(id = (customers.size + 1).toLong(), name = name, phone = phone, creditLimit = creditLimit, openingBalance = openingBalance)
         customers.add(newCustomer)
         return newCustomer
     }
