@@ -118,7 +118,7 @@ class SaleHistoryActivity : ThemedActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
         outer.addView(premiumHeader(
-            icon = R.drawable.ic_receipt,
+            iconRes = R.drawable.ic_receipt,
             title = "Sale History",
             subtitle = "All past sales, grouped by customer",
             primaryHex = navy,

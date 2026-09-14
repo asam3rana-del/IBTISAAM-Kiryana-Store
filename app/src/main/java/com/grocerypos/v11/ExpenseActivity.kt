@@ -84,7 +84,7 @@ class ExpenseActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
         outer.addView(premiumHeader(
-            icon = R.drawable.ic_wallet,
+            iconRes = R.drawable.ic_wallet,
             title = Loc.t(this@ExpenseActivity, "Expenses", "اخراجات"),
             subtitle = Loc.t(this@ExpenseActivity, "Track your business spending", "اپنے کاروباری اخراجات ٹریک کریں"),
             primaryHex = navy,

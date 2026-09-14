@@ -86,7 +86,7 @@ class CashActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
         outer.addView(premiumHeader(
-            icon = R.drawable.ic_wallet,
+            iconRes = R.drawable.ic_wallet,
             title = Loc.t(this@CashActivity, "Cash In / Cash Out", "کیش ان / کیش آؤٹ"),
             subtitle = Loc.t(this@CashActivity, "Record cash movements", "کیش کی آمد و رفت درج کریں"),
             primaryHex = navy,
