@@ -11,6 +11,7 @@ import com.grocerypos.v11.domain.GetCustomerHistoryUseCase
 import com.grocerypos.v11.domain.GetSupplierHistoryUseCase
 import com.grocerypos.v11.domain.ObserveCustomersUseCase
 import com.grocerypos.v11.domain.ObserveSuppliersUseCase
+import com.grocerypos.v11.domain.RecalculateBalancesUseCase
 import com.grocerypos.v11.domain.SaveCustomerUseCase
 import com.grocerypos.v11.domain.SaveSupplierUseCase
 import com.grocerypos.v11.domain.UpdateCustomerUseCase
@@ -38,7 +39,8 @@ class PartyViewModelFactory(context: Context) : ViewModelProvider.Factory {
             deleteCustomer = DeleteCustomerUseCase(repository),
             deleteSupplier = DeleteSupplierUseCase(repository),
             getCustomerHistory = GetCustomerHistoryUseCase(repository),
-            getSupplierHistory = GetSupplierHistoryUseCase(repository)
+            getSupplierHistory = GetSupplierHistoryUseCase(repository),
+            recalculateBalancesUseCase = RecalculateBalancesUseCase(repository)
         ) as T
     }
 }

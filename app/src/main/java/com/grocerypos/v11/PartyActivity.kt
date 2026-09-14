@@ -84,6 +84,7 @@ class PartyActivity : AppCompatActivity() {
     // uiState, they just narrow what render() draws from the last state it got. ----
     private lateinit var searchField: EditText
     private lateinit var duesOnlyChip: TextView
+    private lateinit var recalculateChip: TextView
     private var searchQuery: String = ""
     private var duesOnly: Boolean = false
     private var lastState: PartyUiState? = null
@@ -281,6 +282,25 @@ class PartyActivity : AppCompatActivity() {
             }
         }
         filterRow.addView(duesOnlyChip)
+        filterRow.addView(spacer(10).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+        })
+        // NEW (Recalculate Balances): a party's balance is a running total nudged by
+        // every sale/purchase/payment, not something recomputed from the visible
+        // history each time — so it can quietly drift out of sync with the party's
+        // actual bills (see PartyRepository.recalculateBalances()). This lets the
+        // shop owner fix that drift on demand instead of only Claude being able to.
+        recalculateChip = TextView(this).apply {
+            text = Loc.t(this@PartyActivity, "Fix Balances", "بیلنس ٹھیک کریں")
+            textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding((16 * d).toInt(), (14 * d).toInt(), (16 * d).toInt(), (14 * d).toInt())
+            background = roundedBackground("#EEF0F7", 24)
+            setTextColor(Color.parseColor("#6B7280"))
+            setLeadingIcon(R.drawable.ic_sync, "#6B7280", 14, 6)
+            setOnClickListener { confirmRecalculateBalances() }
+        }
+        filterRow.addView(recalculateChip)
         root.addView(filterRow)
 
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -378,6 +398,18 @@ class PartyActivity : AppCompatActivity() {
             PartyEvent.Saved -> Loc.t(this, "Saved", "محفوظ ہو گیا")
             PartyEvent.Updated -> Loc.t(this, "Updated", "اپ ڈیٹ ہو گیا")
             PartyEvent.Deleted -> Loc.t(this, "Deleted", "حذف ہو گیا")
+            is PartyEvent.BalancesRecalculated -> {
+                val total = event.customersFixed + event.suppliersFixed
+                if (total == 0) {
+                    Loc.t(this, "All balances already correct", "تمام بیلنس پہلے ہی درست ہیں")
+                } else {
+                    Loc.t(
+                        this,
+                        "Fixed ${event.customersFixed} customer(s), ${event.suppliersFixed} supplier(s)",
+                        "${event.customersFixed} کسٹمرز اور ${event.suppliersFixed} سپلائرز کا بیلنس ٹھیک ہو گیا"
+                    )
+                }
+            }
         }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         if (event == PartyEvent.Saved) {
@@ -386,6 +418,24 @@ class PartyActivity : AppCompatActivity() {
             creditLimitField.text.clear()
             openingBalanceField.text.clear()
         }
+    }
+
+    // NEW (Recalculate Balances): confirmation before running — this touches every
+    // customer/supplier's stored balance, so it should be a deliberate action, not
+    // something a stray tap triggers.
+    private fun confirmRecalculateBalances() {
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Recalculate Balances", "بیلنس دوبارہ شمار کریں"))
+            .setMessage(
+                Loc.t(
+                    this,
+                    "This checks every customer's and supplier's balance against their actual bills and payments, and fixes any that don't match. Continue?",
+                    "یہ ہر کسٹمر اور سپلائر کا بیلنس ان کے اصل بلوں اور ادائیگیوں سے ملا کر چیک کرے گا، اور جو میل نہیں کھاتے انہیں ٹھیک کر دے گا۔ جاری رکھیں؟"
+                )
+            )
+            .setPositiveButton(Loc.t(this, "Recalculate", "دوبارہ شمار کریں")) { _, _ -> viewModel.recalculateBalances() }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
     }
 
     // ================= Contact picker =================

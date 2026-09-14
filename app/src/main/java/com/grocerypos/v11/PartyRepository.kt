@@ -86,4 +86,52 @@ class PartyRepository(
 
     suspend fun purchasesBySupplier(supplierId: Long): List<Purchase> =
         db.purchaseDao().purchasesBySupplier(supplierId)
+
+    // NEW (Recalculate Balances): `customer.balance` / `supplier.balance` are running
+    // totals — nudged up/down by SyncQueueHelper.adjustCustomerBalance/
+    // adjustSupplierBalance on every sale, purchase, payment, edit, return, and delete
+    // (see those functions' comments) — rather than something computed fresh from the
+    // visible transaction list each time it's shown. That makes them fast to read, but
+    // it also means any adjustment that ever fired without a matching real transaction
+    // (a duplicate bill saved and deleted before the double-entry guard existed, an
+    // interrupted multi-device sync, etc.) leaves a permanent drift that the ledger
+    // itself never shows — the party's "You'll Give/Get" stops matching the sum of
+    // their own bills. This recomputes each party's balance from scratch, straight
+    // from their actual active (non-returned) bills and recorded payments, and nudges
+    // the stored field back in line with only the *difference* — via the same
+    // adjustCustomerBalance/adjustSupplierBalance path every other write already
+    // uses — so the correction is a normal, sync-safe increment like any other,
+    // not a raw overwrite that could clobber another device's not-yet-synced change.
+    suspend fun recalculateBalances(): RecalcResult {
+        var customersFixed = 0
+        var suppliersFixed = 0
+        val customers = db.customerDao().allList()
+        for (c in customers) {
+            val sales = db.saleDao().salesByCustomer(c.id).filter { it.status != "returned" }
+            val payments = db.paymentDao().listByParty("customer", c.id)
+            val trueBalance = sales.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
+            val delta = trueBalance - c.balance
+            if (Math.abs(delta) > 0.009) {
+                SyncQueueHelper.adjustCustomerBalance(db, c.id, delta)
+                customersFixed++
+            }
+        }
+        val suppliers = db.supplierDao().allList()
+        for (s in suppliers) {
+            val purchases = db.purchaseDao().purchasesBySupplier(s.id).filter { it.status != "returned" }
+            val payments = db.paymentDao().listByParty("supplier", s.id)
+            val trueBalance = purchases.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
+            val delta = trueBalance - s.balance
+            if (Math.abs(delta) > 0.009) {
+                SyncQueueHelper.adjustSupplierBalance(db, s.id, delta)
+                suppliersFixed++
+            }
+        }
+        if (customersFixed > 0 || suppliersFixed > 0) SyncQueueHelper.trigger(appContext)
+        return RecalcResult(customersFixed, suppliersFixed)
+    }
 }
+
+/** Result of [PartyRepository.recalculateBalances] — how many customers/suppliers
+ * actually had a drifted balance corrected (0/0 means everything already matched). */
+data class RecalcResult(val customersFixed: Int, val suppliersFixed: Int)

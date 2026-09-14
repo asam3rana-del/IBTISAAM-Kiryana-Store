@@ -10,6 +10,7 @@ import com.grocerypos.v11.domain.GetCustomerHistoryUseCase
 import com.grocerypos.v11.domain.GetSupplierHistoryUseCase
 import com.grocerypos.v11.domain.ObserveCustomersUseCase
 import com.grocerypos.v11.domain.ObserveSuppliersUseCase
+import com.grocerypos.v11.domain.RecalculateBalancesUseCase
 import com.grocerypos.v11.domain.SaveCustomerUseCase
 import com.grocerypos.v11.domain.SavePartyResult
 import com.grocerypos.v11.domain.SaveSupplierUseCase
@@ -37,6 +38,9 @@ sealed class PartyEvent {
     object Saved : PartyEvent()
     object Updated : PartyEvent()
     object Deleted : PartyEvent()
+    // NEW (Recalculate Balances): how many customers/suppliers actually had a
+    // drifted balance corrected — 0/0 means everything already matched.
+    data class BalancesRecalculated(val customersFixed: Int, val suppliersFixed: Int) : PartyEvent()
 }
 
 class PartyViewModel(
@@ -49,7 +53,8 @@ class PartyViewModel(
     private val deleteCustomer: DeleteCustomerUseCase,
     private val deleteSupplier: DeleteSupplierUseCase,
     private val getCustomerHistory: GetCustomerHistoryUseCase,
-    private val getSupplierHistory: GetSupplierHistoryUseCase
+    private val getSupplierHistory: GetSupplierHistoryUseCase,
+    private val recalculateBalancesUseCase: RecalculateBalancesUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PartyUiState())
@@ -125,4 +130,13 @@ class PartyViewModel(
     suspend fun customerHistory(customer: Customer) = getCustomerHistory(customer)
 
     suspend fun supplierHistory(supplier: Supplier) = getSupplierHistory(supplier)
+
+    /** "Recalculate Balances" action — see RecalculateBalancesUseCase /
+     * PartyRepository.recalculateBalances() for what actually gets fixed. */
+    fun recalculateBalances() {
+        viewModelScope.launch {
+            val result = recalculateBalancesUseCase()
+            _events.emit(PartyEvent.BalancesRecalculated(result.customersFixed, result.suppliersFixed))
+        }
+    }
 }

@@ -5,6 +5,7 @@ import com.grocerypos.v11.Purchase
 import com.grocerypos.v11.Sale
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.data.PartyRepository
+import com.grocerypos.v11.data.RecalcResult
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -131,4 +132,10 @@ class GetCustomerHistoryUseCase(private val repository: PartyRepository) {
 class GetSupplierHistoryUseCase(private val repository: PartyRepository) {
     suspend operator fun invoke(supplier: Supplier): List<Purchase> =
         repository.purchasesBySupplier(supplier.id)
+}
+
+/** Recomputes every customer/supplier balance from their actual bills + payments
+ * and corrects any drift — see PartyRepository.recalculateBalances(). */
+class RecalculateBalancesUseCase(private val repository: PartyRepository) {
+    suspend operator fun invoke(): RecalcResult = repository.recalculateBalances()
 }
