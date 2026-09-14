@@ -343,6 +343,15 @@ object SyncApi {
             val openingBalance = (row["openingBalance"] as? Number)?.toDouble() ?: 0.0
             val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
             val localPendingBalance = pendingDelta("customer", serverId, "increment_balance")
+            // FIX (2-device sync — same class of bug as the purchase/sale fix above):
+            // a name/phone edit on THIS device is pushed as a separate "upsert" queue
+            // entry. If a pull ran before that specific push confirmed, this loop used
+            // to overwrite the local row from the server's still-old copy anyway — only
+            // logging it as a "sync_conflict" audit entry instead of preventing it, even
+            // though it's this device's own unconfirmed edit, not a real conflict from
+            // another device. Skipping while that upsert is still pending leaves the
+            // local edit intact; the very next successful push+pull resumes normally.
+            if (db.syncQueueDao().pendingForEntityAnyRetry("customer", serverId, "upsert").isNotEmpty()) continue
 
             val existing = custDao.findByServerId(serverId)
             if (existing != null) {
@@ -383,6 +392,11 @@ object SyncApi {
             val openingBalance = (row["openingBalance"] as? Number)?.toDouble() ?: 0.0
             val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
             val localPendingBalance = pendingDelta("supplier", serverId, "increment_balance")
+            // FIX (2-device sync): see the matching customer-loop comment above — same
+            // guard so a supplier rename/edit still waiting to push (e.g. exactly the
+            // "Cash Purchase" -> "M Deen & brother's" edit reported) can't be reverted
+            // by a pull that lands first.
+            if (db.syncQueueDao().pendingForEntityAnyRetry("supplier", serverId, "upsert").isNotEmpty()) continue
 
             val existing = suppDao.findByServerId(serverId)
             if (existing != null) {
@@ -449,6 +463,12 @@ object SyncApi {
             val stock = (row["stock"] as? Number)?.toDouble()
             val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
             val localPendingStock = pendingDelta("product", barcode, "increment_stock")
+            // FIX (2-device sync): see the matching customer-loop comment above. Only
+            // guards against a pending "upsert" (name/price/etc.) — deliberately NOT a
+            // blanket pendingCountForEntity check, since a product almost always has
+            // some pending "increment_stock" entry in flight from ordinary sales/
+            // purchases; blocking on those too would stall product syncing constantly.
+            if (db.syncQueueDao().pendingForEntityAnyRetry("product", barcode, "upsert").isNotEmpty()) continue
 
             val existing = prodDao.find(barcode)
             if (existing != null) {
