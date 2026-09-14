@@ -305,6 +305,52 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // FIX (duplicate-payment-on-sync bug): every call site that used to do
+    // `db.paymentDao().deleteByReference(ref)` / `db.cashTransactionDao().deleteByReference(ref)`
+    // directly (purchase/sale edit, bill delete, returns, "edit billed item") removed the
+    // row(s) from THIS device's Room database only — nothing ever told the sync queue a
+    // payment/cash-transaction had been deleted, so the old row was never deleted on the
+    // server or on any other device. The next edit of the same bill then inserted a brand
+    // new payment for the (again full) paid amount, which synced out as normal — so the
+    // OTHER device (or this same device after a fresh pull) ended up with both the old,
+    // never-deleted payment AND the new one, silently doubling how much the party looked
+    // like it had been paid. Repeated edits compound this (that's the "Rs 4,381,674 You'll
+    // Get" on a supplier that should read close to Rs 0 — several edits' worth of stray
+    // duplicate payments, each counted as an overpayment). These two helpers replace every
+    // direct deleteByReference() call: they read the row(s) first (so the already-stamped
+    // serverId is available — never recomputed from this device's own id, which would be
+    // wrong for a row that originated on a different device), delete locally, and enqueue
+    // a matching "delete" for each one so the removal actually propagates.
+    suspend fun deletePaymentsByReference(db: PosDatabase, reference: String) {
+        val payments = db.paymentDao().allByReference(reference)
+        if (payments.isEmpty()) return
+        db.paymentDao().deleteByReference(reference)
+        for (p in payments) {
+            enqueue(db, "payment", p.serverId ?: paymentEntityId(p), "delete", "{}")
+        }
+    }
+
+    // ADDED (Cleanup Duplicate Payments): companion to deletePaymentsByReference() above,
+    // but for removing exactly ONE stale duplicate row instead of every payment sharing a
+    // reference — a duplicate group keeps its one correct payment and only deletes the
+    // rest (see PartyRepository.findDuplicatePayments()/cleanupDuplicatePayments()). Same
+    // reasoning as that fix: delete locally AND enqueue the matching sync delete, using
+    // the row's own already-stamped serverId so this doesn't accidentally target the wrong
+    // server-side record if the row originated on another device.
+    suspend fun deletePayment(db: PosDatabase, payment: Payment) {
+        db.paymentDao().deleteById(payment.id)
+        enqueue(db, "payment", payment.serverId ?: paymentEntityId(payment), "delete", "{}")
+    }
+
+    suspend fun deleteCashTransactionsByReference(db: PosDatabase, reference: String) {
+        val txns = db.cashTransactionDao().allByReference(reference)
+        if (txns.isEmpty()) return
+        db.cashTransactionDao().deleteByReference(reference)
+        for (t in txns) {
+            enqueue(db, "cash_transaction", t.serverId ?: cashTransactionEntityId(t), "delete", "{}")
+        }
+    }
+
     // ---------- Payload builders ----------
 
     fun customerJson(c: Customer): String {

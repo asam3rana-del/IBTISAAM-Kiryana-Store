@@ -1019,10 +1019,20 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE method=:method AND createdAt BETWEEN :start AND :end") suspend fun totalByMethodBetween(method:String,start:Long,end:Long):Double
     @Query("DELETE FROM payments WHERE reference=:ref") suspend fun deleteByReference(ref:String)
+    // FIX (duplicate-payment-on-sync bug): every deleteByReference() call site used to
+    // delete straight from Room with no way to also tell the sync queue which specific
+    // payment row(s) it just removed — see SyncQueueHelper.deletePaymentsByReference()
+    // for why that silently left orphaned payments on other devices/the server.
+    @Query("SELECT * FROM payments WHERE reference=:ref") suspend fun allByReference(ref:String):List<Payment>
     // ADDED (cash record consistency fix): lets a single billed-item edit/delete
     // (PartyTransactionActivity) find and adjust the one payment tied to a bill
     // instead of only being able to delete or total them.
     @Query("SELECT * FROM payments WHERE reference=:ref LIMIT 1") suspend fun findByReference(ref:String):Payment?
+    // ADDED (Cleanup Duplicate Payments): deletePaymentsByReference() below removes every
+    // payment sharing a reference — wrong here, since a duplicate-payment group has exactly
+    // ONE row that's still correct (see PartyRepository.findDuplicatePayments()) and only the
+    // rest should go. This deletes a single row by its own id instead.
+    @Query("DELETE FROM payments WHERE id=:id") suspend fun deleteById(id:Long)
     // ADDED (force full resync): every local payment row, unfiltered.
     @Query("SELECT * FROM payments ORDER BY createdAt DESC") suspend fun allRaw():List<Payment>
     // ADDED (multi-device two-way sync): needed so a pulled payment that this same
@@ -1128,6 +1138,9 @@ interface ProductDao {
     // ADDED (Balance Sheet): all-time IN/OUT total per method, for the Cash/Bank asset lines.
     @Query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE type=:type AND method=:method") suspend fun totalAll(type:String,method:String):Double
     @Query("DELETE FROM cash_transactions WHERE reference=:ref") suspend fun deleteByReference(ref:String)
+    // FIX (duplicate-payment-on-sync bug): see PaymentDao.allByReference() above —
+    // same reasoning, for the matching cash-drawer entry.
+    @Query("SELECT * FROM cash_transactions WHERE reference=:ref") suspend fun allByReference(ref:String):List<CashTransaction>
     // ADDED (cash record consistency fix): lets a single billed-item edit/delete
     // (PartyTransactionActivity) find and adjust the one cash transaction tied to a
     // bill instead of only being able to delete or total them.

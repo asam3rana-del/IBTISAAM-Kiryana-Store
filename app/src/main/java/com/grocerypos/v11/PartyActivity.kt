@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
+import com.grocerypos.v11.data.DuplicatePaymentGroup
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -86,6 +87,7 @@ class PartyActivity : AppCompatActivity() {
     private lateinit var duesOnlyChip: TextView
     private lateinit var recalculateChip: TextView
     private lateinit var mergeDuplicatesChip: TextView
+    private lateinit var cleanupPaymentsChip: TextView
     private var searchQuery: String = ""
     private var duesOnly: Boolean = false
     private var lastState: PartyUiState? = null
@@ -320,6 +322,26 @@ class PartyActivity : AppCompatActivity() {
             setOnClickListener { confirmMergeDuplicates() }
         }
         filterRow.addView(mergeDuplicatesChip)
+        filterRow.addView(spacer(10).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+        })
+        // NEW (Cleanup Duplicate Payments): the duplicate-payment-on-sync bug (fixed in
+        // Database.kt/SyncQueueHelper.kt) left stray leftover payment rows behind on every
+        // purchase/sale edit that happened before the fix — those rows are still sitting in
+        // the database inflating balances even though no new ones can be created now. This
+        // finds and removes exactly those old rows. See PartyRepository.findDuplicatePayments()
+        // / cleanupDuplicatePayments().
+        cleanupPaymentsChip = TextView(this).apply {
+            text = Loc.t(this@PartyActivity, "Cleanup Payments", "ادائیگیاں صاف کریں")
+            textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding((16 * d).toInt(), (14 * d).toInt(), (16 * d).toInt(), (14 * d).toInt())
+            background = roundedBackground("#EEF0F7", 24)
+            setTextColor(Color.parseColor("#6B7280"))
+            setLeadingIcon(R.drawable.ic_wallet, "#6B7280", 14, 6)
+            setOnClickListener { viewModel.findDuplicatePayments() }
+        }
+        filterRow.addView(cleanupPaymentsChip)
         root.addView(filterRow)
 
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -412,6 +434,29 @@ class PartyActivity : AppCompatActivity() {
     }
 
     private fun handleEvent(event: PartyEvent) {
+        // NEW (Cleanup Duplicate Payments): these two don't fit the generic "run it, then
+        // toast a one-line summary" pattern below — Found needs a preview dialog listing
+        // what was found (with its own confirm/cancel) BEFORE anything is deleted, and
+        // Cleaned reuses that same "Fixed X customer(s), Y supplier(s)" phrasing as
+        // BalancesRecalculated so it still needs its own branch to add the removed-payments
+        // count in front of it.
+        if (event is PartyEvent.DuplicatePaymentsFound) {
+            showDuplicatePaymentsPreview(event.groups)
+            return
+        }
+        if (event is PartyEvent.DuplicatePaymentsCleaned) {
+            val message = if (event.paymentsRemoved == 0) {
+                Loc.t(this, "No duplicate payments found", "کوئی ڈپلیکیٹ ادائیگی نہیں ملی")
+            } else {
+                Loc.t(
+                    this,
+                    "Removed ${event.paymentsRemoved} duplicate payment(s). Fixed ${event.customersFixed} customer(s), ${event.suppliersFixed} supplier(s)",
+                    "${event.paymentsRemoved} ڈپلیکیٹ ادائیگیاں حذف ہو گئیں۔ ${event.customersFixed} کسٹمرز اور ${event.suppliersFixed} سپلائرز کا بیلنس ٹھیک ہو گیا"
+                )
+            }
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            return
+        }
         val message = when (event) {
             PartyEvent.NameRequired -> Loc.t(this, "Name is required", "نام ضروری ہے")
             PartyEvent.Saved -> Loc.t(this, "Saved", "محفوظ ہو گیا")
@@ -483,6 +528,39 @@ class PartyActivity : AppCompatActivity() {
                 )
             )
             .setPositiveButton(Loc.t(this, "Merge", "ملائیں")) { _, _ -> viewModel.mergeDuplicateParties() }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    // NEW (Cleanup Duplicate Payments): shows exactly what "Cleanup Payments" found before
+    // deleting anything — one line per party+bill listing how many stray rows and how much
+    // money they add up to — so the shop owner can see it's the same old edited bills (like
+    // Arfan Brothers' Rs 267,854 purchase) before confirming, not just trust a blind "Fix".
+    private fun showDuplicatePaymentsPreview(groups: List<DuplicatePaymentGroup>) {
+        if (groups.isEmpty()) {
+            Toast.makeText(
+                this,
+                Loc.t(this, "No duplicate payments found", "کوئی ڈپلیکیٹ ادائیگی نہیں ملی"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val totalRows = groups.sumOf { it.remove.size }
+        val totalAmount = groups.sumOf { g -> g.remove.sumOf { it.amount } }
+        val lines = groups.joinToString("\n") { g ->
+            val billLabel = g.reference.take(24)
+            "• ${g.partyName} (${billLabel}) — ${g.remove.size} × Rs %.2f".format(g.remove.sumOf { it.amount } / g.remove.size)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Cleanup Payments", "ادائیگیاں صاف کریں"))
+            .setMessage(
+                Loc.t(
+                    this,
+                    "Found $totalRows leftover duplicate payment(s) totalling Rs %.2f:\n\n$lines\n\nEach of these is an old row a bill edit left behind before the sync fix — the one correct payment for each bill is kept, only the extra copies below are removed. Balances will be corrected afterward. This can't be undone. Continue?".format(totalAmount),
+                    "بل ایڈٹ کے دوران sync fix سے پہلے رہ جانے والی $totalRows پرانی ڈپلیکیٹ ادائیگیاں ملیں، مجموعی رقم Rs %.2f:\n\n$lines\n\nہر بل کی ایک درست ادائیگی رکھی جائے گی، صرف اضافی کاپیاں حذف ہوں گی۔ اس کے بعد بیلنس ٹھیک کر دیا جائے گا۔ یہ واپس نہیں ہو سکتا۔ جاری رکھیں؟".format(totalAmount)
+                )
+            )
+            .setPositiveButton(Loc.t(this, "Clean Up", "صاف کریں")) { _, _ -> viewModel.cleanupDuplicatePayments(groups) }
             .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
             .show()
     }

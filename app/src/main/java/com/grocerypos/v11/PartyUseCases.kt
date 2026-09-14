@@ -4,6 +4,8 @@ import com.grocerypos.v11.Customer
 import com.grocerypos.v11.Purchase
 import com.grocerypos.v11.Sale
 import com.grocerypos.v11.Supplier
+import com.grocerypos.v11.data.CleanupPaymentsResult
+import com.grocerypos.v11.data.DuplicatePaymentGroup
 import com.grocerypos.v11.data.MergeResult
 import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.data.RecalcResult
@@ -145,4 +147,18 @@ class RecalculateBalancesUseCase(private val repository: PartyRepository) {
  * PartyRepository.mergeDuplicateParties() for what actually happens. */
 class MergeDuplicatePartiesUseCase(private val repository: PartyRepository) {
     suspend operator fun invoke(): MergeResult = repository.mergeDuplicateParties()
+}
+
+/** Preview step for "Cleanup Duplicate Payments" — finds the stray duplicate payment
+ * rows without deleting anything yet, so the screen can show what it's about to remove
+ * before the shop owner confirms. See PartyRepository.findDuplicatePayments(). */
+class FindDuplicatePaymentsUseCase(private val repository: PartyRepository) {
+    suspend operator fun invoke(): List<DuplicatePaymentGroup> = repository.findDuplicatePayments()
+}
+
+/** Deletes the duplicate payment rows found by [FindDuplicatePaymentsUseCase] and fixes
+ * the balances they were throwing off — see PartyRepository.cleanupDuplicatePayments(). */
+class CleanupDuplicatePaymentsUseCase(private val repository: PartyRepository) {
+    suspend operator fun invoke(groups: List<DuplicatePaymentGroup>? = null): CleanupPaymentsResult =
+        repository.cleanupDuplicatePayments(groups)
 }

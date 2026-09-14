@@ -211,6 +211,63 @@ class PartyRepository(
         }
         return MergeResult(customersMerged, suppliersMerged)
     }
+
+    // NEW (Cleanup Duplicate Payments): finds the stray "orphan" payment rows left behind
+    // by the duplicate-payment-on-sync bug (see SyncQueueHelper.deletePaymentsByReference's
+    // comment for the full story) — every purchase/sale edit before that fix deleted the old
+    // payment on this device only, so a second, third, etc. edit of the same bill kept adding
+    // one more payment row that the party's balance counted as real money paid, without ever
+    // removing the stale ones. A bill should only ever have ONE payment row tied to it — a
+    // manual "Receive/Make Payment" always gets its own unique timestamped reference (see
+    // PartyTransactionActivity.savePayment()), so it can never collide here — so grouping
+    // every payment by (partyType, partyId, reference) and keeping only groups with more than
+    // one row finds exactly the stuck duplicates and nothing else. Within a group, the most
+    // recently updated/created row is the one that reflects the bill's current state; every
+    // other row in the group is the leftover this cleans up.
+    suspend fun findDuplicatePayments(): List<DuplicatePaymentGroup> {
+        val customerNames = db.customerDao().allList().associate { it.id to it.name }
+        val supplierNames = db.supplierDao().allList().associate { it.id to it.name }
+        return db.paymentDao().allRaw()
+            .filter { it.partyId != null }
+            .groupBy { Triple(it.partyType, it.partyId, it.reference) }
+            .values
+            .filter { it.size > 1 }
+            .map { group ->
+                val sorted = group.sortedWith(compareBy({ it.updatedAt }, { it.createdAt }, { it.id }))
+                val keep = sorted.last()
+                val remove = sorted.dropLast(1)
+                val first = group.first()
+                val partyName = (if (first.partyType == "customer") customerNames[first.partyId] else supplierNames[first.partyId])
+                    ?: "#${first.partyId}"
+                DuplicatePaymentGroup(
+                    partyType = first.partyType,
+                    partyId = first.partyId,
+                    partyName = partyName,
+                    reference = first.reference,
+                    keep = keep,
+                    remove = remove
+                )
+            }
+            .sortedByDescending { g -> g.remove.sumOf { it.amount } }
+    }
+
+    // NEW (Cleanup Duplicate Payments): removes exactly the stale rows [findDuplicatePayments]
+    // found (keeping the one correct payment per bill) via SyncQueueHelper.deletePayment() so
+    // the removal propagates to other devices/the server too, then recomputes every balance —
+    // the same recalculateBalances() used elsewhere — since those duplicate rows are what was
+    // inflating payments.sumOf{amount} and throwing the party's balance off in the first place.
+    suspend fun cleanupDuplicatePayments(groups: List<DuplicatePaymentGroup>? = null): CleanupPaymentsResult {
+        val target = groups ?: findDuplicatePayments()
+        var removed = 0
+        for (group in target) {
+            for (payment in group.remove) {
+                SyncQueueHelper.deletePayment(db, payment)
+                removed++
+            }
+        }
+        val recalc = if (removed > 0) recalculateBalances() else RecalcResult(0, 0)
+        return CleanupPaymentsResult(removed, recalc)
+    }
 }
 
 /** Result of [PartyRepository.recalculateBalances] — how many customers/suppliers
@@ -222,3 +279,21 @@ data class RecalcResult(val customersFixed: Int, val suppliersFixed: Int)
  * counts as 2 merged, since one survives as the keeper). 0/0 means no
  * same-name duplicates were found. */
 data class MergeResult(val customersMerged: Int, val suppliersMerged: Int)
+
+/** One bill's worth of stuck duplicate payments, as found by
+ * [PartyRepository.findDuplicatePayments] — [keep] is the row judged current/correct,
+ * [remove] is everything else tied to the same party+bill that
+ * [PartyRepository.cleanupDuplicatePayments] will delete. */
+data class DuplicatePaymentGroup(
+    val partyType: String,
+    val partyId: Long?,
+    val partyName: String,
+    val reference: String,
+    val keep: com.grocerypos.v11.Payment,
+    val remove: List<com.grocerypos.v11.Payment>
+)
+
+/** Result of [PartyRepository.cleanupDuplicatePayments] — how many stray duplicate
+ * payment rows were deleted, plus the balance recalculation that followed (0 removed
+ * means no duplicates were found, and [recalc] is untouched in that case). */
+data class CleanupPaymentsResult(val paymentsRemoved: Int, val recalc: RecalcResult)

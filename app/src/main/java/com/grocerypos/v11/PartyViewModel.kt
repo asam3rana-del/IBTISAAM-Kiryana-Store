@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.Supplier
+import com.grocerypos.v11.data.DuplicatePaymentGroup
+import com.grocerypos.v11.domain.CleanupDuplicatePaymentsUseCase
 import com.grocerypos.v11.domain.DeleteCustomerUseCase
 import com.grocerypos.v11.domain.DeleteSupplierUseCase
+import com.grocerypos.v11.domain.FindDuplicatePaymentsUseCase
 import com.grocerypos.v11.domain.GetCustomerHistoryUseCase
 import com.grocerypos.v11.domain.GetSupplierHistoryUseCase
 import com.grocerypos.v11.domain.MergeDuplicatePartiesUseCase
@@ -45,6 +48,17 @@ sealed class PartyEvent {
     // NEW (Merge Duplicate Parties): how many duplicate customer/supplier ROWS
     // were merged away — 0/0 means no same-name duplicates were found.
     data class DuplicatesMerged(val customersMerged: Int, val suppliersMerged: Int) : PartyEvent()
+    // NEW (Cleanup Duplicate Payments): preview step — the stray duplicate payment
+    // groups found, for the confirmation dialog to list before anything is deleted.
+    // An empty list means none were found.
+    data class DuplicatePaymentsFound(val groups: List<DuplicatePaymentGroup>) : PartyEvent()
+    // NEW (Cleanup Duplicate Payments): how many stray payment rows were actually
+    // deleted, plus how many customer/supplier balances that correction fixed.
+    data class DuplicatePaymentsCleaned(
+        val paymentsRemoved: Int,
+        val customersFixed: Int,
+        val suppliersFixed: Int
+    ) : PartyEvent()
 }
 
 class PartyViewModel(
@@ -59,7 +73,9 @@ class PartyViewModel(
     private val getCustomerHistory: GetCustomerHistoryUseCase,
     private val getSupplierHistory: GetSupplierHistoryUseCase,
     private val recalculateBalancesUseCase: RecalculateBalancesUseCase,
-    private val mergeDuplicatePartiesUseCase: MergeDuplicatePartiesUseCase
+    private val mergeDuplicatePartiesUseCase: MergeDuplicatePartiesUseCase,
+    private val findDuplicatePaymentsUseCase: FindDuplicatePaymentsUseCase,
+    private val cleanupDuplicatePaymentsUseCase: CleanupDuplicatePaymentsUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PartyUiState())
@@ -151,6 +167,33 @@ class PartyViewModel(
         viewModelScope.launch {
             val result = mergeDuplicatePartiesUseCase()
             _events.emit(PartyEvent.DuplicatesMerged(result.customersMerged, result.suppliersMerged))
+        }
+    }
+
+    /** "Cleanup Payments" chip — step 1: look for stray duplicate payment rows and
+     * report what was found so the Activity can show a preview dialog before anything
+     * is deleted. See FindDuplicatePaymentsUseCase / PartyRepository.findDuplicatePayments(). */
+    fun findDuplicatePayments() {
+        viewModelScope.launch {
+            val groups = findDuplicatePaymentsUseCase()
+            _events.emit(PartyEvent.DuplicatePaymentsFound(groups))
+        }
+    }
+
+    /** "Cleanup Payments" chip — step 2: called once the shop owner confirms the preview.
+     * [groups] should be exactly what the preview dialog showed, so a payment that arrived
+     * mid-confirmation (e.g. from a sync pull) isn't swept up too — see
+     * CleanupDuplicatePaymentsUseCase / PartyRepository.cleanupDuplicatePayments(). */
+    fun cleanupDuplicatePayments(groups: List<DuplicatePaymentGroup>) {
+        viewModelScope.launch {
+            val result = cleanupDuplicatePaymentsUseCase(groups)
+            _events.emit(
+                PartyEvent.DuplicatePaymentsCleaned(
+                    result.paymentsRemoved,
+                    result.recalc.customersFixed,
+                    result.recalc.suppliersFixed
+                )
+            )
         }
     }
 }
