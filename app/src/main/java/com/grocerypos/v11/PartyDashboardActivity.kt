@@ -1214,7 +1214,14 @@ class PartyDashboardActivity : AppCompatActivity() {
             isClickable = true
             setOnClickListener { showItemDetailDialog(c) }
 
-            val topRow = LinearLayout(this@PartyDashboardActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val headRow = LinearLayout(this@PartyDashboardActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            headRow.addView(iconBadge(R.drawable.ic_box, navy, sizeDp = 38, iconSizeDp = 17))
+            val topRow = LinearLayout(this@PartyDashboardActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(16, 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
             topRow.addView(TextView(this@PartyDashboardActivity).apply {
                 text = c.product
                 textSize = 14.5f
@@ -1227,7 +1234,8 @@ class PartyDashboardActivity : AppCompatActivity() {
                 textSize = 11.5f
                 setTextColor(Color.parseColor(labelGray))
             })
-            addView(topRow)
+            headRow.addView(topRow)
+            addView(headRow)
 
             addView(TextView(this@PartyDashboardActivity).apply {
                 text = Loc.t(this@PartyDashboardActivity, "Category", "\u06A9\u06CC\u0679\u06AF\u0631\u06CC") + ": ${c.category.ifBlank { "-" }}  \u00B7  " +
