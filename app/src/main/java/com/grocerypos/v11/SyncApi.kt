@@ -322,7 +322,7 @@ object SyncApi {
         // server snapshot. Without this, a pull could temporarily erase an offline
         // sale/purchase/adjustment until the queued increment reached Firestore.
         suspend fun pendingDelta(entityType: String, entityId: String, operation: String): Double {
-            return db.syncQueueDao().pendingForEntity(entityType, entityId, operation).asSequence()
+            return db.syncQueueDao().pendingForEntityAnyRetry(entityType, entityId, operation).asSequence()
                 .sumOf { row ->
                     runCatching {
                         (gson.fromJson(row.payloadJson, Map::class.java)["delta"] as? Number)?.toDouble() ?: 0.0

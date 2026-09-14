@@ -1163,6 +1163,19 @@ interface ProductDao {
     suspend fun pending(limit: Int = 50): List<SyncQueueEntry>
     @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND retryCount < 10 AND entityType=:entityType AND entityId=:entityId AND operation=:operation ORDER BY createdAt ASC")
     suspend fun pendingForEntity(entityType:String, entityId:String, operation:String):List<SyncQueueEntry>
+    // FIX (leaking payable): pendingForEntity() above excludes rows once they've
+    // failed 10 times, which is correct for the auto-retry loop (stop hammering a
+    // permanently-broken push) but was ALSO being used to decide how much unsent
+    // balance/stock delta to re-add on top of a pulled server value. That meant a
+    // supplier/customer balance change that failed to push 10 times didn't just stop
+    // retrying — the next pull for that same party silently erased its effect from
+    // the local balance too, even though the underlying purchase/payment row was
+    // still sitting right there in the app. This query keeps counting every unsynced
+    // row (any retryCount) so a permanently-stuck entry keeps showing up locally and
+    // in Settings > Sync History for the user to "Retry Now" instead of quietly
+    // vanishing from the total.
+    @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND entityType=:entityType AND entityId=:entityId AND operation=:operation ORDER BY createdAt ASC")
+    suspend fun pendingForEntityAnyRetry(entityType:String, entityId:String, operation:String):List<SyncQueueEntry>
     @Query("UPDATE sync_queue SET syncedAt=:ts WHERE id=:id")
     suspend fun markSynced(id: Long, ts: Long = System.currentTimeMillis())
     @Query("UPDATE sync_queue SET retryCount=retryCount+1, lastError=:err WHERE id=:id")

@@ -47,6 +47,7 @@ class MainActivity : ThemedActivity() {
 
     private lateinit var youllGetValue: TextView
     private lateinit var youllGiveValue: TextView
+    private lateinit var syncPendingLabel: TextView
 
     private lateinit var searchResultsBox: LinearLayout
     private var allProductsCache: List<com.grocerypos.v11.Product>? = null
@@ -372,6 +373,7 @@ class MainActivity : ThemedActivity() {
         loadDashboard()
         loadShopName()
         loadPartySummary()
+        observeSyncPending()
     }
 
     override fun onResume() {
@@ -683,7 +685,40 @@ class MainActivity : ThemedActivity() {
         row.addView(giveCardView)
         section.addView(row)
 
+        // ADDED (leaking payable follow-up): "Already up to date" only means nothing
+        // NEW arrived in this check — it says nothing about whether an earlier change
+        // made on THIS device ever actually reached the cloud. A shop running two
+        // devices has no other way to notice that gap until the two dues totals have
+        // already drifted apart. This small line surfaces the local sync_queue's
+        // unsynced-row count right on the dashboard, next to the numbers it could be
+        // silently affecting, and taps straight into Settings > Sync History to fix it.
+        syncPendingLabel = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.parseColor(partyRed))
+            setPadding(4, 10, 4, 0)
+            visibility = android.view.View.GONE
+            setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+        }
+        section.addView(syncPendingLabel)
+
         return section
+    }
+
+    private fun observeSyncPending() {
+        lifecycleScope.launch {
+            PosDatabase.get(this@MainActivity).syncQueueDao().pendingCountFlow().collectLatest { count ->
+                if (count > 0) {
+                    syncPendingLabel.text = Loc.t(
+                        this@MainActivity,
+                        "⚠ $count change(s) not yet synced to cloud — tap to check Sync History",
+                        "⚠ $count تبدیلیاں ابھی کلاؤڈ پر نہیں پہنچیں — چیک کرنے کے لیے ٹیپ کریں"
+                    )
+                    syncPendingLabel.visibility = android.view.View.VISIBLE
+                } else {
+                    syncPendingLabel.visibility = android.view.View.GONE
+                }
+            }
+        }
     }
 
     private fun loadPartySummary() {
