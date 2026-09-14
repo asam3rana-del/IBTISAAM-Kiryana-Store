@@ -223,50 +223,12 @@ class ProductActivity : ThemedActivity() {
     }
 
     private fun buildHeader(root: LinearLayout) {
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(24, 22, 22, 22)
-            background = gradientBg(navy, navyLight, cornerTop = 20, cornerBottom = 20)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 18) }
-            applyElevation(this, 6f)
-        }
-
-        // ADDED (ultra premium pass): a leading circular icon badge, matching the
-        // icon + title/subtitle header pattern used everywhere else in the app
-        // (Reports, History, Party Reports, etc.) — previously this header was just
-        // text + action pills with no icon, so it read as visually inconsistent
-        // next to the rest of the app.
-        header.addView(iconBadge(R.drawable.ic_box, "#FFFFFF", bgHex = headerBadgeOverlay, sizeDp = 44, iconSizeDp = 20).apply {
-            applyElevation(this, 2f)
-        })
-        header.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(14.dp(), 1)
-        })
-
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-        }
-
-        col.addView(TextView(this).apply {
-            text = Loc.t(this@ProductActivity, "Add / Edit Product", "پروڈکٹ شامل / تبدیل کریں")
-            textSize = 18.5f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        })
-
-        col.addView(TextView(this).apply {
-            text = Loc.t(this@ProductActivity, "Inventory Management", "انوینٹری مینجمنٹ")
-            textSize = 11f
-            setTextColor(Color.parseColor(headerSubtitleColor))
-            setPadding(0, 3, 0, 0)
-        })
-
-        header.addView(col)
+        val header = premiumHeader(
+            R.drawable.ic_box,
+            Loc.t(this, "Add / Edit Product", "پروڈکٹ شامل / تبدیل کریں"),
+            Loc.t(this, "Inventory Management", "انوینٹری مینجمنٹ"),
+            navy, navy
+        )
 
         header.addView(ImageView(this).apply {
             setImageDrawable(
