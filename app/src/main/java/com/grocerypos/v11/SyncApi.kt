@@ -528,6 +528,12 @@ object SyncApi {
                 saleDao.deleteSale(invoice)
                 continue
             }
+            // FIX (purchase/sale name reverts after sync): don't clobber a local edit
+            // to this sale that's still waiting to push — see
+            // SyncQueueDao.pendingCountForEntity's comment. Matches
+            // SyncQueueHelper.saleEntityId()'s "sale:$invoice" format directly rather
+            // than building a throwaway Sale just to call that function.
+            if (db.syncQueueDao().pendingCountForEntity("sale", "sale:$invoice") > 0) continue
             val customerServerId = row["customerServerId"] as? String
             val localCustomerId = customerServerId?.let { custDao.findByServerId(it)?.id }
             val sale = Sale(
@@ -586,6 +592,15 @@ object SyncApi {
                 purchaseDao.deletePurchase(billNo)
                 continue
             }
+            // FIX (purchase name reverts after sync — "M Deen & brother's" back to
+            // "Cash Purchase"): don't clobber a local edit to this purchase (e.g.
+            // attaching/changing its supplier) that's still waiting to push. Without
+            // this, a pull landing before that specific push confirms can silently
+            // restore the old server copy — wiping supplierId back to null while the
+            // supplier's own balance (synced separately as a delta, see pendingDelta()
+            // above) stays correct, which is exactly the mismatch this fixes. See
+            // SyncQueueDao.pendingCountForEntity's comment.
+            if (db.syncQueueDao().pendingCountForEntity("purchase", "purchase:$billNo") > 0) continue
             val supplierServerId = row["supplierServerId"] as? String
             val localSupplierId = supplierServerId?.let { suppDao.findByServerId(it)?.id }
             val purchase = Purchase(

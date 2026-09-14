@@ -1193,6 +1193,19 @@ interface ProductDao {
     // vanishing from the total.
     @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND entityType=:entityType AND entityId=:entityId AND operation=:operation ORDER BY createdAt ASC")
     suspend fun pendingForEntityAnyRetry(entityType:String, entityId:String, operation:String):List<SyncQueueEntry>
+    // FIX (purchase/sale name reverts after sync — "M Deen & brother's" back to "Cash
+    // Purchase"): whole-row pulls for purchases/sales (see SyncApi.applyServerChanges)
+    // used to overwrite the local row unconditionally, with no equivalent of the
+    // pendingDelta() guard already used for stock/balance deltas above. If a local
+    // edit (e.g. attaching a supplier to a purchase) is still sitting unpushed in the
+    // queue when a pull runs — slow network, large backlog, a transient push failure —
+    // the pull would silently restore the old server copy over it, wiping the just-set
+    // supplierId back to null even though the supplier's balance (synced separately as
+    // a delta) stayed correct. Any operation, any retryCount — a stuck-but-unsynced
+    // local edit should still block being overwritten, same reasoning as
+    // pendingForEntityAnyRetry above.
+    @Query("SELECT COUNT(*) FROM sync_queue WHERE syncedAt IS NULL AND entityType=:entityType AND entityId=:entityId")
+    suspend fun pendingCountForEntity(entityType:String, entityId:String):Int
     @Query("UPDATE sync_queue SET syncedAt=:ts WHERE id=:id")
     suspend fun markSynced(id: Long, ts: Long = System.currentTimeMillis())
     @Query("UPDATE sync_queue SET retryCount=retryCount+1, lastError=:err WHERE id=:id")
