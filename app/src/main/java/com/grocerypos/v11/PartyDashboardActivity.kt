@@ -1124,9 +1124,21 @@ class PartyDashboardActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor("#2E3242"))
             })
             infoCol.addView(TextView(this@PartyDashboardActivity).apply {
-                text = "$typeLabel \u00B7 $dateText" + if (row.status == "returned") "  \u2022  " + Loc.t(this@PartyDashboardActivity, "Returned", "\u0648\u0627\u067E\u0633") else ""
+                text = typeLabel
+                textSize = 10f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(accent))
+                background = pillBg(lightenHex(accent, 0.85f), 20f)
+                setPadding(16, 4, 16, 4)
+                val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                lp.topMargin = 6
+                layoutParams = lp
+            })
+            infoCol.addView(TextView(this@PartyDashboardActivity).apply {
+                text = dateText + if (row.status == "returned") "  \u2022  " + Loc.t(this@PartyDashboardActivity, "Returned", "\u0648\u0627\u067E\u0633") else ""
                 textSize = 11f
                 setTextColor(Color.parseColor(if (row.status == "returned") red else labelGray))
+                setPadding(0, 4, 0, 0)
             })
             addView(infoCol)
 
@@ -1229,11 +1241,27 @@ class PartyDashboardActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor("#2E3242"))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
-            topRow.addView(TextView(this@PartyDashboardActivity).apply {
+            val rightCol = LinearLayout(this@PartyDashboardActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.END
+            }
+            if (c.category.isNotBlank()) {
+                rightCol.addView(TextView(this@PartyDashboardActivity).apply {
+                    text = c.category
+                    textSize = 10f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(labelGray))
+                    background = pillBg(lightenHex(labelGray, 0.85f), 20f)
+                    setPadding(16, 4, 16, 4)
+                })
+            }
+            rightCol.addView(TextView(this@PartyDashboardActivity).apply {
                 text = "Stock: ${c.stockDisplay}"
                 textSize = 11.5f
                 setTextColor(Color.parseColor(labelGray))
+                setPadding(0, 4, 0, 0)
             })
+            topRow.addView(rightCol)
             headRow.addView(topRow)
             addView(headRow)
 
