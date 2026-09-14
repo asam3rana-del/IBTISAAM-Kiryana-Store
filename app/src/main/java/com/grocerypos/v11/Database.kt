@@ -1127,6 +1127,10 @@ interface ProductDao {
     // especially conflicts — see SyncApi.kt's push()/applyServerChanges().
     @Query("SELECT * FROM audit ORDER BY createdAt DESC LIMIT 300") suspend fun recent(): List<Audit>
     @Query("SELECT * FROM audit WHERE action IN ('sync_conflict','sync_push_failed') ORDER BY createdAt DESC LIMIT 300") suspend fun syncIssues(): List<Audit>
+    // ADDED: lets Settings > Sync History be cleared one-time from the UI — this
+    // table is purely a local diagnostic log (never pushed/pulled via sync_queue),
+    // so wiping it has no effect on the actual synced data on any device.
+    @Query("DELETE FROM audit") suspend fun clearAll()
 }
 
 @Dao interface CashTransactionDao {

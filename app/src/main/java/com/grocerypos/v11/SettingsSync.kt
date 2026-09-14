@@ -255,10 +255,19 @@ internal fun SettingsActivity.openSyncHistoryDialog() {
     }
     container.addView(loading)
 
+    // NEW: one-time "Clear History" — wipes the local audit log (purely a
+    // diagnostic record of conflicts/push failures; never synced to the cloud
+    // or to other devices), so old noise can be cleared out once things are fixed.
     val dialog = AlertDialog.Builder(this)
         .setTitle("Sync History")
         .setView(scroll)
         .setPositiveButton("Close", null)
+        .setNegativeButton("Clear History") { _, _ ->
+            lifecycleScope.launch {
+                PosDatabase.get(this@openSyncHistoryDialog).auditDao().clearAll()
+                Toast.makeText(this@openSyncHistoryDialog, "Sync history clear ho gayi", Toast.LENGTH_SHORT).show()
+            }
+        }
         .create()
     dialog.show()
 
