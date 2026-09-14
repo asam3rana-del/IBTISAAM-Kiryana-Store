@@ -66,6 +66,28 @@ object SyncQueueHelper {
         SyncWorker.syncNowOnce(context)
     }
 
+    // NEW (10/10 Priority #10 — Complete Audit Trail): a single shared writer for
+    // the existing `audit` table (previously only written to by UserManagementActivity's
+    // password-reset flow and SyncApi's conflict/failure logging). Every business
+    // mutation that should be traceable — who did it, on what, when, with what
+    // details — should call this instead of hand-rolling its own Audit(...) insert,
+    // so the shape/username-lookup stays consistent everywhere.
+    //
+    // Reads the logged-in username the same way UserManagementActivity already
+    // does (SharedPreferences "session"/"username"), defaulting to "unknown"
+    // rather than crashing if no session is present (e.g. called from a background
+    // sync path). Wrapped in runCatching so a logging failure can never abort the
+    // business transaction it's describing.
+    suspend fun logAudit(db: PosDatabase, context: Context, action: String, reference: String, details: String) {
+        val username = context.getSharedPreferences("session", Context.MODE_PRIVATE)
+            .getString("username", null) ?: "unknown"
+        runCatching {
+            db.auditDao().insert(
+                Audit(username = username, action = action, reference = reference, details = details)
+            )
+        }
+    }
+
     // ---------- One-call helpers: build payload + enqueue ----------
     // (context is optional — pass it if you want the sync to fire immediately instead
     // of waiting for the next periodic run; omit it to just queue the row.)

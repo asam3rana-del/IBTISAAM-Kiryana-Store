@@ -112,6 +112,15 @@ interface StockMovementDao {
     // changes on the product itself.
     @Query("SELECT * FROM stock_movements WHERE type='DAMAGE' AND createdAt BETWEEN :start AND :end ORDER BY createdAt DESC")
     suspend fun damageBetween(start:Long,end:Long):List<StockMovement>
+
+    // NEW (10/10 Priority #9 — Stock Taking): every physical-count variance line
+    // is logged here with type='STOCK_TAKE' (reference = the stock-take session
+    // id, note = "system:X counted:Y") via the same SyncQueueHelper.increaseProductStock/
+    // decreaseProductStock wrappers every other stock change already goes through —
+    // no new table needed, this reuses the existing ledger. Grouped by `reference`
+    // in StockTakingActivity to rebuild a past session's summary.
+    @Query("SELECT * FROM stock_movements WHERE type='STOCK_TAKE' ORDER BY createdAt DESC")
+    suspend fun stockTakeMovements(): List<StockMovement>
 }
 
 @Entity(tableName="products")
@@ -831,6 +840,13 @@ interface ProductDao {
 
 @Dao interface SaleDao {
     @Insert suspend fun sale(s:Sale)
+    // NOTE (10/10 Priority #3 — edit without delete/re-add): RoomSaleRepository's
+    // edit path uses updateSale() (declared further down, originally added for
+    // PartyTransactionActivity's billed-item editor) instead of the old
+    // deleteSale()+sale() (delete-then-reinsert) sequence, so an edited sale keeps
+    // its original `saleUid` and `dueDate` instead of silently getting a fresh
+    // saleUid / a reset-to-0 dueDate on every edit — see the fix note in
+    // RoomSaleRepository.saveSale().
     @Insert suspend fun items(items:List<SaleItem>)
     @Query("SELECT COUNT(*) FROM sales") suspend fun count():Int
     @Query("SELECT COALESCE(SUM(total),0) FROM sales") suspend fun totalSales():Double

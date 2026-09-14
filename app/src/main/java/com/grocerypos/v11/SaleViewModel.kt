@@ -56,6 +56,11 @@ sealed class SaleEvent {
     object SaleDeleted : SaleEvent()
     object BillHeld : SaleEvent()
     data class CustomerAdded(val name: String) : SaleEvent()
+    // NEW (10/10 Priority #7 — Credit Limit + Due Management): the Activity shows
+    // a confirm dialog for this and, if confirmed, re-calls saveSale/saveQuickSale
+    // with overrideCreditLimit=true.
+    data class CreditLimitExceeded(val customerName: String, val creditLimit: Double, val projectedBalance: Double) : SaleEvent()
+    data class QuickSaleCreditLimitExceeded(val customerName: String, val creditLimit: Double, val projectedBalance: Double) : SaleEvent()
 }
 
 class SaleViewModel(
@@ -113,7 +118,8 @@ class SaleViewModel(
         paymentMethodLabel: String,
         saleDateMillis: Long,
         original: Sale?,
-        originalItems: List<SaleItem>
+        originalItems: List<SaleItem>,
+        overrideCreditLimit: Boolean = false
     ) {
         viewModelScope.launch {
             when (val result = saveSaleUseCase(
@@ -127,7 +133,8 @@ class SaleViewModel(
                 paymentMethodLabel = paymentMethodLabel,
                 saleDateMillis = saleDateMillis,
                 original = original,
-                originalItems = originalItems
+                originalItems = originalItems,
+                allowOverride = overrideCreditLimit
             )) {
                 is SaveSaleResult.Success -> _events.emit(SaleEvent.SaveSuccess(result))
                 is SaveSaleResult.EmptyItems -> _events.emit(SaleEvent.EmptyItems)
@@ -135,17 +142,23 @@ class SaleViewModel(
                 is SaveSaleResult.StockIssue -> _events.emit(SaleEvent.StockIssue(result.message))
                 is SaveSaleResult.DuplicateInvoice -> _events.emit(SaleEvent.DuplicateInvoice(result.message))
                 is SaveSaleResult.InvalidLine -> _events.emit(SaleEvent.InvalidLine(result.message))
+                is SaveSaleResult.CreditLimitExceeded -> _events.emit(
+                    SaleEvent.CreditLimitExceeded(result.customerName, result.creditLimit, result.projectedBalance)
+                )
             }
         }
     }
 
-    fun saveQuickSale(product: Product, qty: Double, price: Double, unit: String, customerName: String) {
+    fun saveQuickSale(product: Product, qty: Double, price: Double, unit: String, customerName: String, overrideCreditLimit: Boolean = false) {
         viewModelScope.launch {
-            when (val result = saveQuickSaleUseCase(product, qty, price, unit, customerName)) {
+            when (val result = saveQuickSaleUseCase(product, qty, price, unit, customerName, allowOverride = overrideCreditLimit)) {
                 is QuickSaleResult.Success -> _events.emit(SaleEvent.QuickSaleSuccess(result.invoice, result.isCredit))
                 is QuickSaleResult.StockIssue -> _events.emit(SaleEvent.QuickSaleStockIssue(result.message))
                 is QuickSaleResult.InvalidQty -> _events.emit(SaleEvent.QuickSaleInvalidQty(result.message))
                 is QuickSaleResult.DuplicateInvoice -> _events.emit(SaleEvent.QuickSaleDuplicateInvoice(result.message))
+                is QuickSaleResult.CreditLimitExceeded -> _events.emit(
+                    SaleEvent.QuickSaleCreditLimitExceeded(result.customerName, result.creditLimit, result.projectedBalance)
+                )
             }
         }
     }

@@ -120,8 +120,17 @@ class RoomSaleRepository(
                 if (original.customerId != null && originalOutstanding > 0) {
                     SyncQueueHelper.adjustCustomerBalance(db, original.customerId, -originalOutstanding)
                 }
+                // FIX (10/10 Priority #3 — edit without delete/re-add): line items
+                // still get replaced wholesale (they carry no identity of their own
+                // in the on-screen line model), but the SALE ROW ITSELF is no
+                // longer deleted here — see the updateSale()/sale() branch below,
+                // which UPDATEs this row in place instead of re-inserting it.
+                // Deleting-then-reinserting the sale row used to hand it a brand
+                // new `saleUid` (Sale's stable, sync-critical identity — see its
+                // doc comment) on every single edit, silently defeating the whole
+                // point of that field, and also silently reset `dueDate` (a Due
+                // Date Reminder the user may have set on this bill) back to 0.
                 db.saleDao().deleteItems(invoice)
-                db.saleDao().deleteSale(invoice)
                 db.cashTransactionDao().deleteByReference(invoice)
             }
 
@@ -149,29 +158,58 @@ class RoomSaleRepository(
             }
 
             // FIX (Improvement Pack P6): reject a duplicate invoice for a brand-new
-            // sale (original == null — the edit path above already deletes any
-            // existing row for this invoice first, so it's exempt). Without this,
-            // a re-submitted Save (double-tap, retry after a timeout, etc.) would
-            // hit the sales table's plain @Insert and surface a raw
-            // SQLiteConstraintException instead of a clear, catchable error.
+            // sale (original == null — an edit reuses its own existing invoice row
+            // via updateSale() below, so it's naturally exempt from this check).
+            // Without this, a re-submitted Save (double-tap, retry after a
+            // timeout, etc.) would hit the sales table's plain @Insert and surface
+            // a raw SQLiteConstraintException instead of a clear, catchable error.
             if (original == null && db.saleDao().findSale(invoice) != null) {
                 throw DuplicateInvoiceException("Invoice number \"$invoice\" pehle se mojood hai. Dobara try karen.")
             }
 
-            db.saleDao().sale(
-                Sale(
-                    invoice = invoice,
-                    customerId = customer?.id,
-                    subtotal = subtotal,
-                    discount = discount,
-                    tax = 0.0,
-                    total = total,
-                    paid = paid,
-                    paymentMethod = method.lowercase(),
-                    saleType = saleType,
-                    createdAt = saleDateMillis
+            if (original != null) {
+                // FIX (10/10 Priority #3): true in-place UPDATE, matched by the
+                // `invoice` primary key — preserves `saleUid` and `dueDate` from
+                // the original row (neither is part of what this screen edits)
+                // instead of the old behavior of silently regenerating/wiping
+                // them via delete+reinsert. `status` is likewise carried
+                // forward (e.g. a "returned" sale stays "returned" through an
+                // edit unless something else explicitly changes it).
+                db.saleDao().updateSale(
+                    Sale(
+                        invoice = invoice,
+                        customerId = customer?.id,
+                        subtotal = subtotal,
+                        discount = discount,
+                        tax = 0.0,
+                        total = total,
+                        paid = paid,
+                        paymentMethod = method.lowercase(),
+                        saleType = saleType,
+                        createdAt = saleDateMillis,
+                        status = original.status,
+                        updatedAt = System.currentTimeMillis(),
+                        dirty = true,
+                        dueDate = original.dueDate,
+                        saleUid = original.saleUid
+                    )
                 )
-            )
+            } else {
+                db.saleDao().sale(
+                    Sale(
+                        invoice = invoice,
+                        customerId = customer?.id,
+                        subtotal = subtotal,
+                        discount = discount,
+                        tax = 0.0,
+                        total = total,
+                        paid = paid,
+                        paymentMethod = method.lowercase(),
+                        saleType = saleType,
+                        createdAt = saleDateMillis
+                    )
+                )
+            }
 
             val saleItems = lines.map {
                 val lineProduct = productsByBarcode[it.barcode]
@@ -227,6 +265,18 @@ class RoomSaleRepository(
         }
 
         SyncQueueHelper.trigger(appContext)
+
+        // NEW (10/10 Priority #10 — Complete Audit Trail): who saved/edited this
+        // bill and when. Logged after the transaction has committed successfully,
+        // so a failed/rolled-back save (stock issue, duplicate invoice, etc.)
+        // never produces a misleading audit entry.
+        SyncQueueHelper.logAudit(
+            db, appContext,
+            action = if (original != null) "sale_edit" else "sale_create",
+            reference = invoice,
+            details = "total=$total paid=$paid method=$method customer=${customer?.name ?: enteredCustomerName}"
+        )
+
         return SaleSaveResult(customer = customer, stockWarnings = stockWarnings)
     }
 
@@ -251,11 +301,15 @@ class RoomSaleRepository(
             db.saleDao().deleteSale(invoice)
             db.cashTransactionDao().deleteByReference(invoice)
         }
-        SyncQueueHelper.enqueue(
-            db, "sale", "sale:$invoice", "delete",
-            org.json.JSONObject().apply { put("invoice", invoice) }.toString()
-        )
         SyncQueueHelper.trigger(appContext)
+
+        // NEW (10/10 Priority #10 — Complete Audit Trail).
+        SyncQueueHelper.logAudit(
+            db, appContext,
+            action = "sale_delete",
+            reference = invoice,
+            details = "total=${sale.total} paid=${sale.paid} customerId=${sale.customerId ?: "walk-in"}"
+        )
     }
 
     /** Persists a Quick Sale line (single-item, no draft/discount workflow).
@@ -382,6 +436,14 @@ class RoomSaleRepository(
         }
 
         SyncQueueHelper.trigger(appContext)
+
+        // NEW (10/10 Priority #10 — Complete Audit Trail).
+        SyncQueueHelper.logAudit(
+            db, appContext,
+            action = "quick_sale_create",
+            reference = resultInvoice,
+            details = "product=${product.name} qty=$qty credit=$resultIsCredit"
+        )
 
         return QuickSaleSaveResult(invoice = resultInvoice, isCredit = resultIsCredit)
     }

@@ -158,6 +158,15 @@ class SaleActivity : AppCompatActivity() {
     // slower case — the same bill genuinely saved twice a few minutes apart.
     private var isSaving = false
 
+    // NEW (10/10 Priority #7 — Credit Limit + Due Management): stashes the exact
+    // Quick Sale inputs so SaleEvent.QuickSaleCreditLimitExceeded's confirm
+    // dialog (handleSaleEvent, below) can re-submit them with
+    // overrideCreditLimit=true — the Quick Sale dialog itself is already
+    // dismissed by the time that event arrives, so this can't just re-read its
+    // fields.
+    internal data class PendingQuickSale(val product: Product, val qty: Double, val price: Double, val unit: String, val customerName: String)
+    internal var pendingQuickSale: PendingQuickSale? = null
+
     internal var lastMainPrice: Double = 0.0
     // FIX (sale-type keyboard-scroll bug): hasFocus() was unreliable right after a
     // touch-driven Spinner selection on some OEM keyboards (e.g. Samsung), so the
@@ -1220,7 +1229,11 @@ class SaleActivity : AppCompatActivity() {
         // back from SaveSaleUseCase, mirroring PurchaseActivity's handleViewModelEvent.
         when (event) {
             is SaleEvent.EmptyItems, is SaleEvent.CustomerRequiredForDue, is SaleEvent.StockIssue,
-            is SaleEvent.DuplicateInvoice, is SaleEvent.InvalidLine -> {
+            is SaleEvent.DuplicateInvoice, is SaleEvent.InvalidLine,
+            // NEW (10/10 Priority #7): a credit-limit block is also "the save did
+            // not happen (yet)" — re-arm the button so the confirm dialog's
+            // Cancel path (or just dismissing it) doesn't leave Save stuck disabled.
+            is SaleEvent.CreditLimitExceeded -> {
                 isSaving = false
                 saveButton.isEnabled = true
             }
@@ -1289,6 +1302,51 @@ class SaleActivity : AppCompatActivity() {
             is SaleEvent.CustomerAdded -> {
                 Toast.makeText(this, "Customer added", Toast.LENGTH_SHORT).show()
                 customerName.setText(event.name)
+            }
+            // NEW (10/10 Priority #7 — Credit Limit + Due Management): block with a
+            // confirm, don't hard-reject — a shopkeeper often has good reasons to
+            // let a trusted customer go over their usual limit occasionally.
+            // "Save Anyway" re-reads the screen's current fields (unchanged since
+            // the failed attempt a moment ago) and calls proceedSaveSale directly
+            // with overrideCreditLimit=true — skipping saveSale()'s duplicate-bill
+            // check again, since that already ran (or didn't need to) to get here.
+            is SaleEvent.CreditLimitExceeded -> {
+                AlertDialog.Builder(this)
+                    .setTitle(com.grocerypos.v11.util.Loc.t(this, "Credit Limit Exceeded", "کریڈٹ لیمٹ سے تجاوز"))
+                    .setMessage(
+                        "${event.customerName} ki credit limit Rs.${formatQty(event.creditLimit)} hai. " +
+                        "Ye bill save karne ke baad balance Rs.${formatQty(event.projectedBalance)} ho jayega.\n\n" +
+                        "Phir bhi save karen?"
+                    )
+                    .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ ->
+                        proceedSaveSale(
+                            enteredCustomer = customerName.text.toString().trim(),
+                            saleTypeLabel = saleTypeSpinner.selectedItem?.toString() ?: "Retail",
+                            enteredDiscount = discountInput.text.toString().toDoubleOrNull() ?: 0.0,
+                            enteredPaid = paidInput.text.toString().toDoubleOrNull() ?: 0.0,
+                            paymentMethodLabel = paymentMethodSpinner.selectedItem?.toString() ?: "Cash",
+                            overrideCreditLimit = true
+                        )
+                    }
+                    .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ"), null)
+                    .show()
+            }
+            is SaleEvent.QuickSaleCreditLimitExceeded -> {
+                val pending = pendingQuickSale
+                AlertDialog.Builder(this)
+                    .setTitle(com.grocerypos.v11.util.Loc.t(this, "Credit Limit Exceeded", "کریڈٹ لیمٹ سے تجاوز"))
+                    .setMessage(
+                        "${event.customerName} ki credit limit Rs.${formatQty(event.creditLimit)} hai. " +
+                        "Ye sale save karne ke baad balance Rs.${formatQty(event.projectedBalance)} ho jayega.\n\n" +
+                        "Phir bhi save karen?"
+                    )
+                    .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ ->
+                        if (pending != null) {
+                            viewModel.saveQuickSale(pending.product, pending.qty, pending.price, pending.unit, pending.customerName, overrideCreditLimit = true)
+                        }
+                    }
+                    .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ"), null)
+                    .show()
             }
         }
     }
@@ -1454,7 +1512,12 @@ class SaleActivity : AppCompatActivity() {
         saleTypeLabel: String,
         enteredDiscount: Double,
         enteredPaid: Double,
-        paymentMethodLabel: String
+        paymentMethodLabel: String,
+        // NEW (10/10 Priority #7 — Credit Limit + Due Management): true only when
+        // re-called from handleSaleEvent's CreditLimitExceeded confirm dialog
+        // below — a normal saveSale()->checkDuplicateAndProceedSale() path always
+        // passes the default false.
+        overrideCreditLimit: Boolean = false
     ) {
         isSaving = true
         saveButton.isEnabled = false
@@ -1474,7 +1537,8 @@ class SaleActivity : AppCompatActivity() {
             paymentMethodLabel = paymentMethodLabel,
             saleDateMillis = saleDateMillis,
             original = originalSale,
-            originalItems = originalItems
+            originalItems = originalItems,
+            overrideCreditLimit = overrideCreditLimit
         )
     }
 

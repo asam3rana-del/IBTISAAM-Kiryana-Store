@@ -79,6 +79,17 @@ sealed class SaveSaleResult {
     // checked before the bill is even sent to the repository, since a bad
     // qty/rate corrupts subtotal/stock math no matter how it got into `lines`.
     data class InvalidLine(val message: String) : SaveSaleResult()
+    // NEW (10/10 Priority #7 — Credit Limit + Due Management): this credit sale
+    // would push the customer's outstanding balance past their configured
+    // Customer.creditLimit. Not auto-rejected — the Activity shows this as a
+    // confirm dialog ("Aage bhi save karen?") and, if the cashier confirms,
+    // re-calls with allowOverride=true so the same bill saves normally (and
+    // the override itself gets audit-logged — see SaveSaleUseCase below).
+    data class CreditLimitExceeded(
+        val customerName: String,
+        val creditLimit: Double,
+        val projectedBalance: Double
+    ) : SaveSaleResult()
 }
 
 /** Result of a Quick Sale (single-item, no draft workflow). */
@@ -88,6 +99,12 @@ sealed class QuickSaleResult {
     data class InvalidQty(val message: String) : QuickSaleResult()
     // NEW (Improvement Pack P6): see SaveSaleResult.DuplicateInvoice.
     data class DuplicateInvoice(val message: String) : QuickSaleResult()
+    // NEW (10/10 Priority #7): see SaveSaleResult.CreditLimitExceeded.
+    data class CreditLimitExceeded(
+        val customerName: String,
+        val creditLimit: Double,
+        val projectedBalance: Double
+    ) : QuickSaleResult()
 }
 
 class ObserveCustomersForSaleUseCase(private val repository: SaleRepository) {
@@ -146,7 +163,13 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
         paymentMethodLabel: String,
         saleDateMillis: Long,
         original: Sale?,
-        originalItems: List<SaleItem>
+        originalItems: List<SaleItem>,
+        // NEW (10/10 Priority #7): false on the first attempt — if the bill would
+        // push the customer over their credit limit, this call returns
+        // CreditLimitExceeded instead of saving. The Activity shows a confirm
+        // dialog and, only if the cashier explicitly confirms, calls again with
+        // allowOverride=true to actually save it.
+        allowOverride: Boolean = false
     ): SaveSaleResult {
         if (lines.isEmpty()) return SaveSaleResult.EmptyItems
 
@@ -170,6 +193,27 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
 
         val method = if (totals.paid <= 0.009) "credit" else paymentMethodLabel
         val existingCustomer = knownCustomers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
+
+        // NEW (10/10 Priority #7 — Credit Limit + Due Management): only meaningful
+        // for a KNOWN customer with a limit actually configured (0 = "no limit
+        // set", the Customer.creditLimit default, so it never blocks the common
+        // case of a customer nobody has bothered to set a limit for). On an edit,
+        // this bill's OWN previous outstanding amount is subtracted back out
+        // first, so re-saving an unchanged (or reduced) credit bill for the same
+        // customer never trips the check on its own — only a bill that GROWS
+        // their outstanding balance past the limit does.
+        if (existingCustomer != null && existingCustomer.creditLimit > 0.0 && !allowOverride) {
+            val originalOutstanding =
+                if (original != null && original.customerId == existingCustomer.id) original.total - original.paid else 0.0
+            val projectedBalance = existingCustomer.balance - originalOutstanding + totals.due
+            if (projectedBalance > existingCustomer.creditLimit + 0.009) {
+                return SaveSaleResult.CreditLimitExceeded(
+                    customerName = existingCustomer.name,
+                    creditLimit = existingCustomer.creditLimit,
+                    projectedBalance = projectedBalance
+                )
+            }
+        }
         val saleType = if (saleTypeLabel == "Wholesale") "wholesale" else "retail"
         val invoice = editInvoice ?: run {
             // FIX (Improvement Pack P2): was mmYY + timestamp-tail alone — two devices
@@ -226,13 +270,38 @@ class SaveQuickSaleUseCase(private val repository: SaleRepository) {
         qty: Double,
         price: Double,
         unit: String,
-        customerName: String
+        customerName: String,
+        // NEW (10/10 Priority #7): see SaveSaleUseCase.allowOverride's comment —
+        // identical role for the Quick Sale dialog.
+        allowOverride: Boolean = false
     ): QuickSaleResult {
         // FIX (Improvement Pack P6): same qty>0/rate>=0 guard as SaveSaleUseCase
         // — reuses InvalidQty since the Activity/ViewModel already Toast its
         // message for this screen.
         if (qty <= 0.0) return QuickSaleResult.InvalidQty("Qty 0 se zyada honi chahiye")
         if (price < 0.0) return QuickSaleResult.InvalidQty("Rate negative nahi ho sakta")
+
+        // NEW (10/10 Priority #7 — Credit Limit + Due Management): a Quick Sale
+        // is 100% credit whenever a customer name is entered (see
+        // RoomSaleRepository.saveQuickSale's `isCredit` flag) — the whole amount
+        // becomes their outstanding balance, so check it the same way
+        // SaveSaleUseCase does for the main flow.
+        val trimmedName = customerName.trim()
+        if (trimmedName.isNotEmpty() && !allowOverride) {
+            val existingCustomer = repository.customersSnapshot()
+                .find { it.name.equals(trimmedName, ignoreCase = true) }
+            if (existingCustomer != null && existingCustomer.creditLimit > 0.0) {
+                val projectedBalance = existingCustomer.balance + (qty * price)
+                if (projectedBalance > existingCustomer.creditLimit + 0.009) {
+                    return QuickSaleResult.CreditLimitExceeded(
+                        customerName = existingCustomer.name,
+                        creditLimit = existingCustomer.creditLimit,
+                        projectedBalance = projectedBalance
+                    )
+                }
+            }
+        }
+
         return try {
             val result = repository.saveQuickSale(product, qty, price, unit, customerName.trim())
             QuickSaleResult.Success(result.invoice, result.isCredit)

@@ -339,6 +339,10 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
                 return@setOnClickListener
             }
             val custName = qsCustomer.text.toString().trim()
+            // NEW (10/10 Priority #7): stashed so a possible CreditLimitExceeded
+            // confirm dialog (raised after this dialog is already dismissed) can
+            // re-submit the same inputs — see SaleActivity.PendingQuickSale.
+            pendingQuickSale = SaleActivity.PendingQuickSale(product, q, price, chosenUnit, custName)
             viewModel.saveQuickSale(product, q, price, chosenUnit, custName)
             dialog.dismiss()
         }

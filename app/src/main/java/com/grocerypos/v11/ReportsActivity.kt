@@ -183,6 +183,17 @@ class ReportsActivity : AppCompatActivity() {
 
         navCard.addView(navDivider())
 
+        // NEW (10/10 Priority #9 — Stock Taking): full physical-count-vs-system
+        // reconciliation, distinct from Stock Adjustment above (which is for a
+        // single known item's damage/loss/correction, not a full recount).
+        navCard.addView(navRow(
+            iconRes = R.drawable.ic_list, accentHex = primary, tintHex = "#EEEDFE",
+            title = Loc.t(this, "Stock Taking", "اسٹاک گنتی"),
+            subtitle = Loc.t(this, "Physical count vs system stock", "اصل گنتی بمقابلہ سسٹم اسٹاک")
+        ) { startActivity(android.content.Intent(this@ReportsActivity, StockTakingActivity::class.java)) })
+
+        navCard.addView(navDivider())
+
         navCard.addView(navRow(
             iconRes = R.drawable.ic_shopping_bag, accentHex = amber, tintHex = "#FAEEDA",
             title = Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"),
