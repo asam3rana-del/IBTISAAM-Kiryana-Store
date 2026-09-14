@@ -125,7 +125,7 @@ class PartyActivity : AppCompatActivity() {
 
         // ================= HEADER (shared premiumHeader — same as History/Reports/Settings) =================
         outer.addView(premiumHeader(
-            icon = R.drawable.ic_people,
+            iconRes = R.drawable.ic_people,
             title = Loc.t(this@PartyActivity, "Customers & Suppliers", "کسٹمرز اور سپلائرز"),
             subtitle = Loc.t(this@PartyActivity, "Manage parties & view ledgers", "پارٹیز کا انتظام اور کھاتے دیکھیں"),
             primaryHex = navy,
