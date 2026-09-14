@@ -152,6 +152,11 @@ class SaleActivity : AppCompatActivity() {
     internal var editInvoice: String? = null
     private var originalSale: Sale? = null
     private var originalItems: List<SaleItem> = emptyList()
+    // NEW (double-tap / accidental double-entry guard, mirrors PurchaseActivity):
+    // isSaving blocks a second saveSale() while the first save is still in flight
+    // (fast double-tap on Save), and checkDuplicateAndProceed() below catches the
+    // slower case — the same bill genuinely saved twice a few minutes apart.
+    private var isSaving = false
 
     internal var lastMainPrice: Double = 0.0
     // FIX (sale-type keyboard-scroll bug): hasFocus() was unreliable right after a
@@ -1210,6 +1215,17 @@ class SaleActivity : AppCompatActivity() {
     }
 
     private fun handleSaleEvent(event: SaleEvent) {
+        // NEW: every branch except the ones that lead to another dialog/step re-arms
+        // the Save button — these are all "the save did not happen" outcomes coming
+        // back from SaveSaleUseCase, mirroring PurchaseActivity's handleViewModelEvent.
+        when (event) {
+            is SaleEvent.EmptyItems, is SaleEvent.CustomerRequiredForDue, is SaleEvent.StockIssue,
+            is SaleEvent.DuplicateInvoice, is SaleEvent.InvalidLine -> {
+                isSaving = false
+                saveButton.isEnabled = true
+            }
+            else -> {}
+        }
         when (event) {
             is SaleEvent.EmptyItems ->
                 Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show()
@@ -1222,6 +1238,8 @@ class SaleActivity : AppCompatActivity() {
             is SaleEvent.InvalidLine ->
                 Toast.makeText(this, event.message, Toast.LENGTH_LONG).show()
             is SaleEvent.SaveSuccess -> {
+                isSaving = false
+                saveButton.isEnabled = true
                 val result = event.result
                 result.stockWarnings.forEach { warning ->
                     Toast.makeText(this, warning, Toast.LENGTH_LONG).show()
@@ -1379,12 +1397,67 @@ class SaleActivity : AppCompatActivity() {
     // everywhere else in this screen (recomputeAmounts/refreshDue), so the live
     // preview and the saved bill always agree. ----
     private fun saveSale() {
+        if (isSaving) return
+        if (lines.isEmpty()) { Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show(); return }
+
         val enteredCustomer = customerName.text.toString().trim()
         val enteredDiscount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
         val enteredPaid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
         val saleTypeLabel = saleTypeSpinner.selectedItem?.toString() ?: "Retail"
         val paymentMethodLabel = paymentMethodSpinner.selectedItem?.toString() ?: "Cash"
 
+        // NEW: same-customer + same-total heuristic as PurchaseActivity's
+        // checkDuplicateAndProceed — computed with the same DiscountCalculator the
+        // save path itself uses, so the total here matches what will actually land
+        // in the sales table. Runs before the real save; skips the sale currently
+        // being edited so re-saving an edit of itself never trips a false alarm.
+        val subtotal = lines.sumOf { it.amount }
+        val totals = DiscountCalculator.compute(subtotal, enteredDiscount, enteredPaid)
+        checkDuplicateAndProceedSale(enteredCustomer, totals.total) {
+            proceedSaveSale(enteredCustomer, saleTypeLabel, enteredDiscount, enteredPaid, paymentMethodLabel)
+        }
+    }
+
+    private fun checkDuplicateAndProceedSale(customer: String, grandTotal: Double, onProceed: () -> Unit) {
+        val custForMatch = customer.ifBlank { "Walk-in" }
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SaleActivity)
+            val recent = db.saleDao().allSales()
+            val windowMillis = 24 * 60 * 60 * 1000L
+            val now = System.currentTimeMillis()
+            val duplicate = recent.firstOrNull { r ->
+                r.invoice != editInvoice &&
+                r.status != "returned" &&
+                r.customerName.equals(custForMatch, ignoreCase = true) &&
+                r.total == grandTotal &&
+                (now - r.createdAt) <= windowMillis
+            }
+            if (duplicate == null) { onProceed(); return@launch }
+            val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+            android.app.AlertDialog.Builder(this@SaleActivity)
+                .setTitle(com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Possible Duplicate Bill", "ممکنہ ڈپلیکیٹ بل"))
+                .setMessage(
+                    com.grocerypos.v11.util.Loc.t(
+                        this@SaleActivity,
+                        "A sale for $custForMatch of Rs %.0f was already saved on ${fmt.format(Date(duplicate.createdAt))} (Invoice #${duplicate.invoice}).\n\nSave this one anyway?".format(grandTotal),
+                        "$custForMatch کے لیے Rs %.0f کی سیل پہلے ہی ${fmt.format(Date(duplicate.createdAt))} کو محفوظ ہو چکی ہے (انوائس نمبر ${duplicate.invoice})۔\n\nکیا پھر بھی محفوظ کریں؟".format(grandTotal)
+                    )
+                )
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ -> onProceed() }
+                .setNegativeButton(com.grocerypos.v11.util.Loc.t(this@SaleActivity, "Cancel", "منسوخ کریں"), null)
+                .show()
+        }
+    }
+
+    private fun proceedSaveSale(
+        enteredCustomer: String,
+        saleTypeLabel: String,
+        enteredDiscount: Double,
+        enteredPaid: Double,
+        paymentMethodLabel: String
+    ) {
+        isSaving = true
+        saveButton.isEnabled = false
         // FIX (Phase 1 - Data Safety): the whole save (stock reversal on edit, stock
         // check, stock deduction, sale+items insert, customer balance update, cash
         // transaction insert) runs inside a single Room transaction in
