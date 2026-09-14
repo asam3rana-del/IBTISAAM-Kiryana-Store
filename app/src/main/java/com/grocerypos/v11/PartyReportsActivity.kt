@@ -12,7 +12,8 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.RecyclerView
+// FIX (list truncation): RecyclerView import no longer needed here — see
+// listContainer below for why this screen stopped using recyclerListView().
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
@@ -73,7 +74,22 @@ class PartyReportsActivity : AppCompatActivity() {
     // by the shared ViewListAdapter (see UiHelpers.kt), so only on-screen
     // rows get inflated instead of the whole list living as permanent child
     // views. ----
-    private lateinit var listContainer: RecyclerView
+    // FIX (list truncation): this was a RecyclerView built via recyclerListView()
+    // (WRAP_CONTENT height, nested scrolling disabled, sized by the outer
+    // ScrollView). With a long supplier/customer list that combo under-measures
+    // on first layout — RecyclerView's wrap_content sizing inside a ScrollView
+    // doesn't always re-request layout correctly when notifyDataSetChanged()
+    // swaps in a bigger row set (loadParties() runs after the initial empty
+    // layout pass), so the screen renders only however many rows fit the stale
+    // measured height and neither the RecyclerView nor the outer ScrollView
+    // scrolls past that point — this is what made suppliers past "Amir Gourmet"
+    // (alphabetically, e.g. "Arfan Brothers") impossible to reach by scrolling,
+    // even though the row itself was being added to the adapter's data.
+    // PartyActivity's own Customers & Suppliers list never had this problem
+    // because it's a plain LinearLayout inside a ScrollView — no wrap_content
+    // RecyclerView measurement involved — so this screen now matches that
+    // proven pattern instead.
+    private lateinit var listContainer: LinearLayout
     private lateinit var customersTab: TextView
     private lateinit var suppliersTab: TextView
     private var showingCustomers = true
@@ -115,7 +131,7 @@ class PartyReportsActivity : AppCompatActivity() {
 
         root.addView(sectionHeader(Loc.t(this, "Tap a party to select a report", "رپورٹ منتخب کرنے کے لیے پارٹی پر ٹیپ کریں")))
 
-        listContainer = recyclerListView()
+        listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)
         root.addView(spacer(30))
 
@@ -164,7 +180,8 @@ class PartyReportsActivity : AppCompatActivity() {
                     })
                 }
             }
-            listContainer.submitRows(rows)
+            listContainer.removeAllViews()
+            rows.forEach { listContainer.addView(it) }
         }
     }
 

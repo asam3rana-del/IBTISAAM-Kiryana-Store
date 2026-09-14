@@ -130,8 +130,95 @@ class PartyRepository(
         if (customersFixed > 0 || suppliersFixed > 0) SyncQueueHelper.trigger(appContext)
         return RecalcResult(customersFixed, suppliersFixed)
     }
+
+    // NEW (Merge Duplicate Parties): fixes the multi-device "two devices created
+    // the same customer/supplier independently before their first sync" problem —
+    // e.g. "Arfan Brothers" existing twice with two separate purchase histories
+    // and two separate running balances, neither of which is wrong on its own,
+    // they just never got combined into one party. Groups customers/suppliers by
+    // exact name (trimmed, case-insensitive), and for every group with more than
+    // one member: keeps the lowest-id (earliest-created) row, re-points every
+    // other member's sales/purchases/payments onto it, folds the other member's
+    // openingBalance into the keeper, deletes the other member, and enqueues sync
+    // for every one of those changes so the merge itself propagates to other
+    // devices instead of only fixing this one. `balance` (as opposed to
+    // openingBalance) is deliberately NOT hand-adjusted here — recalculateBalances()
+    // is called at the end, once every bill/payment has been re-pointed, so the
+    // keeper's balance is simply recomputed from its now-complete bill/payment
+    // history, the same safe path used for ordinary balance drift.
+    suspend fun mergeDuplicateParties(): MergeResult {
+        var customersMerged = 0
+        var suppliersMerged = 0
+        val now = System.currentTimeMillis()
+
+        val customerGroups = db.customerDao().allList().groupBy { it.name.trim().lowercase() }
+        for (group in customerGroups.values) {
+            if (group.size < 2) continue
+            val sorted = group.sortedBy { it.id }
+            var keeper = sorted.first()
+            for (dup in sorted.drop(1)) {
+                for (sale in db.saleDao().salesByCustomer(dup.id)) {
+                    val updated = sale.copy(customerId = keeper.id, dirty = true)
+                    db.saleDao().updateSale(updated)
+                    SyncQueueHelper.enqueue(db, "sale", SyncQueueHelper.saleEntityId(updated), "update", SyncQueueHelper.saleJson(db, updated))
+                }
+                for (payment in db.paymentDao().listByParty("customer", dup.id)) {
+                    val updated = payment.copy(partyId = keeper.id, dirty = true, updatedAt = now)
+                    db.paymentDao().update(updated)
+                    SyncQueueHelper.enqueuePayment(db, updated)
+                }
+                if (dup.openingBalance != 0.0) {
+                    keeper = keeper.copy(openingBalance = keeper.openingBalance + dup.openingBalance, dirty = true)
+                    db.customerDao().update(keeper)
+                    SyncQueueHelper.enqueueCustomer(db, keeper)
+                }
+                db.customerDao().delete(dup)
+                SyncQueueHelper.enqueue(db, "customer", dup.serverId ?: SyncQueueHelper.customerEntityId(dup), "delete", "{}")
+                customersMerged++
+            }
+        }
+
+        val supplierGroups = db.supplierDao().allList().groupBy { it.name.trim().lowercase() }
+        for (group in supplierGroups.values) {
+            if (group.size < 2) continue
+            val sorted = group.sortedBy { it.id }
+            var keeper = sorted.first()
+            for (dup in sorted.drop(1)) {
+                for (purchase in db.purchaseDao().purchasesBySupplier(dup.id)) {
+                    val updated = purchase.copy(supplierId = keeper.id, dirty = true)
+                    db.purchaseDao().updatePurchase(updated)
+                    SyncQueueHelper.enqueue(db, "purchase", SyncQueueHelper.purchaseEntityId(updated), "update", SyncQueueHelper.purchaseJson(db, updated))
+                }
+                for (payment in db.paymentDao().listByParty("supplier", dup.id)) {
+                    val updated = payment.copy(partyId = keeper.id, dirty = true, updatedAt = now)
+                    db.paymentDao().update(updated)
+                    SyncQueueHelper.enqueuePayment(db, updated)
+                }
+                if (dup.openingBalance != 0.0) {
+                    keeper = keeper.copy(openingBalance = keeper.openingBalance + dup.openingBalance, dirty = true)
+                    db.supplierDao().update(keeper)
+                    SyncQueueHelper.enqueueSupplier(db, keeper)
+                }
+                db.supplierDao().delete(dup)
+                SyncQueueHelper.enqueue(db, "supplier", dup.serverId ?: SyncQueueHelper.supplierEntityId(dup), "delete", "{}")
+                suppliersMerged++
+            }
+        }
+
+        if (customersMerged > 0 || suppliersMerged > 0) {
+            recalculateBalances()
+            SyncQueueHelper.trigger(appContext)
+        }
+        return MergeResult(customersMerged, suppliersMerged)
+    }
 }
 
 /** Result of [PartyRepository.recalculateBalances] — how many customers/suppliers
  * actually had a drifted balance corrected (0/0 means everything already matched). */
 data class RecalcResult(val customersFixed: Int, val suppliersFixed: Int)
+
+/** Result of [PartyRepository.mergeDuplicateParties] — how many duplicate
+ * customer/supplier ROWS were merged away (a group of 3 same-name suppliers
+ * counts as 2 merged, since one survives as the keeper). 0/0 means no
+ * same-name duplicates were found. */
+data class MergeResult(val customersMerged: Int, val suppliersMerged: Int)

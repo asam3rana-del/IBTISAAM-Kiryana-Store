@@ -85,6 +85,7 @@ class PartyActivity : AppCompatActivity() {
     private lateinit var searchField: EditText
     private lateinit var duesOnlyChip: TextView
     private lateinit var recalculateChip: TextView
+    private lateinit var mergeDuplicatesChip: TextView
     private var searchQuery: String = ""
     private var duesOnly: Boolean = false
     private var lastState: PartyUiState? = null
@@ -301,6 +302,24 @@ class PartyActivity : AppCompatActivity() {
             setOnClickListener { confirmRecalculateBalances() }
         }
         filterRow.addView(recalculateChip)
+        filterRow.addView(spacer(10).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+        })
+        // NEW (Merge Duplicate Parties): same-name customers/suppliers created
+        // independently on two devices before their first sync end up as two
+        // separate rows with two separate histories — this merges them into one.
+        // See PartyRepository.mergeDuplicateParties().
+        mergeDuplicatesChip = TextView(this).apply {
+            text = Loc.t(this@PartyActivity, "Merge Duplicates", "ڈپلیکیٹ ملائیں")
+            textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding((16 * d).toInt(), (14 * d).toInt(), (16 * d).toInt(), (14 * d).toInt())
+            background = roundedBackground("#EEF0F7", 24)
+            setTextColor(Color.parseColor("#6B7280"))
+            setLeadingIcon(R.drawable.ic_people, "#6B7280", 14, 6)
+            setOnClickListener { confirmMergeDuplicates() }
+        }
+        filterRow.addView(mergeDuplicatesChip)
         root.addView(filterRow)
 
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -410,6 +429,18 @@ class PartyActivity : AppCompatActivity() {
                     )
                 }
             }
+            is PartyEvent.DuplicatesMerged -> {
+                val total = event.customersMerged + event.suppliersMerged
+                if (total == 0) {
+                    Loc.t(this, "No duplicates found", "کوئی ڈپلیکیٹ نہیں ملا")
+                } else {
+                    Loc.t(
+                        this,
+                        "Merged ${event.customersMerged} customer(s), ${event.suppliersMerged} supplier(s)",
+                        "${event.customersMerged} کسٹمرز اور ${event.suppliersMerged} سپلائرز ملا دیے گئے"
+                    )
+                }
+            }
         }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         if (event == PartyEvent.Saved) {
@@ -434,6 +465,24 @@ class PartyActivity : AppCompatActivity() {
                 )
             )
             .setPositiveButton(Loc.t(this, "Recalculate", "دوبارہ شمار کریں")) { _, _ -> viewModel.recalculateBalances() }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    // NEW (Merge Duplicate Parties): confirmation before running — this moves bills/
+    // payments between rows and deletes rows, so it should be a deliberate action,
+    // not something a stray tap triggers.
+    private fun confirmMergeDuplicates() {
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Merge Duplicates", "ڈپلیکیٹ ملائیں"))
+            .setMessage(
+                Loc.t(
+                    this,
+                    "This finds customers/suppliers that share the exact same name, combines their purchase/sale history and balance into one record, and deletes the extra copy. This can't be undone. Continue?",
+                    "یہ ایک جیسے نام والے کسٹمرز/سپلائرز کو ڈھونڈ کر ان کی خرید/فروخت کی تاریخ اور بیلنس ایک ریکارڈ میں ملا دے گا، اور اضافی کاپی حذف کر دے گا۔ یہ واپس نہیں ہو سکتا۔ جاری رکھیں؟"
+                )
+            )
+            .setPositiveButton(Loc.t(this, "Merge", "ملائیں")) { _, _ -> viewModel.mergeDuplicateParties() }
             .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
             .show()
     }

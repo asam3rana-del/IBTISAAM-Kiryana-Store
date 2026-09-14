@@ -8,6 +8,7 @@ import com.grocerypos.v11.domain.DeleteCustomerUseCase
 import com.grocerypos.v11.domain.DeleteSupplierUseCase
 import com.grocerypos.v11.domain.GetCustomerHistoryUseCase
 import com.grocerypos.v11.domain.GetSupplierHistoryUseCase
+import com.grocerypos.v11.domain.MergeDuplicatePartiesUseCase
 import com.grocerypos.v11.domain.ObserveCustomersUseCase
 import com.grocerypos.v11.domain.ObserveSuppliersUseCase
 import com.grocerypos.v11.domain.RecalculateBalancesUseCase
@@ -41,6 +42,9 @@ sealed class PartyEvent {
     // NEW (Recalculate Balances): how many customers/suppliers actually had a
     // drifted balance corrected — 0/0 means everything already matched.
     data class BalancesRecalculated(val customersFixed: Int, val suppliersFixed: Int) : PartyEvent()
+    // NEW (Merge Duplicate Parties): how many duplicate customer/supplier ROWS
+    // were merged away — 0/0 means no same-name duplicates were found.
+    data class DuplicatesMerged(val customersMerged: Int, val suppliersMerged: Int) : PartyEvent()
 }
 
 class PartyViewModel(
@@ -54,7 +58,8 @@ class PartyViewModel(
     private val deleteSupplier: DeleteSupplierUseCase,
     private val getCustomerHistory: GetCustomerHistoryUseCase,
     private val getSupplierHistory: GetSupplierHistoryUseCase,
-    private val recalculateBalancesUseCase: RecalculateBalancesUseCase
+    private val recalculateBalancesUseCase: RecalculateBalancesUseCase,
+    private val mergeDuplicatePartiesUseCase: MergeDuplicatePartiesUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PartyUiState())
@@ -137,6 +142,15 @@ class PartyViewModel(
         viewModelScope.launch {
             val result = recalculateBalancesUseCase()
             _events.emit(PartyEvent.BalancesRecalculated(result.customersFixed, result.suppliersFixed))
+        }
+    }
+
+    /** "Merge Duplicates" action — see MergeDuplicatePartiesUseCase /
+     * PartyRepository.mergeDuplicateParties() for what actually gets merged. */
+    fun mergeDuplicateParties() {
+        viewModelScope.launch {
+            val result = mergeDuplicatePartiesUseCase()
+            _events.emit(PartyEvent.DuplicatesMerged(result.customersMerged, result.suppliersMerged))
         }
     }
 }
