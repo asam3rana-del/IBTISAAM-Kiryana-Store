@@ -249,6 +249,26 @@ class RoomPurchaseRepository(
         }
     }
 
+    // FIX (edit-blocked-by-unrelated-stock-change bug): editing a purchase used to
+    // ALWAYS reverse every original line's stock/cost and then reapply the (possibly
+    // identical) new lines — even when the edit only changed something unrelated like
+    // Paid Amount and every item (barcode/qty/unit/rate) was left untouched. Since
+    // reverseStockAndCostForItems() safety-checks that the product still has enough
+    // stock to reverse, a later sale that ate into that item's stock would block the
+    // edit entirely ("... ka stock is purchase ke baad already kam ho chuka hai ..."),
+    // even though a no-op reverse-then-reapply of unchanged items never needed to
+    // touch stock/cost in the first place. This compares the edited lines against the
+    // original items (barcode/qty/unit/rate) so savePurchase can skip the stock/cost
+    // dance entirely when nothing item-related actually changed.
+    private fun itemsUnchanged(lines: List<PurchaseLine>, originalItems: List<PurchaseItem>): Boolean {
+        if (lines.size != originalItems.size) return false
+        fun key(barcode: String, qty: Double, unit: String, rate: Double) =
+            "$barcode|${"%.6f".format(qty)}|$unit|${"%.6f".format(rate)}"
+        val lineKeys = lines.map { key(it.barcode ?: "", it.qty, it.unit, it.rate) }.sorted()
+        val itemKeys = originalItems.map { key(it.barcode, it.qty, it.unit, it.unitCost) }.sorted()
+        return lineKeys == itemKeys
+    }
+
     // FIX (Phase 1 - Data Safety): stock/cost reversal + supplier balance reversal + all
     // row deletes now run as one atomic Room transaction (previously separate sequential
     // writes — same class of bug as savePurchase()/HistoryActivity.deletePurchase(), which
@@ -298,12 +318,18 @@ class RoomPurchaseRepository(
             val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
             var supplierId = matchedSupplier?.id
             val billNo = editBillNo ?: genBillNo()
+            // See itemsUnchanged() comment above: when true, this edit didn't touch
+            // any item's barcode/qty/unit/rate (e.g. only Paid Amount changed), so the
+            // reverse-then-reapply below must be skipped entirely for stock/cost.
+            val skipStockTouch = original != null && itemsUnchanged(lines, originalItems)
             db.withTransaction {
                 if (supplierId == null && party.isNotEmpty()) {
                     supplierId = db.supplierDao().insert(Supplier(name = party))
                 }
                 if (original != null) {
-                    reverseStockAndCostForItems(originalItems)
+                    if (!skipStockTouch) {
+                        reverseStockAndCostForItems(originalItems)
+                    }
                     val originalOutstanding = original.total - original.paid
                     if (original.supplierId != null && originalOutstanding > 0) {
                         SyncQueueHelper.adjustSupplierBalance(db, original.supplierId, -originalOutstanding)
@@ -345,31 +371,38 @@ class RoomPurchaseRepository(
                 lines.forEach { line ->
                     val barcode = line.barcode ?: return@forEach
                     val before = db.productDao().find(barcode) ?: return@forEach
-                    val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit)
-                    // FIX (fraction control): reject a purchase line that would leave a
-                    // fractional smallest-unit qty for a non-fractional item (Piece/Dabbi/
-                    // Bottle etc.) instead of silently rounding it away — previously stock
-                    // was an Int so e.g. "2.5 Dabbi" quietly became "2 Dabbi" or "3 Dabbi".
-                    if (!before.isValidSmallestQty(purchasedSmallest)) {
-                        throw IllegalStateException("\"${before.name}\" ke liye qty (${line.qty} ${line.unit}) whole ${before.smallestUnitName()} mein convert nahi hoti — qty check karen.")
-                    }
-                    // Compute the new weighted-average cost BEFORE the stock increase below
-                    // (uses `before.stock`, i.e. pre-increase) so the stock_movements row
-                    // logged by increaseProductStock() carries the correct just-computed
-                    // cost instead of the stale pre-purchase one.
-                    var newCostForMovement = before.cost
-                    if (purchasedSmallest > 0) {
-                        val oldStockSmallest = before.stock
-                        val factor = before.smallestUnitFactor()
-                        val oldCostPerSmallest = if (factor > 0) before.cost / factor else before.cost
-                        val purchaseRatePerSmallest = line.amount / purchasedSmallest
-                        val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
-                            else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest)
-                        newCostForMovement = newCostPerSmallest * factor
-                    }
-                    SyncQueueHelper.increaseProductStock(db, barcode, purchasedSmallest, "PURCHASE", billNo, newCostForMovement)
-                    if (purchasedSmallest > 0) {
-                        SyncQueueHelper.updateProductCost(db, barcode, newCostForMovement)
+                    // See itemsUnchanged()/skipStockTouch comment above: nothing item-
+                    // related changed in this edit, so leave stock/cost exactly as-is
+                    // instead of reversing and reapplying a no-op — this is what lets an
+                    // edit that only changes e.g. Paid Amount go through even when a
+                    // later sale has since eaten into this item's stock.
+                    if (!skipStockTouch) {
+                        val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit)
+                        // FIX (fraction control): reject a purchase line that would leave a
+                        // fractional smallest-unit qty for a non-fractional item (Piece/Dabbi/
+                        // Bottle etc.) instead of silently rounding it away — previously stock
+                        // was an Int so e.g. "2.5 Dabbi" quietly became "2 Dabbi" or "3 Dabbi".
+                        if (!before.isValidSmallestQty(purchasedSmallest)) {
+                            throw IllegalStateException("\"${before.name}\" ke liye qty (${line.qty} ${line.unit}) whole ${before.smallestUnitName()} mein convert nahi hoti — qty check karen.")
+                        }
+                        // Compute the new weighted-average cost BEFORE the stock increase below
+                        // (uses `before.stock`, i.e. pre-increase) so the stock_movements row
+                        // logged by increaseProductStock() carries the correct just-computed
+                        // cost instead of the stale pre-purchase one.
+                        var newCostForMovement = before.cost
+                        if (purchasedSmallest > 0) {
+                            val oldStockSmallest = before.stock
+                            val factor = before.smallestUnitFactor()
+                            val oldCostPerSmallest = if (factor > 0) before.cost / factor else before.cost
+                            val purchaseRatePerSmallest = line.amount / purchasedSmallest
+                            val newCostPerSmallest = if (oldStockSmallest <= 0) purchaseRatePerSmallest
+                                else ((oldStockSmallest * oldCostPerSmallest) + (purchasedSmallest * purchaseRatePerSmallest)) / (oldStockSmallest + purchasedSmallest)
+                            newCostForMovement = newCostPerSmallest * factor
+                        }
+                        SyncQueueHelper.increaseProductStock(db, barcode, purchasedSmallest, "PURCHASE", billNo, newCostForMovement)
+                        if (purchasedSmallest > 0) {
+                            SyncQueueHelper.updateProductCost(db, barcode, newCostForMovement)
+                        }
                     }
                     // NEW ("10/10 Purchase screen" item #7): set/update the product's
                     // retail (salePrice) / wholesale rate right here at purchase time —
