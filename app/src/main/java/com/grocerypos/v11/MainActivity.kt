@@ -460,9 +460,19 @@ class MainActivity : ThemedActivity() {
             elevation = 8f
             background = roundedBackgroundBordered(cardWhite, 30)
 
-            addView(premiumIconBadge(R.drawable.ic_search, flatTealBg, flatTealFg, 36, 16).apply {
-                (layoutParams as LinearLayout.LayoutParams).setMargins(0, 0, 14, 0)
-            })
+            // FIX (crash — ClassCastException: ViewGroup$LayoutParams cannot be cast to
+            // LinearLayout$LayoutParams): premiumIconBadge() (→ iconBadge() in MenuRow.kt)
+            // sets a plain ViewGroup.LayoutParams on the icon view. The old code cast that
+            // straight to LinearLayout.LayoutParams INSIDE the .apply{} block that builds
+            // addView()'s argument — which runs BEFORE addView() itself, so at that point
+            // the view still had its original ViewGroup.LayoutParams and the cast crashed
+            // on every launch. addView() itself is what converts a child's incompatible
+            // LayoutParams to the parent's type (LinearLayout.generateLayoutParams()), so
+            // the icon must be added FIRST — only then does its layoutParams actually
+            // become a real LinearLayout.LayoutParams that's safe to cast and set margins on.
+            val searchIcon = premiumIconBadge(R.drawable.ic_search, flatTealBg, flatTealFg, 36, 16)
+            addView(searchIcon)
+            (searchIcon.layoutParams as LinearLayout.LayoutParams).setMargins(0, 0, 14, 0)
             addView(input)
         }
 
