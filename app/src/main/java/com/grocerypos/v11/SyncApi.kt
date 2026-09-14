@@ -617,7 +617,14 @@ object SyncApi {
                         unit = im["unit"] as? String ?: "",
                         conversionFactor = (im["conversionFactor"] as? Number)?.toDouble() ?: 0.0,
                         // NEW (Improvement Pack P2): see the Sale.saleUid pull above.
-                        lineUid = (im["lineUid"] as? String)?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
+                        lineUid = (im["lineUid"] as? String)?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString(),
+                        // FIX (item name / retail-wholesale rate "gayab" after sync): pull
+                        // this row's own name/rate snapshot down too — see purchaseJson()'s
+                        // matching push in SyncQueueHelper.kt and PurchaseItem.itemName's
+                        // comment in Database.kt.
+                        itemName = im["itemName"] as? String ?: "",
+                        retailRate = (im["retailRate"] as? Number)?.toDouble() ?: 0.0,
+                        wholesaleRate = (im["wholesaleRate"] as? Number)?.toDouble() ?: 0.0
                     )
                 }
                 if (items.isNotEmpty()) {

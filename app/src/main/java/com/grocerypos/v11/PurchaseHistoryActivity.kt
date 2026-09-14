@@ -423,7 +423,10 @@ class PurchaseHistoryActivity : ThemedActivity() {
         for (item in items) {
             val product = db.productDao().find(item.barcode)
             val qtyText = formatQty(item.qty)
-            lineTexts.add(listOf(product?.name ?: item.barcode, qtyText, item.unit.ifBlank { product?.unit ?: "" }, item.unitCost, item.amount).joinToString("\u0003"))
+            // FIX (item name "gayab" after sync): prefer the name snapshotted on this
+            // row; only fall back to the live product lookup for pre-migration rows.
+            val itemName = item.itemName.ifBlank { product?.name ?: item.barcode }
+            lineTexts.add(listOf(itemName, qtyText, item.unit.ifBlank { product?.unit ?: "" }, item.unitCost, item.amount).joinToString("\u0003"))
         }
         val itemsEncoded = lineTexts.joinToString("\u0002")
 
@@ -496,7 +499,9 @@ class PurchaseHistoryActivity : ThemedActivity() {
         if (items.isEmpty()) return@safeLaunch
         val rows = items.map { item ->
             val product = db.productDao().find(item.barcode)
-            ReturnRow(item, product?.name ?: item.barcode, item.unit.ifBlank { product?.unit ?: "" })
+            // FIX (item name "gayab" after sync): prefer the name snapshotted on this
+            // row; only fall back to the live product lookup for pre-migration rows.
+            ReturnRow(item, item.itemName.ifBlank { product?.name ?: item.barcode }, item.unit.ifBlank { product?.unit ?: "" })
         }
         openReturnPurchaseDialog(billNo, rows)
     }

@@ -88,7 +88,11 @@ class RoomPurchaseRepository(
         val lines = items.map { pi ->
             val product = db.productDao().find(pi.barcode)
             PurchaseLine(
-                itemName = product?.name ?: pi.barcode,
+                // FIX (item name "gayab" after sync): prefer the name snapshotted on
+                // this row at purchase time; only fall back to a live product lookup
+                // for rows saved before MIGRATION_35_36 (itemName=="" there). See
+                // PurchaseItem.itemName's comment in Database.kt.
+                itemName = pi.itemName.ifBlank { product?.name ?: pi.barcode },
                 barcode = pi.barcode,
                 qty = pi.qty,
                 unit = pi.unit.ifBlank { product?.unit ?: "" },
@@ -98,7 +102,14 @@ class RoomPurchaseRepository(
                 secondaryUnit = product?.secondaryUnit ?: "",
                 secondaryUnitQty = product?.secondaryUnitQty ?: 0.0,
                 tertiaryUnit = product?.tertiaryUnit ?: "",
-                tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0
+                tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0,
+                // FIX (retail/wholesale rate "gayab" on edit): this used to always be
+                // hardcoded 0.0 here because the rate the user entered was never saved
+                // anywhere — only the *product's* current price got updated. Now it's
+                // read back from this row's own snapshot. 0.0 on a pre-migration row
+                // just means "not captured", same as before.
+                retailRate = pi.retailRate,
+                wholesaleRate = pi.wholesaleRate
             )
         }
         return PurchaseEditData(purchase, items, supplierName, lines)
@@ -272,7 +283,14 @@ class RoomPurchaseRepository(
                         // FIX (historical unit conversion bug): freeze this line's
                         // smallest-units-per-`unit` factor at purchase time — see
                         // Database.kt's PurchaseItem.smallestQty()/conversionFactor comment.
-                        conversionFactor = lineProduct?.smallestPerUnitOf(line.unit) ?: 0.0
+                        conversionFactor = lineProduct?.smallestPerUnitOf(line.unit) ?: 0.0,
+                        // FIX (item name / retail-wholesale rate "gayab" after sync):
+                        // snapshot this line's own name + entered rates on the row
+                        // itself instead of relying on a live products-table lookup
+                        // later — see PurchaseItem.itemName's comment in Database.kt.
+                        itemName = line.itemName,
+                        retailRate = line.retailRate,
+                        wholesaleRate = line.wholesaleRate
                     )
                 }
                 db.purchaseDao().items(purchaseItems)

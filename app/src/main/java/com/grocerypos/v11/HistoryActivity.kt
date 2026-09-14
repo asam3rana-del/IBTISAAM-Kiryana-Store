@@ -317,7 +317,10 @@ class HistoryActivity : AppCompatActivity() {
             // to the barcode only if the product record itself is missing/deleted. ----
             for (it in items) {
                 val product = db.productDao().find(it.barcode)
-                val displayName = product?.name ?: it.barcode
+                // FIX (item name "gayab" after sync): prefer the name snapshotted on
+                // this row; only fall back to the live product lookup for
+                // pre-migration rows. See PurchaseItem.itemName's comment in Database.kt.
+                val displayName = it.itemName.ifBlank { product?.name ?: it.barcode }
                 val u = if (it.unit.isBlank()) "" else " ${it.unit}"
                 body.addView(itemRow(displayName, "${it.qty}$u x ${it.unitCost}", "Rs %.2f".format(it.amount)))
             }
@@ -352,7 +355,10 @@ class HistoryActivity : AppCompatActivity() {
             if (items.isEmpty()) return@launch
             val rowMeta = items.map { item ->
                 val product = db.productDao().find(item.barcode)
-                Triple(item, product?.name ?: item.barcode, item.unit.ifBlank { product?.unit ?: "" })
+                // FIX (item name "gayab" after sync): prefer the name snapshotted on
+                // this row; only fall back to the live product lookup for
+                // pre-migration rows.
+                Triple(item, item.itemName.ifBlank { product?.name ?: item.barcode }, item.unit.ifBlank { product?.unit ?: "" })
             }
 
             // FIX (dialog buttons hidden off-screen): capping just the item list's height

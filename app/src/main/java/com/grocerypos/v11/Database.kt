@@ -493,7 +493,22 @@ data class PurchaseItem(
     // purchased. 0.0 means "not captured" (pre-migration row); see smallestQty().
     val conversionFactor:Double=0.0,
     // NEW (Improvement Pack P2): same reasoning as SaleItem.lineUid above.
-    @ColumnInfo(defaultValue="") val lineUid:String=UUID.randomUUID().toString()
+    @ColumnInfo(defaultValue="") val lineUid:String=UUID.randomUUID().toString(),
+    // FIX (item name / retail-wholesale rate "gayab" after sync — MIGRATION_35_36):
+    // this row used to have NO name or rate columns of its own — History/Edit/Return
+    // always re-derived the name via a live `products` table lookup by barcode
+    // (see the removed `product?.name ?: barcode` pattern), and the entered
+    // retail/wholesale rate was never persisted here at all (loadForEdit() always
+    // rebuilt it as 0.0). On a second device that hasn't yet synced/created that
+    // barcode's product row (or where the product was later renamed/deleted), the
+    // lookup came back null/stale and the name showed as the barcode, or the rate
+    // field showed empty. Snapshotting these on the row itself — like SaleItem
+    // already does with `product` — makes this row self-contained, same as a real
+    // invoice line item should be. Blank/0.0 = pre-migration row; callers fall back
+    // to the old live-lookup behaviour for those (see RoomPurchaseRepository).
+    @ColumnInfo(defaultValue="") val itemName:String="",
+    @ColumnInfo(defaultValue="0.0") val retailRate:Double=0.0,
+    @ColumnInfo(defaultValue="0.0") val wholesaleRate:Double=0.0
 )
 
 @Entity(tableName="returns")
@@ -1579,6 +1594,21 @@ val MIGRATION_34_35 = object : Migration(34, 35) {
     }
 }
 
+// FIX (item name / retail-wholesale rate "gayab" after sync): see PurchaseItem's
+// itemName/retailRate/wholesaleRate comment in the entity above. Same low-risk
+// plain-ADD-COLUMN shape as MIGRATION_33_34/34_35 — no table recreate needed.
+// Pre-existing rows get itemName='' and rate=0.0, which callers (loadForEdit,
+// history/return displays) treat exactly like they already treat any row from
+// before this fix: fall back to the live product-table lookup for the name, and
+// leave the rate field blank on edit — nothing regresses for old data.
+val MIGRATION_35_36 = object : Migration(35, 36) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE purchase_items ADD COLUMN itemName TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE purchase_items ADD COLUMN retailRate REAL NOT NULL DEFAULT 0.0")
+        database.execSQL("ALTER TABLE purchase_items ADD COLUMN wholesaleRate REAL NOT NULL DEFAULT 0.0")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1591,7 +1621,7 @@ val MIGRATION_34_35 = object : Migration(34, 35) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=35, exportSchema=true
+    version=36, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1618,7 +1648,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

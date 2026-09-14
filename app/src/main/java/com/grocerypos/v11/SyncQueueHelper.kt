@@ -418,7 +418,14 @@ object SyncQueueHelper {
                 // FIX (historical unit conversion bug): see saleJson()'s itemMaps above.
                 "conversionFactor" to it.conversionFactor,
                 // NEW (Improvement Pack P2): see PurchaseItem.lineUid in Database.kt.
-                "lineUid" to it.lineUid
+                "lineUid" to it.lineUid,
+                // FIX (item name / retail-wholesale rate "gayab" after sync): sync this
+                // row's own name/rate snapshot too, or a device that pulls this purchase
+                // before it has (or ever gets) the matching product row would still show
+                // the old barcode/blank-rate symptom. See PurchaseItem.itemName's comment.
+                "itemName" to it.itemName,
+                "retailRate" to it.retailRate,
+                "wholesaleRate" to it.wholesaleRate
             )
         }
         val supplierServerId = purchase.supplierId?.let { db.supplierDao().find(it)?.let { s -> supplierEntityId(s) } }

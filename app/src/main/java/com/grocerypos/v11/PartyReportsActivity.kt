@@ -277,7 +277,10 @@ class PartyReportsActivity : AppCompatActivity() {
                 val map = LinkedHashMap<String, ItemAgg>()
                 purchases.forEach { p ->
                     db.purchaseDao().itemsForBill(p.billNo).forEach { it ->
-                        val productName = db.productDao().find(it.barcode)?.name ?: it.barcode
+                        // FIX (item name "gayab" after sync): prefer the name
+                        // snapshotted on this row; only fall back to the live
+                        // product lookup for pre-migration rows.
+                        val productName = it.itemName.ifBlank { db.productDao().find(it.barcode)?.name ?: it.barcode }
                         val ex = map[productName]
                         map[productName] = if (ex == null) ItemAgg(productName, it.qty.toDouble(), it.amount)
                         else ItemAgg(productName, ex.qty + it.qty.toDouble(), ex.amount + it.amount)

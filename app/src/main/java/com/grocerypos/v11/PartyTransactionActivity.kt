@@ -958,7 +958,10 @@ class PartyTransactionActivity : AppCompatActivity() {
                         body.addView(emptyText(Loc.t(this@PartyTransactionActivity, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")))
                     } else {
                         items.forEach { item ->
-                            val productName = db.productDao().find(item.barcode)?.name ?: item.barcode
+                            // FIX (item name "gayab" after sync): prefer the name
+                            // snapshotted on this row; only fall back to the live
+                            // product lookup for pre-migration rows.
+                            val productName = item.itemName.ifBlank { db.productDao().find(item.barcode)?.name ?: item.barcode }
                             body.addView(billedItemRow(
                                 productName = productName,
                                 qtyText = formatQty(item.qty),
@@ -1205,7 +1208,9 @@ class PartyTransactionActivity : AppCompatActivity() {
         val (qtyInput, rateInput, container) = qtyRateEditDialogView(item.qty, item.unitCost)
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyTransactionActivity)
-            val name = db.productDao().find(item.barcode)?.name ?: item.barcode
+            // FIX (item name "gayab" after sync): prefer the name snapshotted on this
+            // row; only fall back to the live product lookup for pre-migration rows.
+            val name = item.itemName.ifBlank { db.productDao().find(item.barcode)?.name ?: item.barcode }
             AlertDialog.Builder(this@PartyTransactionActivity)
                 .setTitle(name)
                 .setView(container)
@@ -1338,7 +1343,9 @@ class PartyTransactionActivity : AppCompatActivity() {
     private fun confirmDeletePurchaseItem(item: PurchaseItem, purchase: com.grocerypos.v11.Purchase, onDone: () -> Unit) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyTransactionActivity)
-            val name = db.productDao().find(item.barcode)?.name ?: item.barcode
+            // FIX (item name "gayab" after sync): prefer the name snapshotted on this
+            // row; only fall back to the live product lookup for pre-migration rows.
+            val name = item.itemName.ifBlank { db.productDao().find(item.barcode)?.name ?: item.barcode }
             AlertDialog.Builder(this@PartyTransactionActivity)
                 .setTitle(Loc.t(this@PartyTransactionActivity, "Delete Item", "\u0622\u0626\u0679\u0645 \u0688\u06CC\u0644\u06CC\u0679 \u06A9\u0631\u06CC\u06BA"))
                 .setMessage(name)
