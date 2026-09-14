@@ -138,45 +138,12 @@ class PurchaseHistoryActivity : ThemedActivity() {
             setBackgroundColor(Color.parseColor(bg))
         }
 
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(26, 30, 22, 26)
-            background = gradientBg(navy, navyLight, cornerBottom = 26)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(-24, 0, -24, 16) }
-            applyElevation(this, 8f)
-        }
-        header.addView(TextView(this).apply {
-            text = "\u2039"
-            textSize = 22f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = ovalBg("#22FFFFFF")
-            val px = (38 * resources.displayMetrics.density).toInt(); layoutParams = android.view.ViewGroup.LayoutParams(px, px)
-            setOnClickListener { finish() }
-        })
-        header.addView(spacer(14).apply { layoutParams = LinearLayout.LayoutParams((14 * resources.displayMetrics.density).toInt(), 1) })
-        val headerCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerCol.addView(TextView(this).apply {
-            text = com.grocerypos.v11.util.Loc.t(this@PurchaseHistoryActivity, "Purchase History", "خریداری کی تاریخ")
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            letterSpacing = 0.01f
-        })
-        headerCol.addView(TextView(this).apply {
-            text = "ALL SUPPLIER BILLS"
-            textSize = 10.5f
-            setTextColor(Color.parseColor("#A7B4CC"))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            letterSpacing = 0.08f
-            setPadding(0, 5, 0, 0)
-        })
-        header.addView(headerCol)
-        root.addView(header)
+        root.addView(premiumHeader(
+            R.drawable.ic_cart,
+            com.grocerypos.v11.util.Loc.t(this, "Purchase History", "خریداری کی تاریخ"),
+            com.grocerypos.v11.util.Loc.t(this, "All supplier bills", "تمام سپلائر بلز"),
+            navy, navy
+        ))
 
         // ADDED (Khatabook-style summary cards): Total Purchases / Total Due, same
         // visual language as PartyDashboardActivity's You'll Get/You'll Give cards.
