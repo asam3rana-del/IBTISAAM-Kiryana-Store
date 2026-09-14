@@ -41,7 +41,7 @@ import com.grocerypos.v11.ui.components.*
  *
  * Suggested entry point: add a navRow() to ReportsActivity's navCard, e.g.
  *   navCard.addView(navRow(
- *       icon = "⚖️", accentHex = teal, tintHex = "#E0F2F1",
+ *       iconRes = R.drawable.ic_chart, accentHex = teal, tintHex = "#E0F2F1",
  *       title = Loc.t(this, "Rate Comparison", "ریٹ کا موازنہ"),
  *       subtitle = Loc.t(this, "Compare supplier rates per item", "فی آئٹم سپلائرز کے ریٹ کا موازنہ")
  *   ) { startActivity(Intent(this@ReportsActivity, RateComparisonActivity::class.java)) })
