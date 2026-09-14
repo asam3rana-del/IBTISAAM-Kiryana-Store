@@ -151,7 +151,13 @@ class PartyDashboardActivity : AppCompatActivity() {
     private var itemQuery: String = ""
 
     private enum class Tab { PARTIES, TRANSACTIONS, ITEMS }
-    private enum class FilterMode { ALL, CUSTOMERS, SUPPLIERS }
+    // ---- ADDED (Payable/Receivable split): RECEIVABLE = "You'll Get" only (money
+    // owed TO the shop), PAYABLE = "You'll Give" only (money the shop owes OUT).
+    // These are independent of CUSTOMERS/SUPPLIERS because a customer can have a
+    // negative balance (shop owes them, e.g. an overpayment/advance) and a supplier
+    // can have a negative balance too (supplier owes the shop) — so "who to pay" and
+    // "who to receive from" is a different cut than "customer vs supplier". ----
+    private enum class FilterMode { ALL, CUSTOMERS, SUPPLIERS, RECEIVABLE, PAYABLE }
 
     /** Unified wrapper so customers + suppliers can share one list/adapter-ish rendering. */
     internal data class PartyItem(
@@ -410,13 +416,36 @@ class PartyDashboardActivity : AppCompatActivity() {
         t.toString().replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: 0.0
 
     // ================= SUMMARY CARDS =================
+    // ---- ADDED (Payable/Receivable split): kept as class fields so tapping one card
+    // can restyle both (active card gets a tinted background + border; the other
+    // reverts to plain) without having to rebuild the whole row. ----
+    private lateinit var getCardView: LinearLayout
+    private lateinit var giveCardView: LinearLayout
+
     private fun buildSummaryCards(): LinearLayout {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        val getCard = summaryCard("\u2193", Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2"), green)
-        val giveCard = summaryCard("\u2191", Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA"), red)
+        val getCard = summaryCard("\u2193", Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2"), green) {
+            // ---- Tap "You'll Get" -> jump to Parties tab filtered to receivables
+            // only (everyone who currently owes the shop money), regardless of
+            // whether they're filed as a customer or a supplier. ----
+            filterMode = if (filterMode == FilterMode.RECEIVABLE) FilterMode.ALL else FilterMode.RECEIVABLE
+            activeTab = Tab.PARTIES
+            renderTabs(); renderSearchRow(); renderActiveTabBody()
+            updateSummaryCardStyles()
+        }
+        val giveCard = summaryCard("\u2191", Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA"), red) {
+            // ---- Tap "You'll Give" -> jump to Parties tab filtered to payables only
+            // (everyone the shop currently owes money to). ----
+            filterMode = if (filterMode == FilterMode.PAYABLE) FilterMode.ALL else FilterMode.PAYABLE
+            activeTab = Tab.PARTIES
+            renderTabs(); renderSearchRow(); renderActiveTabBody()
+            updateSummaryCardStyles()
+        }
         youllGetValue = getCard.second
         youllGiveValue = giveCard.second
+        getCardView = getCard.first
+        giveCardView = giveCard.first
 
         getCard.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }
         giveCard.first.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(8, 0, 0, 0) }
@@ -426,18 +455,48 @@ class PartyDashboardActivity : AppCompatActivity() {
         return row
     }
 
+    /** Highlights whichever summary card matches the active filter (tinted
+     * background + colored border) so it's obvious the list below is filtered,
+     * and reverts both to the plain card style when filterMode is ALL/CUSTOMERS/
+     * SUPPLIERS (i.e. not driven by a summary-card tap). */
+    private fun updateSummaryCardStyles() {
+        if (!::getCardView.isInitialized) return
+        getCardView.background = if (filterMode == FilterMode.RECEIVABLE) tintedCardBg(green) else elevatedCardBg()
+        giveCardView.background = if (filterMode == FilterMode.PAYABLE) tintedCardBg(red) else elevatedCardBg()
+    }
+
+    private fun tintedCardBg(accentHex: String) = GradientDrawable().apply {
+        setColor(Color.parseColor(lightenForTint(accentHex)))
+        cornerRadius = 18f
+        setStroke((1.5f * resources.displayMetrics.density).toInt(), Color.parseColor(accentHex))
+    }
+
+    private fun lightenForTint(colorHex: String): String {
+        val c = Color.parseColor(colorHex)
+        val hsv = FloatArray(3)
+        Color.colorToHSV(c, hsv)
+        hsv[1] *= 0.15f
+        hsv[2] = 1f
+        return String.format("#%06X", 0xFFFFFF and Color.HSVToColor(hsv))
+    }
+
     // ---- CHANGE (modern minimal UI pass): airier padding (18->22 vertical), the
     // arrow glyph now sits in a small tinted circular dot instead of loose bold text
     // (a common "minimal fintech card" motif), and a slightly lower elevation (3f -> 2f)
     // since the border removal already does most of the work of making the card read
     // as a distinct surface — a lighter shadow keeps the whole screen feeling calm
     // rather than "boxy".
-    private fun summaryCard(arrow: String, label: String, accentHex: String): Pair<LinearLayout, TextView> {
+    private fun summaryCard(arrow: String, label: String, accentHex: String, onTap: (() -> Unit)? = null): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 20, 22, 20)
             background = elevatedCardBg()
             elevation = 2f
+            if (onTap != null) {
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { onTap() }
+            }
         }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         topRow.addView(TextView(this).apply {
@@ -664,17 +723,30 @@ class PartyDashboardActivity : AppCompatActivity() {
     }
 
     private fun showFilterDialog() {
+        // ---- ADDED (Payable/Receivable split): the same two cuts available from
+        // tapping the summary cards are also reachable from the filter icon, so
+        // there's always one place to both apply AND clear any party-list filter. ----
         val options = arrayOf(
             Loc.t(this, "All Parties", "\u062A\u0645\u0627\u0645 \u067E\u0627\u0631\u0679\u06CC\u0632"),
             Loc.t(this, "Customers Only", "\u0635\u0631\u0641 \u06A9\u0633\u0679\u0645\u0631\u0632"),
-            Loc.t(this, "Suppliers Only", "\u0635\u0631\u0641 \u0633\u067E\u0644\u0627\u0626\u0631\u0632")
+            Loc.t(this, "Suppliers Only", "\u0635\u0631\u0641 \u0633\u067E\u0644\u0627\u0626\u0631\u0632"),
+            Loc.t(this, "Receivable Only (You'll Get)", "\u0635\u0631\u0641 \u0648\u0635\u0648\u0644\u06CC \u0628\u0627\u0642\u06CC (\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2)"),
+            Loc.t(this, "Payable Only (You'll Give)", "\u0635\u0631\u0641 \u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0628\u0627\u0642\u06CC (\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA)")
         )
-        val current = when (filterMode) { FilterMode.ALL -> 0; FilterMode.CUSTOMERS -> 1; FilterMode.SUPPLIERS -> 2 }
+        val current = when (filterMode) {
+            FilterMode.ALL -> 0; FilterMode.CUSTOMERS -> 1; FilterMode.SUPPLIERS -> 2
+            FilterMode.RECEIVABLE -> 3; FilterMode.PAYABLE -> 4
+        }
         AlertDialog.Builder(this)
             .setTitle(Loc.t(this, "Filter", "\u0641\u0644\u0679\u0631"))
             .setSingleChoiceItems(options, current) { d, which ->
-                filterMode = when (which) { 1 -> FilterMode.CUSTOMERS; 2 -> FilterMode.SUPPLIERS; else -> FilterMode.ALL }
+                filterMode = when (which) {
+                    1 -> FilterMode.CUSTOMERS; 2 -> FilterMode.SUPPLIERS
+                    3 -> FilterMode.RECEIVABLE; 4 -> FilterMode.PAYABLE
+                    else -> FilterMode.ALL
+                }
                 renderPartyList()
+                updateSummaryCardStyles()
                 d.dismiss()
             }
             .show()
@@ -838,12 +910,25 @@ class PartyDashboardActivity : AppCompatActivity() {
                     FilterMode.ALL -> true
                     FilterMode.CUSTOMERS -> item.isCustomer
                     FilterMode.SUPPLIERS -> !item.isCustomer
+                    // ---- ADDED (Payable/Receivable split): same give/get sign rule as
+                    // updateSummaryTotals()/dashboardPartyRow() above, applied per-party
+                    // instead of summed, and a settled (Rs 0) party never counts as
+                    // either. RECEIVABLE = "You'll Get" list, PAYABLE = "You'll Give" list.
+                    FilterMode.RECEIVABLE -> kotlin.math.abs(item.closing) >= 0.005 &&
+                        (if (item.isCustomer) item.closing > 0 else item.closing < 0)
+                    FilterMode.PAYABLE -> kotlin.math.abs(item.closing) >= 0.005 &&
+                        (if (item.isCustomer) item.closing < 0 else item.closing > 0)
                 }
             }
             .filter { it.name.lowercase().contains(q) }
 
         if (filtered.isEmpty()) {
-            listContainer.addView(placeholderCard(Loc.t(this, "No parties found", "\u06A9\u0648\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC \u0646\u06C1\u06CC\u06BA \u0645\u0644\u06CC")))
+            val emptyMsg = when (filterMode) {
+                FilterMode.RECEIVABLE -> Loc.t(this, "No one owes you right now", "ابھی کوئی آپ کا مقروض نہیں")
+                FilterMode.PAYABLE -> Loc.t(this, "You don't owe anyone right now", "ابھی آپ کسی کے مقروض نہیں")
+                else -> Loc.t(this, "No parties found", "\u06A9\u0648\u0626\u06CC \u067E\u0627\u0631\u0679\u06CC \u0646\u06C1\u06CC\u06BA \u0645\u0644\u06CC")
+            }
+            listContainer.addView(placeholderCard(emptyMsg))
             return
         }
 

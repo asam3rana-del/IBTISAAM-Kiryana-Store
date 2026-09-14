@@ -1275,14 +1275,60 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
+    // ---- CHANGED (Roman Urdu request: "jab new party add karte hain to sirf party
+    // name aata hai sale/purchase ke waqt, jab ke uska Sara form khulna chahiye") —
+    // this used to be a single name-only EditText. Now it mirrors PartyActivity's
+    // own "Add Customer" form (Name*, Phone, Credit Limit, Opening Balance) so a
+    // customer quick-added mid-sale doesn't come out missing the details you'd
+    // normally fill in from the Customers & Suppliers screen. ----
     private fun promptAddCustomer() {
-        val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
+        fun microLabel(text: String) = TextView(this).apply {
+            this.text = text; textSize = 11.5f
+            setTextColor(Color.parseColor(textGray))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, 8); letterSpacing = 0.04f
+        }
+        fun field(hint: String, inputType: Int? = null) = EditText(this).apply {
+            this.hint = hint
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, fieldFill, 14)
+            setPadding(18, 16, 18, 16)
+            textSize = 15f
+            if (inputType != null) this.inputType = inputType
+        }
+
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 24, 28, 8) }
+        body.addView(microLabel("NAME *"))
+        val nameField = field("Customer name")
+        body.addView(nameField); body.addView(spacer(16))
+
+        body.addView(microLabel("PHONE (OPTIONAL)"))
+        val phoneField = field("Phone", InputType.TYPE_CLASS_PHONE)
+        body.addView(phoneField); body.addView(spacer(16))
+
+        body.addView(microLabel("CREDIT LIMIT (OPTIONAL)"))
+        val creditLimitField = field("Credit limit", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        body.addView(creditLimitField); body.addView(spacer(16))
+
+        body.addView(microLabel("OPENING BALANCE (RS, IF ANY PREVIOUS DUE)"))
+        val openingField = field("Opening balance", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        body.addView(openingField)
+
+        val scroll = ScrollView(this).apply { addView(body) }
+
         AlertDialog.Builder(this)
             .setTitle("New Customer")
-            .setView(input)
+            .setView(scroll)
             .setPositiveButton("Add") { _, _ ->
-                val v = input.text.toString().trim()
-                if (v.isNotEmpty()) viewModel.addCustomer(v)
+                val name = nameField.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(this, "Name is required", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val phone = phoneField.text.toString().trim()
+                val creditLimit = creditLimitField.text.toString().toDoubleOrNull() ?: 0.0
+                val openingBalance = openingField.text.toString().toDoubleOrNull() ?: 0.0
+                viewModel.addCustomer(name, phone, creditLimit, openingBalance)
             }
             .setNegativeButton("Cancel", null)
             .show()

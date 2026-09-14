@@ -64,7 +64,13 @@ interface SaleRepository {
 
     suspend fun topProductNames(sinceMillis: Long, uptoMillis: Long): List<String>
 
-    suspend fun createCustomer(name: String): Customer
+    // ---- ADDED (full quick-add form — Roman Urdu request: "jab new party add karte
+    // hain to sirf party name aata hai, sale/purchase ke waqt Sara form khulna
+    // chahiye"): phone/creditLimit/openingBalance now optional params so the quick-add
+    // dialog in SaleActivity can save the same fields PartyActivity's full form does,
+    // instead of a name-only Customer row. Defaults keep any other caller compiling
+    // unchanged. ----
+    suspend fun createCustomer(name: String, phone: String = "", creditLimit: Double = 0.0, openingBalance: Double = 0.0): Customer
 
     suspend fun heldBills(): List<HeldBill>
 

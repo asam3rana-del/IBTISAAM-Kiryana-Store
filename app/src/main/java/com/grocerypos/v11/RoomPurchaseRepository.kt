@@ -60,8 +60,8 @@ class RoomPurchaseRepository(
         db.unitDao().insert(UnitType(name))
     }
 
-    override suspend fun addSupplier(name: String): Supplier {
-        val supplier = Supplier(name = name)
+    override suspend fun addSupplier(name: String, phone: String, openingBalance: Double): Supplier {
+        val supplier = Supplier(name = name, phone = phone, openingBalance = openingBalance)
         val id = db.supplierDao().insert(supplier)
         val saved = supplier.copy(id = id)
         // FIX (cross-device "Give"/payables mismatch): this used to only insert the

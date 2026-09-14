@@ -1663,11 +1663,52 @@ class PurchaseActivity : ThemedActivity() {
         if (paid == 0.0 && total > 0) { paidWarningText.visibility = View.VISIBLE; paidWarningText.text = "Paid khali hai - Ye Rs %.0f Udhaar jayega".format(due) }
         else { paidWarningText.visibility = View.GONE }
     }
+    // ---- CHANGED (Roman Urdu request: "jab new party add karte hain to sirf party
+    // name aata hai sale/purchase ke waqt, jab ke uska Sara form khulna chahiye") —
+    // this used to be a single name-only EditText. Now it mirrors PartyActivity's
+    // "Add Supplier" form (Name*, Phone, Opening Balance — no Credit Limit field,
+    // same as PartyActivity hides that field for suppliers) instead of quick-adding
+    // a supplier that's missing everything but its name. ----
     private fun promptAddSupplier() {
-        val input = EditText(this).apply { hint = "Supplier name"; setPadding(32, 24, 32, 24) }
-        android.app.AlertDialog.Builder(this).setTitle("Add Supplier").setView(input).setPositiveButton("Add") { _, _ ->
-            val name = input.text.toString().trim()
-            if (name.isNotBlank()) { safeLaunch("addSupplier") { viewModel.addSupplier(name); partyName.setText(name) } }
+        fun microLabel(text: String) = TextView(this).apply {
+            this.text = text; textSize = 11.5f
+            setTextColor(Color.parseColor(textMuted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, 8); letterSpacing = 0.04f
+        }
+        fun field(hint: String, inputType: Int? = null) = EditText(this).apply {
+            this.hint = hint
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, fieldFill, 14)
+            setPadding(18, 16, 18, 16)
+            textSize = 15f
+            if (inputType != null) this.inputType = inputType
+        }
+
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 24, 28, 8) }
+        body.addView(microLabel("NAME *"))
+        val nameField = field("Supplier name")
+        body.addView(nameField); body.addView(spacer(16))
+
+        body.addView(microLabel("PHONE (OPTIONAL)"))
+        val phoneField = field("Phone", InputType.TYPE_CLASS_PHONE)
+        body.addView(phoneField); body.addView(spacer(16))
+
+        body.addView(microLabel("OPENING BALANCE (RS, IF ANY PREVIOUS DUE)"))
+        val openingField = field("Opening balance", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        body.addView(openingField)
+
+        val scroll = ScrollView(this).apply { addView(body) }
+
+        android.app.AlertDialog.Builder(this).setTitle("Add Supplier").setView(scroll).setPositiveButton("Add") { _, _ ->
+            val name = nameField.text.toString().trim()
+            if (name.isBlank()) {
+                Toast.makeText(this, "Name is required", Toast.LENGTH_SHORT).show()
+                return@setPositiveButton
+            }
+            val phone = phoneField.text.toString().trim()
+            val openingBalance = openingField.text.toString().toDoubleOrNull() ?: 0.0
+            safeLaunch("addSupplier") { viewModel.addSupplier(name, phone, openingBalance); partyName.setText(name) }
         }.setNegativeButton("Cancel", null).show()
     }
     private fun openAddProductDialog(prefillName: String) {

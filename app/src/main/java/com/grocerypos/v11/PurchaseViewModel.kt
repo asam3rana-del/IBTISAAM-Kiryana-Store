@@ -114,7 +114,8 @@ class PurchaseViewModel(
     suspend fun lastPurchaseRate(barcode: String, excludeBillNo: String?): Pair<Double, String>? =
         findLastPurchaseRateUseCase(barcode, excludeBillNo)
 
-    suspend fun addSupplier(name: String): Supplier = addSupplierUseCase(name)
+    suspend fun addSupplier(name: String, phone: String = "", openingBalance: Double = 0.0): Supplier =
+        addSupplierUseCase(name, phone, openingBalance)
 
     suspend fun addProduct(product: Product) = addProductUseCase(product)
 

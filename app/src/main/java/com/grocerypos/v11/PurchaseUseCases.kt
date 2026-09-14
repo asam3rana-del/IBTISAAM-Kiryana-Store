@@ -50,7 +50,8 @@ class FindLastPurchaseRateUseCase(private val repository: PurchaseRepository) {
 }
 
 class AddSupplierUseCase(private val repository: PurchaseRepository) {
-    suspend operator fun invoke(name: String): Supplier = repository.addSupplier(name)
+    suspend operator fun invoke(name: String, phone: String = "", openingBalance: Double = 0.0): Supplier =
+        repository.addSupplier(name, phone, openingBalance)
 }
 
 class AddProductUseCase(private val repository: PurchaseRepository) {

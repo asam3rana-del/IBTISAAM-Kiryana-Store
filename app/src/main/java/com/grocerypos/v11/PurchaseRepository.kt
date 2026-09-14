@@ -87,7 +87,11 @@ interface PurchaseRepository {
      * to skip sync entirely, which meant a supplier created here was invisible on
      * every other device along with its whole payable balance. See the FIX comment
      * on the implementation for the full story. */
-    suspend fun addSupplier(name: String): Supplier
+    // ---- ADDED (full quick-add form, same as SaleRepository.createCustomer): phone
+    // and openingBalance are now optional params so the quick-add dialog on the
+    // Purchase screen can save the same fields PartyActivity's "Add Supplier" form
+    // does, instead of a name-only Supplier row. ----
+    suspend fun addSupplier(name: String, phone: String = "", openingBalance: Double = 0.0): Supplier
 
     /** Quick-add-product paths (the manual "+ Add New Product" dialog and
      * bill-scan auto-create) — enqueued for sync just like [addSupplier], for the

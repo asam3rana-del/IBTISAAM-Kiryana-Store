@@ -253,10 +253,10 @@ class DeleteSaleUseCase(private val repository: SaleRepository) {
 }
 
 class CreateCustomerUseCase(private val repository: SaleRepository) {
-    suspend operator fun invoke(name: String): Customer? {
+    suspend operator fun invoke(name: String, phone: String = "", creditLimit: Double = 0.0, openingBalance: Double = 0.0): Customer? {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return null
-        return repository.createCustomer(trimmed)
+        return repository.createCustomer(trimmed, phone.trim(), creditLimit, openingBalance)
     }
 }
 

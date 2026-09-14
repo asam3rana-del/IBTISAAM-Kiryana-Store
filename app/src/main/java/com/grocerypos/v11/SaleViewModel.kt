@@ -157,9 +157,9 @@ class SaleViewModel(
         }
     }
 
-    fun addCustomer(name: String) {
+    fun addCustomer(name: String, phone: String = "", creditLimit: Double = 0.0, openingBalance: Double = 0.0) {
         viewModelScope.launch {
-            val customer = createCustomerUseCase(name)
+            val customer = createCustomerUseCase(name, phone, creditLimit, openingBalance)
             if (customer != null) _events.emit(SaleEvent.CustomerAdded(customer.name))
         }
     }

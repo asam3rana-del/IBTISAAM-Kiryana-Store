@@ -63,8 +63,8 @@ class RoomSaleRepository(
         emptyList()
     }
 
-    override suspend fun createCustomer(name: String): Customer {
-        val newCustomer = Customer(name = name)
+    override suspend fun createCustomer(name: String, phone: String, creditLimit: Double, openingBalance: Double): Customer {
+        val newCustomer = Customer(name = name, phone = phone, creditLimit = creditLimit, openingBalance = openingBalance)
         val newId = db.customerDao().insert(newCustomer)
         val saved = newCustomer.copy(id = newId)
         SyncQueueHelper.enqueueCustomer(db, saved)
