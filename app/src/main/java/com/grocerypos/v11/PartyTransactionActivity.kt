@@ -553,6 +553,35 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     private class BillOption(val label: String, val ref: String)
 
+    // ADDED (Purchase/Sale History "due" not clearing after payment): a payment
+    // recorded here could already be linked to a specific bill via billReference
+    // (see loadBillOptionsForParty()/the "Link to a bill" picker), but that link
+    // was purely cosmetic — it only showed up on the receipt text. The bill's own
+    // `paid` field (what Purchase History/Sale History actually read to decide
+    // DUE vs PAID and to compute "Balance") was never touched, only the party's
+    // aggregate balance was. So a shopkeeper could fully pay off a supplier here
+    // and still see that exact bill sitting in Purchase History marked DUE
+    // forever. This applies `delta` (positive when paying more, negative when
+    // reversing/reducing a payment) to that bill's `paid`, clamped to
+    // [0, total], and enqueues the updated bill so the other device's History
+    // screen agrees too.
+    private suspend fun applyBillPaidDelta(db: PosDatabase, billRef: String, delta: Double) {
+        if (billRef.isBlank() || delta == 0.0) return
+        if (isCustomer) {
+            val sale = db.saleDao().findSale(billRef) ?: return
+            val newPaid = (sale.paid + delta).coerceIn(0.0, sale.total)
+            val updated = sale.copy(paid = newPaid, dirty = true)
+            db.saleDao().updateSale(updated)
+            SyncQueueHelper.enqueue(db, "sale", SyncQueueHelper.saleEntityId(updated), "update", SyncQueueHelper.saleJson(db, updated))
+        } else {
+            val purchase = db.purchaseDao().findPurchase(billRef) ?: return
+            val newPaid = (purchase.paid + delta).coerceIn(0.0, purchase.total)
+            val updated = purchase.copy(paid = newPaid, dirty = true)
+            db.purchaseDao().updatePurchase(updated)
+            SyncQueueHelper.enqueue(db, "purchase", SyncQueueHelper.purchaseEntityId(updated), "update", SyncQueueHelper.purchaseJson(db, updated))
+        }
+    }
+
     /** Recent (unreturned) bills for this party, newest first, for the payment
      * dialog's optional "Link to a bill" picker. */
     private suspend fun loadBillOptionsForParty(): List<BillOption> {
@@ -603,6 +632,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                 val cashTx = CashTransaction(type = if (isCustomer) "IN" else "OUT", method = method.lowercase(), amount = amount, reason = reasonText, reference = reference, createdAt = dateMillis)
                 val cashTxId = db.cashTransactionDao().insert(cashTx)
                 SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
+
+                applyBillPaidDelta(db, billRef, amount)
             }
             SyncQueueHelper.trigger(this@PartyTransactionActivity)
 
@@ -645,6 +676,18 @@ class PartyTransactionActivity : AppCompatActivity() {
                     db.cashTransactionDao().update(updatedTx)
                     SyncQueueHelper.enqueueCashTransaction(db, updatedTx)
                 }
+
+                // Same reasoning as savePayment()'s applyBillPaidDelta call: keep
+                // whichever bill(s) this payment touches in sync with the edited
+                // amount/link. If the bill link itself changed, reverse the full
+                // original amount off the old bill and apply the new amount to the
+                // new one; otherwise just apply the amount's delta to the one bill.
+                if (original.billReference == newBillRef) {
+                    applyBillPaidDelta(db, newBillRef, delta)
+                } else {
+                    applyBillPaidDelta(db, original.billReference, -original.amount)
+                    applyBillPaidDelta(db, newBillRef, newAmount)
+                }
             }
             SyncQueueHelper.trigger(this@PartyTransactionActivity)
             Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Payment updated", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0627\u067E \u0688\u06CC\u0679 \u06C1\u0648 \u06AF\u0626\u06CC"), Toast.LENGTH_SHORT).show()
@@ -684,6 +727,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                 // so undoing it is +amount.
                 if (isCustomer) SyncQueueHelper.adjustCustomerBalance(db, partyId, payment.amount)
                 else SyncQueueHelper.adjustSupplierBalance(db, partyId, payment.amount)
+
+                applyBillPaidDelta(db, payment.billReference, -payment.amount)
             }
             SyncQueueHelper.trigger(this@PartyTransactionActivity)
             Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Payment deleted", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u062D\u0630\u0641 \u06C1\u0648 \u06AF\u0626\u06CC"), Toast.LENGTH_SHORT).show()
