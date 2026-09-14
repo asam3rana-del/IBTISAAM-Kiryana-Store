@@ -27,6 +27,7 @@ class ExpenseActivity : AppCompatActivity() {
     // ---- Pulled from ThemeManager so this screen respects dark mode and stays in sync
     // with the rest of the app. Red/negative logic untouched, only the hex source changed. ----
     private var bg = "#F3F4F9"
+    private var navy = "#0B2545"
     private var cardWhite = "#FFFFFF"
     private var textDark = "#1A1D2E"
     private var textMuted = "#8A8FA3"
@@ -41,6 +42,7 @@ class ExpenseActivity : AppCompatActivity() {
         cardWhite = p.cardWhite
         textDark = p.textDark
         textMuted = p.textMuted
+        navy = p.navy
         red = p.red
         teal = p.teal
         border = p.border
@@ -77,19 +79,22 @@ class ExpenseActivity : AppCompatActivity() {
         super.onCreate(b)
         loadThemeColors()
 
-        val root = LinearLayout(this).apply {
+        val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 40, 28, 32)
             setBackgroundColor(Color.parseColor(bg))
         }
+        outer.addView(premiumHeader(
+            icon = R.drawable.ic_wallet,
+            title = Loc.t(this@ExpenseActivity, "Expenses", "اخراجات"),
+            subtitle = Loc.t(this@ExpenseActivity, "Track your business spending", "اپنے کاروباری اخراجات ٹریک کریں"),
+            primaryHex = navy,
+            primaryDarkHex = navy
+        ))
 
-        root.addView(TextView(this).apply {
-            text = Loc.t(this@ExpenseActivity, "Expenses", "اخراجات")
-            textSize = 21f
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(4, 0, 0, 22)
-        })
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 26, 28, 32)
+        }
 
         // ---- Totals: premium white cards ----
         val totalsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -199,10 +204,11 @@ class ExpenseActivity : AppCompatActivity() {
         root.addView(listContainer)
         root.addView(spacer(30))
 
-        setContentView(ScrollView(this).apply {
+        outer.addView(ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bg))
             addView(root)
         })
+        setContentView(outer)
 
         loadTotals()
         loadExpenses()
@@ -241,18 +247,8 @@ class ExpenseActivity : AppCompatActivity() {
         setPadding(4, 0, 0, 0)
     }
 
-    private fun tintedDrawable(iconRes: Int, tintHex: String, sizeDp: Int = 16): android.graphics.drawable.Drawable? {
-        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate() ?: return null
-        d.setTint(Color.parseColor(tintHex))
-        val size = (sizeDp * resources.displayMetrics.density).toInt()
-        d.setBounds(0, 0, size, size)
-        return d
-    }
-
-    private fun TextView.setLeadingIcon(iconRes: Int, tintHex: String, sizeDp: Int = 16, paddingDp: Int = 8) {
-        setCompoundDrawablesRelative(tintedDrawable(iconRes, tintHex, sizeDp), null, null, null)
-        compoundDrawablePadding = (paddingDp * resources.displayMetrics.density).toInt()
-    }
+    // tintedDrawable()/setLeadingIcon() now come from the shared ui/components/MenuRow.kt —
+    // were byte-identical private copies here before (same dedup pattern as spacer() above).
 
     private fun statCard(iconRes: Int, label: String, accentHex: String, tintHex: String): Pair<LinearLayout, TextView> {
         val card = LinearLayout(this).apply {
@@ -262,20 +258,7 @@ class ExpenseActivity : AppCompatActivity() {
             elevation = 4f
         }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        topRow.addView(FrameLayout(this).apply {
-            val size = (36 * resources.displayMetrics.density).toInt()
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(tintHex))
-            }
-            addView(ImageView(this@ExpenseActivity).apply {
-                setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-                    gravity = Gravity.CENTER
-                }
-            })
-        })
+        topRow.addView(iconBadge(iconRes, accentHex, bgHex = tintHex, sizeDp = 36, iconSizeDp = 18))
         topRow.addView(TextView(this).apply {
             text = "  $label"; setTextColor(Color.parseColor(textMuted)); textSize = 12f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -385,7 +368,9 @@ class ExpenseActivity : AppCompatActivity() {
                             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                         ).apply { setMargins(0, 0, 0, 10) }
 
-                        val row = LinearLayout(this@ExpenseActivity).apply { orientation = LinearLayout.HORIZONTAL }
+                        val row = LinearLayout(this@ExpenseActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                        row.addView(iconBadge(R.drawable.ic_receipt, red, sizeDp = 32, iconSizeDp = 15))
+                        row.addView(spacerH(12))
                         row.addView(TextView(this@ExpenseActivity).apply {
                             text = e.category + if (e.description.isNotEmpty()) " - ${e.description}" else ""
                             textSize = 14f
@@ -410,11 +395,8 @@ class ExpenseActivity : AppCompatActivity() {
                             textSize = 11.5f
                             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                         })
-                        bottomRow.addView(TextView(this@ExpenseActivity).apply {
-                            text = "\u2715"
-                            textSize = 11f
-                            setTextColor(Color.parseColor(red))
-                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        bottomRow.addView(ImageView(this@ExpenseActivity).apply {
+                            setImageDrawable(tintedDrawable(R.drawable.ic_delete, red, 13))
                             setPadding(16, 4, 4, 4)
                             setOnClickListener { confirmDeleteExpense(e) }
                         })

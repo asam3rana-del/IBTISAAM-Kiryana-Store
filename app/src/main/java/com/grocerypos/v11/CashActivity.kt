@@ -28,6 +28,7 @@ class CashActivity : AppCompatActivity() {
     // that logic is untouched, only the hex source changed. "In" is unified with the app's
     // shared positive/teal color (flatTealFg), matching Party/Reports. ----
     private var bg = "#F3F4F9"
+    private var navy = "#0B2545"
     private var cardWhite = "#FFFFFF"
     private var textDark = "#1A1D2E"
     private var textMuted = "#8A8FA3"
@@ -43,6 +44,7 @@ class CashActivity : AppCompatActivity() {
         cardWhite = p.cardWhite
         textDark = p.textDark
         textMuted = p.textMuted
+        navy = p.navy
         green = p.flatTealFg
         red = p.red
         teal = p.teal
@@ -79,19 +81,22 @@ class CashActivity : AppCompatActivity() {
         super.onCreate(b)
         loadThemeColors()
 
-        val root = LinearLayout(this).apply {
+        val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 40, 28, 32)
             setBackgroundColor(Color.parseColor(bg))
         }
+        outer.addView(premiumHeader(
+            icon = R.drawable.ic_wallet,
+            title = Loc.t(this@CashActivity, "Cash In / Cash Out", "کیش ان / کیش آؤٹ"),
+            subtitle = Loc.t(this@CashActivity, "Record cash movements", "کیش کی آمد و رفت درج کریں"),
+            primaryHex = navy,
+            primaryDarkHex = navy
+        ))
 
-        root.addView(TextView(this).apply {
-            text = Loc.t(this@CashActivity, "Cash In / Cash Out", "کیش ان / کیش آؤٹ")
-            textSize = 21f
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(4, 0, 0, 22)
-        })
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 26, 28, 32)
+        }
 
         // ---- Today's totals: premium white cards ----
         val totalsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -220,10 +225,11 @@ class CashActivity : AppCompatActivity() {
         root.addView(listContainer)
         root.addView(spacer(30))
 
-        setContentView(ScrollView(this).apply {
+        outer.addView(ScrollView(this).apply {
             setBackgroundColor(Color.parseColor(bg))
             addView(root)
         })
+        setContentView(outer)
 
         loadTodayTotals()
         loadTransactions()
@@ -283,20 +289,7 @@ class CashActivity : AppCompatActivity() {
             elevation = 4f
         }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        topRow.addView(FrameLayout(this).apply {
-            val size = (36 * resources.displayMetrics.density).toInt()
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(tintHex))
-            }
-            addView(ImageView(this@CashActivity).apply {
-                setImageDrawable(tintedDrawable(iconRes, accentHex, 18))
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-                    gravity = Gravity.CENTER
-                }
-            })
-        })
+        topRow.addView(iconBadge(iconRes, accentHex, bgHex = tintHex, sizeDp = 36, iconSizeDp = 18))
         topRow.addView(TextView(this).apply {
             text = "  $label"; setTextColor(Color.parseColor(textMuted)); textSize = 12f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -407,7 +400,13 @@ class CashActivity : AppCompatActivity() {
                             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                         ).apply { setMargins(0, 0, 0, 10) }
 
-                        val row = LinearLayout(this@CashActivity).apply { orientation = LinearLayout.HORIZONTAL }
+                        val row = LinearLayout(this@CashActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                        row.addView(iconBadge(
+                            if (t.type == "IN") R.drawable.ic_trending else R.drawable.ic_trending_down,
+                            if (t.type == "IN") green else red,
+                            sizeDp = 32, iconSizeDp = 15
+                        ))
+                        row.addView(spacerH(12))
                         row.addView(TextView(this@CashActivity).apply {
                             text = t.method.uppercase() + if (t.reason.isNotEmpty()) " - ${t.reason}" else ""
                             textSize = 14f

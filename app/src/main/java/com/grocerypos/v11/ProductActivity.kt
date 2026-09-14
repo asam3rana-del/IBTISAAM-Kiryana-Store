@@ -240,15 +240,7 @@ class ProductActivity : ThemedActivity() {
         // (Reports, History, Party Reports, etc.) — previously this header was just
         // text + action pills with no icon, so it read as visually inconsistent
         // next to the rest of the app.
-        header.addView(ImageView(this).apply {
-            setImageDrawable(tintedDrawable(R.drawable.ic_box, "#FFFFFF", 20))
-            scaleType = ImageView.ScaleType.CENTER
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(headerBadgeOverlay))
-            }
-            val px = 44.dp()
-            layoutParams = android.view.ViewGroup.LayoutParams(px, px)
+        header.addView(iconBadge(R.drawable.ic_box, "#FFFFFF", bgHex = headerBadgeOverlay, sizeDp = 44, iconSizeDp = 20).apply {
             applyElevation(this, 2f)
         })
         header.addView(View(this).apply {

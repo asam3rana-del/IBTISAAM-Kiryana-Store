@@ -29,7 +29,8 @@ import com.grocerypos.v11.smallestPerUnitOf
 import com.grocerypos.v11.smallestQty
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.toSmallestUnits
-import com.grocerypos.v11.ui.components.formatQty
+import com.grocerypos.v11.R
+import com.grocerypos.v11.ui.components.*
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -170,10 +171,11 @@ class PartyTransactionActivity : AppCompatActivity() {
 
         // ---- Edit party name button — opens a small dialog to rename this party. ----
         headerRow.addView(TextView(this).apply {
-            text = "\u270F\uFE0F  " + Loc.t(this@PartyTransactionActivity, "Edit", "\u062A\u0631\u0645\u06CC\u0645")
+            text = Loc.t(this@PartyTransactionActivity, "Edit", "\u062A\u0631\u0645\u06CC\u0645")
             textSize = 12.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setLeadingIcon(R.drawable.ic_edit, "#FFFFFF", 13, 6)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor(teal))
                 cornerRadius = 30f
@@ -186,11 +188,12 @@ class PartyTransactionActivity : AppCompatActivity() {
         // balance; the only entries possible were full sale/purchase bills. This opens a
         // small dialog (amount, cash/bank, optional note) that adjusts the balance directly.
         headerRow.addView(TextView(this).apply {
-            text = "  \uD83D\uDCB0  " + (if (isCustomer) Loc.t(this@PartyTransactionActivity, "Receive Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06A9\u0631\u06CC\u06BA")
+            text = "  " + (if (isCustomer) Loc.t(this@PartyTransactionActivity, "Receive Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06A9\u0631\u06CC\u06BA")
                 else Loc.t(this@PartyTransactionActivity, "Make Payment", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06A9\u0631\u06CC\u06BA"))
             textSize = 12.5f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setLeadingIcon(R.drawable.ic_wallet, "#FFFFFF", 13, 6)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor(if (isCustomer) green else orange))
                 cornerRadius = 30f
@@ -464,7 +467,8 @@ class PartyTransactionActivity : AppCompatActivity() {
             val dateCal = java.util.Calendar.getInstance().apply { if (existing != null) timeInMillis = existing.createdAt }
             val dateFmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
             val dateField = TextView(this@PartyTransactionActivity).apply {
-                text = "\uD83D\uDCC5  " + dateFmt.format(dateCal.time)
+                text = dateFmt.format(dateCal.time)
+                setLeadingIcon(R.drawable.ic_calendar, textDark, 15, 8)
                 textSize = 15f
                 setTextColor(Color.parseColor(textDark))
                 setPadding(0, 18, 0, 18)
@@ -474,7 +478,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                         this@PartyTransactionActivity,
                         { _, year, month, dayOfMonth ->
                             dateCal.set(year, month, dayOfMonth)
-                            text = "\uD83D\uDCC5  " + dateFmt.format(dateCal.time)
+                            text = dateFmt.format(dateCal.time)
+                            setLeadingIcon(R.drawable.ic_calendar, textDark, 15, 8)
                         },
                         dateCal.get(java.util.Calendar.YEAR),
                         dateCal.get(java.util.Calendar.MONTH),
@@ -763,7 +768,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                             typeLabel = typeLabel,
                             status = s.status,
                             accent = green,
-                            emoji = "\uD83D\uDED2"
+                            iconRes = R.drawable.ic_cart
                         ) {
                             // ---- CHANGE: opens billed items dialog with edit/delete
                             // instead of the full SaleActivity edit screen. ----
@@ -785,7 +790,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                             typeLabel = typeLabel,
                             status = p.status,
                             accent = orange,
-                            emoji = "\uD83E\uDDFE"
+                            iconRes = R.drawable.ic_receipt
                         ) {
                             // ---- CHANGE: opens billed items dialog with edit/delete
                             // instead of the full PurchaseActivity edit screen. ----
@@ -1584,15 +1589,13 @@ class PartyTransactionActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(accent))
                 setPadding(0, 0, 20, 0)
             })
-            addView(TextView(this@PartyTransactionActivity).apply {
-                text = "\u270F\uFE0F"
-                textSize = 15f
+            addView(ImageView(this@PartyTransactionActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_edit, textDark, 15))
                 setPadding(14, 0, 14, 0)
                 setOnClickListener { onEdit() }
             })
-            addView(TextView(this@PartyTransactionActivity).apply {
-                text = "\uD83D\uDDD1\uFE0F"
-                textSize = 15f
+            addView(ImageView(this@PartyTransactionActivity).apply {
+                setImageDrawable(tintedDrawable(R.drawable.ic_delete, red, 15))
                 setPadding(6, 0, 0, 0)
                 setOnClickListener { onDelete() }
             })
@@ -1602,7 +1605,7 @@ class PartyTransactionActivity : AppCompatActivity() {
     // ---- REMOVED (code maintainability — DRY): formatQty() shared via
     // com.grocerypos.v11.ui.components (see UiHelpers.kt) — imported above.
 
-    private fun row(amount: Double, dateText: String, typeLabel: String, status: String, accent: String, emoji: String, onClick: () -> Unit): LinearLayout {
+    private fun row(amount: Double, dateText: String, typeLabel: String, status: String, accent: String, iconRes: Int, onClick: () -> Unit): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1619,14 +1622,7 @@ class PartyTransactionActivity : AppCompatActivity() {
             isClickable = true
             setOnClickListener { onClick() }
 
-            addView(TextView(this@PartyTransactionActivity).apply {
-                text = emoji
-                textSize = 16f
-                gravity = Gravity.CENTER
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(accent)) }
-                width = (38 * resources.displayMetrics.density).toInt()
-                height = (38 * resources.displayMetrics.density).toInt()
-            })
+            addView(iconBadge(iconRes, accent, sizeDp = 38, iconSizeDp = 17))
 
             val infoCol = LinearLayout(this@PartyTransactionActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1678,14 +1674,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            topRow.addView(TextView(this@PartyTransactionActivity).apply {
-                text = "\uD83D\uDCB5"
-                textSize = 16f
-                gravity = Gravity.CENTER
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(teal)) }
-                width = (38 * resources.displayMetrics.density).toInt()
-                height = (38 * resources.displayMetrics.density).toInt()
-            })
+            topRow.addView(iconBadge(R.drawable.ic_wallet, teal, sizeDp = 38, iconSizeDp = 17))
             val infoCol = LinearLayout(this@PartyTransactionActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(16, 0, 12, 0)
@@ -1711,12 +1700,10 @@ class PartyTransactionActivity : AppCompatActivity() {
             })
             addView(topRow)
 
-            fun chip(emoji: String, label: String, colorHex: String, onTap: () -> Unit): TextView =
-                TextView(this@PartyTransactionActivity).apply {
-                    text = "$emoji $label"
-                    textSize = 11.5f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.parseColor(colorHex))
+            fun chip(iconRes: Int, label: String, colorHex: String, onTap: () -> Unit): LinearLayout =
+                LinearLayout(this@PartyTransactionActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
                     setPadding(20, 12, 20, 12)
                     background = GradientDrawable().apply {
                         setColor(Color.parseColor("#F7F8FC"))
@@ -1725,21 +1712,29 @@ class PartyTransactionActivity : AppCompatActivity() {
                     val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     lp.marginEnd = 8
                     layoutParams = lp
-                    gravity = Gravity.CENTER
                     isClickable = true
                     setOnClickListener { onTap() }
+                    addView(ImageView(this@PartyTransactionActivity).apply {
+                        setImageDrawable(tintedDrawable(iconRes, colorHex, 13))
+                    })
+                    addView(TextView(this@PartyTransactionActivity).apply {
+                        text = "  $label"
+                        textSize = 11.5f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setTextColor(Color.parseColor(colorHex))
+                    })
                 }
 
             val actionRow = LinearLayout(this@PartyTransactionActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 10, 0, 0)
             }
-            actionRow.addView(chip("\u270F\uFE0F", Loc.t(this@PartyTransactionActivity, "Edit", "\u062A\u0631\u0645\u06CC\u0645"), textDark) { showPaymentDialog(existing = payment) })
-            actionRow.addView(chip("\uD83D\uDCE4", Loc.t(this@PartyTransactionActivity, "Share", "\u0634\u06CC\u0626\u0631"), teal) {
+            actionRow.addView(chip(R.drawable.ic_edit, Loc.t(this@PartyTransactionActivity, "Edit", "\u062A\u0631\u0645\u06CC\u0645"), textDark) { showPaymentDialog(existing = payment) })
+            actionRow.addView(chip(R.drawable.ic_send, Loc.t(this@PartyTransactionActivity, "Share", "\u0634\u06CC\u0626\u0631"), teal) {
                 shareReceipt(payment.amount, payment.method, payment.note, payment.createdAt, payment.billReference)
             })
-            actionRow.addView(chip("\uD83D\uDDD1\uFE0F", Loc.t(this@PartyTransactionActivity, "Delete", "\u062D\u0630\u0641"), red) { confirmDeletePayment(payment) })
-            (actionRow.getChildAt(2) as TextView).layoutParams = (actionRow.getChildAt(2).layoutParams as LinearLayout.LayoutParams).apply { marginEnd = 0 }
+            actionRow.addView(chip(R.drawable.ic_delete, Loc.t(this@PartyTransactionActivity, "Delete", "\u062D\u0630\u0641"), red) { confirmDeletePayment(payment) })
+            (actionRow.getChildAt(2) as LinearLayout).layoutParams = (actionRow.getChildAt(2).layoutParams as LinearLayout.LayoutParams).apply { marginEnd = 0 }
             addView(actionRow)
         }
     }
