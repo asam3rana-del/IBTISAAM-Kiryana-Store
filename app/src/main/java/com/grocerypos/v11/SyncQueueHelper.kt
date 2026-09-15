@@ -53,6 +53,16 @@ object SyncQueueHelper {
     fun zakatYearEntityId(y: ZakatYear) = "zakat_year:${DeviceTag.current}-${y.id}"
     fun zakatPaymentEntityId(p: ZakatPayment) = "zakat_payment:${DeviceTag.current}-${p.id}"
     fun returnEntityId(r: ReturnLine) = "return:${DeviceTag.current}-${r.id}"
+    // App Settings: only a whitelisted subset of keys are shop-wide identity (name,
+    // phone, address, receipt footer, currency, tax rate) that every branch device
+    // should share. Everything else in this table — login_method, printer_name/mac/
+    // type/width, admin_seeded, last_username — is deliberately device-specific and
+    // must NEVER sync (a paired Bluetooth printer or last-logged-in user on one
+    // device means nothing, or actively misleads, on another).
+    val SYNCED_APP_SETTING_KEYS = setOf(
+        "shop_name", "shop_phone", "shop_address", "receipt_footer", "currency", "tax_percent"
+    )
+    fun appSettingEntityId(s: AppSetting) = s.key
     // Units/Categories: name IS the primary key locally (like Product.barcode), so
     // the Firestore doc id can just be the name directly — no DeviceTag needed since
     // there's no local-autoincrement collision risk (see the comment above).
@@ -350,6 +360,14 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // NEW (App Settings sync): silently does nothing for a non-whitelisted key — see
+    // SYNCED_APP_SETTING_KEYS above. Call sites don't need their own if-check.
+    suspend fun enqueueAppSetting(db: PosDatabase, s: AppSetting, context: Context? = null) {
+        if (s.key !in SYNCED_APP_SETTING_KEYS) return
+        enqueue(db, "app_setting", appSettingEntityId(s), "upsert", appSettingJson(s))
+        context?.let { trigger(it) }
+    }
+
     /** Use for any entity delete (e.g. deleting a customer or product). */
     suspend fun enqueueDelete(db: PosDatabase, entityType: String, entityId: String, context: Context? = null) {
         enqueue(db, entityType, entityId, "delete", "{}")
@@ -522,6 +540,16 @@ object SyncQueueHelper {
             "qty" to r.qty,
             "amount" to r.amount,
             "createdAt" to r.createdAt,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    fun appSettingJson(s: AppSetting): String {
+        val map = mapOf(
+            "key" to s.key,
+            "value" to s.value,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
@@ -729,6 +757,10 @@ object SyncQueueHelper {
         }
         // NEW (Returns sync): push existing local returns too.
         for (r in db.returnDao().allList()) enqueueReturn(db, r)
+        // NEW (App Settings sync): only the whitelisted shop-identity keys, if present.
+        for (key in SYNCED_APP_SETTING_KEYS) {
+            db.appSettingDao().get(key)?.let { enqueueAppSetting(db, it) }
+        }
         context?.let { trigger(it) }
     }
 }

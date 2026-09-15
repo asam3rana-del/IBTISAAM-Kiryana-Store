@@ -888,12 +888,27 @@ class SettingsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SettingsActivity)
             val newShopName = shopNameField.text.toString().trim()
+            val newPhone = phoneField.text.toString().trim()
+            val newAddress = addressField.text.toString().trim()
+            val newFooter = footerField.text.toString().trim()
+            val newCurrency = currencyField.text.toString().trim()
+            val newTax = taxField.text.toString().trim()
             db.appSettingDao().set(AppSetting("shop_name", newShopName))
-            db.appSettingDao().set(AppSetting("shop_phone", phoneField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("shop_address", addressField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("receipt_footer", footerField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("currency", currencyField.text.toString().trim()))
-            db.appSettingDao().set(AppSetting("tax_percent", taxField.text.toString().trim()))
+            db.appSettingDao().set(AppSetting("shop_phone", newPhone))
+            db.appSettingDao().set(AppSetting("shop_address", newAddress))
+            db.appSettingDao().set(AppSetting("receipt_footer", newFooter))
+            db.appSettingDao().set(AppSetting("currency", newCurrency))
+            db.appSettingDao().set(AppSetting("tax_percent", newTax))
+            // NEW (App Settings sync): push these 6 shop-identity fields so every
+            // device shares the same name/phone/address/footer/currency/tax rate —
+            // see SyncQueueHelper.SYNCED_APP_SETTING_KEYS for exactly which keys
+            // sync (printer/login/session settings deliberately stay local-only).
+            SyncQueueHelper.enqueueAppSetting(db, AppSetting("shop_name", newShopName))
+            SyncQueueHelper.enqueueAppSetting(db, AppSetting("shop_phone", newPhone))
+            SyncQueueHelper.enqueueAppSetting(db, AppSetting("shop_address", newAddress))
+            SyncQueueHelper.enqueueAppSetting(db, AppSetting("receipt_footer", newFooter))
+            SyncQueueHelper.enqueueAppSetting(db, AppSetting("currency", newCurrency))
+            SyncQueueHelper.enqueueAppSetting(db, AppSetting("tax_percent", newTax), this@SettingsActivity)
             if (newShopName.isNotEmpty()) {
                 shopNameHeaderText.text = newShopName
             }

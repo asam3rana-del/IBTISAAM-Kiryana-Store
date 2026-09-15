@@ -24,6 +24,7 @@ import com.grocerypos.v11.Category
 import com.grocerypos.v11.ZakatYear
 import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.ReturnLine
+import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.util.Loc
 
 /**
@@ -44,6 +45,7 @@ import com.grocerypos.v11.util.Loc
  *   zakat_years/{serverId}
  *   zakat_payments/{serverId}
  *   returns/{serverId}
+ *   app_settings/{key} (whitelisted shop-identity keys only — see SyncQueueHelper.SYNCED_APP_SETTING_KEYS)
  *
  * CHANGED (multi-tenant support): which Firestore project this talks to is no longer
  * fixed at compile time — see CloudConfigStore. Every entry point below now takes a
@@ -156,6 +158,7 @@ object SyncApi {
                 "zakat_year" -> "zakat_years"
                 "zakat_payment" -> "zakat_payments"
                 "return" -> "returns"
+                "app_setting" -> "app_settings"
                 else -> return false
             }
 
@@ -273,6 +276,7 @@ object SyncApi {
         val zakatYears: List<Map<String, Any?>> = emptyList(),
         val zakatPayments: List<Map<String, Any?>> = emptyList(),
         val returns: List<Map<String, Any?>> = emptyList(),
+        val appSettings: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
 
@@ -303,11 +307,13 @@ object SyncApi {
         val zakatYearsSnap = query("zakat_years").get(Source.SERVER).await()
         val zakatPaymentsSnap = query("zakat_payments").get(Source.SERVER).await()
         val returnsSnap = query("returns").get(Source.SERVER).await()
+        val appSettingsSnap = query("app_settings").get(Source.SERVER).await()
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
             salesSnap, purchasesSnap, paymentsSnap, expensesSnap, cashTxSnap,
-            unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap, returnsSnap
+            unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap, returnsSnap,
+            appSettingsSnap
         )
         var maxUpdatedAt = since
         for (snap in allSnaps) {
@@ -332,6 +338,7 @@ object SyncApi {
             zakatYears = zakatYearsSnap.documents.map { it.data ?: emptyMap() },
             zakatPayments = zakatPaymentsSnap.documents.map { it.data ?: emptyMap() },
             returns = returnsSnap.documents.map { it.data ?: emptyMap() },
+            appSettings = appSettingsSnap.documents.map { it.data ?: emptyMap() },
             serverTime = maxUpdatedAt
         )
     }
@@ -352,6 +359,7 @@ object SyncApi {
         val categoryDao = db.categoryDao()
         val zakatDao = db.zakatDao()
         val returnDao = db.returnDao()
+        val appSettingDao = db.appSettingDao()
 
         // Local deltas that are still queued must be layered on top of the latest
         // server snapshot. Without this, a pull could temporarily erase an offline
@@ -916,6 +924,19 @@ object SyncApi {
                     createdAt = createdAt, serverId = serverId, updatedAt = updatedAt, dirty = false
                 )
             )
+        }
+
+        // NEW (App Settings sync): only whitelisted keys are ever pushed (see
+        // SyncQueueHelper.SYNCED_APP_SETTING_KEYS), so nothing extra to filter here —
+        // whatever arrives in this collection is safe to apply. Skips a key that has
+        // a pending local push still in flight, same guard as the products loop above,
+        // so a pull can't stomp on an edit this device made seconds ago but hasn't
+        // pushed yet.
+        for (row in changes.appSettings) {
+            val key = row["key"] as? String ?: continue
+            if (db.syncQueueDao().pendingForEntityAnyRetry("app_setting", key, "upsert").isNotEmpty()) continue
+            val value = row["value"] as? String ?: continue
+            appSettingDao.set(AppSetting(key, value))
         }
     }
 }
