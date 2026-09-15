@@ -169,27 +169,30 @@ object SyncApi {
                 "delete" -> {
                     // Use a timestamped tombstone instead of a hard delete. A hard
                     // delete cannot be observed by other devices because pull() only
-                    // sees documents changed since its last checkpoint. Compare the
-                    // tombstone timestamp just like normal upserts so an older offline
-                    // delete cannot erase a newer edit.
-                    val docRef = db.collection(collection).document(entry.entityId)
+                    // sees documents changed since its last checkpoint.
+                    //
+                    // FIX (clock skew — see the "local data is authoritative" comment
+                    // on the upsert branch below): this used to run inside a
+                    // transaction and only apply the tombstone if this device's local
+                    // clock (System.currentTimeMillis()) looked >= the server's stored
+                    // updatedAt. Two devices with different clocks made that comparison
+                    // unreliable — a device running slow could have its real, later
+                    // delete silently dropped because its timestamp looked "older" than
+                    // the server's. Deletes now follow the same rule as every other
+                    // push in this function: the action a device actually took is
+                    // always applied, unconditionally, no clock-based comparison.
                     val deleteAt = System.currentTimeMillis()
-                    db.runTransaction { txn ->
-                        val snap = txn.get(docRef)
-                        val serverUpdatedAt = (snap.get("updatedAt") as? Number)?.toLong() ?: 0L
-                        if (!snap.exists() || deleteAt >= serverUpdatedAt) {
-                            txn.set(
-                                docRef,
-                                mapOf(
-                                    "serverId" to entry.entityId,
-                                    "_deleted" to true,
-                                    "updatedAt" to deleteAt,
-                                    "branchId" to BranchConfigStore.current
-                                ),
-                                com.google.firebase.firestore.SetOptions.merge()
-                            )
-                        }
-                    }.await()
+                    db.collection(collection).document(entry.entityId)
+                        .set(
+                            mapOf(
+                                "serverId" to entry.entityId,
+                                "_deleted" to true,
+                                "updatedAt" to deleteAt,
+                                "branchId" to BranchConfigStore.current
+                            ),
+                            com.google.firebase.firestore.SetOptions.merge()
+                        )
+                        .await()
                 }
                 "increment_stock", "increment_balance" -> {
                     @Suppress("UNCHECKED_CAST")
