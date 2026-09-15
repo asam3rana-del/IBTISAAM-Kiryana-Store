@@ -63,11 +63,11 @@ class PurchaseActivity : ThemedActivity() {
     private var red = "#E5484D"
     private var fieldFill = "#FAFBFD"
 
-    // Reports-style flat design: Purchase = flatCoral everywhere, per ThemeManager's
-    // documented category convention (Reports uses the same flatCoralFg for its
-    // Purchase-related rows/icons). navy/navyLight kept as flat (no gradient).
-    private var navy = "#993C1D"       // header/brand accent — flatCoralFg
-    private var navyLight = "#993C1D" // flat design, no gradient — same as navy
+    // Purchase = flatBlue everywhere, to match the dashboard's "Add Purchase" button
+    // (blue) instead of the old Reports-style coral category color.
+    // navy/navyLight kept as flat (no gradient).
+    private var navy = "#185FA5"       // header/brand accent — flatBlueFg
+    private var navyLight = "#185FA5" // flat design, no gradient — same as navy
     private var teal = "#085041"       // flatTealFg
     private var gold = "#854F0B"       // flatAmberFg — "best price" badge
     private var amberBadge = "#FAEEDA" // flatAmberBg
@@ -82,8 +82,8 @@ class PurchaseActivity : ThemedActivity() {
         border = p.border
         red = p.red
         fieldFill = p.fieldFill
-        navy = p.flatCoralFg
-        navyLight = p.flatCoralFg
+        navy = p.flatBlueFg
+        navyLight = p.flatBlueFg
         teal = p.flatTealFg
         gold = p.flatAmberFg
         amberBadge = p.flatAmberBg

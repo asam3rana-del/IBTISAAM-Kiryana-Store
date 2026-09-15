@@ -59,13 +59,13 @@ class SaleActivity : AppCompatActivity() {
 
     // ---------- Palette (Reports-style flat design — pulled from ThemeManager so this
     // screen also respects dark mode and stays in sync with the rest of the app).
-    // Sale = flatPurple everywhere, per ThemeManager's documented category convention
-    // (Reports uses the same flatPurpleFg for its Sale-related rows/icons). ----------
+    // Sale = red everywhere, to match the dashboard's "Add Sale" button instead of
+    // the old Reports-style purple category color. ----------
     internal var bg = "#F4F6F8"
     internal var cardBg = "#FFFFFF"
     internal var fieldFill = "#FAFBFD"
-    internal var navy = "#534AB7"       // header/brand accent — flatPurpleFg
-    internal var navyLight = "#534AB7"  // flat design, no gradient — same as navy
+    internal var navy = "#E5484D"       // header/brand accent — red, matches the dashboard's "Add Sale" button
+    internal var navyLight = "#E5484D"  // flat design, no gradient — same as navy
     internal var teal = "#085041"       // flatTealFg — secondary accent / positive amounts
     internal var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
     internal var greenDark = "#085041"  // flat design, no gradient — same as green
@@ -81,8 +81,8 @@ class SaleActivity : AppCompatActivity() {
         bg = p.bg
         cardBg = p.cardWhite
         fieldFill = p.fieldFill
-        navy = p.flatPurpleFg
-        navyLight = p.flatPurpleFg
+        navy = p.red
+        navyLight = p.red
         teal = p.flatTealFg
         green = p.flatTealFg
         greenDark = p.flatTealFg
