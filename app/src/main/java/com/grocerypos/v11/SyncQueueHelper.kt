@@ -50,6 +50,11 @@ object SyncQueueHelper {
     fun expenseEntityId(expense: Expense) = "expense:${DeviceTag.current}-${expense.id}"
     fun cashTransactionEntityId(t: CashTransaction) = "cash_transaction:${DeviceTag.current}-${t.id}"
     fun userEntityId(u: User) = "user:${u.username}"
+    // Units/Categories: name IS the primary key locally (like Product.barcode), so
+    // the Firestore doc id can just be the name directly — no DeviceTag needed since
+    // there's no local-autoincrement collision risk (see the comment above).
+    fun unitEntityId(u: UnitType) = u.name
+    fun categoryEntityId(c: Category) = c.name
 
     suspend fun enqueue(db: PosDatabase, entityType: String, entityId: String, operation: String, payloadJson: String) {
         db.syncQueueDao().enqueue(
@@ -299,6 +304,19 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // NEW (Units/Categories master-list sync): mirrors enqueueProduct's shape exactly
+    // (name-as-id, no DeviceTag, plain upsert) — see productEntityId()'s comment above
+    // for why these two don't need one either.
+    suspend fun enqueueUnit(db: PosDatabase, u: UnitType, context: Context? = null) {
+        enqueue(db, "unit", unitEntityId(u), "upsert", unitJson(u))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueCategory(db: PosDatabase, c: Category, context: Context? = null) {
+        enqueue(db, "category", categoryEntityId(c), "upsert", categoryJson(c))
+        context?.let { trigger(it) }
+    }
+
     /** Use for any entity delete (e.g. deleting a customer or product). */
     suspend fun enqueueDelete(db: PosDatabase, entityType: String, entityId: String, context: Context? = null) {
         enqueue(db, entityType, entityId, "delete", "{}")
@@ -408,6 +426,26 @@ object SyncQueueHelper {
             "secondaryUnitQty" to p.secondaryUnitQty,
             "tertiaryUnit" to p.tertiaryUnit,
             "tertiaryUnitQty" to p.tertiaryUnitQty,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    // NEW (Units/Categories master-list sync): trivial payloads — these two entities
+    // are just a name, so there's nothing to snapshot besides the name itself.
+    fun unitJson(u: UnitType): String {
+        val map = mapOf(
+            "name" to u.name,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    fun categoryJson(c: Category): String {
+        val map = mapOf(
+            "name" to c.name,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
@@ -600,6 +638,10 @@ object SyncQueueHelper {
         for (payment in db.paymentDao().allRaw()) enqueuePayment(db, payment)
         for (expense in db.expenseDao().allList()) enqueueExpense(db, expense)
         for (t in db.cashTransactionDao().allList()) enqueueCashTransaction(db, t)
+        // NEW (Units/Categories master-list sync): so pre-existing local units/
+        // categories (added before this feature existed) also get pushed once.
+        for (u in db.unitDao().allOnce()) enqueueUnit(db, u)
+        for (c in db.categoryDao().allOnce()) enqueueCategory(db, c)
         context?.let { trigger(it) }
     }
 }

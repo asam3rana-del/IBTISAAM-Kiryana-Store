@@ -91,7 +91,9 @@ object SyncRepository {
             salesReceived = changes.sales.size,
             purchasesReceived = changes.purchases.size,
             expensesReceived = changes.expenses.size,
-            cashTxReceived = changes.cashTransactions.size
+            cashTxReceived = changes.cashTransactions.size,
+            unitsReceived = changes.units.size,
+            categoriesReceived = changes.categories.size
         )
     }
 
@@ -106,6 +108,8 @@ object SyncRepository {
         val purchasesReceived: Int = 0,
         val expensesReceived: Int = 0,
         val cashTxReceived: Int = 0,
+        val unitsReceived: Int = 0,
+        val categoriesReceived: Int = 0,
         val error: String? = null
     ) {
         // ADDED (sync diagnostics): a short, human-readable one-liner so Settings'
@@ -116,7 +120,8 @@ object SyncRepository {
         fun summary(): String {
             if (!pulledOk) return "Sync failed: ${error ?: "unknown error"}"
             val totalReceived = customersReceived + suppliersReceived + productsReceived +
-                salesReceived + purchasesReceived + expensesReceived + cashTxReceived
+                salesReceived + purchasesReceived + expensesReceived + cashTxReceived +
+                unitsReceived + categoriesReceived
             val parts = mutableListOf<String>()
             if (pushedCount > 0) parts.add("sent $pushedCount")
             if (totalReceived > 0) parts.add("received $totalReceived")

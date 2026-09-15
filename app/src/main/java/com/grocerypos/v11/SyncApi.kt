@@ -19,6 +19,8 @@ import com.grocerypos.v11.User
 import com.grocerypos.v11.PasswordHasher
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.Payment
+import com.grocerypos.v11.UnitType
+import com.grocerypos.v11.Category
 import com.grocerypos.v11.util.Loc
 
 /**
@@ -34,6 +36,8 @@ import com.grocerypos.v11.util.Loc
  *   payments/{serverId}
  *   expenses/{serverId}
  *   cash_transactions/{serverId}
+ *   units/{name}
+ *   categories/{name}
  *
  * CHANGED (multi-tenant support): which Firestore project this talks to is no longer
  * fixed at compile time — see CloudConfigStore. Every entry point below now takes a
@@ -141,6 +145,8 @@ object SyncApi {
                 "payment" -> "payments"
                 "expense" -> "expenses"
                 "cash_transaction" -> "cash_transactions"
+                "unit" -> "units"
+                "category" -> "categories"
                 else -> return false
             }
 
@@ -253,6 +259,8 @@ object SyncApi {
         val payments: List<Map<String, Any?>> = emptyList(),
         val expenses: List<Map<String, Any?>> = emptyList(),
         val cashTransactions: List<Map<String, Any?>> = emptyList(),
+        val units: List<Map<String, Any?>> = emptyList(),
+        val categories: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
 
@@ -278,10 +286,13 @@ object SyncApi {
         val paymentsSnap = query("payments").get(Source.SERVER).await()
         val expensesSnap = query("expenses").get(Source.SERVER).await()
         val cashTxSnap = query("cash_transactions").get(Source.SERVER).await()
+        val unitsSnap = query("units").get(Source.SERVER).await()
+        val categoriesSnap = query("categories").get(Source.SERVER).await()
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
-            salesSnap, purchasesSnap, paymentsSnap, expensesSnap, cashTxSnap
+            salesSnap, purchasesSnap, paymentsSnap, expensesSnap, cashTxSnap,
+            unitsSnap, categoriesSnap
         )
         var maxUpdatedAt = since
         for (snap in allSnaps) {
@@ -301,6 +312,8 @@ object SyncApi {
             payments = paymentsSnap.documents.map { it.data ?: emptyMap() },
             expenses = expensesSnap.documents.map { it.data ?: emptyMap() },
             cashTransactions = cashTxSnap.documents.map { it.data ?: emptyMap() },
+            units = unitsSnap.documents.map { it.data ?: emptyMap() },
+            categories = categoriesSnap.documents.map { it.data ?: emptyMap() },
             serverTime = maxUpdatedAt
         )
     }
@@ -317,6 +330,8 @@ object SyncApi {
         val paymentDao = db.paymentDao()
         val expenseDao = db.expenseDao()
         val cashTxDao = db.cashTransactionDao()
+        val unitDao = db.unitDao()
+        val categoryDao = db.categoryDao()
 
         // Local deltas that are still queued must be layered on top of the latest
         // server snapshot. Without this, a pull could temporarily erase an offline
@@ -765,6 +780,27 @@ object SyncApi {
                     )
                 )
             }
+        }
+
+        // NEW (Units/Categories master-list sync): name IS the key (same shape as
+        // the products loop above), so this is just an insert-if-missing / delete —
+        // no other field to merge or compare, unlike every other entity above.
+        for (row in changes.units) {
+            val name = row["name"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                unitDao.deleteByName(name)
+                continue
+            }
+            unitDao.insert(UnitType(name))
+        }
+
+        for (row in changes.categories) {
+            val name = row["name"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                categoryDao.deleteByName(name)
+                continue
+            }
+            categoryDao.insert(Category(name))
         }
     }
 }

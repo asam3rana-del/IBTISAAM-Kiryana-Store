@@ -1163,7 +1163,12 @@ class ProductActivity : ThemedActivity() {
         units = (units + value).distinct()
         lifecycleScope.launch {
             try {
-                PosDatabase.get(this@ProductActivity).unitDao().insert(UnitType(value))
+                val db = PosDatabase.get(this@ProductActivity)
+                val unit = UnitType(value)
+                db.unitDao().insert(unit)
+                // NEW (Units/Categories master-list sync): push this new unit so it
+                // shows up in the dropdown on other devices too.
+                SyncQueueHelper.enqueueUnit(db, unit, this@ProductActivity)
             } catch (e: Exception) {
                 Log.e(TAG, "ensureUnitSaved failed for '$value'", e)
             }
@@ -1468,7 +1473,11 @@ class ProductActivity : ThemedActivity() {
                 val db = PosDatabase.get(this@ProductActivity)
 
                 if (categoryValue != "General" && categoryNames.none { it.equals(categoryValue, ignoreCase = true) }) {
-                    db.categoryDao().insert(Category(categoryValue))
+                    val category = Category(categoryValue)
+                    db.categoryDao().insert(category)
+                    // NEW (Units/Categories master-list sync): push this new category
+                    // so it shows up in the dropdown on other devices too.
+                    SyncQueueHelper.enqueueCategory(db, category, this@ProductActivity)
                 }
 
                 db.productDao().upsert(product)

@@ -392,9 +392,13 @@ class BulkTranslateActivity : ThemedActivity() {
                     val newVal = field.text.toString().trim()
                     if (newVal.isEmpty() || newVal == oldVal) continue
                     db.productDao().findByCategory(oldVal).forEach { touchedBarcodes.add(it.barcode) }
-                    db.categoryDao().insert(Category(newVal))
+                    val newCategory = Category(newVal)
+                    db.categoryDao().insert(newCategory)
                     db.categoryDao().deleteByName(oldVal)
                     db.productDao().renameCategoryInProducts(oldVal, newVal)
+                    // NEW (Units/Categories master-list sync): push both sides of the rename.
+                    SyncQueueHelper.enqueueCategory(db, newCategory)
+                    SyncQueueHelper.enqueueDelete(db, "category", oldVal)
                     count++
                 }
 
@@ -406,26 +410,32 @@ class BulkTranslateActivity : ThemedActivity() {
                     db.productDao().findByPrimaryUnit(oldVal).forEach { touchedBarcodes.add(it.barcode) }
                     db.productDao().findBySecondaryUnit(oldVal).forEach { touchedBarcodes.add(it.barcode) }
                     db.productDao().findByTertiaryUnit(oldVal).forEach { touchedBarcodes.add(it.barcode) }
-                    db.unitDao().insert(UnitType(newVal))
+                    val newUnit = UnitType(newVal)
+                    db.unitDao().insert(newUnit)
                     db.unitDao().deleteByName(oldVal)
                     db.productDao().renamePrimaryUnitInProducts(oldVal, newVal)
                     db.productDao().renameSecondaryUnitInProducts(oldVal, newVal)
                     db.productDao().renameTertiaryUnitInProducts(oldVal, newVal)
+                    // NEW (Units/Categories master-list sync): push both sides of the rename.
+                    SyncQueueHelper.enqueueUnit(db, newUnit)
+                    SyncQueueHelper.enqueueDelete(db, "unit", oldVal)
                     count++
                 }
 
-                // FIX (#12 — category/unit master sync incomplete): the renames above
-                // ran as raw SQL UPDATEs, which silently bypassed sync — this app's
-                // only sync unit is Product (categories/units master tables have no
-                // Firestore collection of their own; see firestore.rules). Without
-                // this, a rename stayed local to the device that made it forever —
-                // other devices kept the old category/unit value indefinitely. Now
-                // every touched product is re-read (post-rename) and enqueued so the
-                // new value actually reaches other devices/branches.
+                // FIX (#12 — category/unit master sync incomplete): renameXInProducts()
+                // calls above run as raw SQL UPDATEs, which bypass sync on their own —
+                // so every touched product is re-read (post-rename) and enqueued so the
+                // new category/unit value actually reaches other devices/branches. The
+                // categories/units master-list rows themselves are now also pushed
+                // directly (enqueueCategory/enqueueUnit above) — see firestore.rules'
+                // units/categories collections.
                 touchedBarcodes.forEach { barcode ->
                     db.productDao().find(barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
                 }
-                if (touchedBarcodes.isNotEmpty()) {
+                // NEW (Units/Categories master-list sync): also trigger when a
+                // rename happened even if it touched zero products yet (e.g. a
+                // freshly-added, still-unused category/unit name).
+                if (touchedBarcodes.isNotEmpty() || count > 0) {
                     SyncQueueHelper.trigger(this@BulkTranslateActivity)
                 }
 

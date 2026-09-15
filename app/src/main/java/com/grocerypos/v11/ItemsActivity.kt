@@ -603,9 +603,15 @@ class ItemsActivity : ThemedActivity() {
                     // add the new name, repoint every product that used the old
                     // name (existing helper — already used by BulkTranslateActivity),
                     // then remove the old category row.
-                    db.categoryDao().insert(Category(newName))
+                    val newCategory = Category(newName)
+                    db.categoryDao().insert(newCategory)
                     db.productDao().renameCategoryInProducts(category.name, newName)
                     db.categoryDao().deleteByName(category.name)
+                    // NEW (Units/Categories master-list sync): push both sides of the
+                    // rename (new name added, old name removed) so other devices' master
+                    // list stays in sync too.
+                    SyncQueueHelper.enqueueCategory(db, newCategory, this@ItemsActivity)
+                    SyncQueueHelper.enqueueDelete(db, "category", category.name, this@ItemsActivity)
                     Toast.makeText(this@ItemsActivity, "Category renamed", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -629,6 +635,8 @@ class ItemsActivity : ThemedActivity() {
                     val db = PosDatabase.get(this@ItemsActivity)
                     if (productCount > 0) db.productDao().renameCategoryInProducts(category.name, "")
                     db.categoryDao().deleteByName(category.name)
+                    // NEW (Units/Categories master-list sync): propagate the delete.
+                    SyncQueueHelper.enqueueDelete(db, "category", category.name, this@ItemsActivity)
                     Toast.makeText(this@ItemsActivity, "Category deleted", Toast.LENGTH_SHORT).show()
                 }
             }
