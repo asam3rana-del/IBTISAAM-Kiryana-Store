@@ -128,6 +128,15 @@ class SaleActivity : AppCompatActivity() {
     internal lateinit var paidInput: EditText
     internal lateinit var paidWarningText: TextView
     internal lateinit var paymentMethodSpinner: Spinner
+    // NEW (Split Payment / multiple payment methods): "Split Payment" link under
+    // the single-method spinner, and the summary line ("Split: Cash Rs300 + Bank
+    // Rs200 ✕") that replaces the spinner once a split is applied.
+    internal lateinit var splitPaymentLink: TextView
+    internal lateinit var splitPaymentSummary: TextView
+    // Source of truth for a split-tender sale — each entry is (method, amount).
+    // Empty means "single method", using paymentMethodSpinner + paidInput exactly
+    // as before this feature existed.
+    internal var splitPayments: MutableList<Pair<String, Double>> = mutableListOf()
     internal lateinit var dueAmountText: TextView
     private lateinit var saveButton: Button
     private lateinit var deleteButton: Button
@@ -667,6 +676,29 @@ class SaleActivity : AppCompatActivity() {
             adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Cash", "Bank"))
         }
         paymentSection.addView(paymentMethodSpinner)
+        // NEW (Split Payment / multiple payment methods): tapping this opens a
+        // dialog to pay one bill with more than one method (e.g. Rs 300 Cash +
+        // Rs 200 Bank). Once applied, this link is hidden and splitPaymentSummary
+        // below shows the breakdown instead — the single spinner above still sits
+        // there but is ignored while a split is active (SaveSaleUseCase derives
+        // the saved payment method from splitPayments, not the spinner, in that
+        // case).
+        splitPaymentLink = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "+ Split Payment (multiple methods)", "+ ادائیگی تقسیم کریں (ایک سے زیادہ طریقے)")
+            textSize = 12.5f
+            setTextColor(Color.parseColor(navy))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 10, 0, 0)
+            setOnClickListener { openSplitPaymentDialog() }
+        }
+        paymentSection.addView(splitPaymentLink)
+        splitPaymentSummary = TextView(this).apply {
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 10, 0, 0)
+            visibility = View.GONE
+        }
+        paymentSection.addView(splitPaymentSummary)
         paidWarningText = TextView(this).apply {
             text = "Paid khali hai - Ye Udhaar me jayega"
             setLeadingIcon(R.drawable.ic_warning, red, 12, 5)
@@ -1096,6 +1128,14 @@ class SaleActivity : AppCompatActivity() {
             suppressPaidWatcher = false
             val methodIndex = if (edit.sale.paymentMethod.equals("bank", ignoreCase = true)) 1 else 0
             paymentMethodSpinner.setSelection(methodIndex)
+            // NEW (Split Payment): if this bill was originally saved with 2+
+            // payment methods, re-open it in split mode so editing/re-saving it
+            // doesn't silently collapse it back to a single method.
+            if (edit.payments.size >= 2) {
+                applySplitPayments(edit.payments)
+            } else {
+                clearSplitPayments()
+            }
 
             lines.clear()
             lines.addAll(edit.lines)
@@ -1538,7 +1578,8 @@ class SaleActivity : AppCompatActivity() {
             saleDateMillis = saleDateMillis,
             original = originalSale,
             originalItems = originalItems,
-            overrideCreditLimit = overrideCreditLimit
+            overrideCreditLimit = overrideCreditLimit,
+            payments = splitPayments.toList()
         )
     }
 
@@ -1587,7 +1628,172 @@ class SaleActivity : AppCompatActivity() {
     internal fun formatQty(v: Double): String =
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
+    // ================= Split Payment (multiple payment methods) =================
+    // NEW: lets one bill be paid across more than one method — e.g. Rs 300 Cash +
+    // Rs 200 Bank on a Rs 500 bill — instead of the single Cash/Bank spinner
+    // forcing the whole Paid Amount onto one method. Kept deliberately simple:
+    // Cash/Bank rows only (matches paymentMethodSpinner's own options), no limit
+    // on row count. `splitPayments` (declared above with paymentMethodSpinner) is
+    // the source of truth once applied — saveSale()/proceedSaveSale() forward it
+    // straight through, and SaveSaleUseCase computes the real paid/due and the
+    // combined "Cash + Bank" method label from it, ignoring paidInput/the spinner
+    // for as long as a split is active.
+    private fun openSplitPaymentDialog() {
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
 
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+        }
+        val totalDue = recomputeAmounts()
+        val infoText = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(
+                this@SaleActivity,
+                "Bill Total: Rs %.2f".format(totalDue),
+                "بل کل: Rs %.2f".format(totalDue)
+            )
+            textSize = 13f
+            setTextColor(Color.parseColor("#666666"))
+            setPadding(0, 0, 0, dp(10))
+        }
+        container.addView(infoText)
 
+        val rowsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        container.addView(rowsContainer)
 
+        val methods = listOf("Cash", "Bank")
+        fun addRow(method: String, amount: Double) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(6), 0, dp(6))
+            }
+            val methodSpinner = Spinner(this).apply {
+                adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, methods)
+                setSelection(methods.indexOf(method).coerceAtLeast(0))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val amountField = EditText(this).apply {
+                hint = "0.00"
+                if (amount > 0.0) setText(if (amount == amount.toLong().toDouble()) amount.toLong().toString() else amount.toString())
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                gravity = Gravity.END
+                minWidth = dp(90)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(8), 0, dp(8), 0) }
+            }
+            val removeBtn = TextView(this).apply {
+                text = "\u2715"
+                setTextColor(Color.parseColor(red))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setOnClickListener { rowsContainer.removeView(row) }
+            }
+            row.addView(methodSpinner)
+            row.addView(amountField)
+            row.addView(removeBtn)
+            rowsContainer.addView(row)
+        }
+
+        if (splitPayments.isNotEmpty()) {
+            splitPayments.forEach { (m, a) -> addRow(m, a) }
+        } else {
+            // Helpful default: two blank rows, Cash and Bank, nudging the cashier
+            // toward actually splitting rather than just re-typing one method.
+            addRow("Cash", 0.0)
+            addRow("Bank", 0.0)
+        }
+
+        val addRowLink = TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(this@SaleActivity, "+ Add another method", "+ ایک اور طریقہ شامل کریں")
+            setTextColor(Color.parseColor(navy))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            textSize = 13f
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { addRow("Cash", 0.0) }
+        }
+        container.addView(addRowLink)
+
+        val scrollWrapper = ScrollView(this).apply { addView(container) }
+
+        AlertDialog.Builder(this)
+            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Split Payment", "ادائیگی تقسیم کریں"))
+            .setView(scrollWrapper)
+            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Apply", "لاگو کریں"), null)
+            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .also { builder ->
+                if (splitPayments.isNotEmpty()) {
+                    // Third button to fully undo the split and go back to the
+                    // single-method spinner — only shown once a split already exists.
+                    builder.setNeutralButton(com.grocerypos.v11.util.Loc.t(this, "Remove Split", "تقسیم ہٹائیں"), null)
+                }
+            }
+            .create()
+            .also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val entries = (0 until rowsContainer.childCount).mapNotNull { i ->
+                            val row = rowsContainer.getChildAt(i) as LinearLayout
+                            val method = (row.getChildAt(0) as Spinner).selectedItem?.toString() ?: "Cash"
+                            val amt = (row.getChildAt(1) as EditText).text.toString().toDoubleOrNull() ?: 0.0
+                            if (amt > 0.009) method to amt else null
+                        }
+                        if (entries.isEmpty()) {
+                            Toast.makeText(this, com.grocerypos.v11.util.Loc.t(this, "Kam az kam ek payment amount daalen", "کم از کم ایک ادائیگی کی رقم درج کریں"), Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+                        applySplitPayments(entries)
+                        dialog.dismiss()
+                    }
+                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
+                        clearSplitPayments()
+                        dialog.dismiss()
+                    }
+                }
+                dialog.show()
+            }
+    }
+
+    private fun applySplitPayments(entries: List<Pair<String, Double>>) {
+        splitPayments = entries.toMutableList()
+        val sum = entries.sumOf { it.second }
+        paidInput.setText(if (sum == sum.toLong().toDouble()) sum.toLong().toString() else sum.toString())
+        // paidInput's own watcher already runs refreshDue()/saveDraft() off the
+        // setText() above — no need to duplicate that here.
+        paidInput.isEnabled = false
+        paymentMethodSpinner.isEnabled = false
+        updateSplitPaymentSummaryText()
+    }
+
+    internal fun clearSplitPayments() {
+        splitPayments = mutableListOf()
+        paidInput.isEnabled = true
+        paymentMethodSpinner.isEnabled = true
+        updateSplitPaymentSummaryText()
+    }
+
+    internal fun updateSplitPaymentSummaryText() {
+        if (splitPayments.isEmpty()) {
+            splitPaymentSummary.visibility = View.GONE
+            splitPaymentLink.visibility = View.VISIBLE
+            splitPaymentLink.text = com.grocerypos.v11.util.Loc.t(this, "+ Split Payment (multiple methods)", "+ ادائیگی تقسیم کریں (ایک سے زیادہ طریقے)")
+            return
+        }
+        val breakdown = splitPayments.joinToString("  +  ") { (m, a) -> "$m Rs %.0f".format(a) }
+        splitPaymentSummary.text = com.grocerypos.v11.util.Loc.t(
+            this,
+            "Split: $breakdown   \u2715",
+            "تقسیم: $breakdown   \u2715"
+        )
+        splitPaymentSummary.visibility = View.VISIBLE
+        splitPaymentSummary.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle(com.grocerypos.v11.util.Loc.t(this, "Remove Split Payment?", "تقسیم شدہ ادائیگی ہٹائیں؟"))
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Remove", "ہٹائیں")) { _, _ -> clearSplitPayments() }
+                .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Edit", "ترمیم کریں")) { _, _ -> openSplitPaymentDialog() }
+                .show()
+        }
+        splitPaymentLink.visibility = View.VISIBLE
+        splitPaymentLink.text = com.grocerypos.v11.util.Loc.t(this, "\u270E Edit split payment", "\u270E تقسیم میں ترمیم کریں")
+    }
 }

@@ -501,6 +501,8 @@ internal fun SaleActivity.clearAll() {
     marginWarningText.visibility = View.GONE
     itemLineTotalText.text = "Total Amount: Rs 0"
     paidInput.text.clear()
+    // NEW (Split Payment): a fresh sale always starts back in single-method mode.
+    clearSplitPayments()
     updateTotals()
     saleDateMillis = System.currentTimeMillis()
     dateValueText.text = formatDate(saleDateMillis)

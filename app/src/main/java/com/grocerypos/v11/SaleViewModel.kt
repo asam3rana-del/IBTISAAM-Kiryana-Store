@@ -119,7 +119,9 @@ class SaleViewModel(
         saleDateMillis: Long,
         original: Sale?,
         originalItems: List<SaleItem>,
-        overrideCreditLimit: Boolean = false
+        overrideCreditLimit: Boolean = false,
+        // NEW (Split Payment): see SaveSaleUseCase's matching param doc.
+        payments: List<Pair<String, Double>> = emptyList()
     ) {
         viewModelScope.launch {
             when (val result = saveSaleUseCase(
@@ -134,7 +136,8 @@ class SaleViewModel(
                 saleDateMillis = saleDateMillis,
                 original = original,
                 originalItems = originalItems,
-                allowOverride = overrideCreditLimit
+                allowOverride = overrideCreditLimit,
+                payments = payments
             )) {
                 is SaveSaleResult.Success -> _events.emit(SaleEvent.SaveSuccess(result))
                 is SaveSaleResult.EmptyItems -> _events.emit(SaleEvent.EmptyItems)

@@ -98,12 +98,26 @@ interface SaleRepository {
         paid: Double,
         lines: List<SaleLine>,
         original: Sale?,
-        originalItems: List<SaleItem>
+        originalItems: List<SaleItem>,
+        // NEW (Split Payment / multiple payment methods): when the bill was paid
+        // using more than one method (e.g. Rs 300 Cash + Rs 200 Bank), this carries
+        // each (method, amount) pair so RoomSaleRepository can log one cash-drawer
+        // entry per method instead of a single combined one — Reports/Day Book/Cash
+        // Register then split correctly by method. Empty (the default) means "single
+        // method" and behaves exactly as before this feature existed: one entry of
+        // (method, paid).
+        payments: List<Pair<String, Double>> = emptyList()
     ): SaleSaveResult
 
     /** Deletes a sale: reverses its stock and customer-balance effect and
      * removes the sale, its line items, and its cash transaction. */
     suspend fun deleteSale(invoice: String, original: Sale?, originalItems: List<SaleItem>)
+
+    // NEW (Split Payment): reconstructs the (method, amount) breakdown for an
+    // existing invoice from its cash-drawer entries — used to repopulate the
+    // Split Payment dialog when editing a sale that was originally paid with
+    // more than one method.
+    suspend fun paymentsForInvoice(invoice: String): List<Pair<String, Double>>
 
     /**
      * Persists a Quick Sale line (single-item, no draft/discount workflow).

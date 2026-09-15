@@ -51,7 +51,11 @@ data class SaleForEdit(
     val sale: Sale,
     val items: List<SaleItem>,
     val customerName: String,
-    val lines: List<SaleLine>
+    val lines: List<SaleLine>,
+    // NEW (Split Payment): non-empty only when this bill was originally saved
+    // with more than one payment method — lets the Sale screen re-open the
+    // Split Payment dialog pre-filled instead of just showing the combined total.
+    val payments: List<Pair<String, Double>> = emptyList()
 )
 
 /** Result of validating + saving a sale (new or edit). */
@@ -66,7 +70,12 @@ sealed class SaveSaleResult {
         val paid: Double,
         val paymentMethod: String,
         val isUpdate: Boolean,
-        val stockWarnings: List<String> = emptyList()
+        val stockWarnings: List<String> = emptyList(),
+        // NEW (Split Payment): the (method, amount) breakdown actually saved —
+        // empty for a normal single-method sale, 2+ entries for a split-tender
+        // one. Lets the Activity/Bill Preview show "Cash Rs300 + Bank Rs200"
+        // instead of just the combined paymentMethod label.
+        val payments: List<Pair<String, Double>> = emptyList()
     ) : SaveSaleResult()
     object EmptyItems : SaveSaleResult()
     object CustomerRequiredForDue : SaveSaleResult()
@@ -143,7 +152,18 @@ class LoadSaleForEditUseCase(private val repository: SaleRepository) {
                 tertiaryUnitQty = product?.tertiaryUnitQty ?: 0.0
             )
         }
-        return SaleForEdit(sale = sale, items = items, customerName = customerName, lines = lines)
+        // NEW (Split Payment): only worth showing as a "split" when there were
+        // actually 2+ methods used — a single-entry list is exactly the normal
+        // single-method case and the screen already handles that via
+        // sale.paymentMethod/sale.paid, so no need to pre-open the dialog for it.
+        val payments = repository.paymentsForInvoice(invoice)
+        return SaleForEdit(
+            sale = sale,
+            items = items,
+            customerName = customerName,
+            lines = lines,
+            payments = if (payments.size >= 2) payments else emptyList()
+        )
     }
 }
 
@@ -169,7 +189,16 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
         // CreditLimitExceeded instead of saving. The Activity shows a confirm
         // dialog and, only if the cashier explicitly confirms, calls again with
         // allowOverride=true to actually save it.
-        allowOverride: Boolean = false
+        allowOverride: Boolean = false,
+        // NEW (Split Payment / multiple payment methods): (method, amount) pairs
+        // when the cashier split the bill across more than one payment method at
+        // checkout. Empty (the default) means "single method" — paidInput +
+        // paymentMethodLabel are used exactly as before this feature existed.
+        // When non-empty, this list is the source of truth for how much was
+        // actually paid (its sum), overriding paidInput — the Sale screen keeps
+        // paidInput in sync with the split total, but computing it here too means
+        // a stale paidInput can never silently disagree with the real split.
+        payments: List<Pair<String, Double>> = emptyList()
     ): SaveSaleResult {
         if (lines.isEmpty()) return SaveSaleResult.EmptyItems
 
@@ -185,13 +214,27 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
             }
         }
 
+        val cleanPayments = payments.filter { it.second > 0.009 }
+        // NEW (Split Payment): the split rows' sum is the real paid amount
+        // whenever a split is in play — paidInput is trusted only when there's
+        // no split (cleanPayments empty), matching the pre-split-payment behavior.
+        val effectivePaidInput = if (cleanPayments.isNotEmpty()) cleanPayments.sumOf { it.second } else paidInput
         val subtotal = lines.sumOf { it.amount }
-        val totals = DiscountCalculator.compute(subtotal, discountInput, paidInput)
+        val totals = DiscountCalculator.compute(subtotal, discountInput, effectivePaidInput)
         val enteredCustomer = enteredCustomerName.trim()
 
         if (totals.due > 0.009 && enteredCustomer.isEmpty()) return SaveSaleResult.CustomerRequiredForDue
 
-        val method = if (totals.paid <= 0.009) "credit" else paymentMethodLabel
+        val method = when {
+            totals.paid <= 0.009 -> "credit"
+            // NEW (Split Payment): a combined label like "Cash + Bank" for the
+            // Sale row's paymentMethod column — distinct methods only (paying
+            // Cash twice in two rows still shows as plain "Cash"), same order
+            // the cashier entered them in.
+            cleanPayments.size >= 2 -> cleanPayments.map { it.first }.distinct().joinToString(" + ")
+            cleanPayments.size == 1 -> cleanPayments[0].first
+            else -> paymentMethodLabel
+        }
         val existingCustomer = knownCustomers.find { it.name.equals(enteredCustomer, ignoreCase = true) }
 
         // NEW (10/10 Priority #7 — Credit Limit + Due Management): only meaningful
@@ -242,7 +285,8 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
                 paid = totals.paid,
                 lines = lines,
                 original = original,
-                originalItems = originalItems
+                originalItems = originalItems,
+                payments = cleanPayments
             )
             SaveSaleResult.Success(
                 invoice = invoice,
@@ -254,7 +298,8 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
                 paid = totals.paid,
                 paymentMethod = method,
                 isUpdate = original != null,
-                stockWarnings = result.stockWarnings
+                stockWarnings = result.stockWarnings,
+                payments = cleanPayments
             )
         } catch (e: StockUnavailableException) {
             SaveSaleResult.StockIssue(e.message ?: "")

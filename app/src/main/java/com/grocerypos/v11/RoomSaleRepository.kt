@@ -104,7 +104,8 @@ class RoomSaleRepository(
         paid: Double,
         lines: List<SaleLine>,
         original: Sale?,
-        originalItems: List<SaleItem>
+        originalItems: List<SaleItem>,
+        payments: List<Pair<String, Double>> = emptyList()
     ): SaleSaveResult {
         var customer = existingCustomer
         val stockWarnings = mutableListOf<String>()
@@ -250,11 +251,20 @@ class RoomSaleRepository(
                 SyncQueueHelper.adjustCustomerBalance(db, customer!!.id, total - paid)
             }
 
-            if (paid > 0) {
+            // NEW (Split Payment / multiple payment methods): one cash-drawer
+            // entry per (method, amount) pair instead of a single combined one,
+            // so Reports/Day Book/Cash Register still split correctly by method
+            // for a bill paid e.g. Rs 300 Cash + Rs 200 Bank. When `payments` is
+            // empty (the single-method path, unchanged from before this feature)
+            // this falls back to exactly the old single-entry behavior.
+            val effectivePayments = if (payments.isNotEmpty()) payments
+                else if (paid > 0.009) listOf(method to paid) else emptyList()
+            for ((payMethod, amount) in effectivePayments) {
+                if (amount <= 0.009) continue
                 val cashTx = CashTransaction(
                     type = "IN",
-                    method = method.lowercase(),
-                    amount = paid,
+                    method = payMethod.lowercase(),
+                    amount = amount,
                     reason = "Sale",
                     reference = invoice
                 )
@@ -279,6 +289,17 @@ class RoomSaleRepository(
 
         return SaleSaveResult(customer = customer, stockWarnings = stockWarnings)
     }
+
+    // NEW (Split Payment): rebuilds the (method, amount) breakdown for an
+    // invoice from its "Sale" cash-drawer entries, so the Split Payment dialog
+    // can repopulate correctly when editing a bill that was originally paid
+    // with more than one method. Ordered by id so rows come back in the same
+    // order they were entered at checkout.
+    override suspend fun paymentsForInvoice(invoice: String): List<Pair<String, Double>> =
+        db.cashTransactionDao().allByReference(invoice)
+            .filter { it.type == "IN" && it.reason == "Sale" }
+            .sortedBy { it.id }
+            .map { it.method to it.amount }
 
     /** Deletes a sale: reverses its stock and customer-balance effect and
      * removes the sale, its line items, and its cash transaction — all in one
