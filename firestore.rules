@@ -48,10 +48,20 @@ service cloud.firestore {
           || request.resource.data.branchId == resource.data.branchId;
     }
 
+    // FIX (missing collections — Zakat/Units/Categories/Returns/Stock/App Settings
+    // couldn't actually sync): SyncApi.kt has synced these collections for a while
+    // (see its class doc comment at the top of that file), but this allowlist was
+    // never updated to match — so every push/pull for units, categories, zakat
+    // years/payments, returns, stock_movements, and app_settings was being silently
+    // rejected by these rules with PERMISSION_DENIED, even though the app-side sync
+    // code for them was working correctly. Added here so they actually reach
+    // Firestore like every other synced entity.
     function isSyncedCollection(collection) {
       return collection in ['customers', 'suppliers', 'products', 'users',
                              'sales', 'purchases', 'payments', 'expenses',
-                             'cash_transactions', 'cash_register'];
+                             'cash_transactions', 'cash_register',
+                             'units', 'categories', 'zakat_years', 'zakat_payments',
+                             'returns', 'stock_movements', 'app_settings'];
     }
 
     // Server-side record of which branch each staff UID belongs to.
