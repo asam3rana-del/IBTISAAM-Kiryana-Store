@@ -98,7 +98,7 @@ class PartyDashboardActivity : AppCompatActivity() {
     // so each quick-menu row keeps its own distinct icon-badge color. ----
     private var bg = "#F4F6F8"
     internal var navy = "#0B2545"       // app-wide accent (header + main-menu chrome)
-    internal var blue = "#993556"       // primary chrome — flatPinkFg
+    internal var blue = "#185FA5"        // primary accent (Add Purchase/New Party/Add Item) — flatBlueFg
     internal var orange = "#993C1D"     // flatCoralFg
     internal var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
     internal var red = "#D32F4A"
@@ -118,7 +118,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         labelGray = p.textMuted
         textDark = p.textDark
         navy = p.navy
-        blue = p.flatPinkFg
+        blue = p.flatBlueFg
         orange = p.flatCoralFg
         green = p.flatTealFg
         red = p.red
@@ -527,21 +527,13 @@ class PartyDashboardActivity : AppCompatActivity() {
     }
 
     // ================= TABS =================
-    // ---- CHANGE (modern minimal UI pass): the old design gave every tab its own
-    // white bordered pill (bold red outline on the active one) — three separate cards
-    // sitting side by side. Replaced with a single segmented-control container (flat
-    // light-gray track, no border) where only the ACTIVE tab gets a white pill with a
-    // soft shadow; inactive tabs are plain text on the track. This is the standard
-    // "modern minimal" tab pattern (iOS segmented control / Khatabook's own tab bar)
-    // and reads as one cohesive control instead of three separate buttons.
+    // ---- Reference-screenshot tab style: each tab is its own bordered white pill
+    // (not a single gray segmented track). Active tab gets a red border + bold red
+    // text; inactive tabs get a light-gray border + gray text. Matches Parties/
+    // Transactions/Items exactly as shown in the reference UI. ----
     private fun buildTabs(): LinearLayout {
         tabRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(6, 6, 6, 6)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#ECEEF2"))
-                cornerRadius = 24f
-            }
         }
         renderTabs()
         return tabRow
@@ -562,12 +554,11 @@ class PartyDashboardActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 setPadding(0, 16, 0, 16)
                 setTypeface(typeface, if (isActive) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-                setTextColor(Color.parseColor(if (isActive) textDark else labelGray))
-                if (isActive) {
-                    background = pillBg(cardWhite, radius = 18f)
-                    elevation = 2f
+                setTextColor(Color.parseColor(if (isActive) red else labelGray))
+                background = strokedBg(if (isActive) red else cardBorder, cardWhite, 20)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (idx > 0) marginStart = (8 * resources.displayMetrics.density).toInt()
                 }
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener {
                     activeTab = tab
                     renderTabs()
