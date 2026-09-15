@@ -52,6 +52,7 @@ object SyncQueueHelper {
     fun userEntityId(u: User) = "user:${u.username}"
     fun zakatYearEntityId(y: ZakatYear) = "zakat_year:${DeviceTag.current}-${y.id}"
     fun zakatPaymentEntityId(p: ZakatPayment) = "zakat_payment:${DeviceTag.current}-${p.id}"
+    fun returnEntityId(r: ReturnLine) = "return:${DeviceTag.current}-${r.id}"
     // Units/Categories: name IS the primary key locally (like Product.barcode), so
     // the Firestore doc id can just be the name directly — no DeviceTag needed since
     // there's no local-autoincrement collision risk (see the comment above).
@@ -340,6 +341,15 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // NEW (Returns sync): same serverId-stamping pattern as every other local-autoincrement
+    // entity above (Customer/Supplier/Expense/CashTransaction/ZakatYear/ZakatPayment).
+    suspend fun enqueueReturn(db: PosDatabase, r: ReturnLine, context: Context? = null) {
+        val id = returnEntityId(r)
+        if (r.serverId != id) db.returnDao().update(r.copy(serverId = id))
+        enqueue(db, "return", id, "upsert", returnJson(r))
+        context?.let { trigger(it) }
+    }
+
     /** Use for any entity delete (e.g. deleting a customer or product). */
     suspend fun enqueueDelete(db: PosDatabase, entityType: String, entityId: String, context: Context? = null) {
         enqueue(db, entityType, entityId, "delete", "{}")
@@ -497,6 +507,21 @@ object SyncQueueHelper {
             "method" to p.method,
             "note" to p.note,
             "createdAt" to p.createdAt,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    fun returnJson(r: ReturnLine): String {
+        val map = mapOf(
+            "serverId" to returnEntityId(r),
+            "reference" to r.reference,
+            "type" to r.type,
+            "barcode" to r.barcode,
+            "qty" to r.qty,
+            "amount" to r.amount,
+            "createdAt" to r.createdAt,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
@@ -702,6 +727,8 @@ object SyncQueueHelper {
                 enqueueZakatPayment(db, p, stampedYear.serverId ?: zakatYearEntityId(stampedYear))
             }
         }
+        // NEW (Returns sync): push existing local returns too.
+        for (r in db.returnDao().allList()) enqueueReturn(db, r)
         context?.let { trigger(it) }
     }
 }

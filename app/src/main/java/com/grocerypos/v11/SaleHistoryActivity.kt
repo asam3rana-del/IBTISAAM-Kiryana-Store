@@ -475,7 +475,8 @@ class SaleHistoryActivity : ThemedActivity() {
                     val p = db.productDao().find(si.barcode)
                     val smallestQty = si.smallestQty(p)
                     SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty, "SALE_REVERSAL", invoice)
-                    db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = si.barcode, qty = si.qty, amount = si.amount))
+                    val returnId = db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = si.barcode, qty = si.qty, amount = si.amount))
+                    SyncQueueHelper.enqueueReturn(db, ReturnLine(id = returnId, reference = invoice, type = "sale", barcode = si.barcode, qty = si.qty, amount = si.amount))
                 }
                 if (sale.customerId != null && sale.paid < sale.total) {
                     SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))

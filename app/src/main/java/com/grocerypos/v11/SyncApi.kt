@@ -23,6 +23,7 @@ import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.Category
 import com.grocerypos.v11.ZakatYear
 import com.grocerypos.v11.ZakatPayment
+import com.grocerypos.v11.ReturnLine
 import com.grocerypos.v11.util.Loc
 
 /**
@@ -42,6 +43,7 @@ import com.grocerypos.v11.util.Loc
  *   categories/{name}
  *   zakat_years/{serverId}
  *   zakat_payments/{serverId}
+ *   returns/{serverId}
  *
  * CHANGED (multi-tenant support): which Firestore project this talks to is no longer
  * fixed at compile time — see CloudConfigStore. Every entry point below now takes a
@@ -153,6 +155,7 @@ object SyncApi {
                 "category" -> "categories"
                 "zakat_year" -> "zakat_years"
                 "zakat_payment" -> "zakat_payments"
+                "return" -> "returns"
                 else -> return false
             }
 
@@ -269,6 +272,7 @@ object SyncApi {
         val categories: List<Map<String, Any?>> = emptyList(),
         val zakatYears: List<Map<String, Any?>> = emptyList(),
         val zakatPayments: List<Map<String, Any?>> = emptyList(),
+        val returns: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
 
@@ -298,11 +302,12 @@ object SyncApi {
         val categoriesSnap = query("categories").get(Source.SERVER).await()
         val zakatYearsSnap = query("zakat_years").get(Source.SERVER).await()
         val zakatPaymentsSnap = query("zakat_payments").get(Source.SERVER).await()
+        val returnsSnap = query("returns").get(Source.SERVER).await()
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
             salesSnap, purchasesSnap, paymentsSnap, expensesSnap, cashTxSnap,
-            unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap
+            unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap, returnsSnap
         )
         var maxUpdatedAt = since
         for (snap in allSnaps) {
@@ -326,6 +331,7 @@ object SyncApi {
             categories = categoriesSnap.documents.map { it.data ?: emptyMap() },
             zakatYears = zakatYearsSnap.documents.map { it.data ?: emptyMap() },
             zakatPayments = zakatPaymentsSnap.documents.map { it.data ?: emptyMap() },
+            returns = returnsSnap.documents.map { it.data ?: emptyMap() },
             serverTime = maxUpdatedAt
         )
     }
@@ -345,6 +351,7 @@ object SyncApi {
         val unitDao = db.unitDao()
         val categoryDao = db.categoryDao()
         val zakatDao = db.zakatDao()
+        val returnDao = db.returnDao()
 
         // Local deltas that are still queued must be layered on top of the latest
         // server snapshot. Without this, a pull could temporarily erase an offline
@@ -887,6 +894,28 @@ object SyncApi {
                     )
                 )
             }
+        }
+
+        // NEW (Returns sync): append-only ledger, no delete/edit UI exists for a
+        // return — so this is just an insert-if-not-already-pulled (idempotent
+        // across repeated pulls via findByServerId), same shape as the products/
+        // customers loops but with nothing to conflict-check against.
+        for (row in changes.returns) {
+            val serverId = row["serverId"] as? String ?: continue
+            if (returnDao.findByServerId(serverId) != null) continue
+            val reference = row["reference"] as? String ?: continue
+            val type = row["type"] as? String ?: continue
+            val barcode = row["barcode"] as? String ?: continue
+            val qty = (row["qty"] as? Number)?.toDouble() ?: 0.0
+            val amount = (row["amount"] as? Number)?.toDouble() ?: 0.0
+            val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+            returnDao.insert(
+                ReturnLine(
+                    reference = reference, type = type, barcode = barcode, qty = qty, amount = amount,
+                    createdAt = createdAt, serverId = serverId, updatedAt = updatedAt, dirty = false
+                )
+            )
         }
     }
 }

@@ -270,7 +270,8 @@ class HistoryActivity : AppCompatActivity() {
                     val p = db.productDao().find(it.barcode)
                     val smallestQty = it.smallestQty(p)
                     SyncQueueHelper.increaseProductStock(db, it.barcode, smallestQty, "SALE_REVERSAL", invoice)
-                    db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
+                    val returnId = db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
+                    SyncQueueHelper.enqueueReturn(db, ReturnLine(id = returnId, reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
                 }
                 if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
                 db.cashTransactionDao().deleteByReference(invoice); db.saleDao().markReturned(invoice)
@@ -539,7 +540,8 @@ class HistoryActivity : AppCompatActivity() {
                             db.productDao().find(item.barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
                         }
 
-                        db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = clampedQty, amount = returnedAmount))
+                        val returnId = db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = clampedQty, amount = returnedAmount))
+                        SyncQueueHelper.enqueueReturn(db, ReturnLine(id = returnId, reference = billNo, type = "purchase", barcode = item.barcode, qty = clampedQty, amount = returnedAmount))
 
                         val remainingQty = item.qty - clampedQty
                         if (remainingQty <= 0.0001) {

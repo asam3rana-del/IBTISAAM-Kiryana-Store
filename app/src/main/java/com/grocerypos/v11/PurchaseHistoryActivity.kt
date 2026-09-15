@@ -699,7 +699,8 @@ class PurchaseHistoryActivity : ThemedActivity() {
                         db.productDao().find(item.barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
                     }
 
-                    db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = clampedQty, amount = returnedAmount))
+                    val returnId = db.returnDao().insert(ReturnLine(reference = billNo, type = "purchase", barcode = item.barcode, qty = clampedQty, amount = returnedAmount))
+                    SyncQueueHelper.enqueueReturn(db, ReturnLine(id = returnId, reference = billNo, type = "purchase", barcode = item.barcode, qty = clampedQty, amount = returnedAmount))
 
                     val remainingQty = item.qty - clampedQty
                     if (remainingQty <= 0.0001) {
