@@ -21,6 +21,8 @@ import com.grocerypos.v11.Product
 import com.grocerypos.v11.Payment
 import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.Category
+import com.grocerypos.v11.ZakatYear
+import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.util.Loc
 
 /**
@@ -38,6 +40,8 @@ import com.grocerypos.v11.util.Loc
  *   cash_transactions/{serverId}
  *   units/{name}
  *   categories/{name}
+ *   zakat_years/{serverId}
+ *   zakat_payments/{serverId}
  *
  * CHANGED (multi-tenant support): which Firestore project this talks to is no longer
  * fixed at compile time — see CloudConfigStore. Every entry point below now takes a
@@ -147,6 +151,8 @@ object SyncApi {
                 "cash_transaction" -> "cash_transactions"
                 "unit" -> "units"
                 "category" -> "categories"
+                "zakat_year" -> "zakat_years"
+                "zakat_payment" -> "zakat_payments"
                 else -> return false
             }
 
@@ -261,6 +267,8 @@ object SyncApi {
         val cashTransactions: List<Map<String, Any?>> = emptyList(),
         val units: List<Map<String, Any?>> = emptyList(),
         val categories: List<Map<String, Any?>> = emptyList(),
+        val zakatYears: List<Map<String, Any?>> = emptyList(),
+        val zakatPayments: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
 
@@ -288,11 +296,13 @@ object SyncApi {
         val cashTxSnap = query("cash_transactions").get(Source.SERVER).await()
         val unitsSnap = query("units").get(Source.SERVER).await()
         val categoriesSnap = query("categories").get(Source.SERVER).await()
+        val zakatYearsSnap = query("zakat_years").get(Source.SERVER).await()
+        val zakatPaymentsSnap = query("zakat_payments").get(Source.SERVER).await()
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
             salesSnap, purchasesSnap, paymentsSnap, expensesSnap, cashTxSnap,
-            unitsSnap, categoriesSnap
+            unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap
         )
         var maxUpdatedAt = since
         for (snap in allSnaps) {
@@ -314,6 +324,8 @@ object SyncApi {
             cashTransactions = cashTxSnap.documents.map { it.data ?: emptyMap() },
             units = unitsSnap.documents.map { it.data ?: emptyMap() },
             categories = categoriesSnap.documents.map { it.data ?: emptyMap() },
+            zakatYears = zakatYearsSnap.documents.map { it.data ?: emptyMap() },
+            zakatPayments = zakatPaymentsSnap.documents.map { it.data ?: emptyMap() },
             serverTime = maxUpdatedAt
         )
     }
@@ -332,6 +344,7 @@ object SyncApi {
         val cashTxDao = db.cashTransactionDao()
         val unitDao = db.unitDao()
         val categoryDao = db.categoryDao()
+        val zakatDao = db.zakatDao()
 
         // Local deltas that are still queued must be layered on top of the latest
         // server snapshot. Without this, a pull could temporarily erase an offline
@@ -801,6 +814,79 @@ object SyncApi {
                 continue
             }
             categoryDao.insert(Category(name))
+        }
+
+        // NEW (Zakat sync): years MUST be applied before payments in this same call,
+        // since a freshly-pulled payment's parent year (zakatYearServerId) needs to
+        // already exist locally for the lookup below to succeed.
+        for (row in changes.zakatYears) {
+            val serverId = row["serverId"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                zakatDao.findYearByServerId(serverId)?.let { /* no deleteYear() exists — Zakat years are never deleted from the UI */ }
+                continue
+            }
+            val startDate = (row["startDate"] as? Number)?.toLong() ?: continue
+            val endDate = (row["endDate"] as? Number)?.toLong() ?: continue
+            val assetsSnapshot = (row["assetsSnapshot"] as? Number)?.toDouble() ?: 0.0
+            val totalPayable = (row["totalPayable"] as? Number)?.toDouble() ?: 0.0
+            val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+
+            val existing = zakatDao.findYearByServerId(serverId)
+            if (existing != null) {
+                zakatDao.updateYear(
+                    existing.copy(
+                        startDate = startDate, endDate = endDate, assetsSnapshot = assetsSnapshot,
+                        totalPayable = totalPayable, updatedAt = updatedAt, dirty = false
+                    )
+                )
+            } else {
+                zakatDao.insertYear(
+                    ZakatYear(
+                        startDate = startDate, endDate = endDate, assetsSnapshot = assetsSnapshot,
+                        totalPayable = totalPayable, createdAt = createdAt,
+                        serverId = serverId, updatedAt = updatedAt, dirty = false
+                    )
+                )
+            }
+        }
+
+        for (row in changes.zakatPayments) {
+            val serverId = row["serverId"] as? String ?: continue
+            if (row["_deleted"] == true) {
+                zakatDao.findPaymentByServerId(serverId)?.let {
+                    // No deletePayment() exists — Zakat payments are never deleted from
+                    // the UI, so a tombstone here has nothing to do locally yet.
+                }
+                continue
+            }
+            val yearServerId = row["zakatYearServerId"] as? String ?: continue
+            // The parent year may not have reached this device yet (pull order isn't
+            // guaranteed across collections) — skip for now, it'll resolve on a later
+            // pull once the year row itself has synced down.
+            val localYear = zakatDao.findYearByServerId(yearServerId) ?: continue
+            val amount = (row["amount"] as? Number)?.toDouble() ?: 0.0
+            val method = row["method"] as? String ?: ""
+            val note = row["note"] as? String ?: ""
+            val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+
+            val existing = zakatDao.findPaymentByServerId(serverId)
+            if (existing != null) {
+                zakatDao.updatePayment(
+                    existing.copy(
+                        zakatYearId = localYear.id, amount = amount, method = method, note = note,
+                        updatedAt = updatedAt, dirty = false
+                    )
+                )
+            } else {
+                zakatDao.insertPayment(
+                    ZakatPayment(
+                        zakatYearId = localYear.id, amount = amount, method = method, note = note,
+                        createdAt = createdAt, serverId = serverId, updatedAt = updatedAt, dirty = false
+                    )
+                )
+            }
         }
     }
 }

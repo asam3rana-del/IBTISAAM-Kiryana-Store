@@ -50,6 +50,8 @@ object SyncQueueHelper {
     fun expenseEntityId(expense: Expense) = "expense:${DeviceTag.current}-${expense.id}"
     fun cashTransactionEntityId(t: CashTransaction) = "cash_transaction:${DeviceTag.current}-${t.id}"
     fun userEntityId(u: User) = "user:${u.username}"
+    fun zakatYearEntityId(y: ZakatYear) = "zakat_year:${DeviceTag.current}-${y.id}"
+    fun zakatPaymentEntityId(p: ZakatPayment) = "zakat_payment:${DeviceTag.current}-${p.id}"
     // Units/Categories: name IS the primary key locally (like Product.barcode), so
     // the Firestore doc id can just be the name directly — no DeviceTag needed since
     // there's no local-autoincrement collision risk (see the comment above).
@@ -317,6 +319,27 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // NEW (Zakat sync): same serverId-stamping pattern as enqueueCustomer/enqueueSupplier
+    // above (id computed locally, so stamp it onto the row immediately rather than
+    // waiting for the network push — avoids self-duplication on the next pull).
+    suspend fun enqueueZakatYear(db: PosDatabase, y: ZakatYear, context: Context? = null): ZakatYear {
+        val id = zakatYearEntityId(y)
+        val stamped = if (y.serverId != id) y.copy(serverId = id) else y
+        if (y.serverId != id) db.zakatDao().updateYear(stamped)
+        enqueue(db, "zakat_year", id, "upsert", zakatYearJson(stamped))
+        context?.let { trigger(it) }
+        return stamped
+    }
+
+    // yearServerId is the PARENT ZakatYear's serverId (NOT its local id) — see the
+    // NOTE (sync) comment on the ZakatPayment entity in Database.kt for why.
+    suspend fun enqueueZakatPayment(db: PosDatabase, p: ZakatPayment, yearServerId: String, context: Context? = null) {
+        val id = zakatPaymentEntityId(p)
+        if (p.serverId != id) db.zakatDao().updatePayment(p.copy(serverId = id))
+        enqueue(db, "zakat_payment", id, "upsert", zakatPaymentJson(p, yearServerId))
+        context?.let { trigger(it) }
+    }
+
     /** Use for any entity delete (e.g. deleting a customer or product). */
     suspend fun enqueueDelete(db: PosDatabase, entityType: String, entityId: String, context: Context? = null) {
         enqueue(db, entityType, entityId, "delete", "{}")
@@ -446,6 +469,34 @@ object SyncQueueHelper {
     fun categoryJson(c: Category): String {
         val map = mapOf(
             "name" to c.name,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    fun zakatYearJson(y: ZakatYear): String {
+        val map = mapOf(
+            "serverId" to zakatYearEntityId(y),
+            "startDate" to y.startDate,
+            "endDate" to y.endDate,
+            "assetsSnapshot" to y.assetsSnapshot,
+            "totalPayable" to y.totalPayable,
+            "createdAt" to y.createdAt,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    fun zakatPaymentJson(p: ZakatPayment, yearServerId: String): String {
+        val map = mapOf(
+            "serverId" to zakatPaymentEntityId(p),
+            "zakatYearServerId" to yearServerId,
+            "amount" to p.amount,
+            "method" to p.method,
+            "note" to p.note,
+            "createdAt" to p.createdAt,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
@@ -642,6 +693,15 @@ object SyncQueueHelper {
         // categories (added before this feature existed) also get pushed once.
         for (u in db.unitDao().allOnce()) enqueueUnit(db, u)
         for (c in db.categoryDao().allOnce()) enqueueCategory(db, c)
+        // NEW (Zakat sync): push existing years first (each returns its stamped
+        // serverId), then their payments — payments need the parent's serverId,
+        // not its local id, so years must go first within this same loop.
+        for (y in db.zakatDao().allYears()) {
+            val stampedYear = enqueueZakatYear(db, y)
+            for (p in db.zakatDao().paymentsForYear(y.id)) {
+                enqueueZakatPayment(db, p, stampedYear.serverId ?: zakatYearEntityId(stampedYear))
+            }
+        }
         context?.let { trigger(it) }
     }
 }

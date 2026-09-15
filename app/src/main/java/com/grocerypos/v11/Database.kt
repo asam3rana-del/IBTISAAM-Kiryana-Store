@@ -566,10 +566,8 @@ data class Expense(
 // NEW (Zakat tracker): one row per Zakat year the user has started (Ramadan-to-Ramadan,
 // per their request), holding the asset snapshot + 2.5% payable calculated at the time
 // the year was started. `dirty`/`serverId` follow the same shape as every other synced
-// entity in this app for future-proofing, but — unlike Payment/CashTransaction/Expense —
-// these are NOT currently pushed through SyncQueueHelper, since that requires a matching
-// server-side endpoint this file can't add on its own; treat Zakat data as local-only
-// until that's wired up.
+// entity in this app — see SyncQueueHelper.enqueueZakatYear()/SyncApi's zakat_years
+// collection (wired up as of the full-sync-audit batch).
 @Entity(tableName="zakat_years")
 data class ZakatYear(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
@@ -585,6 +583,10 @@ data class ZakatYear(
 
 // NEW (Zakat tracker): a partial or full payment recorded against a ZakatYear —
 // letting the user pay all at once or spread across several installments.
+// NOTE (sync): zakatYearId is a local autoincrement FK, meaningless on another
+// device — the sync payload carries the parent's serverId string instead
+// ("zakatYearServerId") and the pull-apply loop resolves it back to whatever
+// local id that year has on THIS device. See SyncQueueHelper.zakatPaymentJson().
 @Entity(tableName="zakat_payments")
 data class ZakatPayment(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
@@ -991,9 +993,17 @@ interface ProductDao {
     @Update suspend fun updateYear(y:ZakatYear)
     @Query("SELECT * FROM zakat_years ORDER BY startDate DESC LIMIT 1") suspend fun latestYear():ZakatYear?
     @Query("SELECT * FROM zakat_years ORDER BY startDate DESC") suspend fun allYears():List<ZakatYear>
+    // NEW (Zakat sync): lets the pull-apply loop find/update the local row that
+    // matches a pulled document, and lets enqueueZakatPayment() resolve a parent
+    // year's serverId without needing the caller to look it up separately.
+    @Query("SELECT * FROM zakat_years WHERE serverId=:serverId LIMIT 1") suspend fun findYearByServerId(serverId:String):ZakatYear?
+    @Query("SELECT * FROM zakat_years WHERE id=:id LIMIT 1") suspend fun findYearById(id:Long):ZakatYear?
     @Insert suspend fun insertPayment(p:ZakatPayment): Long
+    @Update suspend fun updatePayment(p:ZakatPayment)
     @Query("SELECT * FROM zakat_payments WHERE zakatYearId=:yearId ORDER BY createdAt DESC") suspend fun paymentsForYear(yearId:Long):List<ZakatPayment>
     @Query("SELECT COALESCE(SUM(amount),0) FROM zakat_payments WHERE zakatYearId=:yearId") suspend fun totalPaidForYear(yearId:Long):Double
+    // NEW (Zakat sync): mirrors findYearByServerId above, for the payments pull-apply loop.
+    @Query("SELECT * FROM zakat_payments WHERE serverId=:serverId LIMIT 1") suspend fun findPaymentByServerId(serverId:String):ZakatPayment?
 }
 
 @Dao interface ShellDao {

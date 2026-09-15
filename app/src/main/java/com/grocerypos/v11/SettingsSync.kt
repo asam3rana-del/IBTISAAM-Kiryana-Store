@@ -181,7 +181,7 @@ internal fun SettingsActivity.resyncAllLocalDataClicked() {
         .setTitle("Force full push?")
         .setMessage(
             "Ye is device ka SARA local data (customers, products, sales, purchases, " +
-            "payments, expenses, cash transactions, users, units, categories) dobara Firebase par bhejega " +
+            "payments, expenses, cash transactions, users, units, categories, zakat) dobara Firebase par bhejega " +
             "— cloud par jo bhi maujooda data hai, is device ka data usay overwrite kar " +
             "dega. Sirf tab use karo jab is device ka data 'asal' (sahi) ho aur cloud ka " +
             "data purana/galat ho. Continue?"
