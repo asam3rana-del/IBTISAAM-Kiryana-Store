@@ -34,9 +34,14 @@ import com.grocerypos.v11.ui.components.*
 //   3) CLOSE the day against an actually-counted amount, so a shortage/excess is
 //      caught immediately (with a confirm dialog showing the diff) instead of being
 //      discovered days later.
-// Local-only, per-device — same as Zakat/Shell Ledger — since a physical till count is
-// inherently tied to whichever device/drawer it was counted at; CashRegister has no
-// serverId/dirty/updatedAt fields, confirming it was designed that way from the start.
+// CHANGED (Cash Register sync): this used to be local-only, per-device — same as
+// Zakat/Shell Ledger — since a physical till count is inherently tied to whichever
+// device/drawer it was counted at. Now synced to Firebase like everything else (see
+// SyncQueueHelper.enqueueCashRegister / cashRegisterEntityId's comment): one shared
+// register per branch per day, date-keyed, so the till can be opened on one device
+// and closed from another. Every db.cashRegisterDao().upsert(...) call below is
+// immediately followed by SyncQueueHelper.enqueueCashRegister(db, reg, this) to
+// queue + push that change.
 class CashRegisterActivity : AppCompatActivity() {
 
     // ---- Pulled from ThemeManager so this screen respects dark mode, same pattern as CashActivity. ----
@@ -328,9 +333,10 @@ class CashRegisterActivity : AppCompatActivity() {
                 val oc = cashInput.text.toString().toDoubleOrNull() ?: 0.0
                 val ob = bankInput.text.toString().toDoubleOrNull() ?: 0.0
                 lifecycleScope.launch {
-                    PosDatabase.get(this@CashRegisterActivity).cashRegisterDao().upsert(
-                        CashRegister(date = todayKey(), openingCash = oc, openingBank = ob, closingCash = 0.0, closingBank = 0.0, closed = false)
-                    )
+                    val db = PosDatabase.get(this@CashRegisterActivity)
+                    val newReg = CashRegister(date = todayKey(), openingCash = oc, openingBank = ob, closingCash = 0.0, closingBank = 0.0, closed = false)
+                    db.cashRegisterDao().upsert(newReg)
+                    com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, newReg, this@CashRegisterActivity)
                     Toast.makeText(this@CashRegisterActivity, Loc.t(this@CashRegisterActivity, "Register opened", "رجسٹر کھل گیا"), Toast.LENGTH_SHORT).show()
                     refresh()
                 }
@@ -450,7 +456,10 @@ class CashRegisterActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 18 }
             setOnClickListener {
                 lifecycleScope.launch {
-                    PosDatabase.get(this@CashRegisterActivity).cashRegisterDao().upsert(reg.copy(closed = false))
+                    val db = PosDatabase.get(this@CashRegisterActivity)
+                    val updated = reg.copy(closed = false)
+                    db.cashRegisterDao().upsert(updated)
+                    com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, updated, this@CashRegisterActivity)
                     refresh()
                 }
             }
@@ -487,7 +496,10 @@ class CashRegisterActivity : AppCompatActivity() {
                 val oc = cashInput.text.toString().toDoubleOrNull() ?: reg.openingCash
                 val ob = bankInput.text.toString().toDoubleOrNull() ?: reg.openingBank
                 lifecycleScope.launch {
-                    PosDatabase.get(this@CashRegisterActivity).cashRegisterDao().upsert(reg.copy(openingCash = oc, openingBank = ob))
+                    val db = PosDatabase.get(this@CashRegisterActivity)
+                    val updated = reg.copy(openingCash = oc, openingBank = ob)
+                    db.cashRegisterDao().upsert(updated)
+                    com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, updated, this@CashRegisterActivity)
                     refresh()
                 }
             }
@@ -509,9 +521,10 @@ class CashRegisterActivity : AppCompatActivity() {
             .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
             .setPositiveButton(Loc.t(this, "Confirm", "تصدیق کریں")) { _, _ ->
                 lifecycleScope.launch {
-                    PosDatabase.get(this@CashRegisterActivity).cashRegisterDao().upsert(
-                        reg.copy(closingCash = actualCash, closingBank = actualBank, closed = true)
-                    )
+                    val db = PosDatabase.get(this@CashRegisterActivity)
+                    val updated = reg.copy(closingCash = actualCash, closingBank = actualBank, closed = true)
+                    db.cashRegisterDao().upsert(updated)
+                    com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, updated, this@CashRegisterActivity)
                     Toast.makeText(this@CashRegisterActivity, Loc.t(this@CashRegisterActivity, "Register closed", "رجسٹر بند ہو گیا"), Toast.LENGTH_SHORT).show()
                     refresh()
                 }

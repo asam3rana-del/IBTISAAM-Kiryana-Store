@@ -57,6 +57,17 @@ object SyncQueueHelper {
     // returnEntityId above — a stock_movements row's id is per-device, so DeviceTag
     // keeps two devices' movement #7 from colliding on the same Firestore doc.
     fun stockMovementEntityId(m: StockMovement) = "stock_movement:${DeviceTag.current}-${m.id}"
+    // NEW (Cash Register sync): date IS the primary key locally (like Product.barcode /
+    // UnitType.name / Category.name above), so the Firestore doc id is just the date
+    // string directly — no DeviceTag mixed in. Deliberate: a till is meant to be ONE
+    // shared register per branch per day (open on one device, closed from another,
+    // e.g. owner's phone vs. the counter tablet), not a separate per-device count —
+    // if two devices ever DO open a register for the same date, the later push wins,
+    // same last-write-wins tradeoff Units/Categories already accept for their
+    // name-keyed docs. (This replaces the "local-only, per-device — CashRegister has
+    // no serverId/dirty/updatedAt fields" design from CashRegisterActivity's original
+    // header comment; see that comment for the earlier reasoning.)
+    fun cashRegisterEntityId(r: CashRegister) = r.date
     // App Settings: only a whitelisted subset of keys are shop-wide identity (name,
     // phone, address, receipt footer, currency, tax rate) that every branch device
     // should share. Everything else in this table — login_method, printer_name/mac/
@@ -383,6 +394,16 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // NEW (Cash Register sync): plain upsert, no serverId-stamping needed — the doc id
+    // (r.date) is already the local row's own primary key, same as enqueueUnit/
+    // enqueueCategory/enqueueProduct above. Call this right after every
+    // db.cashRegisterDao().upsert(...) call site in CashRegisterActivity (open, edit
+    // opening balance, close, reopen).
+    suspend fun enqueueCashRegister(db: PosDatabase, r: CashRegister, context: Context? = null) {
+        enqueue(db, "cash_register", cashRegisterEntityId(r), "upsert", cashRegisterJson(r))
+        context?.let { trigger(it) }
+    }
+
     // NEW (App Settings sync): silently does nothing for a non-whitelisted key — see
     // SYNCED_APP_SETTING_KEYS above. Call sites don't need their own if-check.
     suspend fun enqueueAppSetting(db: PosDatabase, s: AppSetting, context: Context? = null) {
@@ -583,6 +604,23 @@ object SyncQueueHelper {
             "reference" to m.reference,
             "note" to m.note,
             "createdAt" to m.createdAt,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    // NEW (Cash Register sync): full snapshot, same shape as unitJson/categoryJson
+    // above — `date` doubles as both the local PK and the Firestore doc id, so it's
+    // included in the payload too (mirrors how productJson includes barcode).
+    fun cashRegisterJson(r: CashRegister): String {
+        val map = mapOf(
+            "date" to r.date,
+            "openingCash" to r.openingCash,
+            "closingCash" to r.closingCash,
+            "openingBank" to r.openingBank,
+            "closingBank" to r.closingBank,
+            "closed" to r.closed,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
@@ -807,6 +845,9 @@ object SyncQueueHelper {
         for (key in SYNCED_APP_SETTING_KEYS) {
             db.appSettingDao().get(key)?.let { enqueueAppSetting(db, it) }
         }
+        // NEW (Cash Register sync): push existing till history too, so a register
+        // opened/closed before this feature existed also gets pushed once.
+        for (r in db.cashRegisterDao().allOnce()) enqueueCashRegister(db, r)
         context?.let { trigger(it) }
     }
 }

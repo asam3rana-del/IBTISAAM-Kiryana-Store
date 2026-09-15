@@ -26,6 +26,7 @@ import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.ReturnLine
 import com.grocerypos.v11.StockMovement
 import com.grocerypos.v11.AppSetting
+import com.grocerypos.v11.CashRegister
 import com.grocerypos.v11.util.Loc
 
 /**
@@ -48,6 +49,7 @@ import com.grocerypos.v11.util.Loc
  *   returns/{serverId}
  *   stock_movements/{serverId} (Stock History + Cost History — one shared ledger, see Database.kt's StockMovement doc comment)
  *   app_settings/{key} (whitelisted shop-identity keys only — see SyncQueueHelper.SYNCED_APP_SETTING_KEYS)
+ *   cash_register/{date} (NEW — one shared till record per branch per day, see SyncQueueHelper.cashRegisterEntityId's comment)
  *
  * CHANGED (multi-tenant support): which Firestore project this talks to is no longer
  * fixed at compile time — see CloudConfigStore. Every entry point below now takes a
@@ -162,6 +164,7 @@ object SyncApi {
                 "return" -> "returns"
                 "stock_movement" -> "stock_movements"
                 "app_setting" -> "app_settings"
+                "cash_register" -> "cash_register"
                 else -> return false
             }
 
@@ -284,6 +287,7 @@ object SyncApi {
         val returns: List<Map<String, Any?>> = emptyList(),
         val stockMovements: List<Map<String, Any?>> = emptyList(),
         val appSettings: List<Map<String, Any?>> = emptyList(),
+        val cashRegisters: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
 
@@ -316,12 +320,13 @@ object SyncApi {
         val returnsSnap = query("returns").get(Source.SERVER).await()
         val stockMovementsSnap = query("stock_movements").get(Source.SERVER).await()
         val appSettingsSnap = query("app_settings").get(Source.SERVER).await()
+        val cashRegisterSnap = query("cash_register").get(Source.SERVER).await()
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
             salesSnap, purchasesSnap, paymentsSnap, expensesSnap, cashTxSnap,
             unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap, returnsSnap,
-            stockMovementsSnap, appSettingsSnap
+            stockMovementsSnap, appSettingsSnap, cashRegisterSnap
         )
         var maxUpdatedAt = since
         for (snap in allSnaps) {
@@ -348,6 +353,7 @@ object SyncApi {
             returns = returnsSnap.documents.map { it.data ?: emptyMap() },
             stockMovements = stockMovementsSnap.documents.map { it.data ?: emptyMap() },
             appSettings = appSettingsSnap.documents.map { it.data ?: emptyMap() },
+            cashRegisters = cashRegisterSnap.documents.map { it.data ?: emptyMap() },
             serverTime = maxUpdatedAt
         )
     }
@@ -370,6 +376,7 @@ object SyncApi {
         val returnDao = db.returnDao()
         val stockMovementDao = db.stockMovementDao()
         val appSettingDao = db.appSettingDao()
+        val cashRegisterDao = db.cashRegisterDao()
 
         // Local deltas that are still queued must be layered on top of the latest
         // server snapshot. Without this, a pull could temporarily erase an offline
@@ -973,6 +980,30 @@ object SyncApi {
             if (db.syncQueueDao().pendingForEntityAnyRetry("app_setting", key, "upsert").isNotEmpty()) continue
             val value = row["value"] as? String ?: continue
             appSettingDao.set(AppSetting(key, value))
+        }
+
+        // NEW (Cash Register sync): date is the doc id AND the local PK, so this is a
+        // plain upsert-by-date — no findByServerId lookup needed (same shape as
+        // units/categories above). No delete branch: CashRegisterActivity never
+        // deletes a register (only opens/edits/closes/reopens), so no "_deleted"
+        // tombstone is ever produced for this collection — mirrors zakat_years'
+        // "no deleteYear() exists" note above. Skipped while this device's own
+        // open/edit/close/reopen for that date is still queued to push, so a pull
+        // landing mid-edit can't revert what was just typed in on this device.
+        for (row in changes.cashRegisters) {
+            val date = row["date"] as? String ?: continue
+            if (db.syncQueueDao().pendingForEntityAnyRetry("cash_register", date, "upsert").isNotEmpty()) continue
+            val openingCash = (row["openingCash"] as? Number)?.toDouble() ?: 0.0
+            val closingCash = (row["closingCash"] as? Number)?.toDouble() ?: 0.0
+            val openingBank = (row["openingBank"] as? Number)?.toDouble() ?: 0.0
+            val closingBank = (row["closingBank"] as? Number)?.toDouble() ?: 0.0
+            val closed = row["closed"] as? Boolean ?: false
+            cashRegisterDao.upsert(
+                CashRegister(
+                    date = date, openingCash = openingCash, closingCash = closingCash,
+                    openingBank = openingBank, closingBank = closingBank, closed = closed
+                )
+            )
         }
     }
 }

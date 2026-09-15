@@ -1197,6 +1197,10 @@ interface ProductDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(r:CashRegister)
     @Query("SELECT * FROM cash_register WHERE date=:date LIMIT 1") suspend fun find(date:String):CashRegister?
     @Query("SELECT * FROM cash_register ORDER BY date DESC") fun all():Flow<List<CashRegister>>
+    // NEW (Cash Register sync): one-shot snapshot for SyncQueueHelper.resyncAllLocalData(),
+    // same pattern as UnitDao.allOnce()/CategoryDao.allOnce() — a plain suspend list instead
+    // of a Flow, since resync just needs to walk the table once.
+    @Query("SELECT * FROM cash_register ORDER BY date DESC") suspend fun allOnce():List<CashRegister>
 }
 
 @Dao interface AppSettingDao {
