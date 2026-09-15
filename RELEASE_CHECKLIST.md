@@ -54,11 +54,11 @@ duplicating it.
       not baked into the APK, see `app/build.gradle.kts`'s comment on this)
 - [ ] Branch Code configured and validated on every device that will go live
 - [ ] Firestore Security Rules deployed and require `request.auth != null` (see
-      `SyncApi.kt`'s comment on why Anonymous Auth exists) — **no `firestore.rules`
-      file exists in this repo currently**; if rules are only configured by hand in
-      the Firebase console, get them into version control before release so a
-      console mistake can't silently reopen the database, and so the next
-      developer knows what's expected
+      `SyncApi.kt`'s comment on why Anonymous Auth exists) — **`firestore.rules`
+      now exists in this repo (Improvement Pack P11), but editing/committing the
+      file does NOT make it live — it still needs to be published via the Firebase
+      console or `firebase deploy --only firestore:rules` on every environment
+      this ships to**
 - [ ] `branch_members/{uid}` documents exist for every approved device (see
       `SyncApi.currentUid()`'s doc comment for how an admin gets a device's UID)
 - [ ] Run `SYNC_STRESS_TEST_PLAN.md`'s 10 scenarios end-to-end on two real devices —

@@ -283,6 +283,48 @@ Applied fixes from the full assessment:
     - Like P4, this is **plan/checklist work, not an executed release** — someone
       still has to go through every box on real hardware before shipping.
 
+19. **Cash Register cloud sync + missing `firestore.rules` collections (Improvement Pack P11)**
+    - `CashRegisterActivity.kt`'s daily till (open/edit-opening/close/reopen) was
+      local-only, per-device by original design (no `serverId`/`dirty`/`updatedAt`
+      fields on `CashRegister`) — a register opened on one device was invisible on
+      another. Wired it into the existing sync pipeline instead:
+      - `SyncQueueHelper.kt`: new `cashRegisterEntityId()` (the row's own `date` —
+        same natural-key pattern as `UnitType`/`Category`, deliberately no
+        `DeviceTag`, since a till is meant to be ONE shared register per branch per
+        day) and `cashRegisterJson()` (full snapshot: opening/closing cash+bank,
+        `closed`), plus `enqueueCashRegister()` called right after every
+        `db.cashRegisterDao().upsert(...)` call site, and folded into
+        `resyncAllLocalData()`.
+      - `Database.kt`: `CashRegisterDao` gained `allOnce()` (one-shot snapshot for
+        the resync loop above) — no schema/migration change needed, since `date`
+        was already the table's own primary key.
+      - `SyncApi.kt`: new `cash_register` Firestore collection wired through
+        `push()`, `pull()` (added to `PullResult` + the `query()`/`allSnaps` list),
+        and `applyServerChanges()` (plain upsert-by-date, skipped while this
+        device's own edit for that date is still queued, so a pull mid-edit can't
+        revert what was just typed in; no delete branch, since the UI never
+        deletes a register).
+      - `SyncRepository.kt`: `SyncResult` gained `cashRegistersReceived`, folded
+        into `summary()`'s total-received count.
+      - **Found and fixed while doing this: `firestore.rules` was missing several
+        collections `SyncApi.kt` has synced for a while** (`units`, `categories`,
+        `zakat_years`, `zakat_payments`, `returns`, `stock_movements`,
+        `app_settings`) — `isSyncedCollection()`'s allowlist was never updated to
+        match, so every push/pull for those was being silently rejected with
+        `PERMISSION_DENIED` even though the app-side code was correct. Added all
+        of them, plus `cash_register`, to the allowlist. **This must be
+        re-deployed to the Firebase project (console or `firebase deploy --only
+        firestore:rules`) before any of this actually takes effect** — editing the
+        file in the repo alone does not change what's live.
+      - `SyncQueueHelperTest.kt`: added `cashRegisterEntityId`/`cashRegisterJson`
+        tests (entity-id shape + full payload shape), and folded `cashRegisterJson`
+        into the existing cross-cutting "every payload carries branchId" test —
+        now 8 payload builders covered there instead of 7.
+    - **Not done, still needed before release:** a two-device manual test of the
+      new till flow (open on device A, close from device B, confirm both sides
+      converge) — see `SYNC-CONFLICT-TESTS.md` — and actually publishing the
+      updated `firestore.rules` to the live Firebase project.
+
 ## Remaining operational checks
 
 - Run `gradle lintDebug`, `gradle testDebugUnitTest`, and `gradle assembleDebug` in a network-enabled Android/Gradle environment.
@@ -290,3 +332,5 @@ Applied fixes from the full assessment:
 - Test two devices offline simultaneously for sales, purchases, stock, balances, payments, and rate edits.
 - Keep release signing credentials outside the repository.
 - Databases older than Room version 13 still require the original historical migration chain; this pass deliberately does **not** use destructive upgrade fallback because silently deleting a grocery shop database is unsafe.
+- **Deploy the updated `firestore.rules`** (Improvement Pack P11) to the live Firebase project — it now exists in the repo but is not automatically live until published via console or `firebase deploy --only firestore:rules`.
+- Manually test the Cash Register two-device flow (open/close from different devices) per `SYNC-CONFLICT-TESTS.md` once rules are deployed.
