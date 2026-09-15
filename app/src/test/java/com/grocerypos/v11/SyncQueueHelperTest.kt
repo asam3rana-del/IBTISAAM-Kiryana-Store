@@ -11,7 +11,8 @@ import org.junit.Test
  *
  * SCOPE: only the PURE parts of SyncQueueHelper are covered here — entity-id
  * generation and the JSON payload builders (customerJson/supplierJson/
- * productJson/paymentJson/expenseJson/cashTransactionJson/userJson). These
+ * productJson/paymentJson/expenseJson/cashTransactionJson/userJson/
+ * cashRegisterJson). These
  * take a data object and return a String with no suspend/Room/Context
  * dependency, so they run as plain JVM tests, same as the rest of this
  * module (see TESTS-README.md — no Android SDK/Gradle in this sandbox).
@@ -255,6 +256,30 @@ class SyncQueueHelperTest {
         assertFalse("passwordHash must never leave the device / reach Firestore", map.containsKey("passwordHash"))
     }
 
+    // ---------------- cashRegisterEntityId() / cashRegisterJson() ----------------
+
+    @Test
+    fun `cashRegisterEntityId is just the date (one shared register per branch per day, no DeviceTag)`() {
+        val reg = CashRegister(date = "2026-09-16", openingCash = 1000.0)
+        assertEquals("2026-09-16", SyncQueueHelper.cashRegisterEntityId(reg))
+    }
+
+    @Test
+    fun `cashRegisterJson carries opening-closing balances and closed flag`() {
+        val reg = CashRegister(
+            date = "2026-09-16", openingCash = 1000.0, closingCash = 1500.0,
+            openingBank = 200.0, closingBank = 300.0, closed = true
+        )
+        val map = jsonMap(SyncQueueHelper.cashRegisterJson(reg))
+
+        assertEquals("2026-09-16", map["date"])
+        assertEquals(1000.0, map["openingCash"])
+        assertEquals(1500.0, map["closingCash"])
+        assertEquals(200.0, map["openingBank"])
+        assertEquals(300.0, map["closingBank"])
+        assertEquals(true, map["closed"])
+    }
+
     // ---------------- Cross-cutting: every payload carries branchId ----------------
 
     @Test
@@ -266,6 +291,7 @@ class SyncQueueHelperTest {
         val expense = Expense(id = 1L, category = "Misc", description = "", amount = 1.0)
         val tx = CashTransaction(id = 1L, type = "IN", method = "cash", amount = 1.0)
         val user = User(username = "u", displayName = "U", role = "owner", passwordHash = "h")
+        val cashRegister = CashRegister(date = "2026-09-16")
 
         listOf(
             SyncQueueHelper.customerJson(customer),
@@ -274,7 +300,8 @@ class SyncQueueHelperTest {
             SyncQueueHelper.paymentJson(payment),
             SyncQueueHelper.expenseJson(expense),
             SyncQueueHelper.cashTransactionJson(tx),
-            SyncQueueHelper.userJson(user)
+            SyncQueueHelper.userJson(user),
+            SyncQueueHelper.cashRegisterJson(cashRegister)
         ).forEach { json ->
             assertTrue("payload missing branchId: $json", jsonMap(json).containsKey("branchId"))
         }
