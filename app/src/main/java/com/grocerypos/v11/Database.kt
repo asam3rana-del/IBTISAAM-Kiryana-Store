@@ -89,12 +89,24 @@ data class StockMovement(
     @ColumnInfo(defaultValue="0") val cost:Double=0.0,
     @ColumnInfo(defaultValue="''") val reference:String="",
     @ColumnInfo(defaultValue="''") val note:String="",
-    val createdAt:Long=System.currentTimeMillis()
+    val createdAt:Long=System.currentTimeMillis(),
+    // NEW (Stock/Cost History sync): same shape as Expense/CashTransaction/ReturnLine
+    // above (plain Kotlin defaults, no @ColumnInfo — MIGRATION_37_38 is a plain ALTER
+    // TABLE ADD COLUMN, same as MIGRATION_36_37 which added this same trio to `returns`
+    // and works fine without one; the @ColumnInfo annotations on unit/cost/reference/
+    // note above exist for a different, CREATE-TABLE-recreate-specific reason — see
+    // that comment — and aren't the relevant precedent here).
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
 )
 
 @Dao
 interface StockMovementDao {
     @Insert suspend fun insert(m: StockMovement): Long
+    // NEW (Stock/Cost History sync): needed to stamp serverId onto a row right
+    // after insert (same pattern as ReturnDao.update/CustomerDao.update etc).
+    @Update suspend fun update(m: StockMovement)
     @Query("SELECT * FROM stock_movements WHERE barcode=:barcode ORDER BY createdAt DESC, id DESC")
     fun forProduct(barcode: String): Flow<List<StockMovement>>
     // Cost History = only the movement types that can move Product.cost (a sale
@@ -121,6 +133,12 @@ interface StockMovementDao {
     // in StockTakingActivity to rebuild a past session's summary.
     @Query("SELECT * FROM stock_movements WHERE type='STOCK_TAKE' ORDER BY createdAt DESC")
     suspend fun stockTakeMovements(): List<StockMovement>
+
+    // NEW (Stock/Cost History sync): resyncAllLocalData() snapshot + pull-apply
+    // idempotency lookup, same pattern as ReturnDao.allList()/findByServerId() above.
+    @Query("SELECT * FROM stock_movements") suspend fun allList(): List<StockMovement>
+    @Query("SELECT * FROM stock_movements WHERE serverId=:serverId LIMIT 1")
+    suspend fun findByServerId(serverId: String): StockMovement?
 }
 
 @Entity(tableName="products")
@@ -1700,6 +1718,22 @@ val MIGRATION_36_37 = object : Migration(36, 37) {
     }
 }
 
+// NEW (Stock/Cost History sync): same plain-ADD-COLUMN shape as MIGRATION_36_37's
+// returns columns — Stock History and Cost History both read off stock_movements
+// (see StockMovementDao.forProduct()/costHistoryForProduct()), so giving this one
+// table serverId/updatedAt/dirty makes both screens sync to another device at once.
+// Pre-existing rows get serverId=NULL/updatedAt=0/dirty=1 — exactly the state a
+// locally-created-but-not-yet-pushed row should be in, so "Force full push" (or the
+// resyncAllLocalData() loop) picks every old movement up correctly the first time
+// it runs after this update.
+val MIGRATION_37_38 = object : Migration(37, 38) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE stock_movements ADD COLUMN serverId TEXT")
+        database.execSQL("ALTER TABLE stock_movements ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE stock_movements ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1712,7 +1746,7 @@ val MIGRATION_36_37 = object : Migration(36, 37) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=37, exportSchema=true
+    version=38, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1739,7 +1773,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

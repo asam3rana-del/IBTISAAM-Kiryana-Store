@@ -53,6 +53,10 @@ object SyncQueueHelper {
     fun zakatYearEntityId(y: ZakatYear) = "zakat_year:${DeviceTag.current}-${y.id}"
     fun zakatPaymentEntityId(p: ZakatPayment) = "zakat_payment:${DeviceTag.current}-${p.id}"
     fun returnEntityId(r: ReturnLine) = "return:${DeviceTag.current}-${r.id}"
+    // NEW (Stock/Cost History sync): same local-autoincrement-id shape as
+    // returnEntityId above — a stock_movements row's id is per-device, so DeviceTag
+    // keeps two devices' movement #7 from colliding on the same Firestore doc.
+    fun stockMovementEntityId(m: StockMovement) = "stock_movement:${DeviceTag.current}-${m.id}"
     // App Settings: only a whitelisted subset of keys are shop-wide identity (name,
     // phone, address, receipt footer, currency, tax rate) that every branch device
     // should share. Everything else in this table — login_method, printer_name/mac/
@@ -211,20 +215,26 @@ object SyncQueueHelper {
         logMovement(db, barcode, type, qty, reference, unitCost, note)
     }
 
+    // CHANGED (Stock/Cost History sync): this used to be a fire-and-forget insert —
+    // the row lived only in this device's local DB, so Stock History and Cost
+    // History never showed anything from a second device. Now grabs the
+    // auto-generated id back, stamps serverId onto the row, and enqueues it via
+    // enqueueStockMovement() — same shape as every other local-autoincrement
+    // entity in this file (Expense/CashTransaction/ReturnLine/etc).
     private suspend fun logMovement(db: PosDatabase, barcode: String, type: String, signedQty: Double, reference: String, unitCost: Double?, note: String) {
         val p = db.productDao().find(barcode)
-        db.stockMovementDao().insert(
-            StockMovement(
-                barcode = barcode,
-                type = type,
-                qty = signedQty,
-                unit = p?.smallestUnitName() ?: "",
-                cost = unitCost ?: (p?.cost ?: 0.0),
-                reference = reference,
-                note = note,
-                createdAt = System.currentTimeMillis()
-            )
+        val row = StockMovement(
+            barcode = barcode,
+            type = type,
+            qty = signedQty,
+            unit = p?.smallestUnitName() ?: "",
+            cost = unitCost ?: (p?.cost ?: 0.0),
+            reference = reference,
+            note = note,
+            createdAt = System.currentTimeMillis()
         )
+        val newId = db.stockMovementDao().insert(row)
+        enqueueStockMovement(db, row.copy(id = newId))
     }
 
     // ADDED: db.productDao().updateCost() was being called directly in HistoryActivity
@@ -357,6 +367,19 @@ object SyncQueueHelper {
         val id = returnEntityId(r)
         if (r.serverId != id) db.returnDao().update(r.copy(serverId = id))
         enqueue(db, "return", id, "upsert", returnJson(r))
+        context?.let { trigger(it) }
+    }
+
+    // NEW (Stock/Cost History sync): same serverId-stamping pattern as enqueueReturn
+    // above. logMovement() below is the only call site — every stock change (sale,
+    // purchase, damage, adjustment, stock-take, opening stock) already funnels
+    // through it, so wiring it here is enough to sync both the Stock History and
+    // Cost History screens (they both just read this one table) to another device.
+    suspend fun enqueueStockMovement(db: PosDatabase, m: StockMovement, context: Context? = null) {
+        val id = stockMovementEntityId(m)
+        val stamped = if (m.serverId != id) m.copy(serverId = id) else m
+        if (stamped !== m) db.stockMovementDao().update(stamped)
+        enqueue(db, "stock_movement", id, "upsert", stockMovementJson(stamped))
         context?.let { trigger(it) }
     }
 
@@ -540,6 +563,26 @@ object SyncQueueHelper {
             "qty" to r.qty,
             "amount" to r.amount,
             "createdAt" to r.createdAt,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    // NEW (Stock/Cost History sync): same shape as returnJson above — the pulled
+    // copy needs every field SyncApi.applyServerChanges() reads back off it to
+    // reconstruct a StockMovement row on the other device (see that loop).
+    fun stockMovementJson(m: StockMovement): String {
+        val map = mapOf(
+            "serverId" to (m.serverId ?: stockMovementEntityId(m)),
+            "barcode" to m.barcode,
+            "type" to m.type,
+            "qty" to m.qty,
+            "unit" to m.unit,
+            "cost" to m.cost,
+            "reference" to m.reference,
+            "note" to m.note,
+            "createdAt" to m.createdAt,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
@@ -757,6 +800,9 @@ object SyncQueueHelper {
         }
         // NEW (Returns sync): push existing local returns too.
         for (r in db.returnDao().allList()) enqueueReturn(db, r)
+        // NEW (Stock/Cost History sync): push every pre-existing movement row too —
+        // covers devices that had stock_movements rows before this feature existed.
+        for (m in db.stockMovementDao().allList()) enqueueStockMovement(db, m)
         // NEW (App Settings sync): only the whitelisted shop-identity keys, if present.
         for (key in SYNCED_APP_SETTING_KEYS) {
             db.appSettingDao().get(key)?.let { enqueueAppSetting(db, it) }

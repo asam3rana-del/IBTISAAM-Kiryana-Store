@@ -24,6 +24,7 @@ import com.grocerypos.v11.Category
 import com.grocerypos.v11.ZakatYear
 import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.ReturnLine
+import com.grocerypos.v11.StockMovement
 import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.util.Loc
 
@@ -45,6 +46,7 @@ import com.grocerypos.v11.util.Loc
  *   zakat_years/{serverId}
  *   zakat_payments/{serverId}
  *   returns/{serverId}
+ *   stock_movements/{serverId} (Stock History + Cost History — one shared ledger, see Database.kt's StockMovement doc comment)
  *   app_settings/{key} (whitelisted shop-identity keys only — see SyncQueueHelper.SYNCED_APP_SETTING_KEYS)
  *
  * CHANGED (multi-tenant support): which Firestore project this talks to is no longer
@@ -158,6 +160,7 @@ object SyncApi {
                 "zakat_year" -> "zakat_years"
                 "zakat_payment" -> "zakat_payments"
                 "return" -> "returns"
+                "stock_movement" -> "stock_movements"
                 "app_setting" -> "app_settings"
                 else -> return false
             }
@@ -276,6 +279,7 @@ object SyncApi {
         val zakatYears: List<Map<String, Any?>> = emptyList(),
         val zakatPayments: List<Map<String, Any?>> = emptyList(),
         val returns: List<Map<String, Any?>> = emptyList(),
+        val stockMovements: List<Map<String, Any?>> = emptyList(),
         val appSettings: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
@@ -307,13 +311,14 @@ object SyncApi {
         val zakatYearsSnap = query("zakat_years").get(Source.SERVER).await()
         val zakatPaymentsSnap = query("zakat_payments").get(Source.SERVER).await()
         val returnsSnap = query("returns").get(Source.SERVER).await()
+        val stockMovementsSnap = query("stock_movements").get(Source.SERVER).await()
         val appSettingsSnap = query("app_settings").get(Source.SERVER).await()
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
             salesSnap, purchasesSnap, paymentsSnap, expensesSnap, cashTxSnap,
             unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap, returnsSnap,
-            appSettingsSnap
+            stockMovementsSnap, appSettingsSnap
         )
         var maxUpdatedAt = since
         for (snap in allSnaps) {
@@ -338,6 +343,7 @@ object SyncApi {
             zakatYears = zakatYearsSnap.documents.map { it.data ?: emptyMap() },
             zakatPayments = zakatPaymentsSnap.documents.map { it.data ?: emptyMap() },
             returns = returnsSnap.documents.map { it.data ?: emptyMap() },
+            stockMovements = stockMovementsSnap.documents.map { it.data ?: emptyMap() },
             appSettings = appSettingsSnap.documents.map { it.data ?: emptyMap() },
             serverTime = maxUpdatedAt
         )
@@ -359,6 +365,7 @@ object SyncApi {
         val categoryDao = db.categoryDao()
         val zakatDao = db.zakatDao()
         val returnDao = db.returnDao()
+        val stockMovementDao = db.stockMovementDao()
         val appSettingDao = db.appSettingDao()
 
         // Local deltas that are still queued must be layered on top of the latest
@@ -922,6 +929,32 @@ object SyncApi {
                 ReturnLine(
                     reference = reference, type = type, barcode = barcode, qty = qty, amount = amount,
                     createdAt = createdAt, serverId = serverId, updatedAt = updatedAt, dirty = false
+                )
+            )
+        }
+
+        // NEW (Stock/Cost History sync): append-only ledger, same insert-if-not-
+        // already-pulled idempotency as the returns loop just above — Stock History
+        // and Cost History both read straight off this one table (see
+        // StockMovementDao.forProduct()/costHistoryForProduct()), so applying it here
+        // once is enough for both screens to pick up a movement made on another device.
+        for (row in changes.stockMovements) {
+            val serverId = row["serverId"] as? String ?: continue
+            if (stockMovementDao.findByServerId(serverId) != null) continue
+            val barcode = row["barcode"] as? String ?: continue
+            val type = row["type"] as? String ?: continue
+            val qty = (row["qty"] as? Number)?.toDouble() ?: continue
+            val unit = row["unit"] as? String ?: ""
+            val cost = (row["cost"] as? Number)?.toDouble() ?: 0.0
+            val reference = row["reference"] as? String ?: ""
+            val note = row["note"] as? String ?: ""
+            val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+            stockMovementDao.insert(
+                StockMovement(
+                    barcode = barcode, type = type, qty = qty, unit = unit, cost = cost,
+                    reference = reference, note = note, createdAt = createdAt,
+                    serverId = serverId, updatedAt = updatedAt, dirty = false
                 )
             )
         }
