@@ -51,7 +51,7 @@ service cloud.firestore {
     function isSyncedCollection(collection) {
       return collection in ['customers', 'suppliers', 'products', 'users',
                              'sales', 'purchases', 'payments', 'expenses',
-                             'cash_transactions'];
+                             'cash_transactions', 'cash_register'];
     }
 
     // Server-side record of which branch each staff UID belongs to.
