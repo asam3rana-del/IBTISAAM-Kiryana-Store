@@ -63,11 +63,13 @@ class PurchaseActivity : ThemedActivity() {
     private var red = "#E5484D"
     private var fieldFill = "#FAFBFD"
 
-    // Purchase = flatBlue everywhere, to match the dashboard's "Add Purchase" button
-    // (blue) instead of the old Reports-style coral category color.
-    // navy/navyLight kept as flat (no gradient).
-    private var navy = "#185FA5"       // header/brand accent — flatBlueFg
-    private var navyLight = "#185FA5" // flat design, no gradient — same as navy
+    // CHANGED (user asked: Sale and Purchase should share one calm, eye-friendly
+    // accent instead of Purchase's old blue-vs-Sale's-red split — see
+    // SaleActivity's matching comment): now uses the same flatTealFg the "Add Item"
+    // button already used, so header/Save Purchase/totals/Add Item are all one
+    // consistent, low-fatigue color across both screens.
+    private var navy = "#085041"       // header/brand accent — calm teal, matches Sale + Add Item
+    private var navyLight = "#085041" // flat design, no gradient — same as navy
     private var teal = "#085041"       // flatTealFg
     private var gold = "#854F0B"       // flatAmberFg — "best price" badge
     private var amberBadge = "#FAEEDA" // flatAmberBg
@@ -82,8 +84,10 @@ class PurchaseActivity : ThemedActivity() {
         border = p.border
         red = p.red
         fieldFill = p.fieldFill
-        navy = p.flatBlueFg
-        navyLight = p.flatBlueFg
+        // CHANGED (shared calm accent — see class-level palette comment above): was
+        // navy = p.flatBlueFg / navyLight = p.flatBlueFg.
+        navy = p.flatTealFg
+        navyLight = p.flatTealFg
         teal = p.flatTealFg
         gold = p.flatAmberFg
         amberBadge = p.flatAmberBg

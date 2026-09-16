@@ -59,13 +59,17 @@ class SaleActivity : AppCompatActivity() {
 
     // ---------- Palette (Reports-style flat design — pulled from ThemeManager so this
     // screen also respects dark mode and stays in sync with the rest of the app).
-    // Sale = red everywhere, to match the dashboard's "Add Sale" button instead of
-    // the old Reports-style purple category color. ----------
+    // CHANGED (user asked: Sale and Purchase should share one calm, eye-friendly
+    // accent instead of Sale's old alarm-red — see PurchaseActivity's matching
+    // comment): now uses the same flatTealFg the "Add Item" button already used,
+    // so header/Save Sale/totals/Add Item are all one consistent, low-fatigue color
+    // across both screens instead of red-vs-blue. `red` stays available separately
+    // for genuine errors/warnings (see loadThemeColors below). ----------
     internal var bg = "#F4F6F8"
     internal var cardBg = "#FFFFFF"
     internal var fieldFill = "#FAFBFD"
-    internal var navy = "#E5484D"       // header/brand accent — red, matches the dashboard's "Add Sale" button
-    internal var navyLight = "#E5484D"  // flat design, no gradient — same as navy
+    internal var navy = "#085041"       // header/brand accent — calm teal, matches Purchase + Add Item
+    internal var navyLight = "#085041"  // flat design, no gradient — same as navy
     internal var teal = "#085041"       // flatTealFg — secondary accent / positive amounts
     internal var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
     internal var greenDark = "#085041"  // flat design, no gradient — same as green
@@ -81,8 +85,10 @@ class SaleActivity : AppCompatActivity() {
         bg = p.bg
         cardBg = p.cardWhite
         fieldFill = p.fieldFill
-        navy = p.red
-        navyLight = p.red
+        // CHANGED (shared calm accent — see class-level palette comment above): was
+        // navy = p.red / navyLight = p.red.
+        navy = p.flatTealFg
+        navyLight = p.flatTealFg
         teal = p.flatTealFg
         green = p.flatTealFg
         greenDark = p.flatTealFg
