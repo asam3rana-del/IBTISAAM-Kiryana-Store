@@ -105,7 +105,7 @@ class RoomSaleRepository(
         lines: List<SaleLine>,
         original: Sale?,
         originalItems: List<SaleItem>,
-        payments: List<Pair<String, Double>> = emptyList()
+        payments: List<Pair<String, Double>>
     ): SaleSaveResult {
         var customer = existingCustomer
         val stockWarnings = mutableListOf<String>()
