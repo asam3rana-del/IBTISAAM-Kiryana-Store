@@ -49,13 +49,17 @@ class SettingsActivity : AppCompatActivity() {
     // ================= PALETTE (matches Product/Purchase/Sale premium look) =================
     // Pulled from ThemeManager so this screen respects dark mode. Header was a navy→navyLight
     // gradient; now flat (navyLight = navy) like the rest of the app's flattened headers.
+    // CHANGED (user asked: main brand color across Sale/Purchase/Items/Settings/
+    // Reports should match the "Today's profit" blue on the dashboard): header now
+    // uses flatBlueFg instead of the old deep navy.
     private var bg = "#F4F6F8"
     internal var cardWhite = "#FFFFFF"
-    private var navy = "#0B2545"
-    private var navyLight = "#0B2545"
+    private var navy = "#1450C7"
+    private var navyLight = "#1450C7"
     internal var teal = "#0F9B8E"
     internal var red = "#E5484D"
     internal var amber = "#FF8A00"
+    internal var amberBg = "#FAEEDA"
     private var badgeRed = "#E5484D"
     internal var textDark = "#0B2545"
     internal var textGray = "#7C8798"
@@ -67,11 +71,12 @@ class SettingsActivity : AppCompatActivity() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
         cardWhite = p.cardWhite
-        navy = p.navy
-        navyLight = p.navy
+        navy = p.flatBlueFg
+        navyLight = p.flatBlueFg
         teal = p.flatTealFg
         red = p.red
         amber = p.flatAmberFg
+        amberBg = p.flatAmberBg
         badgeRed = p.red
         textDark = p.textDark
         textGray = p.textMuted

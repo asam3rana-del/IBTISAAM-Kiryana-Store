@@ -137,13 +137,13 @@ internal fun SaleActivity.updateMarginWarning() {
     marginWarningText.visibility = View.VISIBLE
     when {
         margin <= 0 -> {
-            marginWarningText.setTextColor(Color.parseColor("#D32F2F"))
+            marginWarningText.setTextColor(Color.parseColor(red))
             marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
                 "⚠ Loss! Sale rate ≤ Cost (Rs %.2f)".format(costInChosenUnit),
                 "⚠ نقصان! سیل ریٹ لاگت (روپے %.2f) کے برابر یا کم ہے".format(costInChosenUnit))
         }
         marginPct < 10.0 -> {
-            marginWarningText.setTextColor(Color.parseColor("#F57C00"))
+            marginWarningText.setTextColor(Color.parseColor(amber))
             marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
                 "⚠ Low margin: Rs %.2f (%.1f%%) vs Cost Rs %.2f".format(margin, marginPct, costInChosenUnit),
                 "⚠ کم منافع: روپے %.2f (%.1f%%) بمقابلہ لاگت روپے %.2f".format(margin, marginPct, costInChosenUnit))
@@ -256,7 +256,7 @@ internal fun SaleActivity.addItem() {
 
     if (editInvoice == null) saveDraft()
     if (lines.isNotEmpty() && paidInput.text.toString().isBlank()) {
-        paymentSection.background = strokedBg("#FF9800", "#FFF8E1", 18)
+        paymentSection.background = strokedBg(amber, amberBg, 18)
         paymentSection.postDelayed({ paymentSection.background = strokedBg(border, cardBg, 18) }, 2000)
     }
 }

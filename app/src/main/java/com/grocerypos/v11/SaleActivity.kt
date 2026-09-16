@@ -59,23 +59,23 @@ class SaleActivity : AppCompatActivity() {
 
     // ---------- Palette (Reports-style flat design — pulled from ThemeManager so this
     // screen also respects dark mode and stays in sync with the rest of the app).
-    // CHANGED (user asked: Sale and Purchase should share one calm, eye-friendly
-    // accent instead of Sale's old alarm-red — see PurchaseActivity's matching
-    // comment): now uses the same flatTealFg the "Add Item" button already used,
-    // so header/Save Sale/totals/Add Item are all one consistent, low-fatigue color
-    // across both screens instead of red-vs-blue. `red` stays available separately
-    // for genuine errors/warnings (see loadThemeColors below). ----------
+    // CHANGED (user asked: main brand color across Sale/Purchase/Items/Settings/
+    // Reports should match the "Today's profit" blue on the dashboard): header/
+    // Save Sale/totals now use flatBlueFg. `teal`/`green` stay teal — that's the
+    // app's separate "positive amount" (paid/due) semantic, not the brand accent.
+    // `red` stays available separately for genuine errors/warnings. ----------
     internal var bg = "#F4F6F8"
     internal var cardBg = "#FFFFFF"
     internal var fieldFill = "#FAFBFD"
-    internal var navy = "#085041"       // header/brand accent — calm teal, matches Purchase + Add Item
-    internal var navyLight = "#085041"  // flat design, no gradient — same as navy
-    internal var teal = "#085041"       // flatTealFg — secondary accent / positive amounts
-    internal var green = "#085041"      // flatTealFg — unified with Reports' "positive" color
-    internal var greenDark = "#085041"  // flat design, no gradient — same as green
+    internal var navy = "#1450C7"       // header/brand accent — profit blue, matches Purchase/Items/Settings/Reports
+    internal var navyLight = "#1450C7"  // flat design, no gradient — same as navy
+    internal var teal = "#0A8A4E"       // flatTealFg — secondary accent / positive amounts
+    internal var green = "#0A8A4E"      // flatTealFg — unified with Reports' "positive" color
+    internal var greenDark = "#0A8A4E"  // flat design, no gradient — same as green
     internal var red = "#D32F4A"
     internal var redDark = "#A81F39"
     internal var amber = "#854F0B"      // flatAmberFg
+    internal var amberBg = "#FAEEDA"    // flatAmberBg
     internal var textDark = "#0B2545"
     internal var textGray = "#7C8798"
     internal var border = "#E3E8EE"
@@ -85,15 +85,14 @@ class SaleActivity : AppCompatActivity() {
         bg = p.bg
         cardBg = p.cardWhite
         fieldFill = p.fieldFill
-        // CHANGED (shared calm accent — see class-level palette comment above): was
-        // navy = p.red / navyLight = p.red.
-        navy = p.flatTealFg
-        navyLight = p.flatTealFg
+        navy = p.flatBlueFg
+        navyLight = p.flatBlueFg
         teal = p.flatTealFg
         green = p.flatTealFg
         greenDark = p.flatTealFg
         red = p.red
         amber = p.flatAmberFg
+        amberBg = p.flatAmberBg
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
