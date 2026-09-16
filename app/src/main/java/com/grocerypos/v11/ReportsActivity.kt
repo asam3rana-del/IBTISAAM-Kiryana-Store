@@ -86,187 +86,158 @@ class ReportsActivity : AppCompatActivity() {
         root.addView(premiumHeader(R.drawable.ic_chart, Loc.t(this, "Reports", "رپورٹس"), Loc.t(this, "Sales, stock & financial overview", "سیل، اسٹاک اور مالیاتی جائزہ")))
 
         root.addView(sectionHeader(Loc.t(this, "Sale reports", "سیل رپورٹس")))
-        val navCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = strokedBg(border, cardBg, 18)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(0, 0, 0, 18) }
-            applyElevation(this, 3f)
-        }
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_receipt, accentHex = primary, tintHex = "#EEEDFE",
+        // ---- CHANGE (Khatabook-style flat list — user request: "flat jesa party
+        // ma ha"): each report link used to be a row inside one shared bordered
+        // navCard, separated by navDivider() lines, with a pastel-circle icon
+        // badge on the left. Swapped for PartyDashboardActivity's borderless-card
+        // style: every entry is its own elevated white card (no icon badge, no
+        // divider lines) — same shape/spacing/elevation as the Party Dashboard's
+        // party rows. navRow()/navDivider() are unused now but left in place
+        // below in case another screen still wants the old bordered-list look. ----
+        root.addView(khataRow(
             title = Loc.t(this, "Sale History", "سیل کی تاریخ"),
-            subtitle = Loc.t(this, "View all sale transactions", "تمام سیل لین دین دیکھیں")
+            subtitle = Loc.t(this, "View all sale transactions", "تمام سیل لین دین دیکھیں"),
+            accentHex = primary
         ) {
             val i = android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)
             i.putExtra(HistoryActivity.EXTRA_MODE, HistoryActivity.MODE_SALES)
             startActivity(i)
         })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_cart, accentHex = "#993C1D", tintHex = "#FAECE7",
+        root.addView(khataRow(
             title = Loc.t(this, "Purchase History", "خریداری کی تاریخ"),
-            subtitle = Loc.t(this, "View all purchase transactions", "تمام خریداری لین دین دیکھیں")
+            subtitle = Loc.t(this, "View all purchase transactions", "تمام خریداری لین دین دیکھیں"),
+            accentHex = "#993C1D"
         ) {
             val i = android.content.Intent(this@ReportsActivity, HistoryActivity::class.java)
             i.putExtra(HistoryActivity.EXTRA_MODE, HistoryActivity.MODE_PURCHASES)
             startActivity(i)
         })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_people, accentHex = purple, tintHex = "#EEEDFE",
+        root.addView(khataRow(
             title = Loc.t(this, "Party Reports", "پارٹی رپورٹس"),
-            subtitle = Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس")
+            subtitle = Loc.t(this, "Customer & supplier balances", "کسٹمر اور سپلائر کا بیلنس"),
+            accentHex = purple
         ) { startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java)) })
-
-        navCard.addView(navDivider())
 
         // NEW (Payments 10/10 — suggestion #3): all-parties Payments Received vs
         // Made, by Today/Week/Month/All Time — separate from Day Book (mixes
         // payments with sales/purchases/expenses) and Party Reports' Payment
         // History (scoped to one party at a time).
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_wallet, accentHex = teal, tintHex = "#E1F5EE",
+        root.addView(khataRow(
             title = Loc.t(this, "Payments Report", "ادائیگیوں کی رپورٹ"),
-            subtitle = Loc.t(this, "Payments received vs made, by period", "ادائیگیاں وصول اور ادا، مدت کے مطابق")
+            subtitle = Loc.t(this, "Payments received vs made, by period", "ادائیگیاں وصول اور ادا، مدت کے مطابق"),
+            accentHex = teal
         ) { startActivity(android.content.Intent(this@ReportsActivity, PaymentsReportActivity::class.java)) })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_box, accentHex = amber, tintHex = "#FAEEDA",
+        root.addView(khataRow(
             title = Loc.t(this, "Stock Report", "اسٹاک رپورٹ"),
-            subtitle = Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح")
+            subtitle = Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح"),
+            accentHex = amber
         ) { startActivity(android.content.Intent(this@ReportsActivity, StockReportActivity::class.java)) })
-
-        navCard.addView(navDivider())
 
         // ADDED (Inventory Accounting upgrade — stock_movements table): per-product
         // ledger of every purchase/sale/reversal/edit, and a cost-only view of the
         // same ledger — both backed by StockMovementActivity (see that file).
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_history, accentHex = primary, tintHex = "#EEEDFE",
+        root.addView(khataRow(
             title = Loc.t(this, "Stock History", "اسٹاک کی تاریخ"),
-            subtitle = Loc.t(this, "Every purchase, sale & adjustment per item", "ہر آئٹم کی خریداری، سیل اور ایڈجسٹمنٹ")
+            subtitle = Loc.t(this, "Every purchase, sale & adjustment per item", "ہر آئٹم کی خریداری، سیل اور ایڈجسٹمنٹ"),
+            accentHex = primary
         ) {
             val i = android.content.Intent(this@ReportsActivity, StockMovementActivity::class.java)
             i.putExtra(StockMovementActivity.EXTRA_MODE, StockMovementActivity.MODE_STOCK)
             startActivity(i)
         })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_trending, accentHex = teal, tintHex = "#E1F5EE",
+        root.addView(khataRow(
             title = Loc.t(this, "Cost History", "لاگت کی تاریخ"),
-            subtitle = Loc.t(this, "How a product's cost changed over time", "پروڈکٹ کی لاگت وقت کے ساتھ کیسے بدلی")
+            subtitle = Loc.t(this, "How a product's cost changed over time", "پروڈکٹ کی لاگت وقت کے ساتھ کیسے بدلی"),
+            accentHex = teal
         ) {
             val i = android.content.Intent(this@ReportsActivity, StockMovementActivity::class.java)
             i.putExtra(StockMovementActivity.EXTRA_MODE, StockMovementActivity.MODE_COST)
             startActivity(i)
         })
 
-        navCard.addView(navDivider())
-
         // NEW: Stock Adjustment (log damage/loss or a manual correction) plus the four
         // Inventory Insights tabs (Reorder Suggestions, Damage/Loss Report, Profit
         // Margin per Item, Fast/Slow Movers) and Due Date Reminders.
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_wrench, accentHex = red, tintHex = "#FCEBEB",
+        root.addView(khataRow(
             title = Loc.t(this, "Stock Adjustment", "اسٹاک ایڈجسٹمنٹ"),
-            subtitle = Loc.t(this, "Log damage, loss, or a correction", "نقصان یا درستگی درج کریں")
+            subtitle = Loc.t(this, "Log damage, loss, or a correction", "نقصان یا درستگی درج کریں"),
+            accentHex = red
         ) { startActivity(android.content.Intent(this@ReportsActivity, StockAdjustmentActivity::class.java)) })
-
-        navCard.addView(navDivider())
 
         // NEW (10/10 Priority #9 — Stock Taking): full physical-count-vs-system
         // reconciliation, distinct from Stock Adjustment above (which is for a
         // single known item's damage/loss/correction, not a full recount).
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_list, accentHex = primary, tintHex = "#EEEDFE",
+        root.addView(khataRow(
             title = Loc.t(this, "Stock Taking", "اسٹاک گنتی"),
-            subtitle = Loc.t(this, "Physical count vs system stock", "اصل گنتی بمقابلہ سسٹم اسٹاک")
+            subtitle = Loc.t(this, "Physical count vs system stock", "اصل گنتی بمقابلہ سسٹم اسٹاک"),
+            accentHex = primary
         ) { startActivity(android.content.Intent(this@ReportsActivity, StockTakingActivity::class.java)) })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_shopping_bag, accentHex = amber, tintHex = "#FAEEDA",
+        root.addView(khataRow(
             title = Loc.t(this, "Reorder Suggestions", "دوبارہ آرڈر تجاویز"),
-            subtitle = Loc.t(this, "Items at or below reorder level", "کم اسٹاک آئٹمز")
+            subtitle = Loc.t(this, "Items at or below reorder level", "کم اسٹاک آئٹمز"),
+            accentHex = amber
         ) {
             val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
             i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_REORDER)
             startActivity(i)
         })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_warning, accentHex = red, tintHex = "#FCEBEB",
+        root.addView(khataRow(
             title = Loc.t(this, "Damage / Loss Report", "نقصان کی رپورٹ"),
-            subtitle = Loc.t(this, "Value of stock damaged or lost", "خراب یا ضائع اسٹاک کی مالیت")
+            subtitle = Loc.t(this, "Value of stock damaged or lost", "خراب یا ضائع اسٹاک کی مالیت"),
+            accentHex = red
         ) {
             val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
             i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_DAMAGE)
             startActivity(i)
         })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_trending, accentHex = teal, tintHex = "#E1F5EE",
+        root.addView(khataRow(
             title = Loc.t(this, "Profit Margin per Item", "فی آئٹم منافع"),
-            subtitle = Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت")
+            subtitle = Loc.t(this, "Sale price vs cost, item by item", "سیل پرائس بمقابلہ لاگت"),
+            accentHex = teal
         ) {
             val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
             i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_PROFIT)
             startActivity(i)
         })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_stopwatch, accentHex = purple, tintHex = "#EEEDFE",
+        root.addView(khataRow(
             title = Loc.t(this, "Fast / Slow Movers", "تیز / سست چلنے والے"),
-            subtitle = Loc.t(this, "Which items sell, and which don't", "کون سے آئٹم بکتے ہیں")
+            subtitle = Loc.t(this, "Which items sell, and which don't", "کون سے آئٹم بکتے ہیں"),
+            accentHex = purple
         ) {
             val i = android.content.Intent(this@ReportsActivity, InventoryInsightsActivity::class.java)
             i.putExtra(InventoryInsightsActivity.EXTRA_MODE, InventoryInsightsActivity.MODE_MOVERS)
             startActivity(i)
         })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_alarm, accentHex = primary, tintHex = "#EEEDFE",
+        root.addView(khataRow(
             title = Loc.t(this, "Due Date Reminders", "ادائیگی کی یاد دہانی"),
-            subtitle = Loc.t(this, "Credit sales still owed, by due date", "ادھار سیلز جو واجب الادا ہیں")
+            subtitle = Loc.t(this, "Credit sales still owed, by due date", "ادھار سیلز جو واجب الادا ہیں"),
+            accentHex = primary
         ) { startActivity(android.content.Intent(this@ReportsActivity, DueRemindersActivity::class.java)) })
 
-        navCard.addView(navDivider())
-
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_bank, accentHex = teal, tintHex = "#E1F5EE",
+        root.addView(khataRow(
             title = Loc.t(this, "Balance Sheet", "بیلنس شیٹ"),
-            subtitle = Loc.t(this, "Assets, liabilities & capital", "اثاثے، واجبات اور سرمایہ")
+            subtitle = Loc.t(this, "Assets, liabilities & capital", "اثاثے، واجبات اور سرمایہ"),
+            accentHex = teal
         ) { startActivity(android.content.Intent(this@ReportsActivity, BalanceSheetActivity::class.java)) })
-
-        navCard.addView(navDivider())
 
         // NEW: Zakat tracker — Ramadan-to-Ramadan year, auto-calculated from the same
         // asset figures Balance Sheet uses, with monthly-installment support.
-        navCard.addView(navRow(
-            iconRes = R.drawable.ic_zakat, accentHex = gold, tintHex = "#FAEEDA",
+        root.addView(khataRow(
             title = Loc.t(this, "Zakat", "زکوٰۃ"),
-            subtitle = Loc.t(this, "Track & pay this year's Zakat", "اس سال کی زکوٰۃ ٹریک اور ادا کریں")
+            subtitle = Loc.t(this, "Track & pay this year's Zakat", "اس سال کی زکوٰۃ ٹریک اور ادا کریں"),
+            accentHex = gold
         ) { startActivity(android.content.Intent(this@ReportsActivity, ZakatActivity::class.java)) })
 
-        root.addView(navCard)
+        root.addView(spacer(4))
 
         // ================= PERIOD FILTER PILLS (matches Items tab-row style) =================
         val filterRow = LinearLayout(this).apply {
@@ -709,6 +680,65 @@ class ReportsActivity : AppCompatActivity() {
                 setPadding(8, 0, 4, 0)
             })
         }
+    }
+
+    // ---- Khatabook-style row (matches PartyDashboardActivity's dashboardPartyRow
+    // shape/spacing exactly): borderless white card, soft shadow instead of a
+    // stroke, no icon badge — just title + subtitle on the left and a colored
+    // chevron on the right. Each call site adds its own card directly to `root`
+    // (no shared bordered navCard wrapper, no divider lines between rows). ----
+    private fun khataRow(
+        title: String,
+        subtitle: String,
+        accentHex: String,
+        onClick: () -> Unit
+    ): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 18, 20, 18)
+            background = elevatedCardBg()
+            elevation = 1.5f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 12) }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+
+            val textCol = LinearLayout(this@ReportsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            textCol.addView(TextView(this@ReportsActivity).apply {
+                text = title
+                textSize = 15f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.parseColor("#2E3242"))
+            })
+            textCol.addView(TextView(this@ReportsActivity).apply {
+                text = subtitle
+                textSize = 11.5f
+                setTextColor(Color.parseColor(textGray))
+                setPadding(0, 4, 0, 0)
+            })
+            addView(textCol)
+
+            addView(TextView(this@ReportsActivity).apply {
+                text = "\u203A"
+                textSize = 20f
+                setTextColor(Color.parseColor(accentHex))
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(8, 0, 0, 0)
+            })
+        }
+    }
+
+    // Same shape as PartyDashboardActivity/PartyActivity's elevatedCardBg(): no
+    // stroke, floats on the off-white background on a soft shadow only.
+    private fun elevatedCardBg() = GradientDrawable().apply {
+        setColor(Color.parseColor(cardBg))
+        cornerRadius = 20f
     }
 
     private fun navDivider(): View {
