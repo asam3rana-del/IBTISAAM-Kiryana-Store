@@ -108,7 +108,19 @@ class PartyRepository(
         val customers = db.customerDao().allList()
         for (c in customers) {
             val sales = db.saleDao().salesByCustomer(c.id).filter { it.status != "returned" }
+            // FIX (Fix Balances double-counting cash bills — mirrors the supplier/
+            // purchase side below, kept symmetric in case a sale-side payment row
+            // is ever added the way purchases already have one): if a payment
+            // row's `reference` ever matches one of this customer's own invoice
+            // numbers, it means that amount is already reflected in `sale.paid`
+            // (and therefore in `sales.sumOf{total-paid}`) — subtracting it again
+            // via the payments sum would double-count it. Only genuinely
+            // standalone payments — the "Receive/Make Payment" ones, whose
+            // reference is a unique timestamp, never a real invoice number —
+            // should reduce the balance here.
+            val saleInvoices = sales.map { it.invoice }.toHashSet()
             val payments = db.paymentDao().listByParty("customer", c.id)
+                .filter { it.reference !in saleInvoices }
             val trueBalance = sales.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
             val delta = trueBalance - c.balance
             if (Math.abs(delta) > 0.009) {
@@ -119,7 +131,16 @@ class PartyRepository(
         val suppliers = db.supplierDao().allList()
         for (s in suppliers) {
             val purchases = db.purchaseDao().purchasesBySupplier(s.id).filter { it.status != "returned" }
+            // FIX (Fix Balances double-counting cash bills): same reasoning as the
+            // customer/sale side above — RoomPurchaseRepository.savePurchase()
+            // inserts a "Purchase payment" row for whatever was paid at purchase
+            // time (reference == that purchase's billNo), on top of already
+            // setting `purchase.paid`. Exclude those bill-embedded rows so only
+            // standalone payments (unique timestamped reference, never a real
+            // billNo) get subtracted here.
+            val billNos = purchases.map { it.billNo }.toHashSet()
             val payments = db.paymentDao().listByParty("supplier", s.id)
+                .filter { it.reference !in billNos }
             val trueBalance = purchases.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
             val delta = trueBalance - s.balance
             if (Math.abs(delta) > 0.009) {
