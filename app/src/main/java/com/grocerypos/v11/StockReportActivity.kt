@@ -36,9 +36,9 @@ class StockReportActivity : AppCompatActivity() {
     // primary→primaryDark gradient; now flat like the rest of the app.
     private var bg = "#F3F2FA"
     private var cardBg = "#FFFFFF"
-    private var primary = "#4A3AFF"
-    private var primaryDark = "#4A3AFF"
-    private var purple = "#8B5CF6"
+    private var primary = "#1450C7"
+    private var primaryDark = "#1450C7"
+    private var purple = "#1450C7"
     private var amber = "#F5A524"
     private var teal = "#0F9B8E"
     private var red = "#E5484D"
@@ -46,7 +46,7 @@ class StockReportActivity : AppCompatActivity() {
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
     private var fieldFill = "#FAFAFF"
-    private var purpleBg = "#E9E6FF"
+    private var purpleBg = "#E3ECFE"
     private var amberBg = "#FFF3E0"
     private var tealBg = "#E0F2F1"
 
@@ -54,9 +54,9 @@ class StockReportActivity : AppCompatActivity() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
         cardBg = p.cardWhite
-        primary = p.flatPurpleFg
-        primaryDark = p.flatPurpleFg
-        purple = p.flatPurpleFg
+        primary = p.flatBlueFg
+        primaryDark = p.flatBlueFg
+        purple = p.flatBlueFg
         amber = p.flatAmberFg
         teal = p.flatTealFg
         red = p.red
@@ -64,7 +64,7 @@ class StockReportActivity : AppCompatActivity() {
         textGray = p.textMuted
         border = p.border
         fieldFill = p.fieldFill
-        purpleBg = p.flatPurpleBg
+        purpleBg = p.flatBlueBg
         amberBg = p.flatAmberBg
         tealBg = p.flatTealBg
     }

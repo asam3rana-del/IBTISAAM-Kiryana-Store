@@ -49,8 +49,8 @@ class ProductActivity : ThemedActivity() {
     // ---- Premium palette — kept compatible with Purchase/Sale. ----
     internal var bg = "#F4F6F8"
     internal var cardWhite = "#FFFFFF"
-    internal var navy = "#0B2545"
-    internal var navyLight = "#173863"
+    internal var navy = "#1450C7"
+    internal var navyLight = "#1450C7"
     internal var teal = "#0F9B8E"
     private var red = "#E5484D"
     internal var blue = "#3B82F6"
@@ -70,7 +70,7 @@ class ProductActivity : ThemedActivity() {
         val p = ThemeManager.palette(this)
         bg = p.bg
         cardWhite = p.cardWhite
-        navy = p.navy
+        navy = p.flatBlueFg
         teal = p.teal
         red = p.red
         textDark = p.textDark

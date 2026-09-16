@@ -46,16 +46,16 @@ class ItemsActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE (matches Settings / Product) =================
     // Pulled from ThemeManager so this screen respects dark mode.
-    // CHANGED (eye-friendly pass — align Items' pre-theme-load defaults with the
-    // calm ThemeManager palette Sale/Purchase/Settings already use, so there's no
-    // flash of the old high-chroma purple before loadThemeColors() overwrites these):
+    // CHANGED (user asked: main brand color across Sale/Purchase/Items/Settings/
+    // Reports should match the "Today's profit" blue on the dashboard): Items'
+    // primary accent now pulls flatBlueFg instead of flatPurpleFg.
     private var bg = "#F4F5F9"
     private var cardBg = "#FFFFFF"
-    private var primary = "#2D3796"
-    private var primaryDark = "#2D3796"
+    private var primary = "#1450C7"
+    private var primaryDark = "#1450C7"
     private var red = "#E5484D"
     private var redDark = "#E5484D"
-    private var purple = "#2D3796"
+    private var purple = "#1450C7"
     private var amber = "#B85C00"
     private var teal = "#0F9B8E"
     private var textDark = "#14162B"
@@ -66,11 +66,11 @@ class ItemsActivity : ThemedActivity() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
         cardBg = p.cardWhite
-        primary = p.flatPurpleFg
-        primaryDark = p.flatPurpleFg
+        primary = p.flatBlueFg
+        primaryDark = p.flatBlueFg
         red = p.red
         redDark = p.red
-        purple = p.flatPurpleFg
+        purple = p.flatBlueFg
         amber = p.flatAmberFg
         teal = p.flatTealFg
         textDark = p.textDark

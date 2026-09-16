@@ -63,17 +63,17 @@ class PurchaseActivity : ThemedActivity() {
     private var red = "#E5484D"
     private var fieldFill = "#FAFBFD"
 
-    // CHANGED (user asked: Sale and Purchase should share one calm, eye-friendly
-    // accent instead of Purchase's old blue-vs-Sale's-red split — see
-    // SaleActivity's matching comment): now uses the same flatTealFg the "Add Item"
-    // button already used, so header/Save Purchase/totals/Add Item are all one
-    // consistent, low-fatigue color across both screens.
-    private var navy = "#085041"       // header/brand accent — calm teal, matches Sale + Add Item
-    private var navyLight = "#085041" // flat design, no gradient — same as navy
-    private var teal = "#085041"       // flatTealFg
+    // CHANGED (user asked: Sale and Purchase's main brand color should match the
+    // "Today's profit" blue on the dashboard, applied app-wide as the one central
+    // accent): header/Save Purchase/totals now use flatBlueFg. `teal`/`successGreen`
+    // stay teal — that's the app's separate "positive amount" (paid/due) semantic,
+    // not the brand accent, so it's left alone.
+    private var navy = "#1450C7"       // header/brand accent — profit blue, matches Sale/Items/Settings/Reports
+    private var navyLight = "#1450C7" // flat design, no gradient — same as navy
+    private var teal = "#0A8A4E"       // flatTealFg — positive amount accent (unchanged)
     private var gold = "#854F0B"       // flatAmberFg — "best price" badge
     private var amberBadge = "#FAEEDA" // flatAmberBg
-    private var successGreen = "#085041" // flatTealFg — unified with Reports' "positive" color
+    private var successGreen = "#0A8A4E" // flatTealFg — unified with Reports' "positive" color
 
     private fun loadThemePrefs() {
         val p = ThemeManager.palette(this)
@@ -84,10 +84,8 @@ class PurchaseActivity : ThemedActivity() {
         border = p.border
         red = p.red
         fieldFill = p.fieldFill
-        // CHANGED (shared calm accent — see class-level palette comment above): was
-        // navy = p.flatBlueFg / navyLight = p.flatBlueFg.
-        navy = p.flatTealFg
-        navyLight = p.flatTealFg
+        navy = p.flatBlueFg
+        navyLight = p.flatBlueFg
         teal = p.flatTealFg
         gold = p.flatAmberFg
         amberBadge = p.flatAmberBg

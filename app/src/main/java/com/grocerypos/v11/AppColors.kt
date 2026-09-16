@@ -14,10 +14,13 @@ package com.grocerypos.v11.ui.theme
 object AppColors {
     const val bg = "#F4F5F9"
     const val cardBg = "#FFFFFF"
-    const val primary = "#0D1B4C"
-    const val primaryDark = "#081334"
+    // CHANGED (user asked: main brand color across Sale/Purchase/Items/Settings/
+    // Reports should match the "Today's profit" blue on the dashboard): primary
+    // and teal (menu-icon accent) both now match flatBlueFg.
+    const val primary = "#1450C7"
+    const val primaryDark = "#1450C7"
     const val amber = "#FF8A00"
-    const val teal = "#0F9B8E"
+    const val teal = "#1450C7"
     const val red = "#E5484D"
     const val textDark = "#14162B"
     const val textGray = "#7C8798"

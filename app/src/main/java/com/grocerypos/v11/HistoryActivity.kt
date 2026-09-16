@@ -67,8 +67,8 @@ class HistoryActivity : AppCompatActivity() {
     // gradients (primary/primaryDark, gold/goldDark); now flat like the rest of the app.
     private var bg = "#F3F2FA"
     private var cardBg = "#FFFFFF"
-    private var primary = "#4A3AFF"
-    private var primaryDark = "#4A3AFF"
+    private var primary = "#1450C7"
+    private var primaryDark = "#1450C7"
     private var amber = "#F5A524"
     private var teal = "#0F9B8E"
     private var gold = "#C9A24B"
@@ -77,15 +77,15 @@ class HistoryActivity : AppCompatActivity() {
     private var textDark = "#1A1A2E"
     private var textGray = "#8A8A9E"
     private var border = "#E7E5F3"
-    private var purpleBg = "#E9E6FF"
+    private var purpleBg = "#E3ECFE"
     private var amberBg = "#F6EFDD"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
         cardBg = p.cardWhite
-        primary = p.flatPurpleFg
-        primaryDark = p.flatPurpleFg
+        primary = p.flatBlueFg
+        primaryDark = p.flatBlueFg
         amber = p.flatAmberFg
         teal = p.flatTealFg
         gold = p.flatAmberFg
@@ -94,7 +94,7 @@ class HistoryActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
-        purpleBg = p.flatPurpleBg
+        purpleBg = p.flatBlueBg
         amberBg = p.flatAmberBg
     }
 

@@ -26,9 +26,9 @@ class ReportsActivity : AppCompatActivity() {
     // History, Party Reports and Balance Sheet.
     private var bg = "#F4F6F8"
     private var cardBg = "#FFFFFF"
-    private var primary = "#534AB7"       // flatPurpleFg
-    private var primaryDark = "#534AB7"
-    private var purple = "#534AB7"        // flatPurpleFg (merged with primary — one purple everywhere)
+    private var primary = "#1450C7"       // flatBlueFg (profit blue)
+    private var primaryDark = "#1450C7"
+    private var purple = "#1450C7"         // flatBlueFg (merged with primary — one accent everywhere)
     private var amber = "#854F0B"         // flatAmberFg
     private var teal = "#085041"          // flatTealFg
     private var gold = "#854F0B"          // Zakat only — reuses amber (financial)
@@ -36,15 +36,15 @@ class ReportsActivity : AppCompatActivity() {
     private var textDark = "#0B2545"
     private var textGray = "#7C8798"
     private var border = "#E3E8EE"
-    private var headerIconTint = "#EEEDFE" // flatPurpleBg — header badge behind the reports icon
+    private var headerIconTint = "#E3ECFE" // flatBlueBg — header badge behind the reports icon
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
         bg = p.bg
         cardBg = p.cardWhite
-        primary = p.flatPurpleFg
-        primaryDark = p.flatPurpleFg
-        purple = p.flatPurpleFg
+        primary = p.flatBlueFg
+        primaryDark = p.flatBlueFg
+        purple = p.flatBlueFg
         amber = p.flatAmberFg
         teal = p.flatTealFg
         gold = p.flatAmberFg
@@ -52,7 +52,7 @@ class ReportsActivity : AppCompatActivity() {
         textDark = p.textDark
         textGray = p.textMuted
         border = p.border
-        headerIconTint = p.flatPurpleBg
+        headerIconTint = p.flatBlueBg
     }
 
     private lateinit var resultsBox: LinearLayout
