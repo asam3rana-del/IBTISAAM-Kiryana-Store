@@ -54,7 +54,7 @@ class SettingsActivity : AppCompatActivity() {
     private var navyLight = "#0B2545"
     internal var teal = "#0F9B8E"
     internal var red = "#E5484D"
-    internal var amber = "#F5A524"
+    internal var amber = "#FF8A00"
     private var badgeRed = "#E5484D"
     internal var textDark = "#0B2545"
     internal var textGray = "#7C8798"
@@ -141,27 +141,27 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ---- Parties (real) ----
-        list.addView(menuRow(R.drawable.ic_people, "Parties", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_people, "Parties", showChevron = true, iconBgHex = AppColors.teal) {
             startActivity(Intent(this@SettingsActivity, PartyDashboardActivity::class.java))
         })
 
         // ---- Items (real) ----
-        list.addView(menuRow(R.drawable.ic_list, "Items") {
+        list.addView(menuRow(R.drawable.ic_list, "Items", iconBgHex = AppColors.teal) {
             startActivity(Intent(this@SettingsActivity, ItemsActivity::class.java))
         })
 
         // ---- Reports (real) ----
-        list.addView(menuRow(R.drawable.ic_trending, "Reports") {
+        list.addView(menuRow(R.drawable.ic_trending, "Reports", iconBgHex = AppColors.teal) {
             startActivity(Intent(this@SettingsActivity, ReportsActivity::class.java))
         })
 
         // ---- Sale (real) ----
-        list.addView(menuRow(R.drawable.ic_receipt, "Sale", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_receipt, "Sale", showChevron = true, iconBgHex = AppColors.teal) {
             startActivity(Intent(this@SettingsActivity, SaleActivity::class.java))
         })
 
         // ---- Purchase (real) ----
-        list.addView(menuRow(R.drawable.ic_cart, "Purchase", showChevron = true) {
+        list.addView(menuRow(R.drawable.ic_cart, "Purchase", showChevron = true, iconBgHex = AppColors.teal) {
             startActivity(Intent(this@SettingsActivity, PurchaseActivity::class.java))
         })
 
@@ -199,7 +199,7 @@ class SettingsActivity : AppCompatActivity() {
         // ---- Settings (expandable — holds all the real settings sections) ----
         val settingsContent = buildSettingsContent()
         settingsContent.visibility = View.GONE
-        val settingsRow = expandableMenuRow(R.drawable.ic_settings, "Settings", target = settingsContent)
+        val settingsRow = expandableMenuRow(R.drawable.ic_settings, "Settings", target = settingsContent, iconBgHex = AppColors.teal)
         list.addView(settingsRow)
         list.addView(settingsContent)
 
@@ -209,7 +209,8 @@ class SettingsActivity : AppCompatActivity() {
         val backupRow = expandableMenuRow(
             R.drawable.ic_archive, "Backup/Restore",
             subtitle = "Auto backup not enabled.",
-            target = backupContent
+            target = backupContent,
+            iconBgHex = AppColors.teal
         )
         list.addView(backupRow)
         list.addView(backupContent)
