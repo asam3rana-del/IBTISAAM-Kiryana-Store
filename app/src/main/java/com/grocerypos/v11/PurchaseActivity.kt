@@ -1389,13 +1389,13 @@ class PurchaseActivity : ThemedActivity() {
         marginWarningText.visibility = View.VISIBLE
         when {
             margin <= 0 -> {
-                marginWarningText.setTextColor(Color.parseColor("#D32F2F"))
+                marginWarningText.setTextColor(Color.parseColor(red))
                 marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
                     "⚠ Loss! Purchase rate ≥ current Sale Rate (Rs %.2f)".format(sale),
                     "⚠ نقصان! خریداری ریٹ موجودہ سیل ریٹ (روپے %.2f) کے برابر یا زیادہ ہے".format(sale))
             }
             marginPct < 10.0 -> {
-                marginWarningText.setTextColor(Color.parseColor("#F57C00"))
+                marginWarningText.setTextColor(Color.parseColor(gold))
                 marginWarningText.text = com.grocerypos.v11.util.Loc.t(this,
                     "⚠ Low margin: Rs %.2f (%.1f%%) vs Sale Rate Rs %.2f".format(margin, marginPct, sale),
                     "⚠ کم منافع: روپے %.2f (%.1f%%) بمقابلہ سیل ریٹ روپے %.2f".format(margin, marginPct, sale))

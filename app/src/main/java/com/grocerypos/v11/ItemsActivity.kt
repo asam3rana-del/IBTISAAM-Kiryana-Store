@@ -46,18 +46,21 @@ class ItemsActivity : ThemedActivity() {
 
     // ================= PREMIUM COLOR PALETTE (matches Settings / Product) =================
     // Pulled from ThemeManager so this screen respects dark mode.
-    private var bg = "#F3F2FA"
+    // CHANGED (eye-friendly pass — align Items' pre-theme-load defaults with the
+    // calm ThemeManager palette Sale/Purchase/Settings already use, so there's no
+    // flash of the old high-chroma purple before loadThemeColors() overwrites these):
+    private var bg = "#F4F5F9"
     private var cardBg = "#FFFFFF"
-    private var primary = "#4A3AFF"
-    private var primaryDark = "#3527D6"
+    private var primary = "#2D3796"
+    private var primaryDark = "#2D3796"
     private var red = "#E5484D"
     private var redDark = "#E5484D"
-    private var purple = "#8B5CF6"
-    private var amber = "#F5A524"
+    private var purple = "#2D3796"
+    private var amber = "#B85C00"
     private var teal = "#0F9B8E"
-    private var textDark = "#1A1A2E"
-    private var textGray = "#8A8A9E"
-    private var border = "#E7E5F3"
+    private var textDark = "#14162B"
+    private var textGray = "#7C8798"
+    private var border = "#E7E9F2"
 
     private fun loadThemeColors() {
         val p = com.grocerypos.v11.util.ThemeManager.palette(this)
