@@ -66,8 +66,7 @@ fun AppCompatActivity.iconBadge(iconRes: Int, colorHex: String, bgHex: String = 
         setImageDrawable(tintedDrawable(iconRes, colorHex, iconSizeDp))
         scaleType = ImageView.ScaleType.CENTER
         background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = sizeDp * 0.32f * resources.displayMetrics.density
+            shape = GradientDrawable.OVAL
             setColor(Color.parseColor(bgHex))
         }
         val px = (sizeDp * resources.displayMetrics.density).toInt()
