@@ -143,7 +143,7 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
         gravity = Gravity.CENTER_VERTICAL
         background = strokedBg(border, cardBg, 12)
         setPadding(dp(12), dp(4), dp(12), dp(4))
-        addView(qsUnitSpinner, LinearLayout.LayoutParams(0, LinearLayout.WRAP_CONTENT, 1f))
+        addView(qsUnitSpinner, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(ImageView(this@showQuickSaleDialog).apply {
             setImageDrawable(this@showQuickSaleDialog.tintedDrawable(R.drawable.ic_chevron_down, textGray, 14))
         })
