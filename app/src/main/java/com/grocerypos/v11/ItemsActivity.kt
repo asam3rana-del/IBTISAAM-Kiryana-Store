@@ -15,7 +15,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.HorizontalScrollView
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
@@ -121,17 +120,28 @@ class ItemsActivity : ThemedActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // FIX (scroll cutoff — user report: last rows in Products/Categories/
-            // Units hidden behind the floating "+Add" button, list looked like it
-            // wouldn't scroll to the end): these were raw pixel values, never
-            // multiplied by density like the FAB's own margins below are — on a
-            // higher-density screen that shrank the *effective* dp clearance below
-            // the FAB's actual footprint, so it covered the last 1-2 rows instead
-            // of sitting past them. Scaled by density now, and bottom bumped up
-            // to safely clear the FAB (~26+26 padding + text + 24 bottomMargin)
-            // on every density.
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            // FIX (list wouldn't scroll to the end — user report, Products/
+            // Categories/Units tabs): this whole column (header + tabs + search +
+            // the RecyclerView) used to be wrapped in an outer ScrollView, with
+            // the RecyclerView itself measured WRAP_CONTENT and
+            // isNestedScrollingEnabled = false so the ScrollView "owned" the
+            // scrolling. In practice a RecyclerView still intercepts vertical
+            // drags for itself first — it calls requestDisallowInterceptTouchEvent
+            // on its parent as soon as a drag starts, even though nested
+            // scrolling is off — which blocked the outer ScrollView from ever
+            // receiving the rest of the gesture. Net effect: the screen only
+            // scrolled a little (whatever the initial touch grabbed) and then
+            // stuck, so the last rows were unreachable — exactly what was
+            // reported. Fix: drop the outer ScrollView entirely. Header/tabs/
+            // search stay fixed (non-scrolling) here in `root`; the
+            // RecyclerView below is given its own remaining space
+            // (height=0dp + weight=1) and scrolls itself natively — no
+            // competing scroll containers, so it reaches every row.
             val d = resources.displayMetrics.density
-            setPadding((24 * d).toInt(), (48 * d).toInt(), (24 * d).toInt(), (150 * d).toInt())
+            setPadding((24 * d).toInt(), (48 * d).toInt(), (24 * d).toInt(), 0)
         }
 
         // ================= HEADER (matches Items/Categories/Reports) =================
@@ -288,11 +298,25 @@ class ItemsActivity : ThemedActivity() {
         searchBox.addView(searchField)
         root.addView(searchBox)
 
-        listContainer = recyclerListView()
+        listContainer = recyclerListView().apply {
+            // Take all remaining vertical space below the fixed header/tabs/
+            // search, and be the ONE thing on this screen that scrolls — see
+            // the note on `root` above for why the previous outer-ScrollView
+            // setup got stuck partway down the list.
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            )
+            isNestedScrollingEnabled = true
+            clipToPadding = false
+            val d = resources.displayMetrics.density
+            // Bottom padding clears the floating "+ Add" button; clipToPadding
+            // = false (above) means rows still scroll up into/past this
+            // padding instead of being cut off by it.
+            setPadding(0, 0, 0, (150 * d).toInt())
+        }
         root.addView(listContainer)
 
-        val scroll = ScrollView(this).apply { addView(root) }
-        outer.addView(scroll)
+        outer.addView(root)
 
         // ================= FLOATING ADD BUTTON =================
         fab = TextView(this).apply {
