@@ -1521,19 +1521,28 @@ class SaleActivity : AppCompatActivity() {
         }
     }
 
+    // FIX (Double Bill Alert — match by sale DATE, not "last 24 hours"): mirrors the
+    // identical fix in PurchaseActivity.checkDuplicateAndProceed(). This used to
+    // compare `r.createdAt` (real-world instant the earlier sale was saved) against
+    // `now` (real-world instant THIS save was tapped) in a rolling 24-hour window —
+    // so re-entering an old/backdated sale days later never triggered it even for
+    // the exact same customer, amount, AND sale date. Now compares each candidate's
+    // `createdAt` (which doubles as the sale's own recorded date — see
+    // proceedSaveSale's `createdAt = saleDateMillis`) against this sale's
+    // `saleDateMillis` by calendar day, with no time-window cutoff.
     private fun checkDuplicateAndProceedSale(customer: String, grandTotal: Double, onProceed: () -> Unit) {
         val custForMatch = customer.ifBlank { "Walk-in" }
         lifecycleScope.launch {
             val db = PosDatabase.get(this@SaleActivity)
             val recent = db.saleDao().allSales()
-            val windowMillis = 24 * 60 * 60 * 1000L
-            val now = System.currentTimeMillis()
+            val dayFmt = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
+            val targetDay = dayFmt.format(Date(saleDateMillis))
             val duplicate = recent.firstOrNull { r ->
                 r.invoice != editInvoice &&
                 r.status != "returned" &&
                 r.customerName.equals(custForMatch, ignoreCase = true) &&
                 r.total == grandTotal &&
-                (now - r.createdAt) <= windowMillis
+                dayFmt.format(Date(r.createdAt)) == targetDay
             }
             if (duplicate == null) { onProceed(); return@launch }
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())

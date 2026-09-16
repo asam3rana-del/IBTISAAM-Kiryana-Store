@@ -1854,23 +1854,31 @@ class PurchaseActivity : ThemedActivity() {
                 .show()
         }
     }
-    // NEW: before actually saving, look for a recent (last 24h), non-returned purchase
-    // from the same supplier for the exact same total — a common sign the bill was
-    // accidentally entered twice. If found, ask for confirmation instead of silently
-    // saving a second copy; skips the bill currently being edited so re-saving an
-    // edit of itself never triggers a false alarm.
+    // FIX (Double Bill Alert — match by bill DATE, not "last 24 hours"): this used
+    // to compare `r.createdAt` (the real-world instant the earlier bill was saved)
+    // against `now` (the real-world instant THIS save button was tapped), inside a
+    // rolling 24-hour window. That only ever caught a duplicate entered back-to-back
+    // in real time — re-entering an old/backdated bill days later (a very common
+    // Kiryana workflow: catching up a week's paper bills in one sitting) never
+    // triggered it, even for the exact same supplier, amount, AND bill date, since
+    // real elapsed time between the two saves was well past 24 hours. The alert is
+    // meant to catch "same bill entered twice", which is a same-party + same-amount
+    // + same BILL DATE question — nothing to do with when either save actually
+    // happened — so this now compares each candidate's `createdAt` (which doubles
+    // as the purchase's own recorded date) against this bill's `purchaseDateMillis`
+    // by calendar day, with no time-window cutoff at all.
     private fun checkDuplicateAndProceed(party: String, grandTotal: Double) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
             val recent = db.purchaseDao().allPurchases()
-            val windowMillis = 24 * 60 * 60 * 1000L
-            val now = System.currentTimeMillis()
+            val dayFmt = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
+            val targetDay = dayFmt.format(Date(purchaseDateMillis))
             val duplicate = recent.firstOrNull { r ->
                 r.billNo != editBillNo &&
                 r.status != "returned" &&
                 r.supplierName.equals(party, ignoreCase = true) &&
                 r.total == grandTotal &&
-                (now - r.createdAt) <= windowMillis
+                dayFmt.format(Date(r.createdAt)) == targetDay
             }
             if (duplicate == null) {
                 proceedSave(party, grandTotal)
