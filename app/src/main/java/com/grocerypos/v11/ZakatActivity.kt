@@ -283,7 +283,13 @@ class ZakatActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ZakatActivity)
             val payable = assets * 0.025
-            db.zakatDao().insertYear(ZakatYear(startDate = start, endDate = end, assetsSnapshot = assets, totalPayable = payable))
+            val newYear = ZakatYear(startDate = start, endDate = end, assetsSnapshot = assets, totalPayable = payable)
+            val id = db.zakatDao().insertYear(newYear)
+            // FIX (Zakat sync): insertYear() only writes the local row — it was never
+            // being handed to the sync queue, so the year never left this device even
+            // though SyncQueueHelper/SyncApi both already support zakat_years end-to-end.
+            SyncQueueHelper.enqueueZakatYear(db, newYear.copy(id = id), this@ZakatActivity)
+            SyncQueueHelper.trigger(this@ZakatActivity)
             Toast.makeText(this@ZakatActivity, Loc.t(this@ZakatActivity, "Zakat year started", "زکوٰۃ سال شروع ہو گیا"), Toast.LENGTH_SHORT).show()
             loadScreen()
         }
@@ -402,7 +408,8 @@ class ZakatActivity : AppCompatActivity() {
     private fun savePayment(year: ZakatYear, amount: Double, method: String, note: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ZakatActivity)
-            db.zakatDao().insertPayment(ZakatPayment(zakatYearId = year.id, amount = amount, method = method, note = note))
+            val newPayment = ZakatPayment(zakatYearId = year.id, amount = amount, method = method, note = note)
+            val paymentId = db.zakatDao().insertPayment(newPayment)
             // Also logged as a normal expense (category "Zakat") so it shows up in the
             // existing Expense reports/P&L alongside everything else — same as every
             // other outgoing payment in this app.
@@ -413,6 +420,17 @@ class ZakatActivity : AppCompatActivity() {
             SyncQueueHelper.enqueue(
                 db, "expense", SyncQueueHelper.expenseEntityId(savedExpense),
                 "create", SyncQueueHelper.expenseJson(savedExpense)
+            )
+            // FIX (Zakat sync): the payment (and, for years created before this fix,
+            // its parent year too) was never being enqueued — only the linked Expense
+            // was. Stamp/enqueue the year first (enqueueZakatYear is a safe no-op-ish
+            // upsert if it's already stamped) so we have its serverId, then enqueue
+            // this payment against it.
+            val stampedYear = SyncQueueHelper.enqueueZakatYear(db, year, this@ZakatActivity)
+            SyncQueueHelper.enqueueZakatPayment(
+                db, newPayment.copy(id = paymentId),
+                stampedYear.serverId ?: SyncQueueHelper.zakatYearEntityId(stampedYear),
+                this@ZakatActivity
             )
             SyncQueueHelper.trigger(this@ZakatActivity)
             Toast.makeText(this@ZakatActivity, Loc.t(this@ZakatActivity, "Payment saved", "ادائیگی محفوظ ہو گئی"), Toast.LENGTH_SHORT).show()

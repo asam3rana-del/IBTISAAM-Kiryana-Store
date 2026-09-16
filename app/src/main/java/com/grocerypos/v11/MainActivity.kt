@@ -317,9 +317,12 @@ class MainActivity : ThemedActivity() {
                 startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java).putExtra("quickPayment", true))
             }
         )
+        // NOTE: Customers & Suppliers moved to sit in Day book's old grid position
+        // (right after Payments), per user request — with Day book shifting down
+        // to where Customers & Suppliers used to be.
         quickActions.add(
-            QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
-                startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
+            QuickAction("Customers &\nSuppliers", "Manage ledgers & dues", R.drawable.ic_people, flatPinkBg, flatPinkFg) {
+                startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java))
             }
         )
         // ---- ADDED (dashboard fit for tablet): one tap into Stock Report with
@@ -341,8 +344,8 @@ class MainActivity : ThemedActivity() {
             )
         }
         quickActions.add(
-            QuickAction("Customers &\nSuppliers", "Manage ledgers & dues", R.drawable.ic_people, flatPinkBg, flatPinkFg) {
-                startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java))
+            QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
+                startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
             }
         )
         if (role == "manager" || role == "cashier") {

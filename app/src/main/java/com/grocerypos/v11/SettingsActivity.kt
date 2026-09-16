@@ -181,6 +181,14 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@SettingsActivity, CashActivity::class.java))
         })
 
+        // FIX: Shell Ledger — the screen and its full Room backend already existed
+        // (ShellLedgerActivity.kt / ShellCustomer / ShellTransaction /
+        // ShopEmptyShellLog) but had no manifest entry and no menu row, so there was
+        // no way to reach it from anywhere in the app. Wired up here + AndroidManifest.
+        list.addView(menuRow(R.drawable.ic_box, "Shell Ledger", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, ShellLedgerActivity::class.java))
+        })
+
         // ---- Sync Now (now shows live Connected/Offline status) ----
         list.addView(buildSyncRow())
 
