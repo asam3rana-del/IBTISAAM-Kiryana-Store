@@ -75,10 +75,10 @@ class MainActivity : ThemedActivity() {
     private val partyGreenBg = "#EAF3DE"
     private val partyRed = "#D32F4A"
     private val partyRedBg = "#FCEBEB"
-    private val headerStart = "#0F1450"
-    private val headerMid = "#2A2E8F"
-    private val headerEnd = "#4B4FCF"
-    private val goldAccent = "#F2C94C"
+    private val headerStart = "#0D1B4C"
+    private val headerMid = "#0D1B4C"
+    private val headerEnd = "#14297A"
+    private val goldAccent = "#FF8A00"
 
     // ---- Pulls this screen's theme-dependent colors from the app-wide ThemeManager (shared
     // across every activity — see ThemeManager.kt / ThemedActivity.kt). ----
@@ -133,13 +133,13 @@ class MainActivity : ThemedActivity() {
             setBackgroundColor(Color.parseColor(bgColor))
         }
 
-        // ================= HEADER — flat surface, no gradient (app-wide flat redesign) =================
+        // ================= HEADER — solid navy bar (Khatabook-style), white text =================
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(26, 40, 26, 24)
+            setPadding(26, 44, 26, 26)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor(cardWhite))
-                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 28f, 28f, 28f, 28f)
+                setColor(Color.parseColor(headerStart))
+                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 24f, 24f, 24f, 24f)
             }
             elevation = 0f
         }
@@ -153,16 +153,16 @@ class MainActivity : ThemedActivity() {
             val size = (40 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(size, size)
             val chipBg = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(flatPurpleBg))
+                cornerRadius = 13f * resources.displayMetrics.density
+                setColor(Color.parseColor("#1FFFFFFF"))
             }
             isClickable = true
             background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.parseColor(flatPurpleFg)).withAlpha(40),
+                android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(60),
                 chipBg, null
             )
             addView(ImageView(this@MainActivity).apply {
-                setImageDrawable(tintedDrawable(R.drawable.ic_settings, flatPurpleFg, 17))
+                setImageDrawable(tintedDrawable(R.drawable.ic_settings, "#FFFFFF", 17))
                 scaleType = ImageView.ScaleType.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             })
@@ -177,7 +177,7 @@ class MainActivity : ThemedActivity() {
         })
 
         // ---- Day/night toggle — shows the icon for the mode you'd switch TO. ----
-        topRow.addView(premiumIconBadge(if (ThemeManager.isDarkMode(this)) R.drawable.ic_sun else R.drawable.ic_moon, flatAmberBg, flatAmberFg, 40, 17).apply {
+        topRow.addView(headerIconChip(if (ThemeManager.isDarkMode(this)) R.drawable.ic_sun else R.drawable.ic_moon).apply {
             isClickable = true
             setOnClickListener { toggleTheme() }
         })
@@ -190,7 +190,7 @@ class MainActivity : ThemedActivity() {
         // (Admin/Manager/Cashier); tapping a name verifies fingerprint first (falls
         // back to that user's password) and switches the session instantly, without
         // going through the full Login screen / OTP flow. ----
-        topRow.addView(premiumIconBadge(R.drawable.ic_sync, flatTealBg, flatTealFg, 40, 16).apply {
+        topRow.addView(headerIconChip(R.drawable.ic_sync).apply {
             isClickable = true
             setOnClickListener { openQuickSwitchDialog() }
         })
@@ -204,7 +204,7 @@ class MainActivity : ThemedActivity() {
             addView(TextView(this@MainActivity).apply {
                 text = role.replaceFirstChar { it.uppercase() } + " Panel"
                 textSize = 9f
-                setTextColor(Color.parseColor(textMuted))
+                setTextColor(Color.parseColor("#AEB8E0"))
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
                 setPadding(0, 5, 0, 0)
@@ -216,19 +216,12 @@ class MainActivity : ThemedActivity() {
         shopNameHeader = TextView(this).apply {
             text = "IBTISAAM Kiryana Store"
             textSize = 19.5f
-            setTextColor(Color.parseColor(textDark))
+            setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
-            setPadding(8, 16, 8, 0)
+            setPadding(8, 18, 8, 0)
         }
         header.addView(shopNameHeader)
-
-        header.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (1.2 * resources.displayMetrics.density).toInt()).apply {
-                topMargin = (16 * resources.displayMetrics.density).toInt()
-            }
-            setBackgroundColor(Color.parseColor(border))
-        })
 
         root.addView(header)
 
@@ -360,7 +353,7 @@ class MainActivity : ThemedActivity() {
 
         // ================= CUSTOMERS & SUPPLIERS — dues summary =================
         body.addView(buildCustomerSupplierSection())
-        body.addView(spacer(20))
+        body.addView(spacer(100)) // clearance so the last card isn't hidden behind the bottom nav bar
 
         root.addView(body)
 
@@ -368,12 +361,104 @@ class MainActivity : ThemedActivity() {
             setBackgroundColor(Color.parseColor(bgColor))
             addView(root)
         }
-        setContentView(scroll)
+
+        // ================= BOTTOM NAV + FAB (Khatabook-style) =================
+        val screen = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor(bgColor))
+            addView(scroll, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
+
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(8, 14, 8, 14)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadii = floatArrayOf(22f, 22f, 22f, 22f, 0f, 0f, 0f, 0f)
+            }
+            elevation = 18f
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.BOTTOM
+            }
+            addView(bottomNavItem(R.drawable.ic_store, "Home", selected = true) { })
+            addView(bottomNavItem(R.drawable.ic_book, "Day book", selected = false) {
+                startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
+            })
+            addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }) // gap for the FAB notch
+            addView(bottomNavItem(R.drawable.ic_people, "Parties", selected = false) {
+                startActivity(Intent(this@MainActivity, PartyDashboardActivity::class.java))
+            })
+            addView(bottomNavItem(R.drawable.ic_settings, "More", selected = false) {
+                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+            })
+        }
+        screen.addView(bottomBar)
+
+        // ---- Floating "+" button — jumps straight into New Sale, same shortcut Khatabook's
+        // FAB gives for "new entry", sitting centered above the bottom bar's middle notch. ----
+        screen.addView(TextView(this).apply {
+            text = "+"
+            textSize = 30f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 4)
+            val size = (58 * resources.displayMetrics.density).toInt()
+            val fabBg = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(goldAccent))
+            }
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(60),
+                fabBg, fabBg
+            )
+            elevation = 22f
+            isClickable = true
+            layoutParams = FrameLayout.LayoutParams(size, size).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = (26 * resources.displayMetrics.density).toInt()
+            }
+            setOnClickListener { startActivity(Intent(this@MainActivity, SaleActivity::class.java)) }
+        })
+
+        setContentView(screen)
 
         loadDashboard()
         loadShopName()
         loadPartySummary()
         observeSyncPending()
+    }
+
+    // ---- one bottom-nav tab: icon + tiny label, navy when selected, muted otherwise
+    // (Khatabook-style persistent bottom bar instead of a drawer-only nav). ----
+    private fun bottomNavItem(iconRes: Int, label: String, selected: Boolean, onClick: () -> Unit): LinearLayout {
+        val tint = if (selected) headerStart else textMuted
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(6, 6, 6, 2)
+            isClickable = true
+            isFocusable = true
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.parseColor(textMuted)).withAlpha(40), null, null
+            )
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            addView(ImageView(this@MainActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, tint, 18))
+                scaleType = ImageView.ScaleType.CENTER
+                layoutParams = LinearLayout.LayoutParams((22 * resources.displayMetrics.density).toInt(), (22 * resources.displayMetrics.density).toInt())
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = label
+                textSize = 10f
+                setTextColor(Color.parseColor(tint))
+                setTypeface(typeface, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                gravity = Gravity.CENTER
+                setPadding(0, 4, 0, 0)
+            })
+            setOnClickListener { onClick() }
+        }
     }
 
     override fun onResume() {
@@ -419,19 +504,42 @@ class MainActivity : ThemedActivity() {
     private fun premiumIconBadge(iconRes: Int, bgHex: String, fgHex: String, sizeDp: Int, iconSizeDp: Int): ImageView =
         iconBadge(iconRes, fgHex, bgHex, sizeDp, iconSizeDp)
 
-    // ---- flat circular logo badge — solid soft-purple fill, no gradient rings ----
+    // ---- translucent-white square chip for icons sitting directly on the navy header
+    // (Khatabook-style: white glyphs on a soft white-alpha tile instead of a pastel badge). ----
+    private fun headerIconChip(iconRes: Int, sizeDp: Int = 40, iconSizeDp: Int = 17): FrameLayout {
+        val size = (sizeDp * resources.displayMetrics.density).toInt()
+        return FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            val chipBg = GradientDrawable().apply {
+                cornerRadius = 13f * resources.displayMetrics.density
+                setColor(Color.parseColor("#1FFFFFFF"))
+            }
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.WHITE).withAlpha(60),
+                chipBg, null
+            )
+            addView(ImageView(this@MainActivity).apply {
+                setImageDrawable(tintedDrawable(iconRes, "#FFFFFF", iconSizeDp))
+                scaleType = ImageView.ScaleType.CENTER
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            })
+        }
+    }
+
+    // ---- flat rounded-square logo badge on the navy header — translucent white fill, bold
+    // white initials (Khatabook-style avatar tile instead of a pastel circle). ----
     private fun premiumLogoBadge(sizeDp: Int): FrameLayout {
         val size = (sizeDp * resources.displayMetrics.density).toInt()
         return FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(size, size)
             background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(flatPurpleBg))
+                cornerRadius = 13f * resources.displayMetrics.density
+                setColor(Color.parseColor("#26FFFFFF"))
             }
             addView(TextView(this@MainActivity).apply {
                 text = "IK"
                 textSize = 13f
-                setTextColor(Color.parseColor(flatPurpleFg))
+                setTextColor(Color.WHITE)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
@@ -796,9 +904,9 @@ class MainActivity : ThemedActivity() {
 
     private fun quickSwitchRow(user: User, isCurrent: Boolean, onTap: () -> Unit): LinearLayout {
         val roleColor = when (user.role) {
-            "admin" -> "#4A3AFF"
+            "admin" -> "#0D1B4C"
             "manager" -> "#2F6FED"
-            else -> "#F5A524"
+            else -> "#FF8A00"
         }
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -961,7 +1069,7 @@ class MainActivity : ThemedActivity() {
         val valueText = TextView(this).apply {
             text = "Rs 0.00"
             setTextColor(Color.parseColor(tintFgHex))
-            textSize = 22f
+            textSize = 24f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(0, 6, 0, 0)
         }

@@ -53,50 +53,53 @@ object ThemeManager {
     private const val PREFS_NAME = "app_prefs"
     private const val KEY_DARK_MODE = "dark_mode"
 
+    // Khatabook-style ledger palette: deep navy header, white cards on a soft grey
+    // canvas, and fixed green(get)/red(give) semantics — see partyGreen/partyRed
+    // in MainActivity for where the get/give colors are actually consumed.
     val LIGHT = AppPalette(
-        bg = "#F4F6F8",
+        bg = "#F4F5F9",
         cardWhite = "#FFFFFF",
-        navy = "#0B2545",
+        navy = "#0D1B4C",
         teal = "#0F9B8E",
         red = "#E5484D",
-        textDark = "#0B2545",
+        textDark = "#14162B",
         textMuted = "#7C8798",
-        border = "#E3E8EE",
-        amber = "#F5A524",
-        fieldFill = "#FAFBFC",
-        headerSubtitleColor = "#9FB4CC",
+        border = "#E7E9F2",
+        amber = "#FF8A00",
+        fieldFill = "#F4F5F9",
+        headerSubtitleColor = "#AEB8E0",
         headerBadgeOverlay = "#33FFFFFF",
         savedHighlightBg = "#E9FBF9",
 
-        flatPurpleBg = "#EEEDFE", flatPurpleFg = "#534AB7",
-        flatCoralBg = "#FAECE7", flatCoralFg = "#993C1D",
-        flatBlueBg = "#E6F1FB", flatBlueFg = "#185FA5",
+        flatPurpleBg = "#E7E9FB", flatPurpleFg = "#2D3796",
+        flatCoralBg = "#FDEAE3", flatCoralFg = "#C1440E",
+        flatBlueBg = "#E3ECFE", flatBlueFg = "#1450C7",
         flatPinkBg = "#FBEAF0", flatPinkFg = "#993556",
-        flatTealBg = "#E1F5EE", flatTealFg = "#085041",
-        flatAmberBg = "#FAEEDA", flatAmberFg = "#854F0B"
+        flatTealBg = "#DFF6EC", flatTealFg = "#0A8A4E",
+        flatAmberBg = "#FFEFD9", flatAmberFg = "#B85C00"
     )
 
     val DARK = AppPalette(
-        bg = "#10151F",
-        cardWhite = "#1B2334",
-        navy = "#0B2545",
+        bg = "#0B0F1E",
+        cardWhite = "#161B2E",
+        navy = "#0D1B4C",
         teal = "#14B8A6",
         red = "#F0666B",
         textDark = "#EAEFF7",
         textMuted = "#8B95A8",
-        border = "#2A3346",
-        amber = "#F5A524",
+        border = "#262C42",
+        amber = "#FF9E33",
         fieldFill = "#161D2C",
-        headerSubtitleColor = "#9FB4CC",
+        headerSubtitleColor = "#AEB8E0",
         headerBadgeOverlay = "#33FFFFFF",
         savedHighlightBg = "#12332F",
 
-        flatPurpleBg = "#3C3489", flatPurpleFg = "#CECBF6",
-        flatCoralBg = "#712B13", flatCoralFg = "#F5C4B3",
-        flatBlueBg = "#0C447C", flatBlueFg = "#B5D4F4",
+        flatPurpleBg = "#2C2F7A", flatPurpleFg = "#C7CBF6",
+        flatCoralBg = "#6E2E10", flatCoralFg = "#F6C4A9",
+        flatBlueBg = "#0E3A78", flatBlueFg = "#BAD3F8",
         flatPinkBg = "#72243E", flatPinkFg = "#F4C0D1",
-        flatTealBg = "#085041", flatTealFg = "#9FE1CB",
-        flatAmberBg = "#633806", flatAmberFg = "#FAC775"
+        flatTealBg = "#0A4A34", flatTealFg = "#8FE7C0",
+        flatAmberBg = "#5C3A05", flatAmberFg = "#FFC26A"
     )
 
     fun isDarkMode(context: Context): Boolean =
