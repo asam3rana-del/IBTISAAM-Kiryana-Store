@@ -47,6 +47,8 @@ class FakeSaleRepository(
 
     var findSaleResult: Sale? = null
     var itemsForInvoiceResult: List<SaleItem> = emptyList()
+    // NEW (Split Payment): configurable stand-in for paymentsForInvoice().
+    var paymentsForInvoiceResult: List<Pair<String, Double>> = emptyList()
 
     // ---- Recorded calls, for assertions ----
     var lastSaveSaleCall: SaveSaleCallArgs? = null
@@ -65,7 +67,10 @@ class FakeSaleRepository(
         val discount: Double,
         val total: Double,
         val paid: Double,
-        val isUpdate: Boolean
+        val isUpdate: Boolean,
+        // NEW (Split Payment): the (method, amount) pairs the use case forwarded,
+        // so tests can assert on split-tender behavior too.
+        val payments: List<Pair<String, Double>> = emptyList()
     )
 
     data class SaveQuickSaleCallArgs(
@@ -117,7 +122,8 @@ class FakeSaleRepository(
         paid: Double,
         lines: List<com.grocerypos.v11.domain.SaleLine>,
         original: Sale?,
-        originalItems: List<SaleItem>
+        originalItems: List<SaleItem>,
+        payments: List<Pair<String, Double>>
     ): SaleSaveResult {
         lastSaveSaleCall = SaveSaleCallArgs(
             invoice = invoice,
@@ -128,7 +134,8 @@ class FakeSaleRepository(
             discount = discount,
             total = total,
             paid = paid,
-            isUpdate = original != null
+            isUpdate = original != null,
+            payments = payments
         )
         saveSaleThrows?.let { throw it }
         saveSaleThrowsDuplicate?.let { throw it }
@@ -143,6 +150,8 @@ class FakeSaleRepository(
     override suspend fun deleteSale(invoice: String, original: Sale?, originalItems: List<SaleItem>) {
         deleteSaleCallCount++
     }
+
+    override suspend fun paymentsForInvoice(invoice: String): List<Pair<String, Double>> = paymentsForInvoiceResult
 
     override suspend fun saveQuickSale(
         product: Product,
