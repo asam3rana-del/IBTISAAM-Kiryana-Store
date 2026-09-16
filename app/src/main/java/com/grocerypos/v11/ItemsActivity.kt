@@ -121,7 +121,17 @@ class ItemsActivity : ThemedActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 48, 24, 130)
+            // FIX (scroll cutoff — user report: last rows in Products/Categories/
+            // Units hidden behind the floating "+Add" button, list looked like it
+            // wouldn't scroll to the end): these were raw pixel values, never
+            // multiplied by density like the FAB's own margins below are — on a
+            // higher-density screen that shrank the *effective* dp clearance below
+            // the FAB's actual footprint, so it covered the last 1-2 rows instead
+            // of sitting past them. Scaled by density now, and bottom bumped up
+            // to safely clear the FAB (~26+26 padding + text + 24 bottomMargin)
+            // on every density.
+            val d = resources.displayMetrics.density
+            setPadding((24 * d).toInt(), (48 * d).toInt(), (24 * d).toInt(), (150 * d).toInt())
         }
 
         // ================= HEADER (matches Items/Categories/Reports) =================
@@ -837,11 +847,9 @@ class ItemsActivity : ThemedActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 10) }
 
-                addView(ImageView(this@ItemsActivity).apply {
-                    setImageDrawable(tintedDrawable(R.drawable.ic_ruler, textGray, 15))
-                    val px = (15 * resources.displayMetrics.density).toInt()
-                    layoutParams = LinearLayout.LayoutParams(px, px).apply { marginEnd = (8 * resources.displayMetrics.density).toInt() }
-                })
+                // ---- CHANGE (sada/plain like Parties/Transactions/Items tabs —
+                // user asked to remove the leading icon here too): dropped the
+                // ic_ruler icon that used to sit before the unit name. ----
                 addView(TextView(this@ItemsActivity).apply {
                     text = u.name
                     textSize = 14f
