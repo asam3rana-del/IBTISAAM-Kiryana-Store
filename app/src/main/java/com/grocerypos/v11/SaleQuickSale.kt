@@ -21,6 +21,7 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -125,10 +126,29 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
     })
     val qsUnitSpinner = Spinner(this).apply {
         adapter = ArrayAdapter(this@showQuickSaleDialog, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
-        background = strokedBg(border, cardBg, 12)
-        setPadding(dp(12), dp(10), dp(12), dp(10))
+        background = null
     }
-    container.addView(qsUnitSpinner)
+    // FIX (user report: Unit box looked like plain static text, not changeable):
+    // the Spinner above already had real tap-to-change behavior and already
+    // defaults correctly (defaultUnitIndexFor() — 3-tier picks the 2nd/secondary
+    // unit, fewer tiers fall back to the only/last one), but giving it the same
+    // flat strokedBg() as the other fields replaced Android's default spinner
+    // chrome, which is what normally draws the dropdown arrow — so nothing on
+    // screen signaled it was tappable. Wrapping it with a visible chevron here,
+    // same ic_chevron_down + textGray treatment SettingsActivity's chevronText()
+    // uses for its own flat dropdown fields, fixes that without touching the
+    // (already-correct) selection logic.
+    val qsUnitSpinnerRow = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = strokedBg(border, cardBg, 12)
+        setPadding(dp(12), dp(4), dp(12), dp(4))
+        addView(qsUnitSpinner, LinearLayout.LayoutParams(0, LinearLayout.WRAP_CONTENT, 1f))
+        addView(ImageView(this@showQuickSaleDialog).apply {
+            setImageDrawable(this@showQuickSaleDialog.tintedDrawable(R.drawable.ic_chevron_down, textGray, 14))
+        })
+    }
+    container.addView(qsUnitSpinnerRow)
     container.addView(spacer(12))
 
     container.addView(TextView(this).apply {
