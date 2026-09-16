@@ -1079,7 +1079,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(18, 16, 18, 16)
+            setPadding(20, 18, 20, 18)
             background = elevatedCardBg()
             elevation = 1.5f
             layoutParams = LinearLayout.LayoutParams(
@@ -1101,11 +1101,13 @@ class PartyDashboardActivity : AppCompatActivity() {
                 startActivity(intent)
             }
 
-            addView(iconBadge(if (row.isSale) R.drawable.ic_cart else R.drawable.ic_receipt, accent, sizeDp = 38, iconSizeDp = 17))
+            // ---- CHANGE (sada/plain like Parties tab — user asked to match
+            // dashboardPartyRow's plain-text look): dropped the leading
+            // ic_cart/ic_receipt icon badge that used to sit here. ----
 
             val infoCol = LinearLayout(this@PartyDashboardActivity).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(16, 0, 12, 0)
+                setPadding(0, 0, 12, 0)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             infoCol.addView(TextView(this@PartyDashboardActivity).apply {
@@ -1208,7 +1210,7 @@ class PartyDashboardActivity : AppCompatActivity() {
     private fun itemRow(c: ItemAgg): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18, 16, 18, 16)
+            setPadding(20, 18, 20, 18)
             background = elevatedCardBg()
             elevation = 1.5f
             layoutParams = LinearLayout.LayoutParams(
@@ -1218,11 +1220,12 @@ class PartyDashboardActivity : AppCompatActivity() {
             setOnClickListener { showItemDetailDialog(c) }
 
             val headRow = LinearLayout(this@PartyDashboardActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            headRow.addView(iconBadge(R.drawable.ic_box, navy, sizeDp = 38, iconSizeDp = 17))
+            // ---- CHANGE (sada/plain like Parties tab — icon removed here too):
+            // dropped the leading ic_box icon badge, same as transactionRow above. ----
             val topRow = LinearLayout(this@PartyDashboardActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(16, 0, 0, 0)
+                setPadding(0, 0, 0, 0)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             topRow.addView(TextView(this@PartyDashboardActivity).apply {
