@@ -101,6 +101,11 @@ class ItemsActivity : ThemedActivity() {
     private lateinit var listContainer: RecyclerView
     private lateinit var fab: TextView
 
+    // ---- Debounce state for the search box (see the FIX comment where
+    // searchField is built) ----
+    private val searchDebounceHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val searchDebounceRunnable = Runnable { renderCurrentTab() }
+
     // ---- Rate List import: lets the user pick the CSV back up (after editing rates
     // in Excel/Sheets) via the system file picker, and applies the edited rates back
     // onto the matching products (matched by the hidden "Code" column). ----
@@ -290,9 +295,17 @@ class ItemsActivity : ThemedActivity() {
             setTextColor(Color.parseColor(textDark))
             background = null
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            // FIX (perf — app feels slow sometimes): renderCurrentTab() rebuilds a
+            // full row View per item on the main thread. Firing that on every
+            // single keystroke means fast typing on a big catalog queues up many
+            // back-to-back full rebuilds and the UI visibly stutters while typing.
+            // Debounce it: wait 200ms after the user stops typing before
+            // re-rendering, and cancel any still-pending render from a previous
+            // keystroke. Feels identical to typing normally, just without the lag.
             addTextChangedListener {
                 searchQuery = it.trim()
-                renderCurrentTab()
+                searchDebounceHandler.removeCallbacks(searchDebounceRunnable)
+                searchDebounceHandler.postDelayed(searchDebounceRunnable, 200)
             }
         }
         searchBox.addView(searchField)
@@ -356,11 +369,20 @@ class ItemsActivity : ThemedActivity() {
         super.onBackPressed()
     }
 
+    override fun onDestroy() {
+        searchDebounceHandler.removeCallbacks(searchDebounceRunnable)
+        super.onDestroy()
+    }
+
     // ================= TAB SWITCHING =================
     private fun switchTab(tab: Tab) {
         currentTab = tab
         openCategoryName = null
         searchQuery = ""
+        // Cancel any pending debounced re-render from typing on the previous
+        // tab — switchTab renders immediately below, so a stale callback
+        // shouldn't fire a redundant render right after.
+        searchDebounceHandler.removeCallbacks(searchDebounceRunnable)
         searchField.setText("")
         searchField.hint = when (tab) {
             Tab.PRODUCTS -> "Search Items by Name or Code"
@@ -395,6 +417,7 @@ class ItemsActivity : ThemedActivity() {
     private fun closeCategoryDetail() {
         openCategoryName = null
         searchQuery = ""
+        searchDebounceHandler.removeCallbacks(searchDebounceRunnable)
         searchField.setText("")
         searchField.hint = "Search Category"
         fab.text = "＋  Add Category"

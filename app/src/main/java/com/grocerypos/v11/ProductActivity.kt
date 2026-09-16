@@ -127,6 +127,21 @@ class ProductActivity : ThemedActivity() {
     private var justSavedBarcode: String? = null
     private var pendingScrollToSaved = false
 
+    // FIX (perf — user report: app feels slow "jese item open kre", i.e. every
+    // time a single product is opened to edit): this whole screen doubles as an
+    // Add/Edit form AND a full browsable "Products" list at the bottom
+    // (buildProductsSection/renderProducts, one heavy multi-line card per
+    // product with gradients + rounded corners). That list section starts
+    // View.GONE and only ever becomes visible if the user taps the header's
+    // "View List" button (toggleProductsList()) — but loadProducts() used to
+    // be kicked off unconditionally in onCreate(), which built every one of
+    // those heavy card Views for the ENTIRE product catalog on the main
+    // thread, on every single open of this Activity, even just to edit one
+    // item, whether or not the list was ever shown. That's the main-thread
+    // stall behind the reported slowness. Now loadProducts() only starts the
+    // first time the list is actually opened (see toggleProductsList()).
+    private var productsListLoadStarted = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -211,7 +226,10 @@ class ProductActivity : ThemedActivity() {
 
         loadCategories()
         loadUnits()
-        loadProducts()
+        // NOTE: loadProducts() (full catalog list at the bottom of this screen)
+        // is intentionally NOT started here anymore — see the comment on
+        // productsListLoadStarted above. It's started lazily by
+        // toggleProductsList() the first time the user actually opens that list.
 
         intent.getStringExtra(EXTRA_EDIT_BARCODE)?.let { barcode ->
             lifecycleScope.launch {
@@ -981,6 +999,12 @@ class ProductActivity : ThemedActivity() {
     private fun toggleProductsList() {
         if (!::productsSectionContainer.isInitialized) return
         productsSectionContainer.visibility = View.VISIBLE
+        // Lazy-load: the heavy full-catalog render only ever needs to happen
+        // once this list is actually being shown — see productsListLoadStarted.
+        if (!productsListLoadStarted) {
+            productsListLoadStarted = true
+            loadProducts()
+        }
         scrollToProductsList()
     }
 
