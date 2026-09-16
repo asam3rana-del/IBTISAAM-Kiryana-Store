@@ -2,11 +2,7 @@ package com.grocerypos.v11.sync
 
 import android.content.Context
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Source
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.tasks.await
 import com.grocerypos.v11.CloudConfigStore
 import com.grocerypos.v11.BranchConfigStore
@@ -295,38 +291,8 @@ object SyncApi {
         val serverTime: Long = System.currentTimeMillis()
     )
 
-    // ADDED (sync reliability): a single Source.SERVER call has zero tolerance for a
-    // momentary network blip — one dropped packet on any one of the 17 collection
-    // queries used to kill the entire pull with Firestore's raw "Failed to get
-    // documents from server" error. This retries each query a few times with backoff
-    // before giving up, so a transient hiccup no longer fails the whole sync.
-    private suspend fun <T> retryOnUnavailable(
-        attempts: Int = 3,
-        initialDelayMs: Long = 500,
-        block: suspend () -> T
-    ): T {
-        var lastError: Exception? = null
-        var delayMs = initialDelayMs
-        repeat(attempts) { attempt ->
-            try {
-                return block()
-            } catch (e: FirebaseFirestoreException) {
-                lastError = e
-                // Only retry on transient/network-shaped failures; anything else
-                // (permission denied, not found, etc.) should fail fast as before.
-                val retryable = e.code == FirebaseFirestoreException.Code.UNAVAILABLE ||
-                    e.code == FirebaseFirestoreException.Code.DEADLINE_EXCEEDED ||
-                    e.code == FirebaseFirestoreException.Code.ABORTED
-                if (!retryable || attempt == attempts - 1) throw e
-            }
-            delay(delayMs)
-            delayMs *= 2
-        }
-        throw lastError ?: IllegalStateException("retryOnUnavailable: unreachable")
-    }
-
-    suspend fun pull(context: Context, since: Long): PullResult = coroutineScope {
-        val db = firestoreFor(context) ?: return@coroutineScope PullResult(serverTime = since)
+    suspend fun pull(context: Context, since: Long): PullResult {
+        val db = firestoreFor(context) ?: return PullResult(serverTime = since)
         val branchId = BranchConfigStore.current
         if (branchId.isBlank()) {
             throw BranchNotConfiguredException(
@@ -338,46 +304,23 @@ object SyncApi {
             .whereEqualTo("branchId", branchId)
             .whereGreaterThan("updatedAt", since)
 
-        // Fire all 17 collection reads in parallel, each with its own retry, instead
-        // of one-after-another. This cuts how long the whole pull is exposed to a bad
-        // network window from "sum of 17 calls" down to "the slowest single call".
-        fun fetch(collection: String) = async { retryOnUnavailable { query(collection).get(Source.SERVER).await() } }
-
-        val customersSnapD = fetch("customers")
-        val suppliersSnapD = fetch("suppliers")
-        val productsSnapD = fetch("products")
-        val usersSnapD = fetch("users")
-        val salesSnapD = fetch("sales")
-        val purchasesSnapD = fetch("purchases")
-        val paymentsSnapD = fetch("payments")
-        val expensesSnapD = fetch("expenses")
-        val cashTxSnapD = fetch("cash_transactions")
-        val unitsSnapD = fetch("units")
-        val categoriesSnapD = fetch("categories")
-        val zakatYearsSnapD = fetch("zakat_years")
-        val zakatPaymentsSnapD = fetch("zakat_payments")
-        val returnsSnapD = fetch("returns")
-        val stockMovementsSnapD = fetch("stock_movements")
-        val appSettingsSnapD = fetch("app_settings")
-        val cashRegisterSnapD = fetch("cash_register")
-
-        val customersSnap = customersSnapD.await()
-        val suppliersSnap = suppliersSnapD.await()
-        val productsSnap = productsSnapD.await()
-        val usersSnap = usersSnapD.await()
-        val salesSnap = salesSnapD.await()
-        val purchasesSnap = purchasesSnapD.await()
-        val paymentsSnap = paymentsSnapD.await()
-        val expensesSnap = expensesSnapD.await()
-        val cashTxSnap = cashTxSnapD.await()
-        val unitsSnap = unitsSnapD.await()
-        val categoriesSnap = categoriesSnapD.await()
-        val zakatYearsSnap = zakatYearsSnapD.await()
-        val zakatPaymentsSnap = zakatPaymentsSnapD.await()
-        val returnsSnap = returnsSnapD.await()
-        val stockMovementsSnap = stockMovementsSnapD.await()
-        val appSettingsSnap = appSettingsSnapD.await()
-        val cashRegisterSnap = cashRegisterSnapD.await()
+        val customersSnap = query("customers").get(Source.SERVER).await()
+        val suppliersSnap = query("suppliers").get(Source.SERVER).await()
+        val productsSnap = query("products").get(Source.SERVER).await()
+        val usersSnap = query("users").get(Source.SERVER).await()
+        val salesSnap = query("sales").get(Source.SERVER).await()
+        val purchasesSnap = query("purchases").get(Source.SERVER).await()
+        val paymentsSnap = query("payments").get(Source.SERVER).await()
+        val expensesSnap = query("expenses").get(Source.SERVER).await()
+        val cashTxSnap = query("cash_transactions").get(Source.SERVER).await()
+        val unitsSnap = query("units").get(Source.SERVER).await()
+        val categoriesSnap = query("categories").get(Source.SERVER).await()
+        val zakatYearsSnap = query("zakat_years").get(Source.SERVER).await()
+        val zakatPaymentsSnap = query("zakat_payments").get(Source.SERVER).await()
+        val returnsSnap = query("returns").get(Source.SERVER).await()
+        val stockMovementsSnap = query("stock_movements").get(Source.SERVER).await()
+        val appSettingsSnap = query("app_settings").get(Source.SERVER).await()
+        val cashRegisterSnap = query("cash_register").get(Source.SERVER).await()
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
