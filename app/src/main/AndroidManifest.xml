@@ -86,6 +86,12 @@
         <activity android:name=".ui.BillScanActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.ExpenseActivity" android:exported="false" />
 
+        <!-- FIX: Bottle Shell Ledger — screen existed (ShellLedgerActivity.kt) with a
+             full Room-backed backend (ShellCustomer/ShellTransaction/ShopEmptyShellLog)
+             but was never declared here, so it was unreachable — no manifest entry
+             meant it couldn't be launched from anywhere in the app. -->
+        <activity android:name=".ui.ShellLedgerActivity" android:exported="false" />
+
         <!-- NEW: Day Book (Roznamcha) - merged daily ledger -->
         <activity android:name=".ui.DayBookActivity" android:exported="false" />
 
