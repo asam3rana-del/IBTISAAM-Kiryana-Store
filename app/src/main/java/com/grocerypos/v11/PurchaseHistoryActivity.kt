@@ -131,6 +131,22 @@ class PurchaseHistoryActivity : ThemedActivity() {
         }
     }
 
+    // FIX (stale DUE/PAID badge after editing a bill): unlike SaleHistoryActivity,
+    // this screen only ever loaded its rows once, in onCreate(). Each card's
+    // DUE/PAID pill and "Balance: Rs …" line are computed fresh from `row.paid`/
+    // `row.total` on every renderList() call (see the `due = ...` line there), so
+    // the calculation itself was never wrong — but `rows` (in-memory) was never
+    // re-fetched from the DB after coming back from PurchaseActivity's edit
+    // screen (tapping a card opens it, and changing Paid Amount there does
+    // persist correctly). Result: a bill just edited from due -> fully paid (or
+    // paid -> partial) kept showing whatever badge it had when this screen was
+    // first opened, until it was closed and reopened. Mirrors
+    // SaleHistoryActivity.onResume()'s existing refresh() call.
+    override fun onResume() {
+        super.onResume()
+        loadPurchases()
+    }
+
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
