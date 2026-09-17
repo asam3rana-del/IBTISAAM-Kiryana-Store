@@ -43,6 +43,10 @@ class MainActivity : ThemedActivity() {
 
     private lateinit var todaySaleValue: TextView
     private var todayProfitValue: TextView? = null
+    private var todaySaleAmount: Double = 0.0
+    private var todayProfitAmount: Double = 0.0
+    private var isSaleAmountHidden = false
+    private var isProfitAmountHidden = false
     private var role: String = "cashier"
     private lateinit var shopNameHeader: TextView
 
@@ -253,11 +257,23 @@ class MainActivity : ThemedActivity() {
         val saleCardParts = premiumStatCard("Today's sale", flatTealBg, flatTealFg)
         val saleCardView = saleCardParts.first
         todaySaleValue = saleCardParts.second
+        saleCardView.isClickable = true
+        saleCardView.isFocusable = true
+        saleCardView.setOnClickListener {
+            isSaleAmountHidden = !isSaleAmountHidden
+            updateSaleValueDisplay()
+        }
 
         if (role == "admin") {
             val profitCardParts = premiumStatCard("Today's profit", flatBlueBg, flatBlueFg)
             val profitCardView = profitCardParts.first
             todayProfitValue = profitCardParts.second
+            profitCardView.isClickable = true
+            profitCardView.isFocusable = true
+            profitCardView.setOnClickListener {
+                isProfitAmountHidden = !isProfitAmountHidden
+                updateProfitValueDisplay()
+            }
 
             saleCardView.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 9, 0) }
             profitCardView.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(9, 0, 0, 0) }
@@ -983,6 +999,16 @@ class MainActivity : ThemedActivity() {
         return Pair(card, valueText)
     }
 
+    // ---- Tap-to-hide/unhide for the dashboard stat cards. Tapping a card toggles the
+    // amount between its real value and a masked placeholder, without re-querying the DB.
+    private fun updateSaleValueDisplay() {
+        todaySaleValue.text = if (isSaleAmountHidden) "Rs ••••••" else "Rs %.2f".format(todaySaleAmount)
+    }
+
+    private fun updateProfitValueDisplay() {
+        todayProfitValue?.text = if (isProfitAmountHidden) "Rs ••••••" else "Rs %.2f".format(todayProfitAmount)
+    }
+
     private fun spacer(heightPx: Int) = View(this).apply {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, heightPx)
     }
@@ -1009,12 +1035,14 @@ class MainActivity : ThemedActivity() {
             val endOfDay = startOfDay + 24 * 60 * 60 * 1000L
 
             val todaySale = db.saleDao().totalSalesBetween(startOfDay, endOfDay)
-            todaySaleValue.text = "Rs %.2f".format(todaySale)
+            todaySaleAmount = todaySale
+            updateSaleValueDisplay()
 
             if (role == "admin") {
                 val cogs = db.saleDao().cogsBetween(startOfDay, endOfDay)
                 val todayProfit = todaySale - cogs
-                todayProfitValue?.text = "Rs %.2f".format(todayProfit)
+                todayProfitAmount = todayProfit
+                updateProfitValueDisplay()
             }
         }
     }
