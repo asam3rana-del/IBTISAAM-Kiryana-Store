@@ -295,6 +295,55 @@ class ZakatActivity : AppCompatActivity() {
         }
     }
 
+    // ---------------- Edit a saved year's assets/payable ----------------
+
+    // Same input dialog as showStartYearDialog, but pre-filled with the year's
+    // CURRENT saved assets (not a fresh auto-calc — the point is to correct
+    // whatever was saved before), and updates the existing row instead of
+    // inserting a new one.
+    private fun showEditYearDialog(year: ZakatYear) {
+        val padding = (24 * resources.displayMetrics.density).toInt()
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
+        col.addView(TextView(this).apply {
+            text = Loc.t(this@ZakatActivity, "Correct the saved Net Zakatable Assets for this year:", "اس سال کے محفوظ شدہ خالص زکوٰۃ کے قابل اثاثے درست کریں:")
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 0, 0, 12)
+        })
+        val assetsInput = EditText(this).apply {
+            hint = Loc.t(this@ZakatActivity, "Net Zakatable Assets", "خالص زکوٰۃ کے قابل اثاثے")
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText("%.0f".format(year.assetsSnapshot))
+        }
+        col.addView(assetsInput)
+
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Edit Zakat Year", "زکوٰۃ سال میں ترمیم"))
+            .setView(col)
+            .setPositiveButton(Loc.t(this, "Save", "محفوظ کریں")) { _, _ ->
+                val assets = assetsInput.text.toString().toDoubleOrNull()
+                if (assets == null || assets < 0.0) {
+                    Toast.makeText(this, Loc.t(this, "Enter a valid amount", "صحیح رقم لکھیں"), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                updateYearAssets(year, assets)
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    private fun updateYearAssets(year: ZakatYear, assets: Double) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@ZakatActivity)
+            val payable = assets * 0.025
+            val updated = year.copy(assetsSnapshot = assets, totalPayable = payable)
+            db.zakatDao().updateYear(updated)
+            SyncQueueHelper.enqueueZakatYear(db, updated, this@ZakatActivity)
+            Toast.makeText(this@ZakatActivity, Loc.t(this@ZakatActivity, "Zakat year updated", "زکوٰۃ سال تازہ ہو گیا"), Toast.LENGTH_SHORT).show()
+            loadScreen()
+        }
+    }
+
     // ---------------- Active year summary + payment ----------------
 
     private fun activeYearCard(year: ZakatYear, paid: Double): LinearLayout {
@@ -307,10 +356,29 @@ class ZakatActivity : AppCompatActivity() {
             background = strokedBg(border, cardBg, 18)
             applyElevation(this, 2f)
         }
-        card.addView(TextView(this).apply {
-            text = "${fmt.format(Date(year.startDate))} \u2014 ${fmt.format(Date(year.endDate))}"
-            textSize = 12f
-            setTextColor(Color.parseColor(textGray))
+        card.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(this@ZakatActivity).apply {
+                text = "${fmt.format(Date(year.startDate))} \u2014 ${fmt.format(Date(year.endDate))}"
+                textSize = 12f
+                setTextColor(Color.parseColor(textGray))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            // NEW (Zakat edit): the year's assets/payable were only ever settable at
+            // creation time (showStartYearDialog) and then treated as fixed — but the
+            // auto-calc can come out wrong (e.g. Rs 0 if cash/bank/stock data wasn't
+            // ready yet), and there was no way to fix it afterward. This lets
+            // Admin/Manager re-open the same amount dialog against the saved year.
+            addView(TextView(this@ZakatActivity).apply {
+                text = Loc.t(this@ZakatActivity, "Edit", "ترمیم")
+                textSize = 12.5f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.parseColor(primary))
+                setLeadingIcon(R.drawable.ic_edit, primary, 13, 4)
+                setPadding(16, 6, 6, 6)
+                setOnClickListener { showEditYearDialog(year) }
+            })
         })
         card.addView(bigAmountRow(Loc.t(this, "Total Zakat Payable", "کل زکوٰۃ ادا کرنی ہے"), year.totalPayable, primary))
         card.addView(spacer(4))

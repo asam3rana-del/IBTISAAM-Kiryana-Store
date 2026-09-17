@@ -54,6 +54,19 @@ class HistoryActivity : AppCompatActivity() {
         RoomPurchaseRepository(PosDatabase.get(this), applicationContext)
     }
 
+    // NEW (P1 security — item #1, HistoryActivity Admin Lock): Sale/Purchase Edit,
+    // Return and Delete require Admin. isAdmin() decides which buttons even render;
+    // requireAdminOrAbort() is the action-level re-check (item #3) repeated right
+    // before the actual DB write in each action function below.
+    private fun isAdmin(): Boolean =
+        getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") == "admin"
+
+    private fun requireAdminOrAbort(): Boolean {
+        if (isAdmin()) return true
+        Toast.makeText(this, Loc.t(this, "Sirf Admin ye action kar sakta hai", "صرف ایڈمن یہ عمل کر سکتا ہے"), Toast.LENGTH_LONG).show()
+        return false
+    }
+
     companion object {
         // ADDED: lets Reports link straight into Sale History or Purchase History
         // without an extra tap on the in-screen SALES/PURCHASES tabs.
@@ -236,7 +249,7 @@ class HistoryActivity : AppCompatActivity() {
             val dialog = AlertDialog.Builder(this@HistoryActivity).setView(content).create()
             val footer = content.getChildAt(2) as LinearLayout
             footer.addView(outlineButton(Loc.t(this@HistoryActivity, "Close", "بند کریں")) { dialog.dismiss() })
-            if (sale.status != "returned") {
+            if (sale.status != "returned" && isAdmin()) {
                 footer.addView(spacerH(8))
                 footer.addView(filledButton(Loc.t(this@HistoryActivity, "Return", "واپس"), amber) { returnSale(invoice); dialog.dismiss() })
                 footer.addView(spacerH(8))
@@ -263,6 +276,7 @@ class HistoryActivity : AppCompatActivity() {
     // it.qty to Int too, so both branches of the elvis are the same type.
     private fun returnSale(invoice: String) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@HistoryActivity); val sale = db.saleDao().findSale(invoice) ?: return@launch; if (sale.status == "returned") return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
             db.withTransaction {
@@ -285,6 +299,7 @@ class HistoryActivity : AppCompatActivity() {
     // it.qty to Int.
     private fun deleteSale(invoice: String) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@HistoryActivity); val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
             db.withTransaction {
@@ -328,7 +343,7 @@ class HistoryActivity : AppCompatActivity() {
             val dialog = AlertDialog.Builder(this@HistoryActivity).setView(content).create()
             val footer = content.getChildAt(2) as LinearLayout
             footer.addView(outlineButton(Loc.t(this@HistoryActivity, "Close", "بند کریں")) { dialog.dismiss() })
-            if (purchase.status != "returned") {
+            if (purchase.status != "returned" && isAdmin()) {
                 footer.addView(spacerH(8))
                 footer.addView(filledButton(Loc.t(this@HistoryActivity, "Edit", "ترمیم"), primary) {
                     dialog.dismiss()
@@ -352,6 +367,7 @@ class HistoryActivity : AppCompatActivity() {
     // line still behaves exactly like the old whole-bill return.
     private fun openReturnPurchaseDialog(billNo: String, items: List<com.grocerypos.v11.PurchaseItem>) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@HistoryActivity)
             if (items.isEmpty()) return@launch
             val rowMeta = items.map { item ->
@@ -509,6 +525,7 @@ class HistoryActivity : AppCompatActivity() {
     // logic, kept in sync so both entry points to Purchase History behave the same way).
     private fun processPartialReturn(billNo: String, requested: Map<Long, Double>) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@HistoryActivity)
             try {
                 db.withTransaction {
@@ -650,6 +667,7 @@ class HistoryActivity : AppCompatActivity() {
     // IllegalStateException on a line that can't be reversed cleanly.
     private fun deletePurchase(billNo: String) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@HistoryActivity)
             val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)

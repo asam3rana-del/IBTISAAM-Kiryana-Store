@@ -139,6 +139,21 @@ class PartyTransactionActivity : AppCompatActivity() {
     // in-flight load before starting a new one so two loads can never both mutate the list.
     private var loadJob: kotlinx.coroutines.Job? = null
 
+    // NEW (P1 security — item #2, PartyTransactionActivity Admin Lock): billed-item
+    // edit/delete, qty/rate changes and balance-affecting payment edit/delete are
+    // sensitive and admin-only. isAdmin() gates which icons/chips even render;
+    // requireAdminOrAbort() is the action-level re-check (item #3) called again
+    // right before the actual DB write, so a stale button reference or a future
+    // call site can never bypass it.
+    private fun isAdmin(): Boolean =
+        getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") == "admin"
+
+    private fun requireAdminOrAbort(): Boolean {
+        if (isAdmin()) return true
+        Toast.makeText(this, Loc.t(this, "Sirf Admin ye action kar sakta hai", "صرف ایڈمن یہ عمل کر سکتا ہے"), Toast.LENGTH_LONG).show()
+        return false
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         loadThemeColors()
@@ -654,6 +669,7 @@ class PartyTransactionActivity : AppCompatActivity() {
      * entry (found by the shared `reference`) so Cash/Day Book stays in sync too. */
     private fun updatePayment(original: Payment, newAmount: Double, newMethod: String, newNote: String, newDateMillis: Long, newBillRef: String) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@PartyTransactionActivity)
             val delta = newAmount - original.amount
             val reasonText = (if (isCustomer) "Payment received from $partyName" else "Payment made to $partyName") +
@@ -713,6 +729,7 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     private fun deletePayment(payment: Payment) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@PartyTransactionActivity)
             db.withTransaction {
                 db.paymentDao().deleteByReference(payment.reference)
@@ -997,8 +1014,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                                 qtyText = formatQty(item.qty),
                                 amount = item.amount,
                                 accent = accent,
-                                onEdit = { promptEditSaleItem(item, sale!!) { rebuildAndShow() } },
-                                onDelete = { confirmDeleteSaleItem(item, sale!!) { rebuildAndShow() } }
+                                onEdit = if (isAdmin()) ({ promptEditSaleItem(item, sale!!) { rebuildAndShow() } }) else null,
+                                onDelete = if (isAdmin()) ({ confirmDeleteSaleItem(item, sale!!) { rebuildAndShow() } }) else null
                             ))
                         }
                     }
@@ -1018,8 +1035,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                                 qtyText = formatQty(item.qty),
                                 amount = item.amount,
                                 accent = accent,
-                                onEdit = { promptEditPurchaseItem(item, purchase!!) { rebuildAndShow() } },
-                                onDelete = { confirmDeletePurchaseItem(item, purchase!!) { rebuildAndShow() } }
+                                onEdit = if (isAdmin()) ({ promptEditPurchaseItem(item, purchase!!) { rebuildAndShow() } }) else null,
+                                onDelete = if (isAdmin()) ({ confirmDeletePurchaseItem(item, purchase!!) { rebuildAndShow() } }) else null
                             ))
                         }
                     }
@@ -1088,6 +1105,7 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     private fun applySaleItemEdit(item: SaleItem, sale: com.grocerypos.v11.Sale, newQty: Double, newRate: Double, onDone: () -> Unit) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@PartyTransactionActivity)
             try {
                 // FIX (#8 — dangerous editing pattern): the item row change, the parent
@@ -1188,6 +1206,7 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     private fun applyDeleteSaleItem(item: SaleItem, sale: com.grocerypos.v11.Sale, onDone: () -> Unit) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@PartyTransactionActivity)
             try {
                 var deletedWholeSale = false
@@ -1281,6 +1300,7 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     private fun applyPurchaseItemEdit(item: PurchaseItem, purchase: com.grocerypos.v11.Purchase, newQty: Double, newRate: Double, onDone: () -> Unit) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@PartyTransactionActivity)
             try {
                 // FIX (#8 — dangerous editing pattern): the item row change, the parent
@@ -1408,6 +1428,7 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     private fun applyDeletePurchaseItem(item: PurchaseItem, purchase: com.grocerypos.v11.Purchase, onDone: () -> Unit) {
         lifecycleScope.launch {
+            if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@PartyTransactionActivity)
             try {
                 var deletedWholePurchase = false
@@ -1605,8 +1626,8 @@ class PartyTransactionActivity : AppCompatActivity() {
         qtyText: String,
         amount: Double,
         accent: String,
-        onEdit: () -> Unit,
-        onDelete: () -> Unit
+        onEdit: (() -> Unit)?,
+        onDelete: (() -> Unit)?
     ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1635,16 +1656,22 @@ class PartyTransactionActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(accent))
                 setPadding(0, 0, 20, 0)
             })
-            addView(ImageView(this@PartyTransactionActivity).apply {
-                setImageDrawable(tintedDrawable(R.drawable.ic_edit, textDark, 15))
-                setPadding(14, 0, 14, 0)
-                setOnClickListener { onEdit() }
-            })
-            addView(ImageView(this@PartyTransactionActivity).apply {
-                setImageDrawable(tintedDrawable(R.drawable.ic_delete, red, 15))
-                setPadding(6, 0, 0, 0)
-                setOnClickListener { onDelete() }
-            })
+            // NEW (P1 security): edit/delete icons are Admin-only — non-admin sees
+            // just the plain row with no action affordance at all.
+            if (onEdit != null) {
+                addView(ImageView(this@PartyTransactionActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_edit, textDark, 15))
+                    setPadding(14, 0, 14, 0)
+                    setOnClickListener { onEdit() }
+                })
+            }
+            if (onDelete != null) {
+                addView(ImageView(this@PartyTransactionActivity).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_delete, red, 15))
+                    setPadding(6, 0, 0, 0)
+                    setOnClickListener { onDelete() }
+                })
+            }
         }
     }
 
@@ -1775,12 +1802,19 @@ class PartyTransactionActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 10, 0, 0)
             }
-            actionRow.addView(chip(R.drawable.ic_edit, Loc.t(this@PartyTransactionActivity, "Edit", "\u062A\u0631\u0645\u06CC\u0645"), textDark) { showPaymentDialog(existing = payment) })
+            // NEW (P1 security): editing/deleting an existing payment adjusts the
+            // party's balance — Admin-only, matching Billed Items above. Share stays
+            // available to everyone since it doesn't touch any data.
+            if (isAdmin()) {
+                actionRow.addView(chip(R.drawable.ic_edit, Loc.t(this@PartyTransactionActivity, "Edit", "\u062A\u0631\u0645\u06CC\u0645"), textDark) { showPaymentDialog(existing = payment) })
+            }
             actionRow.addView(chip(R.drawable.ic_send, Loc.t(this@PartyTransactionActivity, "Share", "\u0634\u06CC\u0626\u0631"), teal) {
                 shareReceipt(payment.amount, payment.method, payment.note, payment.createdAt, payment.billReference)
             })
-            actionRow.addView(chip(R.drawable.ic_delete, Loc.t(this@PartyTransactionActivity, "Delete", "\u062D\u0630\u0641"), red) { confirmDeletePayment(payment) })
-            (actionRow.getChildAt(2) as LinearLayout).layoutParams = (actionRow.getChildAt(2).layoutParams as LinearLayout.LayoutParams).apply { marginEnd = 0 }
+            if (isAdmin()) {
+                actionRow.addView(chip(R.drawable.ic_delete, Loc.t(this@PartyTransactionActivity, "Delete", "\u062D\u0630\u0641"), red) { confirmDeletePayment(payment) })
+            }
+            (actionRow.getChildAt(actionRow.childCount - 1) as LinearLayout).layoutParams = (actionRow.getChildAt(actionRow.childCount - 1).layoutParams as LinearLayout.LayoutParams).apply { marginEnd = 0 }
             addView(actionRow)
         }
     }

@@ -27,6 +27,7 @@ import com.grocerypos.v11.ui.DayBookActivity
 import com.grocerypos.v11.ui.BackupExportActivity
 import com.grocerypos.v11.ui.PartyDashboardActivity
 import com.grocerypos.v11.ui.ItemSearchActivity
+import com.grocerypos.v11.ui.ItemsActivity
 import com.grocerypos.v11.ui.StockReportActivity
 import com.grocerypos.v11.ui.ThemedActivity
 import com.grocerypos.v11.ui.components.iconBadge
@@ -331,6 +332,16 @@ class MainActivity : ThemedActivity() {
         quickActions.add(
             QuickAction("Low Stock", "Items needing restock", R.drawable.ic_warning, partyRedBg, partyRed) {
                 startActivity(Intent(this@MainActivity, StockReportActivity::class.java).putExtra(StockReportActivity.EXTRA_LOW_STOCK_ONLY, true))
+            }
+        )
+        // NEW (user request 2026-09-17): Items was only reachable via Settings ->
+        // Items before this, buried a level deep — added here so unit products
+        // and categories (ItemsActivity's Products/Categories/Units tabs) are one
+        // tap from the dashboard. No role gate, matching ItemsActivity itself
+        // (Settings' own "Items" row has none either).
+        quickActions.add(
+            QuickAction("Items", "Products, categories & units", R.drawable.ic_list, flatBlueBg, flatBlueFg) {
+                startActivity(Intent(this@MainActivity, ItemsActivity::class.java))
             }
         )
         // NEW: Backup & Reports — combined CSV + PDF export (full data or custom date range).

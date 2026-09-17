@@ -494,13 +494,46 @@ internal fun SettingsActivity.openCloudSyncSetupDialog() {
                 Toast.makeText(this, "Branch Code 2-50 characters ka ho: A-Z, 0-9, _ ya -", Toast.LENGTH_LONG).show()
                 return@setPositiveButton
             }
-            com.grocerypos.v11.CloudConfigStore.save(
-                this,
-                com.grocerypos.v11.CloudConfig(projectId, apiKey, appId, storageBucket)
-            )
-            BranchConfigStore.set(this, branchId)
-            Toast.makeText(this, "Cloud project connected — ab Sync Now try karein", Toast.LENGTH_LONG).show()
-            refreshSyncStatus()
+
+            fun doSave() {
+                com.grocerypos.v11.CloudConfigStore.save(
+                    this,
+                    com.grocerypos.v11.CloudConfig(projectId, apiKey, appId, storageBucket)
+                )
+                BranchConfigStore.set(this, branchId)
+                Toast.makeText(this, "Cloud project connected — ab Sync Now try karein", Toast.LENGTH_LONG).show()
+                refreshSyncStatus()
+            }
+
+            // NEW (P1 security — item #4, Branch Change + Pending Queue Protection):
+            // SyncApi.push() always re-stamps every queued record with
+            // BranchConfigStore.current AT PUSH TIME (a deliberate earlier fix, for
+            // healing entries that had a stale/blank branch id) — not the branch that
+            // was active when the record was actually queued. That means switching
+            // the Branch Code here while offline records are still waiting to sync
+            // would silently push THIS branch's pending data into the NEWLY selected
+            // branch's Firestore documents. Block a real branch change until the
+            // queue is empty; a first-time setup (no branch configured yet) or saving
+            // with the SAME branch code is unaffected.
+            val oldBranch = BranchConfigStore.current
+            val isRealBranchChange = BranchConfigStore.isConfigured() && branchId != oldBranch
+            if (!isRealBranchChange) {
+                doSave()
+                return@setPositiveButton
+            }
+            lifecycleScope.launch {
+                val pending = PosDatabase.get(this@openCloudSyncSetupDialog).syncQueueDao().pendingCount()
+                if (pending > 0) {
+                    AlertDialog.Builder(this@openCloudSyncSetupDialog)
+                        .setTitle("Pending offline records")
+                        .setMessage("Is device par abhi $pending record(s) '$oldBranch' branch ke liye sync hone baaki hain. Branch badalne se pehle inhe sync karna zaroori hai, warna ye ghalat branch mein chale jayenge.\n\nPehle 'Sync Now' try karein, sab records sync hone ke baad dobara Branch Code save karein.")
+                        .setPositiveButton("Sync Now") { _, _ -> SyncQueueHelper.trigger(this@openCloudSyncSetupDialog) }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                } else {
+                    doSave()
+                }
+            }
         }
         .setNegativeButton("Cancel", null)
 
@@ -510,10 +543,31 @@ internal fun SettingsActivity.openCloudSyncSetupDialog() {
     // neutral button at all when there's something to actually disconnect.
     if (existing != null) {
         dialogBuilder.setNeutralButton("Disconnect") { _, _ ->
-            com.grocerypos.v11.CloudConfigStore.clear(this)
-            BranchConfigStore.clear(this)
-            Toast.makeText(this, "Cloud project aur Branch Code disconnect ho gaye", Toast.LENGTH_SHORT).show()
-            refreshSyncStatus()
+            // NEW (P1 security — item #4): same reasoning as the Save-button guard
+            // above — disconnecting clears BranchConfigStore, so a later Save would
+            // no longer see this as a "real branch change" and the guard above would
+            // be bypassed. Check pending records here too before actually clearing.
+            lifecycleScope.launch {
+                val pending = PosDatabase.get(this@openCloudSyncSetupDialog).syncQueueDao().pendingCount()
+                if (pending > 0) {
+                    AlertDialog.Builder(this@openCloudSyncSetupDialog)
+                        .setTitle("Pending offline records")
+                        .setMessage("Is device par abhi $pending record(s) sync hone baaki hain. Disconnect karne se pehle inhe sync kar lein, warna ye baad mein ghalat branch mein chale ja sakte hain.")
+                        .setPositiveButton("Sync Now") { _, _ -> SyncQueueHelper.trigger(this@openCloudSyncSetupDialog) }
+                        .setNegativeButton("Disconnect Anyway") { _, _ ->
+                            com.grocerypos.v11.CloudConfigStore.clear(this@openCloudSyncSetupDialog)
+                            BranchConfigStore.clear(this@openCloudSyncSetupDialog)
+                            Toast.makeText(this@openCloudSyncSetupDialog, "Cloud project aur Branch Code disconnect ho gaye", Toast.LENGTH_SHORT).show()
+                            refreshSyncStatus()
+                        }
+                        .show()
+                } else {
+                    com.grocerypos.v11.CloudConfigStore.clear(this@openCloudSyncSetupDialog)
+                    BranchConfigStore.clear(this@openCloudSyncSetupDialog)
+                    Toast.makeText(this@openCloudSyncSetupDialog, "Cloud project aur Branch Code disconnect ho gaye", Toast.LENGTH_SHORT).show()
+                    refreshSyncStatus()
+                }
+            }
         }
     }
 

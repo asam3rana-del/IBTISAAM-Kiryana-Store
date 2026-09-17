@@ -1255,6 +1255,12 @@ interface ProductDao {
     suspend fun pruneSynced(before: Long)
     @Query("SELECT COUNT(*) FROM sync_queue WHERE syncedAt IS NULL")
     fun pendingCountFlow(): Flow<Int>
+    // NEW (P1 security — item #4, Branch Change + Pending Queue Protection): a
+    // one-shot version of pendingCountFlow() for a plain suspend check (e.g. before
+    // letting the Branch Code be changed in Settings > Cloud Sync Setup) — see
+    // SettingsSync.kt's openCloudSyncSetupDialog().
+    @Query("SELECT COUNT(*) FROM sync_queue WHERE syncedAt IS NULL")
+    suspend fun pendingCount(): Int
     // ADDED (risk-free POS): entries that gave up after 10 failed attempts — surfaced
     // in Settings > Sync History so they don't just vanish from view.
     @Query("SELECT * FROM sync_queue WHERE syncedAt IS NULL AND retryCount >= 10 ORDER BY createdAt ASC")
