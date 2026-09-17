@@ -40,7 +40,11 @@ data class PurchaseEditData(
     val purchase: Purchase,
     val items: List<PurchaseItem>,
     val supplierName: String,
-    val lines: List<PurchaseLine>
+    val lines: List<PurchaseLine>,
+    // NEW (Split Payment): non-empty only when this bill was originally saved
+    // with more than one payment method — lets the Purchase screen re-open the
+    // Split Payment dialog pre-filled instead of just showing the combined total.
+    val payments: List<Pair<String, Double>> = emptyList()
 )
 
 /** Result of [PurchaseRepository.savePurchase]. */
@@ -107,6 +111,13 @@ interface PurchaseRepository {
 
     suspend fun loadForEdit(billNo: String): PurchaseEditData?
 
+    /** NEW (Split Payment): rebuilds the (method, amount) breakdown for a bill
+     * from its "Purchase" cash-drawer entries, so the Split Payment dialog can
+     * repopulate correctly when editing a bill originally paid with more than
+     * one method. Ordered the same way as [com.grocerypos.v11.SaleRepository]'s
+     * equivalent — by insertion order. */
+    suspend fun paymentsForBill(billNo: String): List<Pair<String, Double>>
+
     /** Finds the most recent PAST purchase of [barcode] (excluding
      * [excludeBillNo], the bill currently being edited if any) and returns its
      * rate + the unit it was recorded in. */
@@ -142,6 +153,12 @@ interface PurchaseRepository {
         // NEW ("10/10 Purchase screen" item #2): the SUPPLIER's own invoice/bill
         // number, stored on the Purchase record for the exact-match duplicate check
         // (see PurchaseDao.findDuplicateBySupplierInvoice). Blank = not entered.
-        supplierInvoiceNo: String = ""
+        supplierInvoiceNo: String = "",
+        // NEW (Split Payment / multiple payment methods): mirrors SaleRepository's
+        // `payments` param — non-empty means a split-tender purchase (e.g. Rs 300
+        // Cash + Rs 200 Bank) and takes over from `paymentMethod`/`amountPaid` for
+        // how the cash-drawer entries are recorded. Empty (the default) keeps every
+        // existing single-method caller behaving exactly as before.
+        payments: List<Pair<String, Double>> = emptyList()
     ): SavePurchaseResult
 }

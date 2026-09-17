@@ -159,6 +159,17 @@ class RoomPurchaseRepository(
         return PurchaseEditData(purchase, items, supplierName, lines)
     }
 
+    // NEW (Split Payment): rebuilds the (method, amount) breakdown for a bill
+    // from its "Purchase" cash-drawer entries, so the Split Payment dialog can
+    // repopulate correctly when editing a bill that was originally paid with
+    // more than one method. Ordered by id so rows come back in the same order
+    // they were entered — mirrors RoomSaleRepository.paymentsForInvoice.
+    override suspend fun paymentsForBill(billNo: String): List<Pair<String, Double>> =
+        db.cashTransactionDao().allByReference(billNo)
+            .filter { it.type == "OUT" && it.reason == "Purchase" }
+            .sortedBy { it.id }
+            .map { it.method to it.amount }
+
     override suspend fun findLastPurchaseRate(barcode: String, excludeBillNo: String?): Pair<Double, String>? {
         if (barcode.isBlank()) return null
         val candidatePurchases = db.purchaseDao().allPurchases()
@@ -312,7 +323,8 @@ class RoomPurchaseRepository(
         original: Purchase?,
         originalItems: List<PurchaseItem>,
         suppliers: List<Supplier>,
-        supplierInvoiceNo: String
+        supplierInvoiceNo: String,
+        payments: List<Pair<String, Double>>
     ): SavePurchaseResult {
         return try {
             val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
@@ -431,8 +443,18 @@ class RoomPurchaseRepository(
                     val paymentId = db.paymentDao().insert(payment)
                     SyncQueueHelper.enqueuePayment(db, payment.copy(id = paymentId))
                 }
-                if (amountPaid > 0) {
-                    val cashTx = CashTransaction(type = "OUT", method = paymentMethod.lowercase(), amount = amountPaid, reason = "Purchase", reference = billNo)
+                // NEW (Split Payment / multiple payment methods): one cash-drawer
+                // entry per (method, amount) pair instead of a single combined one,
+                // so Reports/Day Book/Cash Register still split correctly by method
+                // for a bill paid e.g. Rs 300 Cash + Rs 200 Bank. When `payments` is
+                // empty (the single-method path, unchanged from before this feature)
+                // this falls back to exactly the old single-entry behavior. Mirrors
+                // RoomSaleRepository.saveSale's effectivePayments.
+                val effectivePayments = if (payments.isNotEmpty()) payments
+                    else if (amountPaid > 0.009) listOf(paymentMethod to amountPaid) else emptyList()
+                for ((payMethod, amount) in effectivePayments) {
+                    if (amount <= 0.009) continue
+                    val cashTx = CashTransaction(type = "OUT", method = payMethod.lowercase(), amount = amount, reason = "Purchase", reference = billNo)
                     val cashTxId = db.cashTransactionDao().insert(cashTx)
                     val savedCashTx = cashTx.copy(id = cashTxId)
                     SyncQueueHelper.enqueueCashTransaction(db, savedCashTx)

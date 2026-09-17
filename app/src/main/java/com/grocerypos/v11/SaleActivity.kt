@@ -1053,11 +1053,14 @@ class SaleActivity : AppCompatActivity() {
             val paid = draft.optString("paid", "")
             if (paid.isNotBlank()) paidInput.setText(paid)
 
-            val savedDate = draft.optLong("dateMillis", 0L)
-            if (savedDate > 0L) {
-                saleDateMillis = savedDate
-                dateValueText.text = formatDate(saleDateMillis)
-            }
+            // FIX (invoice date/time bug): a draft can sit unsaved for days (app
+            // closed mid-sale, etc.). Restoring its old `dateMillis` here meant a
+            // brand-new sale silently got stamped with a days-old date/time that
+            // nobody noticed until printing. `saleDateMillis` already defaults to
+            // System.currentTimeMillis() (see its declaration above), so we simply
+            // leave it as "now" when restoring a draft — items/customer/etc. are
+            // still restored, only the stale date is not. The date picker still
+            // lets the user pick a different date manually if they really need to.
 
             val linesArray = draft.optJSONArray("lines")
             if (linesArray != null) {

@@ -41,7 +41,15 @@ class LoadCategoriesUseCase(private val repository: PurchaseRepository) {
 }
 
 class LoadPurchaseForEditUseCase(private val repository: PurchaseRepository) {
-    suspend operator fun invoke(billNo: String): PurchaseEditData? = repository.loadForEdit(billNo)
+    suspend operator fun invoke(billNo: String): PurchaseEditData? {
+        val data = repository.loadForEdit(billNo) ?: return null
+        // NEW (Split Payment): only worth showing as a "split" when there were
+        // actually 2+ methods used — a single-entry list is exactly the normal
+        // single-method case and the screen already handles that via
+        // paidInput's plain amount, so no need to pre-open the dialog for it.
+        val payments = repository.paymentsForBill(billNo)
+        return if (payments.size >= 2) data.copy(payments = payments) else data
+    }
 }
 
 class FindLastPurchaseRateUseCase(private val repository: PurchaseRepository) {
@@ -109,7 +117,9 @@ class SavePurchaseUseCase(private val repository: PurchaseRepository) {
         suppliers: List<Supplier>,
         // Default keeps every existing caller (and SavePurchaseUseCaseTest) compiling
         // unchanged — see PurchaseRepository.savePurchase for what this is.
-        supplierInvoiceNo: String = ""
+        supplierInvoiceNo: String = "",
+        // NEW (Split Payment): see PurchaseRepository.savePurchase's `payments` doc.
+        payments: List<Pair<String, Double>> = emptyList()
     ): SavePurchaseResult {
         // FIX (Improvement Pack P6): PurchaseRepository.savePurchase had no
         // empty-bill or per-line qty>0/rate>=0 guard at all (unlike the Sale
@@ -128,7 +138,7 @@ class SavePurchaseUseCase(private val repository: PurchaseRepository) {
         }
         return repository.savePurchase(
             editBillNo, party, grandTotal, amountPaid, discount, paymentMethod,
-            purchaseDateMillis, lines, original, originalItems, suppliers, supplierInvoiceNo
+            purchaseDateMillis, lines, original, originalItems, suppliers, supplierInvoiceNo, payments
         )
     }
 }
