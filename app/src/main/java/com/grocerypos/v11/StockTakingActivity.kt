@@ -21,6 +21,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.matchesQuery
 import com.grocerypos.v11.ui.widget.useNumericKeypad
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -188,7 +189,7 @@ class StockTakingActivity : AppCompatActivity() {
     private fun renderList(query: String) {
         val q = query.trim().lowercase()
         val filtered = if (q.isEmpty()) allProducts else allProducts.filter { p ->
-            p.name.lowercase().contains(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
+            p.matchesQuery(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
         }
         val rows = filtered.map { p -> buildRow(p) }
         listContainer.submitRows(rows)

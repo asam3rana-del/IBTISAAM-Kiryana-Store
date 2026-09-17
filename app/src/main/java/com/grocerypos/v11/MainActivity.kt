@@ -531,7 +531,7 @@ class MainActivity : ThemedActivity() {
         }
         lifecycleScope.launch {
             val products = allProductsCache ?: PosDatabase.get(this@MainActivity).productDao().all().first().also { allProductsCache = it }
-            val matches = products.filter { it.name.contains(trimmed, ignoreCase = true) }.take(6)
+            val matches = products.filter { it.matchesQuery(trimmed) }.take(6)
 
             searchResultsBox.removeAllViews()
             if (matches.isEmpty()) {

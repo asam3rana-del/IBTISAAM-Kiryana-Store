@@ -17,6 +17,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.R
 import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.matchesQuery
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -203,7 +204,7 @@ class StockReportActivity : AppCompatActivity() {
         resultsBox.removeAllViews()
         val q = query.trim().lowercase()
         var filtered = allProducts.filter { p ->
-            q.isEmpty() || p.name.lowercase().contains(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
+            q.isEmpty() || p.matchesQuery(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
         }
         if (lowStockOnly) filtered = filtered.filter { it.stock <= it.reorderLevel }
 

@@ -505,6 +505,7 @@ object SyncApi {
             val secondaryUnitQty = (row["secondaryUnitQty"] as? Number)?.toDouble() ?: 0.0
             val tertiaryUnit = row["tertiaryUnit"] as? String ?: ""
             val tertiaryUnitQty = (row["tertiaryUnitQty"] as? Number)?.toDouble() ?: 0.0
+            val searchTag = row["searchTag"] as? String ?: ""
             // FIX (stock sync incomplete): productJson() deliberately leaves "stock" out
             // of the full-snapshot payload (see the big comment above adjustCustomerBalance
             // in SyncQueueHelper.kt) — every stock change instead reaches Firestore as its
@@ -546,6 +547,7 @@ object SyncApi {
                         unit = unit, unitSize = unitSize, unitNote = unitNote,
                         secondaryUnit = secondaryUnit, secondaryUnitQty = secondaryUnitQty,
                         tertiaryUnit = tertiaryUnit, tertiaryUnitQty = tertiaryUnitQty,
+                        searchTag = searchTag,
                         stock = (stock ?: existing.stock) + localPendingStock,
                         dirty = localPendingStock != 0.0, updatedAt = serverUpdatedAt
                     )
@@ -558,7 +560,8 @@ object SyncApi {
                         reorderLevel = reorderLevel, expiry = expiry, unit = unit,
                         unitSize = unitSize, unitNote = unitNote, secondaryUnit = secondaryUnit,
                         secondaryUnitQty = secondaryUnitQty, tertiaryUnit = tertiaryUnit,
-                        tertiaryUnitQty = tertiaryUnitQty, stock = (stock ?: 0.0) + localPendingStock,
+                        tertiaryUnitQty = tertiaryUnitQty, searchTag = searchTag,
+                        stock = (stock ?: 0.0) + localPendingStock,
                         dirty = localPendingStock != 0.0, updatedAt = serverUpdatedAt
                     )
                 )

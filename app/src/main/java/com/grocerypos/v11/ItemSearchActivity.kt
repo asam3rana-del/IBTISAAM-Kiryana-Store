@@ -191,7 +191,7 @@ class ItemSearchActivity : ThemedActivity() {
         resultsContainer.removeAllViews()
         if (query.isEmpty()) return
 
-        val matches = products.filter { it.name.contains(query, ignoreCase = true) }.take(15)
+        val matches = products.filter { it.matchesQuery(query) }.take(15)
         if (matches.isEmpty()) {
             resultsContainer.addView(TextView(this).apply {
                 text = "No matching item"

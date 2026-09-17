@@ -29,6 +29,7 @@ import com.grocerypos.v11.Product
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.matchesQuery
 import com.grocerypos.v11.isValidSmallestQty
 import com.grocerypos.v11.smallestUnitName
 import com.grocerypos.v11.toSmallestUnits
@@ -91,6 +92,7 @@ class ProductActivity : ThemedActivity() {
     private lateinit var scrollView: ScrollView
     private lateinit var formCardTitle: TextView
     private lateinit var name: EditText
+    private lateinit var searchTagInput: EditText
     internal lateinit var selectUnitBtn: TextView
     private lateinit var categoryField: AutoCompleteTextView
     private lateinit var cost: EditText
@@ -393,6 +395,33 @@ class ProductActivity : ThemedActivity() {
         nameBox.addView(name)
         nameBox.addView(selectUnitBtn)
         nameCard.addView(nameBox)
+
+        // NEW (English search alias): optional — lets an Urdu-named item be found by
+        // typing its English/Roman name in search, without switching the keyboard.
+        // Purely a search aid: never shown as the product's real name anywhere.
+        val searchTagBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 8, 8, 8)
+            background = strokedBg(border, fieldFill, 16)
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 10, 0, 0) }
+        }
+        searchTagInput = EditText(this).apply {
+            hint = Loc.t(
+                this@ProductActivity,
+                "Search Tag in English (optional)",
+                "تلاش کے لیے انگریزی لفظ (اختیاری)"
+            )
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 14f
+            maxLines = 1
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
+        }
+        searchTagBox.addView(searchTagInput)
+        nameCard.addView(searchTagBox)
         root.addView(nameCard)
 
         // ================= CATEGORY CARD =================
@@ -1296,6 +1325,7 @@ class ProductActivity : ThemedActivity() {
         editingProduct = product
 
         name.setText(product.name)
+        searchTagInput.setText(product.searchTag)
 
         selectedPrimaryUnit = product.unit.ifBlank { "pcs" }
         selectedSecondaryUnit =
@@ -1489,7 +1519,8 @@ class ProductActivity : ThemedActivity() {
                 if (selectedTertiaryUnit == "None") "" else selectedTertiaryUnit,
             tertiaryUnitQty =
                 if (selectedTertiaryUnit == "None") 0.0 else selectedTertiaryQty,
-            reorderLevel = reorderLevel.text.toString().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+            reorderLevel = reorderLevel.text.toString().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0,
+            searchTag = searchTagInput.text.toString().trim()
         )
 
         lifecycleScope.launch {
@@ -1610,6 +1641,7 @@ class ProductActivity : ThemedActivity() {
 
     private fun clearForm() {
         name.text.clear()
+        searchTagInput.text.clear()
         cost.text.clear()
         wholesalePrice.text.clear()
         salePrice.text.clear()
@@ -1655,7 +1687,7 @@ class ProductActivity : ThemedActivity() {
         if (q.isEmpty()) return allProducts
 
         return allProducts.filter {
-            it.name.contains(q, ignoreCase = true) ||
+            it.matchesQuery(q) ||
                 it.category.contains(q, ignoreCase = true)
         }
     }

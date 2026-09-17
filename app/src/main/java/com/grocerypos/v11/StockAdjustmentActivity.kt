@@ -19,6 +19,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.matchesQuery
 import com.grocerypos.v11.smallestUnitName
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -153,7 +154,7 @@ class StockAdjustmentActivity : AppCompatActivity() {
             return
         }
         val filtered = allProducts.filter { p ->
-            p.name.lowercase().contains(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
+            p.matchesQuery(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
         }
         if (filtered.isEmpty()) {
             resultsBox.addView(TextView(this).apply {

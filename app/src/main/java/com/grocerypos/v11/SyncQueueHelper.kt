@@ -521,6 +521,7 @@ object SyncQueueHelper {
             "secondaryUnitQty" to p.secondaryUnitQty,
             "tertiaryUnit" to p.tertiaryUnit,
             "tertiaryUnitQty" to p.tertiaryUnitQty,
+            "searchTag" to p.searchTag,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )

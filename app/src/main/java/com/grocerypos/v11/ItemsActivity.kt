@@ -30,6 +30,7 @@ import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.R
 import com.grocerypos.v11.UnitType
 import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.matchesQuery
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import com.grocerypos.v11.ui.components.*
@@ -479,7 +480,7 @@ class ItemsActivity : ThemedActivity() {
     private fun renderProducts() {
         val filtered = if (searchQuery.isEmpty()) allProducts
         else allProducts.filter {
-            it.name.contains(searchQuery, ignoreCase = true) || it.barcode.contains(searchQuery, ignoreCase = true)
+            it.matchesQuery(searchQuery) || it.barcode.contains(searchQuery, ignoreCase = true)
         }
         val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
@@ -744,7 +745,7 @@ class ItemsActivity : ThemedActivity() {
 
         val inCategory = allProducts.filter { it.category.ifBlank { "" } == categoryName }
         val filtered = if (searchQuery.isEmpty()) inCategory
-        else inCategory.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        else inCategory.filter { it.matchesQuery(searchQuery) }
 
         if (filtered.isEmpty()) {
             rows.add(emptyState(if (inCategory.isEmpty()) "Is category mein koi item nahi" else "Koi matching item nahi mila"))

@@ -166,8 +166,26 @@ data class Product(
     val tertiaryUnit:String="",
     val tertiaryUnitQty:Double=0.0,
     val updatedAt:Long=0L,
-    val dirty:Boolean=true
+    val dirty:Boolean=true,
+    // NEW (English search alias): lets a product whose `name` is saved in Urdu
+    // still be found by typing English/Roman letters, without needing to switch
+    // the keyboard mid-search. Purely a search aid — never shown as the product's
+    // display name anywhere, never required. See MIGRATION_38_39 and
+    // Product.matchesQuery() below, which every product-name search screen should
+    // go through instead of checking `name` alone.
+    val searchTag:String=""
 )
+
+// Single source of truth for "does this product match what the user typed" —
+// checks the Urdu/native `name` AND the optional English `searchTag` alias, so
+// every search screen (dashboard quick-search, Item Search, Items list, Sale/
+// Purchase item pickers, Stock screens, Rate Comparison, etc.) behaves the same
+// way once wired through this instead of re-deriving `name.contains(...)` locally.
+fun Product.matchesQuery(query: String): Boolean {
+    val q = query.trim()
+    if (q.isEmpty()) return true
+    return name.contains(q, ignoreCase = true) || searchTag.contains(q, ignoreCase = true)
+}
 
 // ================= 3-tier unit conversion helpers =================
 // Single source of truth for converting between a product's primary, secondary,
@@ -1744,6 +1762,17 @@ val MIGRATION_37_38 = object : Migration(37, 38) {
     }
 }
 
+// NEW (English search alias for Urdu-named products): same plain-ADD-COLUMN shape
+// as MIGRATION_36_37/37_38 — no table recreate needed. Pre-existing products get
+// searchTag='' (blank), which matchesQuery() above treats as "no alias set yet" —
+// search still falls back to matching the Urdu `name` exactly as before, nothing
+// regresses for products that never get a tag filled in.
+val MIGRATION_38_39 = object : Migration(38, 39) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE products ADD COLUMN searchTag TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1756,7 +1785,7 @@ val MIGRATION_37_38 = object : Migration(37, 38) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=38, exportSchema=true
+    version=39, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1783,7 +1812,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

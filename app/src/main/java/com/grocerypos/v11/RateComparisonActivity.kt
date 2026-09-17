@@ -14,6 +14,7 @@ import android.widget.*
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.matchesQuery
 import com.grocerypos.v11.toPrimaryUnitRate
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
@@ -212,7 +213,7 @@ class RateComparisonActivity : ThemedActivity() {
         val filtered = if (q.isEmpty()) {
             emptyList()
         } else {
-            allProducts.filter { it.name.contains(q, ignoreCase = true) }.take(20)
+            allProducts.filter { it.matchesQuery(q) }.take(20)
         }
 
         if (q.isEmpty()) {

@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.matchesQuery
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.StockMovement
 import com.grocerypos.v11.util.Loc
@@ -183,7 +184,7 @@ class StockMovementActivity : AppCompatActivity() {
         searchField.visibility = View.VISIBLE
         val q = query.trim().lowercase()
         val filtered = allProducts.filter { p ->
-            q.isEmpty() || p.name.lowercase().contains(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
+            q.isEmpty() || p.matchesQuery(q) || p.category.lowercase().contains(q) || p.barcode.lowercase().contains(q)
         }
         val rows = mutableListOf<View>()
         if (filtered.isEmpty()) {
