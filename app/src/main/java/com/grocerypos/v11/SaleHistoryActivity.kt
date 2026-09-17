@@ -53,8 +53,8 @@ class SaleHistoryActivity : ThemedActivity() {
     // a flat list of Row values bound to a RecyclerView, so only on-screen rows
     // get inflated instead of the whole history living as permanent child views.
     private sealed class Row {
-        data class Header(val name: String, val count: Int, val total: Double) : Row()
-        data class SaleRow(val sale: SaleWithCustomer) : Row()
+        data class Header(val name: String, val count: Int, val total: Double, val profit: Double) : Row()
+        data class SaleRow(val sale: SaleWithCustomer, val profit: Double?) : Row()
         data class ItemRow(val invoice: String, val text: String) : Row()
         data class ItemsEmpty(val invoice: String) : Row()
     }
@@ -78,8 +78,8 @@ class SaleHistoryActivity : ThemedActivity() {
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val view = when (val row = rows[position]) {
-                is Row.Header -> customerHeader(row.name, row.count, row.total)
-                is Row.SaleRow -> saleRow(row.sale)
+                is Row.Header -> customerHeader(row.name, row.count, row.total, row.profit)
+                is Row.SaleRow -> saleRow(row.sale, row.profit)
                 is Row.ItemRow -> itemLine(row.text, muted = false)
                 is Row.ItemsEmpty -> itemLine("No items on this sale.", muted = true)
             }
@@ -108,6 +108,12 @@ class SaleHistoryActivity : ThemedActivity() {
     // last grouped-by-customer sales fetched from the DB, so toggling expand/collapse
     // can rebuild the flat row list without a fresh query
     private var groupedSales: List<Pair<String, List<SaleWithCustomer>>> = emptyList()
+    // NEW (bill-wise profit): invoice -> profit for that bill, and whether this
+    // logged-in user is allowed to see profit at all (cashiers don't, same as
+    // MainActivity's "Today's Profit" card and every other profit figure in the app).
+    private var saleProfits: Map<String, Double> = emptyMap()
+    private val isAdmin: Boolean
+        get() = getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") == "admin"
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -267,6 +273,12 @@ class SaleHistoryActivity : ThemedActivity() {
                 .toList()
                 .sortedByDescending { (_, sales) -> sales.maxOf { it.createdAt } }
 
+            // NEW (bill-wise profit): only fetched/shown for admins — cashiers never see
+            // profit figures anywhere else in the app, so this stays consistent.
+            saleProfits = if (isAdmin) {
+                db.saleDao().allSaleProfits().associate { it.invoice to it.profit }
+            } else emptyMap()
+
             // ADDED (Khatabook-style summary cards): active sales count toward Total
             // Sales; returned sales count toward Total Returned instead.
             totalSalesValue.text = "Rs %.2f".format(allSales.filter { it.status != "returned" }.sumOf { it.total })
@@ -287,9 +299,10 @@ class SaleHistoryActivity : ThemedActivity() {
             .filter { (customerName, _) -> q.isEmpty() || customerName.lowercase().contains(q) }
             .forEach { (customerName, sales) ->
             val customerTotal = sales.sumOf { it.total }
-            rows.add(Row.Header(customerName, sales.size, customerTotal))
+            val customerProfit = sales.sumOf { saleProfits[it.invoice] ?: 0.0 }
+            rows.add(Row.Header(customerName, sales.size, customerTotal, customerProfit))
             sales.sortedByDescending { it.createdAt }.forEach { sale ->
-                rows.add(Row.SaleRow(sale))
+                rows.add(Row.SaleRow(sale, saleProfits[sale.invoice]))
                 if (expandedSales.contains(sale.invoice)) {
                     val items = loadedItems[sale.invoice]
                     if (items != null) {
@@ -307,25 +320,40 @@ class SaleHistoryActivity : ThemedActivity() {
         adapter.submit(rows)
     }
 
-    private fun customerHeader(name: String, count: Int, total: Double) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
+    private fun customerHeader(name: String, count: Int, total: Double, profit: Double) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
         setPadding(4, 18, 4, 8)
-        addView(TextView(this@SaleHistoryActivity).apply {
-            text = name
-            textSize = 15f
-            setTextColor(Color.parseColor(textDark))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        addView(LinearLayout(this@SaleHistoryActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(TextView(this@SaleHistoryActivity).apply {
+                text = name
+                textSize = 15f
+                setTextColor(Color.parseColor(textDark))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@SaleHistoryActivity).apply {
+                text = "$count sales · Rs %.2f".format(total)
+                textSize = 12f
+                setTextColor(Color.parseColor(textMuted))
+            })
         })
-        addView(TextView(this@SaleHistoryActivity).apply {
-            text = "$count sales · Rs %.2f".format(total)
-            textSize = 12f
-            setTextColor(Color.parseColor(textMuted))
-        })
+        // NEW (bill-wise profit): total profit across this customer's bills, admin-only.
+        if (isAdmin) {
+            addView(TextView(this@SaleHistoryActivity).apply {
+                text = "Profit: Rs %.2f".format(profit)
+                textSize = 11.5f
+                setTextColor(Color.parseColor(teal))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 2, 0, 0)
+            })
+        }
     }
 
     // ---- Invoice number is intentionally never shown — date is the visible identifier ----
-    private fun saleRow(sale: SaleWithCustomer) = outlinedBox().apply {
+    // profit is null when this user isn't admin (see isAdmin) or the sale was returned —
+    // either way, no profit line is shown for the bill.
+    private fun saleRow(sale: SaleWithCustomer, profit: Double?) = outlinedBox().apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setOnClickListener { toggleSale(sale.invoice) }
@@ -345,13 +373,24 @@ class SaleHistoryActivity : ThemedActivity() {
                 setTextColor(Color.parseColor(textMuted))
             })
         })
-        addView(TextView(this@SaleHistoryActivity).apply {
-            text = "Rs %.2f".format(sale.total)
-            textSize = 13f
-            setTextColor(Color.parseColor(if (sale.status == "returned") red else teal))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(8, 0, 12, 0)
-        })
+        addView(LinearLayout(this@SaleHistoryActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+            addView(TextView(this@SaleHistoryActivity).apply {
+                text = "Rs %.2f".format(sale.total)
+                textSize = 13f
+                setTextColor(Color.parseColor(if (sale.status == "returned") red else teal))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            // NEW (bill-wise profit): this specific bill's profit, admin-only.
+            if (isAdmin && profit != null) {
+                addView(TextView(this@SaleHistoryActivity).apply {
+                    text = "Profit: Rs %.2f".format(profit)
+                    textSize = 10.5f
+                    setTextColor(Color.parseColor(textMuted))
+                })
+            }
+        }.apply { setPadding(8, 0, 12, 0) })
         // ---- FIX (reprint bug): previously there was no way to print a sale again
         // after it was first saved — the row only toggled expand/collapse, and
         // Return/Delete were the only per-row actions. Added a Print icon that

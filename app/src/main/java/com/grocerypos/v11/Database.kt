@@ -18,6 +18,10 @@ data class TopProduct(val product:String,val totalQty:Double)
 data class PurchaseWithSupplier(val billNo:String,val supplierName:String,val total:Double,val createdAt:Long,val status:String)
 data class SupplierPurchaseTotal(val supplierName:String,val total:Double)
 data class SaleWithCustomer(val invoice:String,val customerName:String,val total:Double,val paymentMethod:String,val createdAt:Long,val status:String)
+// NEW (bill-wise profit in Sale History): per-invoice profit, same Gross Profit
+// formula as profitBetween/dailyProfit above (sale.total, which is already
+// discount-adjusted, minus that invoice's own COGS from sale_items.cost).
+data class SaleProfit(val invoice:String,val profit:Double)
 data class CustomerSalesTotal(val customerName:String,val total:Double)
 data class DailyProfit(val day:String,val profit:Double)
 data class PartyItemReport(val product:String,val totalAmount:Double,val totalQty:Double)
@@ -897,6 +901,17 @@ interface ProductDao {
     @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned' GROUP BY day ORDER BY day") suspend fun dailySales(start:Long,end:Long):List<DailySales>
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned') GROUP BY product ORDER BY totalQty DESC LIMIT 5") suspend fun topProducts(start:Long,end:Long):List<TopProduct>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC LIMIT 100") suspend fun allSales():List<SaleWithCustomer>
+    // NEW (bill-wise profit in Sale History): profit per invoice, for the same
+    // window as allSales() above (matched by invoice at the call site). Returned
+    // sales are excluded (no profit to show once a bill is reversed).
+    @Query("""
+        SELECT s.invoice as invoice,
+            (s.total - COALESCE((SELECT SUM(si.cost) FROM sale_items si WHERE si.invoice = s.invoice),0)) as profit
+        FROM sales s
+        WHERE s.status != 'returned'
+        ORDER BY s.createdAt DESC LIMIT 100
+    """)
+    suspend fun allSaleProfits():List<SaleProfit>
     @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun salesByCustomer(customerId:Long):List<Sale>
     // ADDED (Parties tab — show last transaction date instead of a static "Customer"
     // label, matching the Khatabook-style party list design): most recent sale date
