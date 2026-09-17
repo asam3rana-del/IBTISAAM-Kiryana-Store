@@ -93,6 +93,9 @@ class FakePurchaseRepository(
 
     override suspend fun loadForEdit(billNo: String): PurchaseEditData? = loadForEditResult
 
+    var paymentsForBillResult: List<Pair<String, Double>> = emptyList()
+    override suspend fun paymentsForBill(billNo: String): List<Pair<String, Double>> = paymentsForBillResult
+
     override suspend fun findLastPurchaseRate(barcode: String, excludeBillNo: String?): Pair<Double, String>? =
         findLastPurchaseRateResult
 
@@ -112,7 +115,8 @@ class FakePurchaseRepository(
         original: Purchase?,
         originalItems: List<PurchaseItem>,
         suppliers: List<Supplier>,
-        supplierInvoiceNo: String
+        supplierInvoiceNo: String,
+        payments: List<Pair<String, Double>>
     ): SavePurchaseResult {
         lastSavePurchaseCall = SavePurchaseCallArgs(
             editBillNo = editBillNo,
