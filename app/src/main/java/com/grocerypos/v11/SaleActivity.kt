@@ -906,6 +906,7 @@ class SaleActivity : AppCompatActivity() {
                 lastMainPrice = 0.0
                 refillAutoPrice()
                 if (saleTypeUserInteracted) {
+                    repriceLinesForSaleType()
                     // FIX (position bug): scrolling to absolute 0 landed at the very top
                     // of the screen (Header/Quick Sale/Date/Firm/Customer cards), which
                     // pushed the Add Item section back down under the keyboard. Scrolling

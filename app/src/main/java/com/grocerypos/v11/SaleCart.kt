@@ -157,6 +157,42 @@ internal fun SaleActivity.updateMarginWarning() {
     }
 }
 
+// NEW (Retail <-> Wholesale switch reprices existing cart lines): previously,
+// switching Sale Type only auto-filled the price of whichever item was being
+// typed into the entry row — items already added to the cart kept whatever rate
+// they were added at. Now, when the user actually taps/picks a different Sale
+// Type (guarded by saleTypeUserInteracted, so this never fires on a
+// programmatic selection like loading an old invoice for edit or restoring a
+// draft), every line already in the cart is repriced against ITS OWN product's
+// retail/wholesale price, converted into that line's own unit — and its amount
+// is recalculated to match. A line's cost (used for margin/profit reporting)
+// is left untouched, since that's the purchase cost and has nothing to do with
+// which sale type is selected.
+internal fun SaleActivity.repriceLinesForSaleType() {
+    if (lines.isEmpty()) return
+    val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
+    var changed = false
+    for (i in lines.indices) {
+        val line = lines[i]
+        val product = products.find { it.barcode == line.barcode }
+            ?: products.find { it.name.equals(line.itemName, ignoreCase = true) }
+            ?: continue
+        val basePrice = if (isWholesale) product.wholesalePrice else product.salePrice
+        // Product has no rate configured for the target type — leave this
+        // line's existing price alone instead of zeroing it out.
+        if (basePrice <= 0.0) continue
+        val newPrice = product.fromPrimaryUnitRate(basePrice, line.unit)
+        if (newPrice == line.unitPrice) continue
+        lines[i] = line.copy(unitPrice = newPrice, amount = line.qty * newPrice)
+        changed = true
+    }
+    if (changed) {
+        renderItemsList()
+        updateTotals()
+        if (editInvoice == null) saveDraft()
+    }
+}
+
 internal fun SaleActivity.updateItemLineTotal() {
     val q = qty.text.toString().toDoubleOrNull() ?: 0.0
     val p = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
