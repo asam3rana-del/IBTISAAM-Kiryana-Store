@@ -454,7 +454,12 @@ class RoomPurchaseRepository(
                     else if (amountPaid > 0.009) listOf(paymentMethod to amountPaid) else emptyList()
                 for ((payMethod, amount) in effectivePayments) {
                     if (amount <= 0.009) continue
-                    val cashTx = CashTransaction(type = "OUT", method = payMethod.lowercase(), amount = amount, reason = "Purchase", reference = billNo)
+                    // FIX (back-dated purchase missing from Cash Register on that date):
+                    // this always defaulted to CashTransaction's createdAt=now, so a
+                    // purchase entered today but dated e.g. 29 Aug showed up in the
+                    // Cash Register under TODAY's date instead of 29 Aug, and never
+                    // appeared when checking the Cash Register for 29 Aug itself.
+                    val cashTx = CashTransaction(type = "OUT", method = payMethod.lowercase(), amount = amount, reason = "Purchase", reference = billNo, createdAt = purchaseDateMillis)
                     val cashTxId = db.cashTransactionDao().insert(cashTx)
                     val savedCashTx = cashTx.copy(id = cashTxId)
                     SyncQueueHelper.enqueueCashTransaction(db, savedCashTx)

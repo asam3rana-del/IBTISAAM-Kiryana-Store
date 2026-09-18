@@ -261,12 +261,17 @@ class RoomSaleRepository(
                 else if (paid > 0.009) listOf(method to paid) else emptyList()
             for ((payMethod, amount) in effectivePayments) {
                 if (amount <= 0.009) continue
+                // FIX (same bug as RoomPurchaseRepository.savePurchase): a back-dated
+                // sale's cash-in entry defaulted to createdAt=now instead of the
+                // sale's own date, so it showed under today in the Cash Register and
+                // never appeared when checking the register for the actual sale date.
                 val cashTx = CashTransaction(
                     type = "IN",
                     method = payMethod.lowercase(),
                     amount = amount,
                     reason = "Sale",
-                    reference = invoice
+                    reference = invoice,
+                    createdAt = saleDateMillis
                 )
                 val cashTxId = db.cashTransactionDao().insert(cashTx)
                 val savedCashTx = cashTx.copy(id = cashTxId)
