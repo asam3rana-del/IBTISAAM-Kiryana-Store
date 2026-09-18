@@ -209,15 +209,24 @@ class HistoryActivity : AppCompatActivity() {
     private fun showSales() { showingSales = true; refreshTabs(); loadSales() }
     private fun showPurchases() { showingSales = false; refreshTabs(); loadPurchases() }
 
+    // FIX (duplicate rows in Sale/Purchase History): onCreate() -> showSales() and onResume()
+    // both call loadSales(), so two coroutines ran at once. Each did removeAllViews() and
+    // THEN suspended again on allSaleProfits() before adding rows, so both cleared an empty
+    // list and both then added the full list = every sale shown twice (admin only, random).
+    // Now (1) a new load cancels the previous one, and (2) all DB work finishes BEFORE
+    // removeAllViews(), so clear+add happens in one uninterrupted step on the main thread.
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     private fun loadSales() {
-        lifecycleScope.launch {
+        loadJob?.cancel()
+        loadJob = lifecycleScope.launch {
             val db = PosDatabase.get(this@HistoryActivity)
             val list = db.saleDao().allSales()
-            listContainer.removeAllViews()
-            if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No sales yet", "کوئی سیل نہیں ہوئی"))); return@launch }
             // NEW (bill-wise profit): only fetched/shown for admins — cashiers never
             // see profit figures anywhere else in the app, so this stays consistent.
             val profits = if (isAdmin()) db.saleDao().allSaleProfits().associate { it.invoice to it.profit } else emptyMap()
+            listContainer.removeAllViews()
+            if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No sales yet", "کوئی سیل نہیں ہوئی"))); return@launch }
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             for (s in list) listContainer.addView(
                 row(R.drawable.ic_receipt, s.invoice, s.customerName, s.total, fmt.format(Date(s.createdAt)), primary, purpleBg, s.status == "returned", profits[s.invoice]) { openSaleDetail(s.invoice) }
@@ -226,7 +235,8 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun loadPurchases() {
-        lifecycleScope.launch {
+        loadJob?.cancel()
+        loadJob = lifecycleScope.launch {
             val list = PosDatabase.get(this@HistoryActivity).purchaseDao().allPurchases()
             listContainer.removeAllViews()
             if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی"))); return@launch }
