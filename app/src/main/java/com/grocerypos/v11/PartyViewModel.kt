@@ -6,9 +6,11 @@ import com.grocerypos.v11.Customer
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.data.DuplicatePaymentGroup
 import com.grocerypos.v11.domain.CleanupDuplicatePaymentsUseCase
+import com.grocerypos.v11.domain.CleanupOrphanedPaymentsUseCase
 import com.grocerypos.v11.domain.DeleteCustomerUseCase
 import com.grocerypos.v11.domain.DeleteSupplierUseCase
 import com.grocerypos.v11.domain.FindDuplicatePaymentsUseCase
+import com.grocerypos.v11.domain.FindOrphanedPaymentsUseCase
 import com.grocerypos.v11.domain.GetCustomerHistoryUseCase
 import com.grocerypos.v11.domain.GetSupplierHistoryUseCase
 import com.grocerypos.v11.domain.MergeDuplicatePartiesUseCase
@@ -59,6 +61,18 @@ sealed class PartyEvent {
         val customersFixed: Int,
         val suppliersFixed: Int
     ) : PartyEvent()
+    // NEW (Cleanup Orphaned Payments): preview step — bill-embedded payment rows
+    // whose purchase/sale no longer exists (see PartyRepository.findOrphanedPayments()),
+    // for the confirmation dialog to list before anything is deleted. An empty list
+    // means none were found.
+    data class OrphanedPaymentsFound(val payments: List<com.grocerypos.v11.Payment>) : PartyEvent()
+    // NEW (Cleanup Orphaned Payments): how many orphaned payment rows were actually
+    // deleted, plus how many customer/supplier balances that correction fixed.
+    data class OrphanedPaymentsCleaned(
+        val paymentsRemoved: Int,
+        val customersFixed: Int,
+        val suppliersFixed: Int
+    ) : PartyEvent()
 }
 
 class PartyViewModel(
@@ -75,7 +89,9 @@ class PartyViewModel(
     private val recalculateBalancesUseCase: RecalculateBalancesUseCase,
     private val mergeDuplicatePartiesUseCase: MergeDuplicatePartiesUseCase,
     private val findDuplicatePaymentsUseCase: FindDuplicatePaymentsUseCase,
-    private val cleanupDuplicatePaymentsUseCase: CleanupDuplicatePaymentsUseCase
+    private val cleanupDuplicatePaymentsUseCase: CleanupDuplicatePaymentsUseCase,
+    private val findOrphanedPaymentsUseCase: FindOrphanedPaymentsUseCase,
+    private val cleanupOrphanedPaymentsUseCase: CleanupOrphanedPaymentsUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PartyUiState())
@@ -189,6 +205,33 @@ class PartyViewModel(
             val result = cleanupDuplicatePaymentsUseCase(groups)
             _events.emit(
                 PartyEvent.DuplicatePaymentsCleaned(
+                    result.paymentsRemoved,
+                    result.recalc.customersFixed,
+                    result.recalc.suppliersFixed
+                )
+            )
+        }
+    }
+
+    /** "Cleanup Orphaned Payments" chip — step 1: look for bill-embedded payment rows
+     * whose purchase/sale no longer exists and report what was found, so the Activity
+     * can show a preview dialog before anything is deleted. See
+     * FindOrphanedPaymentsUseCase / PartyRepository.findOrphanedPayments(). */
+    fun findOrphanedPayments() {
+        viewModelScope.launch {
+            val payments = findOrphanedPaymentsUseCase()
+            _events.emit(PartyEvent.OrphanedPaymentsFound(payments))
+        }
+    }
+
+    /** "Cleanup Orphaned Payments" chip — step 2: called once the shop owner confirms
+     * the preview. [payments] should be exactly what the preview dialog showed — see
+     * CleanupOrphanedPaymentsUseCase / PartyRepository.cleanupOrphanedPayments(). */
+    fun cleanupOrphanedPayments(payments: List<com.grocerypos.v11.Payment>) {
+        viewModelScope.launch {
+            val result = cleanupOrphanedPaymentsUseCase(payments)
+            _events.emit(
+                PartyEvent.OrphanedPaymentsCleaned(
                     result.paymentsRemoved,
                     result.recalc.customersFixed,
                     result.recalc.suppliersFixed

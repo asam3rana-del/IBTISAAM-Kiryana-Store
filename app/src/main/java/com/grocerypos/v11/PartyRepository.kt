@@ -289,6 +289,42 @@ class PartyRepository(
         val recalc = if (removed > 0) recalculateBalances() else RecalcResult(0, 0)
         return CleanupPaymentsResult(removed, recalc)
     }
+
+    // NEW (Cleanup Orphaned Payments): a different leftover than the duplicate-payment
+    // case above. Every Purchase/Sale save inserts its own "Purchase payment"/"Sale
+    // payment" row for whatever was paid at bill time, with reference == that bill's
+    // billNo/invoice (see RoomPurchaseRepository.savePurchase()/RoomSaleRepository.
+    // saveSale()) — a manual "Receive/Make Payment" always gets a unique
+    // "manual-..." reference instead (see PartyTransactionActivity.savePayment()), so
+    // it can never be mistaken for one of these. deletePurchase()/deleteSale() now
+    // correctly delete this row along with the bill (see
+    // SyncQueueHelper.deletePaymentsByReference's comment on the sync side of that
+    // fix), but a bill deleted by an older build before that fix only removed the
+    // bill itself — its bill-embedded payment row was left behind, pointing at a
+    // billNo/invoice that no longer exists. recalculateBalances() still counts that
+    // orphan as a real standalone payment (its reference isn't a *duplicate* of any
+    // current bill, so findDuplicatePayments() above never catches it either) and
+    // subtracts it — which is exactly backwards for a supplier/customer that was
+    // paid in full and should net to zero: it shows up "You'll Get" for the exact
+    // amount of a purchase/sale that isn't there anymore. This finds every payment
+    // whose reference isn't the "manual-" pattern and doesn't match any existing
+    // bill, and removes it the same sync-safe way as cleanupDuplicatePayments()
+    // above, then recalculates.
+    suspend fun findOrphanedPayments(): List<com.grocerypos.v11.Payment> =
+        db.paymentDao().allRaw().filter { p ->
+            !p.reference.startsWith("manual-") && when (p.partyType) {
+                "supplier" -> db.purchaseDao().findPurchase(p.reference) == null
+                "customer" -> db.saleDao().findSale(p.reference) == null
+                else -> false
+            }
+        }
+
+    suspend fun cleanupOrphanedPayments(payments: List<com.grocerypos.v11.Payment>? = null): CleanupPaymentsResult {
+        val target = payments ?: findOrphanedPayments()
+        for (payment in target) SyncQueueHelper.deletePayment(db, payment)
+        val recalc = if (target.isNotEmpty()) recalculateBalances() else RecalcResult(0, 0)
+        return CleanupPaymentsResult(target.size, recalc)
+    }
 }
 
 /** Result of [PartyRepository.recalculateBalances] — how many customers/suppliers

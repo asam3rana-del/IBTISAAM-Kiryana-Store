@@ -6,9 +6,11 @@ import androidx.lifecycle.ViewModelProvider
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.domain.CleanupDuplicatePaymentsUseCase
+import com.grocerypos.v11.domain.CleanupOrphanedPaymentsUseCase
 import com.grocerypos.v11.domain.DeleteCustomerUseCase
 import com.grocerypos.v11.domain.DeleteSupplierUseCase
 import com.grocerypos.v11.domain.FindDuplicatePaymentsUseCase
+import com.grocerypos.v11.domain.FindOrphanedPaymentsUseCase
 import com.grocerypos.v11.domain.GetCustomerHistoryUseCase
 import com.grocerypos.v11.domain.GetSupplierHistoryUseCase
 import com.grocerypos.v11.domain.MergeDuplicatePartiesUseCase
@@ -46,7 +48,9 @@ class PartyViewModelFactory(context: Context) : ViewModelProvider.Factory {
             recalculateBalancesUseCase = RecalculateBalancesUseCase(repository),
             mergeDuplicatePartiesUseCase = MergeDuplicatePartiesUseCase(repository),
             findDuplicatePaymentsUseCase = FindDuplicatePaymentsUseCase(repository),
-            cleanupDuplicatePaymentsUseCase = CleanupDuplicatePaymentsUseCase(repository)
+            cleanupDuplicatePaymentsUseCase = CleanupDuplicatePaymentsUseCase(repository),
+            findOrphanedPaymentsUseCase = FindOrphanedPaymentsUseCase(repository),
+            cleanupOrphanedPaymentsUseCase = CleanupOrphanedPaymentsUseCase(repository)
         ) as T
     }
 }

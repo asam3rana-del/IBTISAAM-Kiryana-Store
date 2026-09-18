@@ -88,6 +88,7 @@ class PartyActivity : AppCompatActivity() {
     private lateinit var recalculateChip: TextView
     private lateinit var mergeDuplicatesChip: TextView
     private lateinit var cleanupPaymentsChip: TextView
+    private lateinit var orphanedPaymentsChip: TextView
     private var searchQuery: String = ""
     private var duesOnly: Boolean = false
     private var lastState: PartyUiState? = null
@@ -342,6 +343,23 @@ class PartyActivity : AppCompatActivity() {
             setOnClickListener { viewModel.findDuplicatePayments() }
         }
         filterRow.addView(cleanupPaymentsChip)
+        filterRow.addView(spacer(10).apply {
+            layoutParams = LinearLayout.LayoutParams((10 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+        })
+        // NEW (Cleanup Orphaned Payments): a different leftover than Cleanup Payments
+        // above — see PartyRepository.findOrphanedPayments() and this screen's
+        // showOrphanedPaymentsPreview() for the full reasoning.
+        orphanedPaymentsChip = TextView(this).apply {
+            text = Loc.t(this@PartyActivity, "Cleanup Orphaned", "بے مالک صاف کریں")
+            textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding((16 * d).toInt(), (14 * d).toInt(), (16 * d).toInt(), (14 * d).toInt())
+            background = roundedBackground("#EEF0F7", 24)
+            setTextColor(Color.parseColor("#6B7280"))
+            setLeadingIcon(R.drawable.ic_wallet, "#6B7280", 14, 6)
+            setOnClickListener { viewModel.findOrphanedPayments() }
+        }
+        filterRow.addView(orphanedPaymentsChip)
         root.addView(filterRow)
 
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -457,6 +475,27 @@ class PartyActivity : AppCompatActivity() {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
             return
         }
+        // NEW (Cleanup Orphaned Payments): same two-step preview/confirm shape as
+        // Cleanup Duplicate Payments above, for a different leftover — a bill-embedded
+        // payment row whose purchase/sale was deleted (by an old build, before
+        // deletePurchase()/deleteSale() cleaned up that row too) and never removed.
+        if (event is PartyEvent.OrphanedPaymentsFound) {
+            showOrphanedPaymentsPreview(event.payments)
+            return
+        }
+        if (event is PartyEvent.OrphanedPaymentsCleaned) {
+            val message = if (event.paymentsRemoved == 0) {
+                Loc.t(this, "No orphaned payments found", "کوئی بے مالک ادائیگی نہیں ملی")
+            } else {
+                Loc.t(
+                    this,
+                    "Removed ${event.paymentsRemoved} orphaned payment(s). Fixed ${event.customersFixed} customer(s), ${event.suppliersFixed} supplier(s)",
+                    "${event.paymentsRemoved} بے مالک ادائیگیاں حذف ہو گئیں۔ ${event.customersFixed} کسٹمرز اور ${event.suppliersFixed} سپلائرز کا بیلنس ٹھیک ہو گیا"
+                )
+            }
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            return
+        }
         val message = when (event) {
             PartyEvent.NameRequired -> Loc.t(this, "Name is required", "نام ضروری ہے")
             PartyEvent.Saved -> Loc.t(this, "Saved", "محفوظ ہو گیا")
@@ -467,6 +506,8 @@ class PartyActivity : AppCompatActivity() {
             // they're unreachable in practice.
             is PartyEvent.DuplicatePaymentsFound -> return
             is PartyEvent.DuplicatePaymentsCleaned -> return
+            is PartyEvent.OrphanedPaymentsFound -> return
+            is PartyEvent.OrphanedPaymentsCleaned -> return
             is PartyEvent.BalancesRecalculated -> {
                 val total = event.customersFixed + event.suppliersFixed
                 if (total == 0) {
@@ -566,6 +607,40 @@ class PartyActivity : AppCompatActivity() {
                 )
             )
             .setPositiveButton(Loc.t(this, "Clean Up", "صاف کریں")) { _, _ -> viewModel.cleanupDuplicatePayments(groups) }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    // NEW (Cleanup Orphaned Payments): same preview-then-confirm shape as
+    // showDuplicatePaymentsPreview above, for orphaned bill-embedded payment rows —
+    // see PartyRepository.findOrphanedPayments() for what these are and why they
+    // throw a party's balance the wrong direction.
+    private fun showOrphanedPaymentsPreview(payments: List<com.grocerypos.v11.Payment>) {
+        if (payments.isEmpty()) {
+            Toast.makeText(
+                this,
+                Loc.t(this, "No orphaned payments found", "کوئی بے مالک ادائیگی نہیں ملی"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val customerNames = viewModel.uiState.value.customers.associate { it.id to it.name }
+        val supplierNames = viewModel.uiState.value.suppliers.associate { it.id to it.name }
+        val totalAmount = payments.sumOf { it.amount }
+        val lines = payments.joinToString("\n") { p ->
+            val name = (if (p.partyType == "customer") customerNames[p.partyId] else supplierNames[p.partyId]) ?: "#${p.partyId}"
+            "• $name (${p.reference.take(24)}) — Rs %.2f".format(p.amount)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Cleanup Orphaned Payments", "بے مالک ادائیگیاں صاف کریں"))
+            .setMessage(
+                Loc.t(
+                    this,
+                    "Found ${payments.size} orphaned payment(s) totalling Rs %.2f:\n\n$lines\n\nEach of these is a bill-payment row whose purchase/sale bill was deleted by an old app version before it cleaned up this row too — it's being wrongly counted as real money, throwing that party's balance the wrong way. Balances will be corrected afterward. This can't be undone. Continue?".format(totalAmount),
+                    "ان میں سے ہر ایک اس بل کی ادائیگی ہے جس کا purchase/sale پرانی ایپ ورژن سے حذف ہوا تھا مگر یہ ادائیگی حذف نہیں ہوئی — یہ غلطی سے اصل رقم شمار ہو رہی ہے اور پارٹی کا بیلنس غلط سمت دکھا رہی ہے۔ اس کے بعد بیلنس ٹھیک کر دیا جائے گا۔ یہ واپس نہیں ہو سکتا۔ جاری رکھیں؟"
+                )
+            )
+            .setPositiveButton(Loc.t(this, "Clean Up", "صاف کریں")) { _, _ -> viewModel.cleanupOrphanedPayments(payments) }
             .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
             .show()
     }

@@ -162,3 +162,18 @@ class CleanupDuplicatePaymentsUseCase(private val repository: PartyRepository) {
     suspend operator fun invoke(groups: List<DuplicatePaymentGroup>? = null): CleanupPaymentsResult =
         repository.cleanupDuplicatePayments(groups)
 }
+
+/** Preview step for "Cleanup Orphaned Payments" — finds bill-embedded payment rows
+ * whose purchase/sale no longer exists (left behind by a bill deleted before
+ * deletePurchase()/deleteSale() cleaned up their payment row too), without deleting
+ * anything yet. See PartyRepository.findOrphanedPayments(). */
+class FindOrphanedPaymentsUseCase(private val repository: PartyRepository) {
+    suspend operator fun invoke(): List<com.grocerypos.v11.Payment> = repository.findOrphanedPayments()
+}
+
+/** Deletes the orphaned payment rows found by [FindOrphanedPaymentsUseCase] and fixes
+ * the balances they were throwing off — see PartyRepository.cleanupOrphanedPayments(). */
+class CleanupOrphanedPaymentsUseCase(private val repository: PartyRepository) {
+    suspend operator fun invoke(payments: List<com.grocerypos.v11.Payment>? = null): CleanupPaymentsResult =
+        repository.cleanupOrphanedPayments(payments)
+}
