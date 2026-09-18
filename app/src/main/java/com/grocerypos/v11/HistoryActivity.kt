@@ -211,12 +211,16 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun loadSales() {
         lifecycleScope.launch {
-            val list = PosDatabase.get(this@HistoryActivity).saleDao().allSales()
+            val db = PosDatabase.get(this@HistoryActivity)
+            val list = db.saleDao().allSales()
             listContainer.removeAllViews()
             if (list.isEmpty()) { listContainer.addView(emptyText(Loc.t(this@HistoryActivity, "No sales yet", "کوئی سیل نہیں ہوئی"))); return@launch }
+            // NEW (bill-wise profit): only fetched/shown for admins — cashiers never
+            // see profit figures anywhere else in the app, so this stays consistent.
+            val profits = if (isAdmin()) db.saleDao().allSaleProfits().associate { it.invoice to it.profit } else emptyMap()
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             for (s in list) listContainer.addView(
-                row(R.drawable.ic_receipt, s.invoice, s.customerName, s.total, fmt.format(Date(s.createdAt)), primary, purpleBg, s.status == "returned") { openSaleDetail(s.invoice) }
+                row(R.drawable.ic_receipt, s.invoice, s.customerName, s.total, fmt.format(Date(s.createdAt)), primary, purpleBg, s.status == "returned", profits[s.invoice]) { openSaleDetail(s.invoice) }
             )
         }
     }
@@ -243,6 +247,13 @@ class HistoryActivity : AppCompatActivity() {
             if (sale.status == "returned") body.addView(returnedBanner())
             body.addView(kv(Loc.t(this@HistoryActivity, "Total", "کل"), "Rs %.2f".format(sale.total)))
             body.addView(kv(Loc.t(this@HistoryActivity, "Paid", "ادا شدہ"), "Rs %.2f".format(sale.paid)))
+            // NEW (bill-wise profit): this bill's own profit, admin-only, and only
+            // when it hasn't been returned (a returned bill has no profit to show —
+            // matches allSaleProfits()'s WHERE status != 'returned').
+            if (isAdmin() && sale.status != "returned") {
+                val profit = sale.total - items.sumOf { it.cost }
+                body.addView(kv(Loc.t(this@HistoryActivity, "Profit", "منافع"), "Rs %.2f".format(profit)))
+            }
             body.addView(spacer(12))
             body.addView(sectionTitle(Loc.t(this@HistoryActivity, "Items", "آئٹمز")))
             for (it in items) body.addView(itemRow(it.product, "${it.qty} x ${it.unitPrice}", "Rs %.2f".format(it.amount)))
@@ -689,7 +700,7 @@ class HistoryActivity : AppCompatActivity() {
         return d
     }
 
-    private fun row(iconRes: Int, reference: String, subtitle: String, amount: Double, date: String, accentHex: String, tintHex: String, returned: Boolean, onClick: () -> Unit): LinearLayout {
+    private fun row(iconRes: Int, reference: String, subtitle: String, amount: Double, date: String, accentHex: String, tintHex: String, returned: Boolean, profit: Double? = null, onClick: () -> Unit): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -739,11 +750,23 @@ class HistoryActivity : AppCompatActivity() {
             })
             addView(infoCol)
 
-            addView(TextView(this@HistoryActivity).apply {
-                text = "Rs %.2f".format(amount)
-                textSize = 14f
-                setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor(accentHex))
+            addView(LinearLayout(this@HistoryActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.END
+                addView(TextView(this@HistoryActivity).apply {
+                    text = "Rs %.2f".format(amount)
+                    textSize = 14f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor(accentHex))
+                })
+                // NEW (bill-wise profit): this bill's own profit, admin-only.
+                if (profit != null) {
+                    addView(TextView(this@HistoryActivity).apply {
+                        text = "Profit: Rs %.2f".format(profit)
+                        textSize = 10.5f
+                        setTextColor(Color.parseColor(textGray))
+                    })
+                }
             })
         }
     }
