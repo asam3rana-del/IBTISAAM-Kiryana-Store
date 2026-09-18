@@ -95,11 +95,23 @@ class BulkTranslateActivity : ThemedActivity() {
     // old value -> input field, keeps insertion order for a stable UI
     private val categoryFields = LinkedHashMap<String, EditText>()
     private val unitFields = LinkedHashMap<String, EditText>()
-    private val itemFields = LinkedHashMap<String, EditText>()
+
+    // NEW (Items — one-at-a-time flow): Categories/Units stay as a batch list (one
+    // Save button for everything), but Items are now a queue — save ONE product
+    // name's English tag and the next untagged name appears immediately, instead
+    // of scrolling a long list and hitting Save at the very end.
+    private var untaggedQueue: MutableList<String> = mutableListOf()
+    private var untaggedTotal: Int = 0
 
     private lateinit var catContainer: LinearLayout
     private lateinit var unitContainer: LinearLayout
     private lateinit var itemContainer: LinearLayout
+    private lateinit var itemProgressText: TextView
+    private lateinit var itemCard: LinearLayout
+    private lateinit var itemNameLabel: TextView
+    private lateinit var itemTagInput: EditText
+    private lateinit var itemSaveNextBtn: TextView
+    private lateinit var itemAllDoneText: TextView
     private lateinit var emptyText: TextView
     private lateinit var saveBtn: TextView
     private lateinit var loadingText: TextView
@@ -221,6 +233,73 @@ class BulkTranslateActivity : ThemedActivity() {
         root.addView(sectionHeader("Items (search tags)"))
         itemContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(itemContainer)
+
+        // ---- One-at-a-time item stepper: shows ONE untagged product name, an input
+        // for its English tag, and a Save & Next button. Saving that single name
+        // advances straight to the next untagged name — no waiting for a batch Save. ----
+        itemProgressText = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(4, 0, 0, 10)
+            visibility = View.GONE
+        }
+        itemContainer.addView(itemProgressText)
+
+        itemCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 18, 18, 18)
+            background = strokedBg(border, cardBg, 14)
+            visibility = View.GONE
+        }
+        itemNameLabel = TextView(this).apply {
+            textSize = 15.5f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+        }
+        itemCard.addView(itemNameLabel)
+        itemCard.addView(spacer(12))
+        itemTagInput = EditText(this).apply {
+            hint = "English name(s), e.g. sugar, chini"
+            setHintTextColor(Color.parseColor(textGray))
+            setTextColor(Color.parseColor(textDark))
+            textSize = 14.5f
+            maxLines = 1
+            background = strokedBg(border, bg, 12)
+            setPadding(16, 14, 16, 14)
+            // Same "always Latin keyboard" fix as ProductActivity's Search Tag field —
+            // this box only ever holds an English/Roman alias.
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        }
+        itemCard.addView(itemTagInput)
+        itemCard.addView(spacer(14))
+        itemSaveNextBtn = TextView(this).apply {
+            text = "SAVE & NEXT"
+            setLeadingIcon(R.drawable.ic_save, "#FFFFFF", 15, 6)
+            textSize = 13.5f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor(teal), Color.parseColor(tealDark))
+            ).apply { cornerRadius = 14f }
+            setPadding(0, 22, 0, 22)
+            setOnClickListener { saveCurrentItemAndAdvance() }
+        }
+        itemCard.addView(itemSaveNextBtn)
+        itemContainer.addView(itemCard)
+
+        itemAllDoneText = TextView(this).apply {
+            text = "All items tagged"
+            setCompoundDrawablesRelative(null, null, tintedDrawable(R.drawable.ic_check, teal, 16), null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
+            textSize = 13.5f
+            setTextColor(Color.parseColor(textGray))
+            gravity = Gravity.CENTER
+            setPadding(0, 20, 0, 20)
+            visibility = View.GONE
+        }
+        itemContainer.addView(itemAllDoneText)
         root.addView(spacer(30))
 
         saveBtn = TextView(this).apply {
@@ -308,22 +387,19 @@ class BulkTranslateActivity : ThemedActivity() {
                 // again after fixing, so the container must not just keep appending).
                 catContainer.removeAllViews()
                 unitContainer.removeAllViews()
-                itemContainer.removeAllViews()
                 categoryFields.clear()
                 unitFields.clear()
-                itemFields.clear()
 
                 renderRows(catContainer, urduCats, categoryFields)
                 renderRows(unitContainer, urduUnits, unitFields)
-                renderRows(itemContainer, untaggedNames, itemFields, hint = "English name(s), e.g. sugar, chini")
 
-                if (urduCats.isEmpty() && urduUnits.isEmpty() && untaggedNames.isEmpty()) {
-                    emptyText.visibility = View.VISIBLE
-                    saveBtn.visibility = View.GONE
-                } else {
-                    emptyText.visibility = View.GONE
-                    saveBtn.visibility = View.VISIBLE
-                }
+                untaggedQueue = untaggedNames.toMutableList()
+                untaggedTotal = untaggedNames.size
+                showCurrentItem()
+
+                val catsUnitsEmpty = urduCats.isEmpty() && urduUnits.isEmpty()
+                emptyText.visibility = if (catsUnitsEmpty) View.VISIBLE else View.GONE
+                saveBtn.visibility = if (catsUnitsEmpty) View.GONE else View.VISIBLE
             } catch (e: Exception) {
                 Log.e(TAG, "loadValues failed", e)
                 loadingText.visibility = View.GONE
@@ -388,6 +464,60 @@ class BulkTranslateActivity : ThemedActivity() {
         }
     }
 
+    // ---- Items stepper: shows the front of untaggedQueue (or the "done" state). ----
+    private fun showCurrentItem() {
+        val current = untaggedQueue.firstOrNull()
+        if (current == null) {
+            itemCard.visibility = View.GONE
+            itemProgressText.visibility = View.GONE
+            itemAllDoneText.visibility = View.VISIBLE
+        } else {
+            itemAllDoneText.visibility = View.GONE
+            itemCard.visibility = View.VISIBLE
+            itemProgressText.visibility = View.VISIBLE
+            val doneCount = untaggedTotal - untaggedQueue.size
+            itemProgressText.text = "${doneCount + 1} of $untaggedTotal"
+            itemNameLabel.text = current
+            itemTagInput.text.clear()
+            itemTagInput.requestFocus()
+        }
+    }
+
+    // Saves the English tag for ONLY the item currently shown, then immediately
+    // advances the stepper to the next untagged name — the screen itself is never
+    // closed, so the shop owner can keep going product after product.
+    private fun saveCurrentItemAndAdvance() {
+        val currentName = untaggedQueue.firstOrNull() ?: return
+        val newTag = itemTagInput.text.toString().trim()
+        if (newTag.isEmpty()) {
+            Toast.makeText(this, "Pehle English likhein", Toast.LENGTH_SHORT).show()
+            return
+        }
+        itemSaveNextBtn.isEnabled = false
+        lifecycleScope.launch {
+            try {
+                val db = PosDatabase.get(this@BulkTranslateActivity)
+                val touched = db.productDao().findByName(currentName)
+                db.productDao().updateSearchTagForName(currentName, newTag)
+                touched.forEach { p ->
+                    db.productDao().find(p.barcode)?.let { updated -> SyncQueueHelper.enqueueProduct(db, updated) }
+                }
+                if (touched.isNotEmpty()) SyncQueueHelper.trigger(this@BulkTranslateActivity)
+                untaggedQueue.removeAt(0)
+                showCurrentItem()
+            } catch (e: Exception) {
+                Log.e(TAG, "saveCurrentItemAndAdvance failed", e)
+                Toast.makeText(
+                    this@BulkTranslateActivity,
+                    "Could not save: ${e.message ?: "unknown error"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                itemSaveNextBtn.isEnabled = true
+            }
+        }
+    }
+
     private fun saveAll() {
         lifecycleScope.launch {
             try {
@@ -437,18 +567,9 @@ class BulkTranslateActivity : ThemedActivity() {
                     count++
                 }
 
-                // ---- Items: save the English search-tag alias(es) for every product
-                // sharing this Urdu name. Name itself is untouched — only searchTag.
-                // Comma-separated multiple aliases (e.g. "sugar, chini") are stored as
-                // one string; Product.matchesQuery() does a plain substring check
-                // against it, so typing EITHER "sugar" or "chini" finds it. ----
-                for ((oldName, field) in itemFields) {
-                    val newTag = field.text.toString().trim()
-                    if (newTag.isEmpty()) continue
-                    db.productDao().findByName(oldName).forEach { touchedBarcodes.add(it.barcode) }
-                    db.productDao().updateSearchTagForName(oldName, newTag)
-                    count++
-                }
+                // Items (search tags) are now saved one-at-a-time via
+                // saveCurrentItemAndAdvance() above, as soon as each is typed — they
+                // no longer wait for this batch Save button.
 
                 // FIX (#12 — category/unit master sync incomplete): renameXInProducts()
                 // calls above run as raw SQL UPDATEs, which bypass sync on their own —
