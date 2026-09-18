@@ -67,6 +67,17 @@ android {
         }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
+            // PREPARED, NOT ACTIVE (Improvement Pack P12): proguard-rules.pro now has
+            // real keep rules (Gson generics, Firestore/gRPC TLS-provider dontwarns,
+            // WorkManager's reflective Worker instantiation, and the app's one
+            // Class.forName() call site — see that file's header for the full
+            // reasoning). isMinifyEnabled is deliberately left at its default (false)
+            // here — RELEASE_CHECKLIST.md still treats turning R8 on as a decision to
+            // make deliberately, not something to flip as a drive-by edit. When that
+            // decision is made: set `isMinifyEnabled = true` below, run
+            // `./gradlew assembleRelease`, and manually walk every screen on the
+            // resulting APK per proguard-rules.pro's own checklist before shipping it.
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
