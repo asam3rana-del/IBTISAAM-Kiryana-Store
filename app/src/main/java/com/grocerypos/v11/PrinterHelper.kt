@@ -574,6 +574,43 @@ object PrinterHelper {
         return false
     }
 
+    /**
+     * FIX (item name collapsing to a tiny fragment — e.g. a name with a mixed
+     * Urdu + English/number run printed as just "1.5" instead of the full
+     * name): StaticLayout.Builder's own setEllipsize(TruncateAt.END) has a
+     * known weakness with bidi (mixed-direction) text — it can measure/cut at
+     * the wrong point and leave only a short leftover fragment plus a
+     * misplaced "…" mark, which is exactly what this looked like. StaticLayout
+     * itself is NOT the problem (it draws pure-RTL names like "سیرا لاٹھی"
+     * correctly) — only its built-in ellipsizer is unreliable for mixed
+     * content. This does the truncation manually with plain pixel
+     * measurement (which shapes text correctly via Paint, same as before)
+     * BEFORE handing the text to StaticLayout, so StaticLayout only ever has
+     * to lay out a string that already fits — no ellipsizing decisions left
+     * for it to get wrong. [paint]'s current textSize/typeface/bold state is
+     * used for measurement, so call this only after those are set for the
+     * line being measured.
+     */
+    private fun ellipsizeByWidth(paint: TextPaint, text: String, maxWidthPx: Float): String {
+        if (maxWidthPx <= 0f) return ""
+        if (paint.measureText(text) <= maxWidthPx) return text
+        val ellipsis = "\u2026" // "…"
+        val ellipsisWidth = paint.measureText(ellipsis)
+        if (ellipsisWidth > maxWidthPx) return ""
+        // Binary search the longest prefix (in chars) that still fits alongside
+        // the ellipsis mark. Works on the string's logical order — same
+        // "keep the start, drop the end" behavior TruncateAt.END was meant to
+        // give, just without its bidi bug.
+        var lo = 0
+        var hi = text.length
+        while (lo < hi) {
+            val mid = (lo + hi + 1) / 2
+            val candidateWidth = paint.measureText(text, 0, mid) + ellipsisWidth
+            if (candidateWidth <= maxWidthPx) lo = mid else hi = mid - 1
+        }
+        return if (lo <= 0) ellipsis else text.substring(0, lo) + ellipsis
+    }
+
     private var cachedUrduTypeface: Typeface? = null
     private var triedLoadingUrduFont = false
 
@@ -1032,26 +1069,31 @@ object PrinterHelper {
                     // like "385ml"): this used to be a raw paint.textAlign +
                     // canvas.drawText(fitName, ...) call, same as every other line in
                     // this file *except* this one. Plain canvas.drawText does not run
-                    // Unicode bidi reordering across mixed-direction text, and
-                    // TextUtils.ellipsize truncates from the string's *logical* end,
-                    // which for RTL text is the visual LEFT — so a mixed name got
-                    // drawn out of order and chopped from the wrong side, collapsing
-                    // to what looked like one stray glyph. Center/Left lines above
-                    // already avoid this by going through StaticLayout with
-                    // setTextDirection(...), which does full bidi + shaping. Item
-                    // names now go through the same StaticLayout path (single line,
-                    // built-in ellipsize) so a mixed Urdu/English/number name prints
-                    // complete and in the correct column, exactly like the on-screen
-                    // preview card.
+                    // Unicode bidi reordering across mixed-direction text — so a mixed
+                    // name got drawn out of order, collapsing to what looked like one
+                    // stray glyph. Center/Left lines above already avoid this by going
+                    // through StaticLayout with setTextDirection(...), which does full
+                    // bidi + shaping. Item names now go through the same StaticLayout
+                    // path so a mixed Urdu/English/number name prints complete and in
+                    // the correct column, exactly like the on-screen preview card.
+                    //
+                    // FIX 2 (a long mixed-content name collapsing to a tiny fragment,
+                    // e.g. printing just "1.5" instead of the full name): the first fix
+                    // used StaticLayout's own setEllipsize(TruncateAt.END), which has a
+                    // known bidi bug and can cut at the wrong point for mixed-direction
+                    // text. Truncation is now done manually via ellipsizeByWidth()
+                    // (plain pixel measurement, no bidi-ellipsize bug) before handing
+                    // the already-fitting string to StaticLayout — StaticLayout is only
+                    // ever asked to lay out text that already fits, so there's no
+                    // ellipsizing decision left for it to get wrong.
                     val nameDir = if (nameIsUrdu) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
                     val nameWidthPx = fullTextWidth.toInt().coerceAtLeast(1)
+                    val fitName = ellipsizeByWidth(paint, line.name, fullTextWidth)
                     val nameLayout = StaticLayout.Builder
-                        .obtain(line.name, 0, line.name.length, paint, nameWidthPx)
+                        .obtain(fitName, 0, fitName.length, paint, nameWidthPx)
                         .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                         .setTextDirection(nameDir)
                         .setMaxLines(1)
-                        .setEllipsize(TextUtils.TruncateAt.END)
-                        .setEllipsizedWidth(nameWidthPx)
                         .build()
                     canvas.save()
                     // Translate so the layout's own first-line baseline lands exactly
