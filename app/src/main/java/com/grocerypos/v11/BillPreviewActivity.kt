@@ -206,6 +206,14 @@ class BillPreviewActivity : ThemedActivity() {
                 setTypeface(typeface, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
             })
+            // CHANGE (Rate column): rate used to sit as a small "@ 145.00" line under the
+            // item name. It now has its own RATE column between ITEM and QTY.
+            addView(TextView(this@BillPreviewActivity).apply {
+                text = "RATE"; textSize = 11f; gravity = Gravity.CENTER
+                setTextColor(Color.parseColor(textGray))
+                setTypeface(typeface, Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
             addView(TextView(this@BillPreviewActivity).apply {
                 text = "QTY"; textSize = 11f; gravity = Gravity.CENTER
                 setTextColor(Color.parseColor(textGray))
@@ -225,18 +233,21 @@ class BillPreviewActivity : ThemedActivity() {
             receiptCard.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 6, 0, 6)
-                addView(LinearLayout(this@BillPreviewActivity).apply {
-                    orientation = LinearLayout.VERTICAL
+                // Item name sits directly under the ITEM header. TEXT_ALIGNMENT_VIEW_START
+                // keeps Urdu names on the left edge too (default alignment flips RTL text
+                // to the right side of the cell, away from the ITEM header).
+                addView(TextView(this@BillPreviewActivity).apply {
+                    text = line.name; textSize = 13.5f
+                    setTextColor(Color.parseColor(textDark))
+                    setTypeface(typeface, Typeface.BOLD)
+                    gravity = Gravity.START
+                    textAlignment = View.TEXT_ALIGNMENT_VIEW_START
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
-                    addView(TextView(this@BillPreviewActivity).apply {
-                        text = line.name; textSize = 13.5f
-                        setTextColor(Color.parseColor(textDark))
-                        setTypeface(typeface, Typeface.BOLD)
-                    })
-                    addView(TextView(this@BillPreviewActivity).apply {
-                        text = "@ %.2f".format(line.rate); textSize = 11f
-                        setTextColor(Color.parseColor(textGray))
-                    })
+                })
+                addView(TextView(this@BillPreviewActivity).apply {
+                    text = "%.2f".format(line.rate); textSize = 13f; gravity = Gravity.CENTER
+                    setTextColor(Color.parseColor(textDark))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
                 addView(TextView(this@BillPreviewActivity).apply {
                     text = "${line.qty} ${line.unit}"; textSize = 13f; gravity = Gravity.CENTER
