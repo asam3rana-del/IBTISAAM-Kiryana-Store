@@ -555,6 +555,11 @@ object SyncQueueHelper {
             "endDate" to y.endDate,
             "assetsSnapshot" to y.assetsSnapshot,
             "totalPayable" to y.totalPayable,
+            // NEW (Zakat currency/calendar): carried through so another device shows the
+            // same currency label and month-name style for this year instead of its own
+            // local defaults.
+            "currency" to y.currency,
+            "calendarType" to y.calendarType,
             "createdAt" to y.createdAt,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
@@ -569,6 +574,9 @@ object SyncQueueHelper {
             "amount" to p.amount,
             "method" to p.method,
             "note" to p.note,
+            // NEW (Zakat payment date + category): see ZakatPayment's doc comment.
+            "category" to p.category,
+            "paymentDate" to p.paymentDate,
             "createdAt" to p.createdAt,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current

@@ -864,6 +864,10 @@ object SyncApi {
             val endDate = (row["endDate"] as? Number)?.toLong() ?: continue
             val assetsSnapshot = (row["assetsSnapshot"] as? Number)?.toDouble() ?: 0.0
             val totalPayable = (row["totalPayable"] as? Number)?.toDouble() ?: 0.0
+            // NEW (Zakat currency/calendar): default to "Rs"/"islamic" for rows pulled
+            // from a server document written before this field existed.
+            val currency = row["currency"] as? String ?: "Rs"
+            val calendarType = row["calendarType"] as? String ?: "islamic"
             val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
             val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
 
@@ -872,15 +876,16 @@ object SyncApi {
                 zakatDao.updateYear(
                     existing.copy(
                         startDate = startDate, endDate = endDate, assetsSnapshot = assetsSnapshot,
-                        totalPayable = totalPayable, updatedAt = updatedAt, dirty = false
+                        totalPayable = totalPayable, currency = currency, calendarType = calendarType,
+                        updatedAt = updatedAt, dirty = false
                     )
                 )
             } else {
                 zakatDao.insertYear(
                     ZakatYear(
                         startDate = startDate, endDate = endDate, assetsSnapshot = assetsSnapshot,
-                        totalPayable = totalPayable, createdAt = createdAt,
-                        serverId = serverId, updatedAt = updatedAt, dirty = false
+                        totalPayable = totalPayable, currency = currency, calendarType = calendarType,
+                        createdAt = createdAt, serverId = serverId, updatedAt = updatedAt, dirty = false
                     )
                 )
             }
@@ -903,7 +908,11 @@ object SyncApi {
             val amount = (row["amount"] as? Number)?.toDouble() ?: 0.0
             val method = row["method"] as? String ?: ""
             val note = row["note"] as? String ?: ""
+            // NEW (Zakat payment date + category): fall back to createdAt/blank for rows
+            // pulled from a server document written before these fields existed.
+            val category = row["category"] as? String ?: ""
             val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val paymentDate = (row["paymentDate"] as? Number)?.toLong() ?: createdAt
             val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
 
             val existing = zakatDao.findPaymentByServerId(serverId)
@@ -911,13 +920,14 @@ object SyncApi {
                 zakatDao.updatePayment(
                     existing.copy(
                         zakatYearId = localYear.id, amount = amount, method = method, note = note,
-                        updatedAt = updatedAt, dirty = false
+                        category = category, paymentDate = paymentDate, updatedAt = updatedAt, dirty = false
                     )
                 )
             } else {
                 zakatDao.insertPayment(
                     ZakatPayment(
                         zakatYearId = localYear.id, amount = amount, method = method, note = note,
+                        category = category, paymentDate = paymentDate,
                         createdAt = createdAt, serverId = serverId, updatedAt = updatedAt, dirty = false
                     )
                 )

@@ -612,6 +612,12 @@ data class Expense(
 // the year was started. `dirty`/`serverId` follow the same shape as every other synced
 // entity in this app — see SyncQueueHelper.enqueueZakatYear()/SyncApi's zakat_years
 // collection (wired up as of the full-sync-audit batch).
+// UPDATED (Zakat currency + calendar option): currency is captured per-year (not just
+// read live from Settings) so a year already started keeps showing in whatever currency
+// it was started in even if the shop's default currency changes later. calendarType picks
+// which month names the monthly plan (ZakatMonthPlan below) displays — "islamic" (Ramadan,
+// Shawwal, ...) or "gregorian" (the actual Jan/Feb/... month each ~29.5-day slice falls in)
+// — the underlying Ramadan-to-Ramadan year window itself is unchanged either way.
 @Entity(tableName="zakat_years")
 data class ZakatYear(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
@@ -619,6 +625,8 @@ data class ZakatYear(
     val endDate:Long,
     val assetsSnapshot:Double,
     val totalPayable:Double,
+    val currency:String="Rs",
+    val calendarType:String="islamic", // "islamic" or "gregorian"
     val createdAt:Long=System.currentTimeMillis(),
     val serverId:String?=null,
     val updatedAt:Long=0L,
@@ -631,6 +639,12 @@ data class ZakatYear(
 // device — the sync payload carries the parent's serverId string instead
 // ("zakatYearServerId") and the pull-apply loop resolves it back to whatever
 // local id that year has on THIS device. See SyncQueueHelper.zakatPaymentJson().
+// UPDATED (Zakat payment date + category): paymentDate is the date the user says the
+// payment was actually made (editable, defaults to today) — kept separate from createdAt
+// (when the row was entered on this device) since the two can differ, e.g. logging a
+// payment a few days after actually handing it over. category is an OPTIONAL label for
+// which zakatable asset the payment relates to (Cash, Gold, Silver, Business Stock,
+// Livestock, Crops, Other) — purely informational, left blank if not needed.
 @Entity(tableName="zakat_payments")
 data class ZakatPayment(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
@@ -638,8 +652,31 @@ data class ZakatPayment(
     val amount:Double,
     val method:String,
     val note:String="",
+    val category:String="",
+    val paymentDate:Long=System.currentTimeMillis(),
     val createdAt:Long=System.currentTimeMillis(),
     val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
+)
+
+// NEW (Zakat monthly plan): one row per month (1-12, counted from the year's start —
+// Ramadan if calendarType=="islamic") the user has customized — a chosen payable amount
+// for that month (defaults to totalPayable/12 in the UI until the user edits/saves it)
+// plus an optional description/note. Paid-per-month is NOT stored here — it's computed
+// live from ZakatPayment rows whose paymentDate falls inside that month's date range
+// (see ZakatActivity.monthStartMillis/monthEndMillis), so recording a payment always
+// keeps the monthly breakdown in sync without a separate "mark as paid" step.
+// Local-only for now (dirty/serverId-shaped fields kept out entirely, same reasoning as
+// ShellCustomer above) — no matching server-side collection exists yet.
+@Entity(tableName="zakat_month_plans")
+data class ZakatMonthPlan(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val zakatYearId:Long,
+    val monthIndex:Int,
+    val payableAmount:Double,
+    val note:String="",
+    val createdAt:Long=System.currentTimeMillis(),
     val updatedAt:Long=0L,
     val dirty:Boolean=true
 )
@@ -1073,6 +1110,17 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(amount),0) FROM zakat_payments WHERE zakatYearId=:yearId") suspend fun totalPaidForYear(yearId:Long):Double
     // NEW (Zakat sync): mirrors findYearByServerId above, for the payments pull-apply loop.
     @Query("SELECT * FROM zakat_payments WHERE serverId=:serverId LIMIT 1") suspend fun findPaymentByServerId(serverId:String):ZakatPayment?
+
+    // NEW (Zakat monthly plan): upsert-by-hand (no unique index on zakatYearId+monthIndex,
+    // so callers check monthPlan(yearId, monthIndex) first and insert vs update accordingly
+    // — same pattern used throughout this file, e.g. AppSettingDao.set()).
+    @Insert suspend fun insertMonthPlan(m:ZakatMonthPlan):Long
+    @Update suspend fun updateMonthPlan(m:ZakatMonthPlan)
+    @Query("SELECT * FROM zakat_month_plans WHERE zakatYearId=:yearId ORDER BY monthIndex ASC") suspend fun monthPlansForYear(yearId:Long):List<ZakatMonthPlan>
+    @Query("SELECT * FROM zakat_month_plans WHERE zakatYearId=:yearId AND monthIndex=:monthIndex LIMIT 1") suspend fun monthPlan(yearId:Long, monthIndex:Int):ZakatMonthPlan?
+    // Paid-so-far for one month slice — see ZakatMonthPlan's doc comment for why this is
+    // computed from payments' paymentDate rather than stored on the plan row itself.
+    @Query("SELECT COALESCE(SUM(amount),0) FROM zakat_payments WHERE zakatYearId=:yearId AND paymentDate>=:start AND paymentDate<:end") suspend fun paidInRange(yearId:Long, start:Long, end:Long):Double
 }
 
 @Dao interface ShellDao {
@@ -1802,19 +1850,45 @@ val MIGRATION_38_39 = object : Migration(38, 39) {
     }
 }
 
+// NEW (Zakat currency/calendar/month-plan): adds ZakatYear.currency, ZakatYear.calendarType,
+// ZakatPayment.paymentDate, ZakatPayment.category as plain ADD COLUMNs (same low-risk shape
+// as MIGRATION_33_34 etc.), plus the brand-new zakat_month_plans table (same CREATE-TABLE
+// pattern as MIGRATION_30_31). Existing zakat_payments rows get paymentDate backfilled from
+// their createdAt so old payments still land in the right month slice.
+val MIGRATION_39_40 = object : Migration(39, 40) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE zakat_years ADD COLUMN currency TEXT NOT NULL DEFAULT 'Rs'")
+        database.execSQL("ALTER TABLE zakat_years ADD COLUMN calendarType TEXT NOT NULL DEFAULT 'islamic'")
+        database.execSQL("ALTER TABLE zakat_payments ADD COLUMN paymentDate INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE zakat_payments ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+        database.execSQL("UPDATE zakat_payments SET paymentDate = createdAt WHERE paymentDate = 0")
+        database.execSQL(
+            "CREATE TABLE IF NOT EXISTS zakat_month_plans (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "zakatYearId INTEGER NOT NULL, " +
+                "monthIndex INTEGER NOT NULL, " +
+                "payableAmount REAL NOT NULL, " +
+                "note TEXT NOT NULL DEFAULT '', " +
+                "createdAt INTEGER NOT NULL, " +
+                "updatedAt INTEGER NOT NULL DEFAULT 0, " +
+                "dirty INTEGER NOT NULL DEFAULT 1)"
+        )
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
-        ZakatYear::class,ZakatPayment::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class],
+        ZakatYear::class,ZakatPayment::class,ZakatMonthPlan::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class],
     // FIX (Improvement Pack P3 — migration testing): was exportSchema=false, so Room
     // never wrote a schema JSON for any version — MigrationTestHelper needs those to
     // validate a migration's resulting schema (not just that it runs without an
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=39, exportSchema=true
+    version=40, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1841,7 +1915,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

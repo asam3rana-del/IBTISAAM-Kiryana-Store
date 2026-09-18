@@ -1,6 +1,7 @@
 package com.grocerypos.v11.ui
 
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.icu.util.IslamicCalendar
@@ -11,6 +12,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -25,6 +27,7 @@ import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
+import com.grocerypos.v11.ZakatMonthPlan
 import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.ZakatYear
 import com.grocerypos.v11.smallestUnitFactor
@@ -32,6 +35,7 @@ import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import com.grocerypos.v11.ui.components.*
@@ -39,8 +43,8 @@ import com.grocerypos.v11.ui.components.*
 /**
  * Zakat tracker — Ramadan-to-Ramadan year (per the user's request), auto-calculated
  * from data this app already tracks (same asset formula as BalanceSheetActivity),
- * with support for paying the year's Zakat all at once or in installments, and an
- * optional month-by-month "how much have I covered so far" breakdown.
+ * with support for paying the year's Zakat all at once or in installments, and a
+ * month-by-month editable payable/paid breakdown.
  *
  * ZAKATABLE ASSETS (standard/common view — see the in-app note; a mufti/scholar
  * should confirm anything business-specific):
@@ -51,14 +55,21 @@ import com.grocerypos.v11.ui.components.*
  * A "Zakat year" starts on the most recent 1 Ramadan on/before today and runs to
  * the following 1 Ramadan. The asset snapshot + payable amount are calculated once
  * when the year is started (editable before saving) and stay fixed for that year;
- * payments are then recorded against it, all-at-once or split into parts. This is
- * local-only data for now — see the ZakatYear/ZakatPayment doc comment in Database.kt.
+ * payments are then recorded against it, all-at-once or split into parts, each with
+ * its own date and an optional category (Cash, Gold, Silver, Business Stock, ...).
+ *
+ * UPDATED (currency + calendar + monthly plan): a year now also carries a chosen
+ * currency label and a choice of Islamic-month or Gregorian-month names for the
+ * monthly breakdown below. Each of the 12 months in the breakdown has its own
+ * editable payable amount + description/note (ZakatMonthPlan, saved per month), and
+ * shows how much of THAT month's slice has actually been paid — computed live from
+ * payments dated inside that month's window, not a separate manual toggle.
+ * This is local-only data for now — see the ZakatYear/ZakatPayment/ZakatMonthPlan
+ * doc comments in Database.kt.
  */
 class ZakatActivity : AppCompatActivity() {
 
     // ================= PREMIUM PALETTE (shared with Items/Categories/Reports) =================
-    // Pulled from ThemeManager so this screen respects dark mode. Header was a
-    // primary→primaryDark gradient; now flat like the rest of the app.
     private var bg = "#F3F2FA"
     private var cardBg = "#FFFFFF"
     private var primary = "#4A3AFF"
@@ -138,7 +149,6 @@ class ZakatActivity : AppCompatActivity() {
 
     // ---------------- Hijri (Ramadan) date helpers ----------------
 
-    // Returns the Gregorian start-of-day timestamp for 1 Ramadan of the given Hijri year.
     private fun ramadanStart(hijriYear: Int): Long {
         val cal = IslamicCalendar()
         cal.clear()
@@ -146,8 +156,6 @@ class ZakatActivity : AppCompatActivity() {
         return cal.timeInMillis
     }
 
-    // The most recent 1 Ramadan on/before "now", and the following 1 Ramadan —
-    // i.e. the Zakat year that contains today.
     private fun currentRamadanBracket(): Pair<Long, Long> {
         val nowCal = IslamicCalendar()
         val hijriYearNow = nowCal.get(IcuCalendar.YEAR)
@@ -163,6 +171,42 @@ class ZakatActivity : AppCompatActivity() {
         return c.get(IcuCalendar.YEAR)
     }
 
+    // ---------------- Month-slice helpers (used by the monthly breakdown) ----------------
+
+    // Splits [year.startDate, year.endDate) into 12 even slices (~29.5 days each, since
+    // it's a lunar year) and returns the start/end millis of slice m (1-indexed).
+    private fun monthStartMillis(year: ZakatYear, m: Int): Long {
+        val span = year.endDate - year.startDate
+        return year.startDate + (span * (m - 1) / 12)
+    }
+    private fun monthEndMillis(year: ZakatYear, m: Int): Long {
+        val span = year.endDate - year.startDate
+        return year.startDate + (span * m / 12)
+    }
+
+    private val islamicMonthNames: List<Pair<String, String>> by lazy {
+        listOf(
+            "Ramadan" to "رمضان", "Shawwal" to "شوال", "Dhul-Qa'dah" to "ذوالقعدہ",
+            "Dhul-Hijjah" to "ذوالحجہ", "Muharram" to "محرم", "Safar" to "صفر",
+            "Rabi' al-Awwal" to "ربیع الاول", "Rabi' al-Thani" to "ربیع الثانی",
+            "Jumada al-Awwal" to "جمادی الاولیٰ", "Jumada al-Thani" to "جمادی الثانی",
+            "Rajab" to "رجب", "Sha'ban" to "شعبان"
+        )
+    }
+
+    // Label for month m of a given year, per that year's chosen calendarType — either
+    // the Islamic month name (Ramadan..Sha'ban, since the year always starts at Ramadan)
+    // or the actual Gregorian month/year that slice's start date falls in.
+    private fun monthLabel(year: ZakatYear, m: Int): String {
+        return if (year.calendarType == "gregorian") {
+            val greg = SimpleDateFormat("MMM yyyy", Locale.getDefault())
+            greg.format(Date(monthStartMillis(year, m)))
+        } else {
+            val pair = islamicMonthNames.getOrNull(m - 1)
+            if (pair != null) Loc.t(this, pair.first, pair.second) else Loc.t(this, "Month $m", "ماہ $m")
+        }
+    }
+
     // ---------------- Load ----------------
 
     private fun loadScreen() {
@@ -175,17 +219,15 @@ class ZakatActivity : AppCompatActivity() {
             resultsBox.removeAllViews()
 
             if (latest == null || now >= latest.endDate) {
-                // No year started yet, or the last one's Ramadan-to-Ramadan window has
-                // already closed — offer to start the current one.
                 resultsBox.addView(startYearCard())
             } else {
                 val paid = db.zakatDao().totalPaidForYear(latest.id)
                 val payments = db.zakatDao().paymentsForYear(latest.id)
                 resultsBox.addView(activeYearCard(latest, paid))
                 resultsBox.addView(spacer(16))
-                resultsBox.addView(monthlyBreakdownCard(latest, paid))
+                resultsBox.addView(monthlyBreakdownCard(latest))
                 resultsBox.addView(spacer(16))
-                resultsBox.addView(historyCard(payments))
+                resultsBox.addView(historyCard(payments, latest.currency))
                 resultsBox.addView(spacer(16))
                 resultsBox.addView(startYearCard(isRestart = true))
             }
@@ -202,6 +244,98 @@ class ZakatActivity : AppCompatActivity() {
                 setPadding(6, 4, 6, 20)
             })
         }
+    }
+
+    // ---------------- Currency + calendar-type pickers (shared by start/edit dialogs) ----------------
+
+    private val currencyOptions = listOf("Rs", "PKR", "$", "SAR", "AED", "\u00A3", "\u20AC", "Custom")
+
+    // Returns the picker view plus a getter for whatever the user currently has chosen.
+    private fun currencyPickerView(initial: String): Pair<LinearLayout, () -> String> {
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 10, 0, 4)
+        }
+        col.addView(TextView(this).apply {
+            text = Loc.t(this@ZakatActivity, "Currency", "کرنسی")
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 0, 0, 4)
+        })
+        val spinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@ZakatActivity, android.R.layout.simple_spinner_dropdown_item, currencyOptions)
+        }
+        val customInput = EditText(this).apply {
+            hint = Loc.t(this@ZakatActivity, "Custom currency symbol/code", "اپنی کرنسی لکھیں")
+            visibility = View.GONE
+        }
+        val presetIndex = currencyOptions.indexOf(initial)
+        if (presetIndex >= 0) {
+            spinner.setSelection(presetIndex)
+        } else {
+            spinner.setSelection(currencyOptions.size - 1)
+            customInput.setText(initial)
+            customInput.visibility = View.VISIBLE
+        }
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
+                customInput.visibility = if (currencyOptions[position] == "Custom") View.VISIBLE else View.GONE
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        col.addView(spinner)
+        col.addView(customInput)
+        val getter: () -> String = {
+            val sel = currencyOptions.getOrElse(spinner.selectedItemPosition) { "Rs" }
+            if (sel == "Custom") customInput.text.toString().trim().ifBlank { "Rs" } else sel
+        }
+        return col to getter
+    }
+
+    // Simple two-way pill toggle for Islamic vs Gregorian month names.
+    private fun calendarTypeToggle(initial: String): Pair<LinearLayout, () -> String> {
+        var selected = initial
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 10, 0, 4)
+        }
+        wrap.addView(TextView(this).apply {
+            text = Loc.t(this@ZakatActivity, "Monthly breakdown shows", "ماہانہ تفصیل میں دکھائیں")
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 0, 0, 4)
+        })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        lateinit var islamicBtn: TextView
+        lateinit var gregBtn: TextView
+        fun refresh() {
+            islamicBtn.background = roundedBg(if (selected == "islamic") primary else border, 30)
+            islamicBtn.setTextColor(if (selected == "islamic") Color.WHITE else Color.parseColor(textDark))
+            gregBtn.background = roundedBg(if (selected == "gregorian") primary else border, 30)
+            gregBtn.setTextColor(if (selected == "gregorian") Color.WHITE else Color.parseColor(textDark))
+        }
+        islamicBtn = TextView(this).apply {
+            text = Loc.t(this@ZakatActivity, "Islamic Months", "اسلامی مہینے")
+            gravity = Gravity.CENTER
+            textSize = 12.5f
+            setPadding(12, 14, 12, 14)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { selected = "islamic"; refresh() }
+        }
+        gregBtn = TextView(this).apply {
+            text = Loc.t(this@ZakatActivity, "Gregorian Months", "عیسوی مہینے")
+            gravity = Gravity.CENTER
+            textSize = 12.5f
+            setPadding(12, 14, 12, 14)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { selected = "gregorian"; refresh() }
+        }
+        row.addView(islamicBtn)
+        row.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
+        row.addView(gregBtn)
+        refresh()
+        wrap.addView(row)
+        return wrap to { selected }
     }
 
     // ---------------- Start / restart a Zakat year ----------------
@@ -238,8 +372,6 @@ class ZakatActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ZakatActivity)
 
-            // ---- Same asset formula as BalanceSheetActivity (see that file's doc
-            // comment for why stock is cost-per-smallest-unit, not raw stock*cost). ----
             val cashInHand = db.cashTransactionDao().totalAll("IN", "cash") - db.cashTransactionDao().totalAll("OUT", "cash")
             val bankBalance = db.cashTransactionDao().totalAll("IN", "bank") - db.cashTransactionDao().totalAll("OUT", "bank")
             val allProducts = db.productDao().all().first()
@@ -251,6 +383,7 @@ class ZakatActivity : AppCompatActivity() {
             val receivables = db.customerDao().receivablesTotal()
             val payables = db.supplierDao().payablesTotal()
             val autoAssets = cashInHand + bankBalance + stockValue + receivables - payables
+            val defaultCurrency = db.appSettingDao().get("currency")?.value?.trim()?.ifBlank { null } ?: "Rs"
 
             val padding = (24 * resources.displayMetrics.density).toInt()
             val col = LinearLayout(this@ZakatActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
@@ -267,27 +400,31 @@ class ZakatActivity : AppCompatActivity() {
             }
             col.addView(assetsInput)
 
+            val (currencyView, getCurrency) = currencyPickerView(defaultCurrency)
+            col.addView(currencyView)
+            val (calendarView, getCalendarType) = calendarTypeToggle("islamic")
+            col.addView(calendarView)
+
+            val scrollWrap = ScrollView(this@ZakatActivity).apply { addView(col) }
+
             AlertDialog.Builder(this@ZakatActivity)
                 .setTitle(Loc.t(this@ZakatActivity, "Confirm Zakat Year", "زکوٰۃ سال کی تصدیق کریں"))
-                .setView(col)
+                .setView(scrollWrap)
                 .setPositiveButton(Loc.t(this@ZakatActivity, "Start", "شروع کریں")) { _, _ ->
                     val assets = assetsInput.text.toString().toDoubleOrNull() ?: 0.0
-                    saveNewYear(start, end, assets)
+                    saveNewYear(start, end, assets, getCurrency(), getCalendarType())
                 }
                 .setNegativeButton(Loc.t(this@ZakatActivity, "Cancel", "منسوخ کریں"), null)
                 .show()
         }
     }
 
-    private fun saveNewYear(start: Long, end: Long, assets: Double) {
+    private fun saveNewYear(start: Long, end: Long, assets: Double, currency: String, calendarType: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ZakatActivity)
             val payable = assets * 0.025
-            val newYear = ZakatYear(startDate = start, endDate = end, assetsSnapshot = assets, totalPayable = payable)
+            val newYear = ZakatYear(startDate = start, endDate = end, assetsSnapshot = assets, totalPayable = payable, currency = currency, calendarType = calendarType)
             val id = db.zakatDao().insertYear(newYear)
-            // FIX (Zakat sync): insertYear() only writes the local row — it was never
-            // being handed to the sync queue, so the year never left this device even
-            // though SyncQueueHelper/SyncApi both already support zakat_years end-to-end.
             SyncQueueHelper.enqueueZakatYear(db, newYear.copy(id = id), this@ZakatActivity)
             SyncQueueHelper.trigger(this@ZakatActivity)
             Toast.makeText(this@ZakatActivity, Loc.t(this@ZakatActivity, "Zakat year started", "زکوٰۃ سال شروع ہو گیا"), Toast.LENGTH_SHORT).show()
@@ -295,12 +432,8 @@ class ZakatActivity : AppCompatActivity() {
         }
     }
 
-    // ---------------- Edit a saved year's assets/payable ----------------
+    // ---------------- Edit a saved year's assets/payable/currency/calendar ----------------
 
-    // Same input dialog as showStartYearDialog, but pre-filled with the year's
-    // CURRENT saved assets (not a fresh auto-calc — the point is to correct
-    // whatever was saved before), and updates the existing row instead of
-    // inserting a new one.
     private fun showEditYearDialog(year: ZakatYear) {
         val padding = (24 * resources.displayMetrics.density).toInt()
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
@@ -317,26 +450,33 @@ class ZakatActivity : AppCompatActivity() {
         }
         col.addView(assetsInput)
 
+        val (currencyView, getCurrency) = currencyPickerView(year.currency)
+        col.addView(currencyView)
+        val (calendarView, getCalendarType) = calendarTypeToggle(year.calendarType)
+        col.addView(calendarView)
+
+        val scrollWrap = ScrollView(this).apply { addView(col) }
+
         AlertDialog.Builder(this)
             .setTitle(Loc.t(this, "Edit Zakat Year", "زکوٰۃ سال میں ترمیم"))
-            .setView(col)
+            .setView(scrollWrap)
             .setPositiveButton(Loc.t(this, "Save", "محفوظ کریں")) { _, _ ->
                 val assets = assetsInput.text.toString().toDoubleOrNull()
                 if (assets == null || assets < 0.0) {
                     Toast.makeText(this, Loc.t(this, "Enter a valid amount", "صحیح رقم لکھیں"), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                updateYearAssets(year, assets)
+                updateYearAssets(year, assets, getCurrency(), getCalendarType())
             }
             .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
             .show()
     }
 
-    private fun updateYearAssets(year: ZakatYear, assets: Double) {
+    private fun updateYearAssets(year: ZakatYear, assets: Double, currency: String, calendarType: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ZakatActivity)
             val payable = assets * 0.025
-            val updated = year.copy(assetsSnapshot = assets, totalPayable = payable)
+            val updated = year.copy(assetsSnapshot = assets, totalPayable = payable, currency = currency, calendarType = calendarType)
             db.zakatDao().updateYear(updated)
             SyncQueueHelper.enqueueZakatYear(db, updated, this@ZakatActivity)
             Toast.makeText(this@ZakatActivity, Loc.t(this@ZakatActivity, "Zakat year updated", "زکوٰۃ سال تازہ ہو گیا"), Toast.LENGTH_SHORT).show()
@@ -365,11 +505,6 @@ class ZakatActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(textGray))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
-            // NEW (Zakat edit): the year's assets/payable were only ever settable at
-            // creation time (showStartYearDialog) and then treated as fixed — but the
-            // auto-calc can come out wrong (e.g. Rs 0 if cash/bank/stock data wasn't
-            // ready yet), and there was no way to fix it afterward. This lets
-            // Admin/Manager re-open the same amount dialog against the saved year.
             addView(TextView(this@ZakatActivity).apply {
                 text = Loc.t(this@ZakatActivity, "Edit", "ترمیم")
                 textSize = 12.5f
@@ -380,10 +515,10 @@ class ZakatActivity : AppCompatActivity() {
                 setOnClickListener { showEditYearDialog(year) }
             })
         })
-        card.addView(bigAmountRow(Loc.t(this, "Total Zakat Payable", "کل زکوٰۃ ادا کرنی ہے"), year.totalPayable, primary))
+        card.addView(bigAmountRow(Loc.t(this, "Total Zakat Payable", "کل زکوٰۃ ادا کرنی ہے"), year.totalPayable, primary, year.currency))
         card.addView(spacer(4))
-        card.addView(bigAmountRow(Loc.t(this, "Paid So Far", "اب تک ادا شدہ"), paid, teal))
-        card.addView(bigAmountRow(Loc.t(this, "Remaining", "باقی رقم"), remaining, if (remaining > 0) red else teal))
+        card.addView(bigAmountRow(Loc.t(this, "Paid So Far", "اب تک ادا شدہ"), paid, teal, year.currency))
+        card.addView(bigAmountRow(Loc.t(this, "Remaining", "باقی رقم"), remaining, if (remaining > 0) red else teal, year.currency))
 
         card.addView(spacer(10))
         card.addView(ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -405,7 +540,7 @@ class ZakatActivity : AppCompatActivity() {
             }.apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
             row.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
             row.addView(pillButton(Loc.t(this@ZakatActivity, "Pay Remaining in Full", "باقی مکمل ادا کریں"), teal) {
-                savePayment(year, remaining, "cash", Loc.t(this@ZakatActivity, "Full remaining balance", "مکمل باقی رقم"))
+                savePayment(year, remaining, "cash", Loc.t(this@ZakatActivity, "Full remaining balance", "مکمل باقی رقم"), "", System.currentTimeMillis())
             }.apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
             card.addView(row)
         } else {
@@ -419,7 +554,7 @@ class ZakatActivity : AppCompatActivity() {
         return card
     }
 
-    private fun bigAmountRow(label: String, amount: Double, colorHex: String): LinearLayout {
+    private fun bigAmountRow(label: String, amount: Double, colorHex: String, currency: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 4, 0, 4)
@@ -430,7 +565,7 @@ class ZakatActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(TextView(this@ZakatActivity).apply {
-                text = "Rs %.0f".format(amount)
+                text = "$currency %.0f".format(amount)
                 textSize = 15f
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(Color.parseColor(colorHex))
@@ -438,12 +573,25 @@ class ZakatActivity : AppCompatActivity() {
         }
     }
 
+    // Optional category for a payment — purely informational (which zakatable asset it
+    // relates to). First entry ("" -> "No category") means the field can be left blank.
+    private fun categoryOptions(): List<Pair<String, String>> = listOf(
+        "" to Loc.t(this, "No category", "کوئی کیٹیگری نہیں"),
+        "cash" to Loc.t(this, "Cash / Bank", "نقدی / بینک"),
+        "gold" to Loc.t(this, "Gold", "سونا"),
+        "silver" to Loc.t(this, "Silver", "چاندی"),
+        "business" to Loc.t(this, "Business Stock", "کاروباری مال"),
+        "livestock" to Loc.t(this, "Livestock", "مویشی"),
+        "crops" to Loc.t(this, "Crops / Produce", "فصل / پیداوار"),
+        "other" to Loc.t(this, "Other", "دیگر")
+    )
+
     private fun showPaymentDialog(year: ZakatYear, remaining: Double) {
         val padding = (24 * resources.displayMetrics.density).toInt()
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
 
         val amountInput = EditText(this).apply {
-            hint = Loc.t(this@ZakatActivity, "Amount (remaining: Rs %.0f)".format(remaining), "رقم (باقی: Rs %.0f)".format(remaining))
+            hint = Loc.t(this@ZakatActivity, "Amount (remaining: ${year.currency} %.0f)".format(remaining), "رقم (باقی: ${year.currency} %.0f)".format(remaining))
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
         col.addView(amountInput)
@@ -453,47 +601,88 @@ class ZakatActivity : AppCompatActivity() {
         }
         col.addView(methodSpinner)
 
+        col.addView(TextView(this).apply {
+            text = Loc.t(this@ZakatActivity, "Category (optional)", "کیٹیگری (اختیاری)")
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 12, 0, 4)
+        })
+        val catOptions = categoryOptions()
+        val categorySpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@ZakatActivity, android.R.layout.simple_spinner_dropdown_item, catOptions.map { it.second })
+        }
+        col.addView(categorySpinner)
+
+        var pickedDate = System.currentTimeMillis()
+        col.addView(TextView(this).apply {
+            text = Loc.t(this@ZakatActivity, "Payment Date", "ادائیگی کی تاریخ")
+            textSize = 12f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 12, 0, 4)
+        })
+        lateinit var dateText: TextView
+        dateText = TextView(this).apply {
+            text = fmt.format(Date(pickedDate))
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+            background = strokedBg(border, cardBg, 10)
+            setPadding(16, 16, 16, 16)
+            setLeadingIcon(R.drawable.ic_calendar, primary, 15, 8)
+            setOnClickListener {
+                val cal = Calendar.getInstance().apply { timeInMillis = pickedDate }
+                DatePickerDialog(this@ZakatActivity, { _, y, m, d ->
+                    val picked = Calendar.getInstance().apply { set(y, m, d, 0, 0, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                    pickedDate = picked
+                    text = fmt.format(Date(picked))
+                }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
+                    datePicker.calendarViewShown = true; datePicker.spinnersShown = false
+                    datePicker.maxDate = System.currentTimeMillis()
+                }.show()
+            }
+        }
+        col.addView(dateText)
+
         val noteInput = EditText(this).apply {
             hint = Loc.t(this@ZakatActivity, "Note (optional)", "نوٹ (اختیاری)")
+            setPadding(0, 20, 0, 0)
         }
         col.addView(noteInput)
 
+        val scrollWrap = ScrollView(this).apply { addView(col) }
+
         AlertDialog.Builder(this)
             .setTitle(Loc.t(this, "Record Zakat Payment", "زکوٰۃ ادائیگی درج کریں"))
-            .setView(col)
+            .setView(scrollWrap)
             .setPositiveButton(Loc.t(this, "Save", "محفوظ کریں")) { _, _ ->
                 val amt = amountInput.text.toString().toDoubleOrNull()
                 if (amt == null || amt <= 0.0) {
                     Toast.makeText(this, Loc.t(this, "Enter a valid amount", "صحیح رقم لکھیں"), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                savePayment(year, amt, methodSpinner.selectedItem?.toString() ?: "cash", noteInput.text.toString().trim())
+                val category = catOptions.getOrElse(categorySpinner.selectedItemPosition) { catOptions[0] }.first
+                savePayment(year, amt, methodSpinner.selectedItem?.toString() ?: "cash", noteInput.text.toString().trim(), category, pickedDate)
             }
             .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
             .show()
     }
 
-    private fun savePayment(year: ZakatYear, amount: Double, method: String, note: String) {
+    private fun savePayment(year: ZakatYear, amount: Double, method: String, note: String, category: String, paymentDate: Long) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ZakatActivity)
-            val newPayment = ZakatPayment(zakatYearId = year.id, amount = amount, method = method, note = note)
+            val newPayment = ZakatPayment(zakatYearId = year.id, amount = amount, method = method, note = note, category = category, paymentDate = paymentDate)
             val paymentId = db.zakatDao().insertPayment(newPayment)
             // Also logged as a normal expense (category "Zakat") so it shows up in the
             // existing Expense reports/P&L alongside everything else — same as every
             // other outgoing payment in this app.
             val desc = Loc.t(this@ZakatActivity, "Zakat payment", "زکوٰۃ کی ادائیگی") + " (${fmt.format(Date(year.startDate))} \u2014 ${fmt.format(Date(year.endDate))})" + if (note.isNotEmpty()) " | $note" else ""
-            val zakatExpense = Expense(category = "Zakat", description = desc, amount = amount)
+            val zakatExpense = Expense(category = "Zakat", description = desc, amount = amount, createdAt = paymentDate)
             val expenseId = db.expenseDao().insert(zakatExpense)
             val savedExpense = zakatExpense.copy(id = expenseId)
             SyncQueueHelper.enqueue(
                 db, "expense", SyncQueueHelper.expenseEntityId(savedExpense),
                 "create", SyncQueueHelper.expenseJson(savedExpense)
             )
-            // FIX (Zakat sync): the payment (and, for years created before this fix,
-            // its parent year too) was never being enqueued — only the linked Expense
-            // was. Stamp/enqueue the year first (enqueueZakatYear is a safe no-op-ish
-            // upsert if it's already stamped) so we have its serverId, then enqueue
-            // this payment against it.
             val stampedYear = SyncQueueHelper.enqueueZakatYear(db, year, this@ZakatActivity)
             SyncQueueHelper.enqueueZakatPayment(
                 db, newPayment.copy(id = paymentId),
@@ -506,15 +695,14 @@ class ZakatActivity : AppCompatActivity() {
         }
     }
 
-    // ---------------- Monthly breakdown ----------------
+    // ---------------- Monthly breakdown (editable payable + note per month) ----------------
 
-    // Splits the year's total into 12 equal installments and shows, cumulatively,
-    // how many of those "months' worth" the payments made so far cover — for anyone
-    // who prefers to pay Zakat spread across the year rather than all at once.
-    private fun monthlyBreakdownCard(year: ZakatYear, paid: Double): LinearLayout {
-        val monthly = year.totalPayable / 12.0
-        val monthsElapsed = monthsBetween(year.startDate, System.currentTimeMillis().coerceAtMost(year.endDate)).coerceIn(0, 12)
-
+    // Shows all 12 months of the active Zakat year by name (Islamic or Gregorian, per
+    // year.calendarType), each with its own editable payable amount + description/note
+    // (ZakatMonthPlan — defaults to totalPayable/12 until the user saves one), and how
+    // much of that month's slice has actually been paid (computed live from payments
+    // whose paymentDate falls in that slice). Tap a month to edit its amount/note.
+    private fun monthlyBreakdownCard(year: ZakatYear): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 18, 22, 18)
@@ -528,52 +716,160 @@ class ZakatActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
         })
         card.addView(TextView(this).apply {
-            text = Loc.t(this@ZakatActivity, "If paying monthly: Rs %.0f / month".format(monthly), "ماہانہ ادائیگی کی صورت میں: Rs %.0f / ماہ".format(monthly))
+            text = Loc.t(this@ZakatActivity, "Tap a month to set its amount and add a note", "رقم مقرر کرنے اور نوٹ لکھنے کے لیے ماہ پر ٹیپ کریں")
             textSize = 12f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 4, 0, 14)
         })
 
-        for (m in 1..12) {
-            val dueSoFar = monthly * m
-            val covered = paid >= dueSoFar - 0.5 // small tolerance for rounding
-            val isCurrentMonth = m == monthsElapsed + 1
-            card.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, 6, 0, 6)
-                addView(TextView(this@ZakatActivity).apply {
-                    text = Loc.t(this@ZakatActivity, "Month $m", "ماہ $m")
-                    if (covered) {
-                        setLeadingIcon(R.drawable.ic_check, teal, 13, 6)
-                    } else if (isCurrentMonth) {
-                        setLeadingIcon(R.drawable.ic_stopwatch, gold, 13, 6)
-                    } else {
-                        setCompoundDrawablesRelative(null, null, null, null)
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@ZakatActivity)
+            val plans = db.zakatDao().monthPlansForYear(year.id).associateBy { it.monthIndex }
+            val defaultMonthly = year.totalPayable / 12.0
+            var totalPlannedPayable = 0.0
+            var totalPlannedPaid = 0.0
+
+            for (m in 1..12) {
+                val plan = plans[m]
+                val payableAmt = plan?.payableAmount ?: defaultMonthly
+                val note = plan?.note ?: ""
+                val startM = monthStartMillis(year, m)
+                val endM = monthEndMillis(year, m)
+                val paidM = db.zakatDao().paidInRange(year.id, startM, endM)
+                totalPlannedPayable += payableAmt
+                totalPlannedPaid += paidM
+                val covered = paidM >= payableAmt - 0.5
+                val remainingM = (payableAmt - paidM).coerceAtLeast(0.0)
+
+                card.addView(LinearLayout(this@ZakatActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(0, 10, 0, 10)
+                    background = strokedBg(border, cardBg, 12)
+                    setPadding(16, 12, 16, 12)
+                    setOnClickListener { showMonthPlanDialog(year, m, plan, defaultMonthly) }
+
+                    addView(LinearLayout(this@ZakatActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        addView(TextView(this@ZakatActivity).apply {
+                            text = monthLabel(year, m)
+                            if (covered) setLeadingIcon(R.drawable.ic_check, teal, 13, 6)
+                            else setLeadingIcon(R.drawable.ic_edit, textGray, 12, 6)
+                            textSize = 13.5f
+                            setTypeface(typeface, Typeface.BOLD)
+                            setTextColor(Color.parseColor(textDark))
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        })
+                        addView(TextView(this@ZakatActivity).apply {
+                            text = "${year.currency} %.0f".format(payableAmt)
+                            textSize = 13f
+                            setTypeface(typeface, Typeface.BOLD)
+                            setTextColor(Color.parseColor(primary))
+                        })
+                    })
+                    addView(LinearLayout(this@ZakatActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(0, 4, 0, 0)
+                        addView(TextView(this@ZakatActivity).apply {
+                            text = Loc.t(this@ZakatActivity, "Paid: ", "ادا شدہ: ") + "${year.currency} %.0f".format(paidM)
+                            textSize = 11.5f
+                            setTextColor(Color.parseColor(teal))
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        })
+                        addView(TextView(this@ZakatActivity).apply {
+                            text = Loc.t(this@ZakatActivity, "Remaining: ", "باقی: ") + "${year.currency} %.0f".format(remainingM)
+                            textSize = 11.5f
+                            setTextColor(Color.parseColor(if (remainingM > 0) red else teal))
+                        })
+                    })
+                    if (note.isNotEmpty()) {
+                        addView(TextView(this@ZakatActivity).apply {
+                            text = note
+                            textSize = 11.5f
+                            setTextColor(Color.parseColor(textGray))
+                            setPadding(0, 6, 0, 0)
+                        })
                     }
-                    textSize = 13f
-                    setTextColor(Color.parseColor(if (covered) textDark else textGray))
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
-                addView(TextView(this@ZakatActivity).apply {
-                    text = "Rs %.0f".format(monthly)
-                    textSize = 12.5f
-                    setTextColor(Color.parseColor(if (covered) teal else textGray))
-                })
+            }
+
+            // Year-end summary computed from the monthly plan itself, so the user can see
+            // at a glance whether their month-by-month schedule adds up to the year's
+            // total payable, and how much of THAT schedule has been paid so far.
+            card.addView(spacer(6))
+            card.addView(View(this@ZakatActivity).apply {
+                setBackgroundColor(Color.parseColor(border))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
             })
+            card.addView(spacer(10))
+            card.addView(TextView(this@ZakatActivity).apply {
+                text = Loc.t(this@ZakatActivity, "Year-End Totals (from monthly schedule)", "سالانہ مجموعہ (ماہانہ شیڈول سے)")
+                textSize = 12.5f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.parseColor(textDark))
+                setPadding(0, 0, 0, 6)
+            })
+            card.addView(bigAmountRow(Loc.t(this@ZakatActivity, "Total Planned Payable", "کل مقررہ رقم"), totalPlannedPayable, primary, year.currency))
+            card.addView(bigAmountRow(Loc.t(this@ZakatActivity, "Total Paid (this schedule)", "کل ادا شدہ"), totalPlannedPaid, teal, year.currency))
+            card.addView(bigAmountRow(Loc.t(this@ZakatActivity, "Remaining (this schedule)", "باقی رقم"), (totalPlannedPayable - totalPlannedPaid).coerceAtLeast(0.0), red, year.currency))
         }
         return card
     }
 
-    private fun monthsBetween(startMillis: Long, endMillis: Long): Int {
-        val days = ((endMillis - startMillis) / (1000L * 60 * 60 * 24)).toInt()
-        // ~354-day lunar year / 12 \u2248 29.5 days per lunar month
-        return (days / 29.5).toInt()
+    private fun showMonthPlanDialog(year: ZakatYear, m: Int, existing: ZakatMonthPlan?, suggested: Double) {
+        val padding = (24 * resources.displayMetrics.density).toInt()
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
+        col.addView(TextView(this).apply {
+            text = monthLabel(year, m)
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor(textDark))
+            setPadding(0, 0, 0, 10)
+        })
+        val amountInput = EditText(this).apply {
+            hint = Loc.t(this@ZakatActivity, "Payable Amount for this month", "اس ماہ کی قابل ادا رقم")
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText("%.0f".format(existing?.payableAmount ?: suggested))
+        }
+        col.addView(amountInput)
+        val noteInput = EditText(this).apply {
+            hint = Loc.t(this@ZakatActivity, "Description / Note (optional)", "تفصیل / نوٹ (اختیاری)")
+            setText(existing?.note ?: "")
+            setPadding(0, 16, 0, 0)
+        }
+        col.addView(noteInput)
+
+        AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Edit Month", "ماہ میں ترمیم"))
+            .setView(col)
+            .setPositiveButton(Loc.t(this, "Save", "محفوظ کریں")) { _, _ ->
+                val amt = amountInput.text.toString().toDoubleOrNull()
+                if (amt == null || amt < 0.0) {
+                    Toast.makeText(this, Loc.t(this, "Enter a valid amount", "صحیح رقم لکھیں"), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                saveMonthPlan(year, m, amt, noteInput.text.toString().trim(), existing)
+            }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
+            .show()
+    }
+
+    private fun saveMonthPlan(year: ZakatYear, m: Int, amount: Double, note: String, existing: ZakatMonthPlan?) {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@ZakatActivity)
+            if (existing != null) {
+                db.zakatDao().updateMonthPlan(existing.copy(payableAmount = amount, note = note, updatedAt = System.currentTimeMillis(), dirty = true))
+            } else {
+                db.zakatDao().insertMonthPlan(ZakatMonthPlan(zakatYearId = year.id, monthIndex = m, payableAmount = amount, note = note))
+            }
+            Toast.makeText(this@ZakatActivity, Loc.t(this@ZakatActivity, "Month updated", "ماہ تازہ ہو گیا"), Toast.LENGTH_SHORT).show()
+            loadScreen()
+        }
     }
 
     // ---------------- Payment history ----------------
 
-    private fun historyCard(payments: List<ZakatPayment>): LinearLayout {
+    private fun historyCard(payments: List<ZakatPayment>, currency: String): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 18, 22, 18)
@@ -594,7 +890,7 @@ class ZakatActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(textGray))
             })
         } else {
-            val histFmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+            val catLabels = categoryOptions().toMap()
             payments.forEach { p ->
                 card.addView(LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
@@ -602,21 +898,27 @@ class ZakatActivity : AppCompatActivity() {
                     addView(LinearLayout(this@ZakatActivity).apply {
                         orientation = LinearLayout.HORIZONTAL
                         addView(TextView(this@ZakatActivity).apply {
-                            text = histFmt.format(Date(p.createdAt))
+                            text = fmt.format(Date(p.paymentDate))
                             textSize = 12f
                             setTextColor(Color.parseColor(textGray))
                             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                         })
                         addView(TextView(this@ZakatActivity).apply {
-                            text = "Rs %.0f".format(p.amount)
+                            text = "$currency %.0f".format(p.amount)
                             textSize = 13.5f
                             setTypeface(typeface, Typeface.BOLD)
                             setTextColor(Color.parseColor(teal))
                         })
                     })
-                    if (p.note.isNotEmpty() || p.method.isNotEmpty()) {
+                    val catLabel = catLabels[p.category]?.takeIf { p.category.isNotEmpty() }
+                    val metaParts = listOfNotNull(
+                        p.method.takeIf { it.isNotEmpty() }?.uppercase(),
+                        catLabel,
+                        p.note.takeIf { it.isNotEmpty() }
+                    )
+                    if (metaParts.isNotEmpty()) {
                         addView(TextView(this@ZakatActivity).apply {
-                            text = p.method.uppercase() + if (p.note.isNotEmpty()) "  \u2022  ${p.note}" else ""
+                            text = metaParts.joinToString("  \u2022  ")
                             textSize = 11.5f
                             setTextColor(Color.parseColor(textGray))
                         })
