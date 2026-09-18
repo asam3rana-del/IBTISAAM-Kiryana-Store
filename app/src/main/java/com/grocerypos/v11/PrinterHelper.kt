@@ -196,7 +196,18 @@ object PrinterHelper {
     // Feed a few lines then partial cut (GS V 1) - supported by most 58mm printers.
     // NOTE: printers with no cutter hardware (most handheld/mobile 58mm Bluetooth
     // printers) simply ignore an unsupported cut command, so this is safe to always send.
-    private val FEED_AND_CUT = byteArrayOf(0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x01)
+    //
+    // FIX (too much blank paper at top/bottom of every receipt — "page upper and
+    // bottom bht zaida use ho raha"): this was 3 line-feeds (0x0A x3). On a
+    // continuous roll with no cutter (the common case per the note above), that
+    // blank feed after receipt N doesn't disappear — it just sits on the paper
+    // directly above receipt N+1's first line, so it reads as wasted space at
+    // BOTH the bottom of one receipt and the top of the next. Trimmed to 2, which
+    // is still enough tear-off/cutter clearance for the last printed line on
+    // every printer this was tested against. If your printer has an auto-cutter
+    // and it ever nicks the last line of text, raise this back to 3; if it has no
+    // cutter and tear-off is easy, you can safely trim it to 1.
+    private val FEED_AND_CUT = byteArrayOf(0x0A, 0x0A, 0x1D, 0x56, 0x01)
 
     // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi).
     //
@@ -1015,13 +1026,39 @@ object PrinterHelper {
                     val line1Baseline = y + tableRowPaddingV - fm.top
                     val line1Height = fm.bottom - fm.top
 
-                    // Ellipsized against the full printable width so the name always
-                    // fits the page regardless of paper width — "page k mutabiq proper
-                    // fit kro".
-                    val fitName = TextUtils.ellipsize(line.name, paint, fullTextWidth, TextUtils.TruncateAt.END).toString()
-                    paint.textAlign = if (nameIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
-                    val nameX = if (nameIsUrdu) tableRight - tableCellPaddingH else tableLeft + tableCellPaddingH
-                    canvas.drawText(fitName, nameX, line1Baseline, paint)
+                    // FIX (product name not printing in its proper column/row — name
+                    // showed as a single garbled glyph instead of the full text,
+                    // especially for a Urdu name with an embedded English/number run
+                    // like "385ml"): this used to be a raw paint.textAlign +
+                    // canvas.drawText(fitName, ...) call, same as every other line in
+                    // this file *except* this one. Plain canvas.drawText does not run
+                    // Unicode bidi reordering across mixed-direction text, and
+                    // TextUtils.ellipsize truncates from the string's *logical* end,
+                    // which for RTL text is the visual LEFT — so a mixed name got
+                    // drawn out of order and chopped from the wrong side, collapsing
+                    // to what looked like one stray glyph. Center/Left lines above
+                    // already avoid this by going through StaticLayout with
+                    // setTextDirection(...), which does full bidi + shaping. Item
+                    // names now go through the same StaticLayout path (single line,
+                    // built-in ellipsize) so a mixed Urdu/English/number name prints
+                    // complete and in the correct column, exactly like the on-screen
+                    // preview card.
+                    val nameDir = if (nameIsUrdu) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
+                    val nameWidthPx = fullTextWidth.toInt().coerceAtLeast(1)
+                    val nameLayout = StaticLayout.Builder
+                        .obtain(line.name, 0, line.name.length, paint, nameWidthPx)
+                        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                        .setTextDirection(nameDir)
+                        .setMaxLines(1)
+                        .setEllipsize(TextUtils.TruncateAt.END)
+                        .setEllipsizedWidth(nameWidthPx)
+                        .build()
+                    canvas.save()
+                    // Translate so the layout's own first-line baseline lands exactly
+                    // on line1Baseline (matches where the old drawText call baselined).
+                    canvas.translate(tableLeft + tableCellPaddingH, line1Baseline - nameLayout.getLineBaseline(0))
+                    nameLayout.draw(canvas)
+                    canvas.restore()
 
                     // ---- line 2: rate / qty / amount, each centered (amount right-
                     // aligned) under the matching header column ----
