@@ -115,6 +115,25 @@ object PrinterHelper {
         ) : ReceiptLine()
 
         /**
+         * FIX (print didn't match preview — "print view ki tarah print ana chahiye"):
+         * the on-screen receipt card now has its own RATE column between ITEM and
+         * QTY (see BillPreviewActivity's header row: ITEM / RATE / QTY / AMOUNT),
+         * but the printed header was still the older 3-column Row3 ("Item / Qty /
+         * Amount") with no Rate label at all. Row4 is the 4-column borderless
+         * equivalent — col1 left/RTL-aware, col2 & col3 centered, col4
+         * right-aligned — used for the printed "Item / Rate / Qty / Amount"
+         * header so it lines up with what the customer already sees on screen.
+         */
+        data class Row4(
+            val col1: String,
+            val col2: String,
+            val col3: String,
+            val col4: String,
+            val weights: List<Float> = listOf(2f, 1f, 1f, 1f),
+            val bold: Boolean = false
+        ) : ReceiptLine()
+
+        /**
          * One item row rendered exactly like the on-screen preview card:
          * line 1 is the item name (bold, left/RTL-aware) with qty centered and
          * amount right-aligned in the same row; line 2 is "@ rate" in smaller
@@ -127,9 +146,15 @@ object PrinterHelper {
          * name previously shared one line with qty/amount, squeezed into a narrow
          * column, so longer (especially Urdu) names got ellipsized. Now rendered as:
          *   line 1: <name>                                    (full row width, bold)
-         *   line 2: <qty>            @ <rate>            <amount>   (amount bold)
+         *   line 2: <rate>              <qty>              <amount>   (amount bold)
+         * FIX (print didn't match preview): line 2 used to read
+         * "<qty> @ <rate> <amount>", which put qty first and buried rate behind an
+         * "@" — different order from the on-screen card's ITEM / RATE / QTY / AMOUNT
+         * header. Line 2 now shows rate / qty / amount, left-to-right, in the same
+         * order as the header (and the preview card), just wrapped onto its own line
+         * under the name instead of a plain "@ rate" note.
          * [weights] is kept for source compatibility with existing call sites (the
-         * shared header Row3 above still uses it) but is no longer used by ItemRow's
+         * shared header Row4 above still uses it) but is no longer used by ItemRow's
          * own layout, since line 1 now always spans the full row width.
          */
         data class ItemRow(
@@ -698,6 +723,14 @@ object PrinterHelper {
                     blocks.add(Block(line, null, h))
                     totalHeight += h
                 }
+                is ReceiptLine.Row4 -> {
+                    paint.textSize = tableFontSize
+                    val fm = paint.fontMetrics
+                    paint.textSize = fontSizePx
+                    val h = (fm.bottom - fm.top).toInt() + tableRowPaddingV
+                    blocks.add(Block(line, null, h))
+                    totalHeight += h
+                }
                 is ReceiptLine.ItemRow -> {
                     // Two stacked lines: line 1 is the item name alone (full width,
                     // bold); line 2 is qty / "@ rate" / amount. Measured using the
@@ -887,13 +920,49 @@ object PrinterHelper {
                     paint.textSize = fontSizePx
                     y += block.height
                 }
+                is ReceiptLine.Row4 -> {
+                    // Borderless header-style row: col1 left/RTL-aware, col2 & col3
+                    // centered, col4 right-aligned — matches the on-screen "ITEM /
+                    // RATE / QTY / AMOUNT" header, no grid lines drawn.
+                    paint.textSize = tableFontSize
+                    val oldBold = paint.isFakeBoldText
+                    paint.isFakeBoldText = line.bold
+                    val fm = paint.fontMetrics
+                    val baseline = y + tableRowPaddingV / 2 - fm.top
+
+                    val tableLeft = margin.toFloat()
+                    val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
+                    val tableWidth = tableRight - tableLeft
+                    val totalWeight = line.weights.sum().coerceAtLeast(0.01f)
+                    val colX = FloatArray(5)
+                    colX[0] = tableLeft
+                    for (i in 0..3) colX[i + 1] = colX[i] + (line.weights[i] / totalWeight) * tableWidth
+
+                    val col1Rtl = containsArabicScript(line.col1)
+                    paint.textAlign = if (col1Rtl) Paint.Align.RIGHT else Paint.Align.LEFT
+                    val col1X = if (col1Rtl) colX[1] - tableCellPaddingH else colX[0] + tableCellPaddingH
+                    canvas.drawText(line.col1, col1X, baseline, paint)
+
+                    paint.textAlign = Paint.Align.CENTER
+                    canvas.drawText(line.col2, (colX[1] + colX[2]) / 2f, baseline, paint)
+                    canvas.drawText(line.col3, (colX[2] + colX[3]) / 2f, baseline, paint)
+
+                    paint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText(line.col4, colX[4] - tableCellPaddingH, baseline, paint)
+
+                    paint.isFakeBoldText = oldBold
+                    paint.textSize = fontSizePx
+                    y += block.height
+                }
                 is ReceiptLine.ItemRow -> {
                     // FIX (item name truncation — "item k nechey item name aye"): name
                     // now gets its own full-width line so long/Urdu names no longer get
-                    // squeezed into a narrow shared column and ellipsized. qty/rate/
-                    // amount moved to a second line underneath. No borders, no grid.
+                    // squeezed into a narrow shared column and ellipsized. rate/qty/
+                    // amount moved to a second line underneath, in that order — same
+                    // left-to-right order as the Rate/Qty/Amount header columns above.
+                    // No borders, no grid.
                     //   line 1: <name>                                   (full width, bold)
-                    //   line 2: <qty>            @ <rate>          <amount>   (amount bold)
+                    //   line 2: <rate>              <qty>              <amount>   (amount bold)
                     val tableLeft = margin.toFloat()
                     val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
                     val fullTextWidth = (tableRight - tableLeft - tableCellPaddingH * 2).coerceAtLeast(1f)
@@ -913,7 +982,13 @@ object PrinterHelper {
                     val nameX = if (nameIsUrdu) tableRight - tableCellPaddingH else tableLeft + tableCellPaddingH
                     canvas.drawText(fitName, nameX, line1Baseline, paint)
 
-                    // ---- line 2: qty (left) / "@ rate" (center) / amount (right, bold) ----
+                    // ---- line 2: rate (left) / qty (center) / amount (right, bold) ----
+                    // FIX (print didn't match preview): order used to be qty / "@ rate" /
+                    // amount, which didn't match the on-screen card's column order. Now
+                    // rate / qty / amount, left-to-right, same order as the ITEM / RATE /
+                    // QTY / AMOUNT header above and the preview card's own row order —
+                    // just wrapped onto this second line instead of squeezed into columns
+                    // next to the (full-width) item name.
                     // Small explicit gap (detailLineGap) below line 1 so the two lines
                     // don't sit flush against each other on paper.
                     val detailLineGap = tableRowPaddingV * 0.35f
@@ -923,10 +998,10 @@ object PrinterHelper {
                     val line2Baseline = y + tableRowPaddingV + line1Height + detailLineGap - fm.top
 
                     paint.textAlign = Paint.Align.LEFT
-                    canvas.drawText(line.qty, tableLeft + tableCellPaddingH, line2Baseline, paint)
+                    canvas.drawText(line.rate, tableLeft + tableCellPaddingH, line2Baseline, paint)
 
                     paint.textAlign = Paint.Align.CENTER
-                    canvas.drawText("@ ${line.rate}", (tableLeft + tableRight) / 2f, line2Baseline, paint)
+                    canvas.drawText(line.qty, (tableLeft + tableRight) / 2f, line2Baseline, paint)
 
                     paint.isFakeBoldText = true
                     paint.textAlign = Paint.Align.RIGHT
@@ -1028,7 +1103,7 @@ object PrinterHelper {
      * Kept for any existing callers that build a plain string. Each line of the
      * input is now given its own RTL/LTR direction (fixing the old whole-receipt
      * RTL bug); for real column alignment (labels/values, item qty/rate/amount),
-     * prefer [printReceiptLines] with [ReceiptLine.TwoCol]/[ReceiptLine.Row3]/
+     * prefer [printReceiptLines] with [ReceiptLine.TwoCol]/[ReceiptLine.Row4]/
      * [ReceiptLine.ItemRow] instead of padding with spaces, since a proportional
      * font can't be aligned that way.
      */
