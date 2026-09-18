@@ -1241,7 +1241,10 @@ class PartyTransactionActivity : AppCompatActivity() {
                         // stale Cash IN entry behind forever (mirrors what
                         // SaleRepository.deleteSale() already does for the full-bill
                         // delete screen).
-                        db.cashTransactionDao().deleteByReference(sale.invoice)
+                        // FIX (deleted-payment-survives-sync bug — see RoomPurchaseRepository.
+                        // deletePurchase()'s matching comment): raw deleteByReference() never
+                        // enqueued the removal, so it never reached other devices/Firestore.
+                        SyncQueueHelper.deleteCashTransactionsByReference(db, sale.invoice)
                         SyncQueueHelper.enqueueDelete(db, "sale", SyncQueueHelper.saleEntityId(sale))
                     } else {
                         val newTotal = sale.total - item.amount
@@ -1474,11 +1477,14 @@ class PartyTransactionActivity : AppCompatActivity() {
                         // FIX (#9 — cash transaction consistency): the whole purchase is
                         // gone now, so its linked payment and cash transaction must go
                         // with it — previously only db.purchaseDao().deletePurchase() ran
-                        // here, leaving stale Payment/Cash OUT entries behind forever
-                        // (mirrors what PurchaseRepository.deletePurchase() already does
-                        // for the full-bill delete screen).
-                        db.paymentDao().deleteByReference(purchase.billNo)
-                        db.cashTransactionDao().deleteByReference(purchase.billNo)
+                        // here, leaving stale Payment/Cash OUT entries behind forever.
+                        // FIX (deleted-payment-survives-sync bug): raw deleteByReference()
+                        // calls delete the rows locally but never enqueue a matching sync
+                        // delete (see RoomPurchaseRepository.deletePurchase()'s matching
+                        // comment) — the very bug this comment claimed was already handled
+                        // there, but wasn't. Using the safe helpers actually closes it.
+                        SyncQueueHelper.deletePaymentsByReference(db, purchase.billNo)
+                        SyncQueueHelper.deleteCashTransactionsByReference(db, purchase.billNo)
                         SyncQueueHelper.enqueueDelete(db, "purchase", SyncQueueHelper.purchaseEntityId(purchase))
                     } else {
                         val newTotal = purchase.total - item.amount

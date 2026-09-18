@@ -520,10 +520,16 @@ class SaleHistoryActivity : ThemedActivity() {
                 if (sale.customerId != null && sale.paid < sale.total) {
                     SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
                 }
-                db.cashTransactionDao().deleteByReference(invoice)
-                db.saleDao().markReturned(invoice)
+                SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
+                // FIX (returned sale never syncs to other devices — see HistoryActivity.
+                // returnSale()'s matching comment): markReturned() was a raw SQL UPDATE
+                // with no enqueueSale() afterward, so this status change never pushed.
+                val returnedSale = sale.copy(status = "returned")
+                db.saleDao().updateSale(returnedSale)
+                SyncQueueHelper.enqueueSale(db, returnedSale)
             }
 
+            SyncQueueHelper.trigger(this@SaleHistoryActivity)
             Toast.makeText(this@SaleHistoryActivity, "Sale returned", Toast.LENGTH_SHORT).show()
             refresh()
         }
@@ -566,9 +572,18 @@ class SaleHistoryActivity : ThemedActivity() {
 
                 db.saleDao().deleteItems(invoice)
                 db.saleDao().deleteSale(invoice)
-                db.paymentDao().deleteByReference(invoice)
-                db.cashTransactionDao().deleteByReference(invoice)
+                // FIX (deleted-payment-survives-sync bug — see RoomPurchaseRepository.
+                // deletePurchase()'s matching comment): raw deleteByReference() calls
+                // never enqueued the removal, leaving these rows behind on every other
+                // device/Firestore even after the sale itself was gone here.
+                SyncQueueHelper.deletePaymentsByReference(db, invoice)
+                SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
             }
+            // FIX (deleted sale never disappears on other devices): this screen's
+            // own delete path never enqueued a "sale" delete entry at all — mirrors
+            // RoomSaleRepository.deleteSale()'s matching fix.
+            SyncQueueHelper.enqueueDelete(db, "sale", SyncQueueHelper.saleEntityId(sale))
+            SyncQueueHelper.trigger(this@SaleHistoryActivity)
 
             expandedSales.remove(invoice)
             loadedItems.remove(invoice)

@@ -299,8 +299,18 @@ class HistoryActivity : AppCompatActivity() {
                     SyncQueueHelper.enqueueReturn(db, ReturnLine(id = returnId, reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
                 }
                 if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
-                db.cashTransactionDao().deleteByReference(invoice); db.saleDao().markReturned(invoice)
+                SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
+                // FIX (returned sale never syncs to other devices): markReturned() was a
+                // raw SQL UPDATE with no matching enqueueSale() afterward — same "bypasses
+                // sync" class of bug as the whole-purchase-return fix above, just missing
+                // the local-clobber half since nothing else touched this row afterward.
+                // Using updateSale()+enqueueSale() (Room @Update on the actual entity)
+                // instead makes the status change persist AND push like every other field.
+                val returnedSale = sale.copy(status = "returned")
+                db.saleDao().updateSale(returnedSale)
+                SyncQueueHelper.enqueueSale(db, returnedSale)
             }
+            SyncQueueHelper.trigger(this@HistoryActivity)
             loadSales()
         }
     }
@@ -320,8 +330,13 @@ class HistoryActivity : AppCompatActivity() {
                     SyncQueueHelper.increaseProductStock(db, it.barcode, smallestQty, "SALE_REVERSAL", invoice)
                 }
                 if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
-                db.cashTransactionDao().deleteByReference(invoice); db.saleDao().deleteItems(invoice); db.saleDao().deleteSale(invoice)
+                SyncQueueHelper.deleteCashTransactionsByReference(db, invoice); db.saleDao().deleteItems(invoice); db.saleDao().deleteSale(invoice)
             }
+            // FIX (deleted sale never disappears on other devices): this delete path
+            // never enqueued a "sale" delete entry at all — mirrors RoomSaleRepository.
+            // deleteSale()'s matching fix.
+            SyncQueueHelper.enqueueDelete(db, "sale", SyncQueueHelper.saleEntityId(sale))
+            SyncQueueHelper.trigger(this@HistoryActivity)
             loadSales()
         }
     }
@@ -592,12 +607,18 @@ class HistoryActivity : AppCompatActivity() {
                         if (purchase.supplierId != null && oldOutstanding > 0) {
                             SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -oldOutstanding)
                         }
-                        db.cashTransactionDao().deleteByReference(billNo)
-                        db.paymentDao().deleteByReference(billNo)
-                        db.purchaseDao().markReturned(billNo)
+                        SyncQueueHelper.deleteCashTransactionsByReference(db, billNo)
+                        SyncQueueHelper.deletePaymentsByReference(db, billNo)
+                        // FIX (whole-bill return silently un-returning itself — see
+                        // PurchaseHistoryActivity's matching comment): the updatePurchase()
+                        // @Update call right after markReturned() replaces the whole row
+                        // using this in-memory copy, whose status was still "active" —
+                        // clobbering the just-written "returned" back to "active" both
+                        // locally and in what got synced. Set status on the copy instead.
                         val updatedPurchase = purchase.copy(
                             subtotal = (purchase.subtotal - totalReturnedAmount).coerceAtLeast(0.0),
-                            total = (purchase.total - totalReturnedAmount).coerceAtLeast(0.0)
+                            total = (purchase.total - totalReturnedAmount).coerceAtLeast(0.0),
+                            status = "returned"
                         )
                         db.purchaseDao().updatePurchase(updatedPurchase)
                         SyncQueueHelper.enqueuePurchase(db, updatedPurchase)

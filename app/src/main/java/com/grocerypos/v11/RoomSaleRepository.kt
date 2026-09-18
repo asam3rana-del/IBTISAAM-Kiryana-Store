@@ -132,7 +132,12 @@ class RoomSaleRepository(
                 // point of that field, and also silently reset `dueDate` (a Due
                 // Date Reminder the user may have set on this bill) back to 0.
                 db.saleDao().deleteItems(invoice)
-                db.cashTransactionDao().deleteByReference(invoice)
+                // FIX (deleted-payment-survives-sync bug): raw deleteByReference() deletes
+                // locally but never enqueues the removal, so the old cash-transaction row
+                // (about to be replaced below with the edited amount) stayed behind on
+                // every other device/Firestore forever — see RoomPurchaseRepository.
+                // deletePurchase()'s matching comment.
+                SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
             }
 
             val productsByBarcode = mutableMapOf<String, Product>()
@@ -325,8 +330,16 @@ class RoomSaleRepository(
             }
             db.saleDao().deleteItems(invoice)
             db.saleDao().deleteSale(invoice)
-            db.cashTransactionDao().deleteByReference(invoice)
+            // FIX (deleted-payment-survives-sync bug): raw deleteByReference() never
+            // enqueued the removal — see RoomPurchaseRepository.deletePurchase()'s
+            // matching comment.
+            SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
         }
+        // FIX (deleted sale never disappears on other devices): this deleted the sale
+        // row locally and triggered a sync push, but never actually enqueued a "sale"
+        // delete entry — so every other device (and Firestore) kept the sale forever.
+        // Mirrors RoomPurchaseRepository.deletePurchase()'s "purchase" delete enqueue.
+        SyncQueueHelper.enqueueDelete(db, "sale", SyncQueueHelper.saleEntityId(sale))
         SyncQueueHelper.trigger(appContext)
 
         // NEW (10/10 Priority #10 — Complete Audit Trail).

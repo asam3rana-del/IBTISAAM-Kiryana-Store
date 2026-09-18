@@ -295,8 +295,17 @@ class RoomPurchaseRepository(
             }
             db.purchaseDao().deleteItems(billNo)
             db.purchaseDao().deletePurchase(billNo)
-            db.paymentDao().deleteByReference(billNo)
-            db.cashTransactionDao().deleteByReference(billNo)
+            // FIX (deleted purchase's payment "survives" — shows in Payments Report/
+            // other devices with no purchase behind it): these two used to call
+            // db.paymentDao().deleteByReference()/db.cashTransactionDao().deleteByReference()
+            // directly, which deletes the rows LOCALLY but never enqueues a matching sync
+            // delete — see SyncQueueHelper.deletePaymentsByReference()'s big comment above,
+            // which documents exactly this class of bug for the edit path. The purchase
+            // itself WAS enqueued for delete below and disappears everywhere correctly;
+            // its payment/cash-transaction rows did not carry the same enqueue and so
+            // silently stayed behind on every other device (and in Firestore) forever.
+            SyncQueueHelper.deletePaymentsByReference(db, billNo)
+            SyncQueueHelper.deleteCashTransactionsByReference(db, billNo)
         }
         SyncQueueHelper.enqueue(
             db, "purchase", "purchase:$billNo", "delete",
@@ -356,8 +365,11 @@ class RoomPurchaseRepository(
                     }
                     db.purchaseDao().deleteItems(billNo)
                     db.purchaseDao().deletePurchase(billNo)
-                    db.paymentDao().deleteByReference(billNo)
-                    db.cashTransactionDao().deleteByReference(billNo)
+                    // FIX: same enqueue-missing bug as deletePurchase() above, hit here on
+                    // every EDIT too (original purchase is deleted and recreated) — see the
+                    // comment there and SyncQueueHelper.deletePaymentsByReference()'s.
+                    SyncQueueHelper.deletePaymentsByReference(db, billNo)
+                    SyncQueueHelper.deleteCashTransactionsByReference(db, billNo)
                 }
                 val purchaseRecord = Purchase(
                     billNo = billNo, supplierId = supplierId, total = grandTotal, paid = amountPaid,

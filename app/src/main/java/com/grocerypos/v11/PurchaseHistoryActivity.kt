@@ -739,12 +739,26 @@ class PurchaseHistoryActivity : ThemedActivity() {
                     if (purchase.supplierId != null && oldOutstanding > 0) {
                         SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -oldOutstanding)
                     }
-                    db.cashTransactionDao().deleteByReference(billNo)
-                    db.paymentDao().deleteByReference(billNo)
-                    db.purchaseDao().markReturned(billNo)
+                    // FIX (deleted-payment-survives-sync bug — see RoomPurchaseRepository.
+                    // deletePurchase()'s matching comment): raw deleteByReference() calls
+                    // never enqueued a sync delete for the removed payment/cash-transaction
+                    // rows, so a full purchase return that clears the bill's payment left
+                    // that payment behind on every other device/Firestore forever.
+                    SyncQueueHelper.deleteCashTransactionsByReference(db, billNo)
+                    SyncQueueHelper.deletePaymentsByReference(db, billNo)
+                    // FIX (whole-bill return silently un-returning itself): markReturned()
+                    // set status='returned' via raw SQL, but the very next line's
+                    // updatePurchase(updatedPurchase) is a Room @Update — it REPLACES the
+                    // whole row using this in-memory `updatedPurchase`, whose status was
+                    // never touched (still "active" from the original `purchase` object),
+                    // silently clobbering markReturned()'s write back to "active" a moment
+                    // later — both locally AND in what got pushed to sync. A fully-returned
+                    // bill never actually ended up "returned" anywhere. Fixed by setting
+                    // status on the copy itself instead of relying on the separate raw call.
                     val updatedPurchase = purchase.copy(
                         subtotal = (purchase.subtotal - totalReturnedAmount).coerceAtLeast(0.0),
-                        total = (purchase.total - totalReturnedAmount).coerceAtLeast(0.0)
+                        total = (purchase.total - totalReturnedAmount).coerceAtLeast(0.0),
+                        status = "returned"
                     )
                     db.purchaseDao().updatePurchase(updatedPurchase)
                     SyncQueueHelper.enqueuePurchase(db, updatedPurchase)
