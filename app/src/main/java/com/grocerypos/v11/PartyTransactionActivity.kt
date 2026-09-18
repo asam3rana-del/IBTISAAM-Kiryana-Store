@@ -119,6 +119,19 @@ class PartyTransactionActivity : AppCompatActivity() {
     private lateinit var openingValueText: TextView
     private lateinit var closingValueText: TextView
     private lateinit var closingLabelText: TextView
+
+    // ---- NEW (Customer Dashboard 10/10): consolidated stat tiles — Total Sales/
+    // Purchases, Total Paid, Overdue, Credit Limit, Last Purchase — so a party's full
+    // picture (dashboard screenshot: "Customer open karne par ek hi jagah hon") shows
+    // on this same screen instead of being scattered across Reports/PartyDashboard.
+    // Outstanding is already covered by closingValueText above; Statement + Payment
+    // History are already this screen's transaction list + filter chips. ----
+    private lateinit var statTotalValue: TextView
+    private lateinit var statPaidValue: TextView
+    private lateinit var statOverdueValue: TextView
+    private lateinit var statCreditValue: TextView
+    private lateinit var statLastValue: TextView
+    private lateinit var shareStatementBtn: TextView
     private lateinit var chipAll: TextView
     private lateinit var chipBills: TextView
     private lateinit var chipPayments: TextView
@@ -287,6 +300,30 @@ class PartyTransactionActivity : AppCompatActivity() {
         closingCol.addView(closingValueText)
         balanceCard.addView(closingCol)
         root.addView(balanceCard)
+
+        // ---- NEW (Customer Dashboard 10/10): 2x2 stat grid + Share Statement button.
+        // Values are filled in by updateDashboardStats(), called from loadTransactions()
+        // using the same sales/purchases/payments already fetched there — no extra
+        // DB round trip just for this card. ----
+        root.addView(buildDashboardStatsCard())
+        root.addView(TextView(this).apply {
+            shareStatementBtn = this
+            text = "  " + Loc.t(this@PartyTransactionActivity, "Share Statement", "\u0633\u0679\u06CC\u0679\u0645\u0646\u0679 \u0634\u06CC\u0626\u0631 \u06A9\u0631\u06CC\u06BA")
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setLeadingIcon(R.drawable.ic_share, "#FFFFFF", 14, 6)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(if (isCustomer) green else orange))
+                cornerRadius = 12f
+            }
+            setPadding(0, 26, 0, 26)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 16) }
+            setOnClickListener { shareStatement() }
+        })
 
         // ---- IMPROVEMENT PACK (Party Transactions 10/10): search box + filter
         // chips (All/Bills/Payments) — a party with months of history otherwise
@@ -799,10 +836,12 @@ class PartyTransactionActivity : AppCompatActivity() {
             // same load pass (onResume / after a payment or bill edit). ----
             val opening: Double
             val running: Double
+            var creditLimit = 0.0
             if (isCustomer) {
                 val customer = db.customerDao().find(partyId)
                 opening = customer?.openingBalance ?: 0.0
                 running = customer?.balance ?: 0.0
+                creditLimit = customer?.creditLimit ?: 0.0
             } else {
                 val supplier = db.supplierDao().find(partyId)
                 opening = supplier?.openingBalance ?: 0.0
@@ -817,8 +856,23 @@ class PartyTransactionActivity : AppCompatActivity() {
 
             val entries = mutableListOf<TxEntry>()
 
+            // ---- NEW (Customer Dashboard 10/10): running totals for the stat grid,
+            // built from the exact same bill lists below (single DB round trip). ----
+            var totalAmount = 0.0
+            var totalPaidOnBills = 0.0
+            var overdueAmount = 0.0
+            var lastActivityAt: Long? = null
+            val now = System.currentTimeMillis()
+
             if (isCustomer) {
                 db.saleDao().salesByCustomer(partyId).forEach { s ->
+                    totalAmount += s.total
+                    totalPaidOnBills += s.paid
+                    if (s.status != "returned" && s.dueDate > 0L && s.dueDate < now && (s.total - s.paid) > 0.009) {
+                        overdueAmount += (s.total - s.paid)
+                    }
+                    if (lastActivityAt == null || s.createdAt > lastActivityAt!!) lastActivityAt = s.createdAt
+
                     val dateText = fmt.format(Date(s.createdAt))
                     val typeLabel = Loc.t(this@PartyTransactionActivity, "Sale", "\u0633\u06CC\u0644")
                     entries.add(TxEntry(
@@ -841,6 +895,10 @@ class PartyTransactionActivity : AppCompatActivity() {
                 }
             } else {
                 db.purchaseDao().purchasesBySupplier(partyId).forEach { p ->
+                    totalAmount += p.total
+                    totalPaidOnBills += p.paid
+                    if (lastActivityAt == null || p.createdAt > lastActivityAt!!) lastActivityAt = p.createdAt
+
                     val dateText = fmt.format(Date(p.createdAt))
                     val typeLabel = Loc.t(this@PartyTransactionActivity, "Purchase", "\u062E\u0631\u06CC\u062F\u0627\u0631\u06CC")
                     entries.add(TxEntry(
@@ -862,6 +920,11 @@ class PartyTransactionActivity : AppCompatActivity() {
                     ))
                 }
             }
+            // Suppliers have no dueDate field on Purchase in the current schema, so
+            // "Overdue" is customer-only for now — the tile still shows Rs 0.00 for suppliers.
+            val paymentsSum = payments.sumOf { it.amount }
+            updateDashboardStats(totalAmount, totalPaidOnBills, paymentsSum, overdueAmount, creditLimit, lastActivityAt)
+
             payments.forEach { pay ->
                 val dateText = fmt.format(Date(pay.createdAt))
                 val label = (if (isCustomer) Loc.t(this@PartyTransactionActivity, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC")
@@ -937,6 +1000,136 @@ class PartyTransactionActivity : AppCompatActivity() {
         closingLabelText.text = if (give) Loc.t(this, "You'll Give", "\u0622\u067E \u06A9\u0648 \u062F\u06CC\u0646\u06D2 \u06C1\u06CC\u06BA")
             else Loc.t(this, "You'll Get", "\u0622\u067E \u06A9\u0648 \u0645\u0644\u06CC\u06BA \u06AF\u06D2")
         closingLabelText.setTextColor(Color.parseColor(color))
+    }
+
+    // ==================== NEW (Customer Dashboard 10/10) ====================
+
+    /** Builds the 2-column stat grid card: Total Sales/Purchases, Total Paid,
+     * Overdue, Credit Limit, and a full-width Last Purchase/Sale row. Values start
+     * blank/zero and are filled by [updateDashboardStats] on every load. */
+    private fun buildDashboardStatsCard(): LinearLayout {
+        val accent = if (isCustomer) green else orange
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 18, 20, 14)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadius = 16f
+                setStroke(1, Color.parseColor(cardBorder))
+            }
+            elevation = 2f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 16) }
+        }
+
+        fun tile(labelText: String, valueColor: String): Pair<LinearLayout, TextView> {
+            val col = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            col.addView(TextView(this).apply {
+                text = labelText
+                textSize = 11f
+                setTextColor(Color.parseColor(labelGray))
+            })
+            val value = TextView(this).apply {
+                text = "Rs 0.00"
+                textSize = 14.5f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(valueColor))
+                setPadding(0, 4, 0, 0)
+            }
+            col.addView(value)
+            return col to value
+        }
+
+        fun rowOf(vararg tiles: LinearLayout): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 14) }
+            tiles.forEach { addView(it) }
+        }
+
+        val (totalCol, totalVal) = tile(
+            if (isCustomer) Loc.t(this, "Total Sales", "\u06A9\u0644 \u0641\u0631\u0648\u062E\u062A")
+            else Loc.t(this, "Total Purchases", "\u06A9\u0644 \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC"),
+            textDark
+        )
+        statTotalValue = totalVal
+
+        val (paidCol, paidVal) = tile(Loc.t(this, "Total Paid", "\u06A9\u0644 \u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC"), green)
+        statPaidValue = paidVal
+        card.addView(rowOf(totalCol, paidCol))
+
+        val (overdueCol, overdueVal) = tile(Loc.t(this, "Overdue", "\u0645\u06CC\u0639\u0627\u062F \u06AF\u0632\u0631 \u06AF\u0626\u06CC"), red)
+        statOverdueValue = overdueVal
+
+        val (creditCol, creditVal) = tile(
+            if (isCustomer) Loc.t(this, "Credit Limit", "\u06A9\u0631\u06CC\u0688\u0679 \u0644\u0645\u0679") else Loc.t(this, "—", "\u2014"),
+            textDark
+        )
+        statCreditValue = creditVal
+        card.addView(rowOf(overdueCol, creditCol))
+        // Supplier parties have no credit limit field in the data model — hide that tile.
+        if (!isCustomer) creditCol.visibility = View.GONE
+
+        val (lastCol, lastVal) = tile(
+            if (isCustomer) Loc.t(this, "Last Purchase", "\u0622\u062E\u0631\u06CC \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC")
+            else Loc.t(this, "Last Purchase (by you)", "\u0622\u062E\u0631\u06CC \u062E\u0631\u06CC\u062F\u0627\u0631\u06CC"),
+            accent
+        )
+        statLastValue = lastVal
+        lastVal.textSize = 13f
+        card.addView(rowOf(lastCol))
+
+        return card
+    }
+
+    /** Fills the stat grid from data [loadTransactions] already pulled from Room —
+     * no separate DB hit. `bills` is every sale/purchase for this party (any status),
+     * `payments` is every standalone payment, `creditLimit` is 0.0 for suppliers. */
+    private fun updateDashboardStats(
+        totalAmount: Double,
+        totalPaidOnBills: Double,
+        paymentsSum: Double,
+        overdueAmount: Double,
+        creditLimit: Double,
+        lastActivityAt: Long?
+    ) {
+        statTotalValue.text = "Rs %.2f".format(totalAmount)
+        statPaidValue.text = "Rs %.2f".format(totalPaidOnBills + paymentsSum)
+        statOverdueValue.text = "Rs %.2f".format(overdueAmount)
+        statCreditValue.text = if (isCustomer) {
+            if (creditLimit > 0.0) "Rs %.2f".format(creditLimit)
+            else Loc.t(this, "No Limit", "\u06A9\u0648\u0626\u06CC \u062D\u062F \u0646\u06C1\u06CC\u06BA")
+        } else "-"
+        val fmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+        statLastValue.text = if (lastActivityAt != null && lastActivityAt > 0L) fmt.format(Date(lastActivityAt))
+            else Loc.t(this, "No activity yet", "\u0627\u0628\u06BE\u06CC \u062A\u06A9 \u06A9\u0648\u0626\u06CC \u0633\u0631\u06AF\u0631\u0645\u06CC \u0646\u06C1\u06CC\u06BA")
+    }
+
+    /** Builds a plain-text statement (header info + every bill/payment, oldest first)
+     * and hands it to the system share sheet — same Intent.ACTION_SEND pattern already
+     * used by shareReceipt()/shareSummary() elsewhere in the Party screens. */
+    private fun shareStatement() {
+        val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+        val sb = StringBuilder()
+        sb.append(partyName).append("\n")
+        sb.append(if (isCustomer) Loc.t(this, "Customer Statement", "\u06A9\u0633\u0679\u0645\u0631 \u0633\u0679\u06CC\u0679\u0645\u0646\u0679")
+            else Loc.t(this, "Supplier Statement", "\u0633\u067E\u0644\u0627\u0626\u0631 \u0633\u0679\u06CC\u0679\u0645\u0646\u0679")).append("\n")
+        sb.append(Loc.t(this, "Outstanding", "\u0628\u0642\u0627\u06CC\u0627")).append(": ").append(closingValueText.text).append("\n")
+        sb.append("----------------------------\n")
+        allEntries.sortedBy { it.createdAt }.forEach { e ->
+            sb.append(fmt.format(Date(e.createdAt))).append("  \u2014  ").append(e.searchText).append("\n")
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "$partyName - Statement")
+            putExtra(Intent.EXTRA_TEXT, sb.toString())
+        }
+        startActivity(Intent.createChooser(intent, null))
     }
 
     // ---------------- Billed Items (editable / deletable) ----------------
