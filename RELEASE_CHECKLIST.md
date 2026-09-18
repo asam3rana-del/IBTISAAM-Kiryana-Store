@@ -23,13 +23,19 @@ duplicating it.
 - [ ] Release keystore credentials are supplied via Gradle properties / CI secrets
       (see `app/build.gradle.kts`'s release `signingConfigs` block for the exact
       property names expected) — **never** committed to Git
-- [ ] **Open question, not yet decided:** `buildTypes { release { } }` has no
-      `isMinifyEnabled`/`proguardFiles` — R8/ProGuard is currently OFF for release
-      builds. Decide deliberately (smaller APK + some obfuscation vs. one more
-      variable to debug if something misbehaves only in a minified build) rather
-      than leaving it as an accidental default; if enabling it, budget time to test
-      every screen afterward — Room/Gson reflection-based code is a common source of
-      minify-only crashes.
+- [ ] **Open question, still not yet decided — but now prepared (Improvement Pack
+      P12):** `app/proguard-rules.pro` now has real keep rules (Gson generics,
+      Firestore/gRPC TLS-provider dontwarns, WorkManager's reflective Worker
+      instantiation, and the one `Class.forName()` call site in
+      `SettingsActivity.tryOpenActivity()`), and the release buildType wires it in
+      via `proguardFiles(...)`. `isMinifyEnabled` is still deliberately left at its
+      default (false) — enabling R8 is still a decision to make on purpose (smaller
+      APK + some obfuscation vs. one more variable to debug), not something this
+      pass should flip unilaterally. When it IS decided: flip `isMinifyEnabled =
+      true`, run `./gradlew assembleRelease`, walk every screen on the resulting
+      APK (see `proguard-rules.pro`'s header for the specific list), and keep
+      `app/build/outputs/mapping/release/mapping.txt` from that build outside the
+      repo — without it a crash log from a minified build is unreadable.
 - [ ] `versionCode` / `versionName` bumped in `app/build.gradle.kts` for this release
       (currently `10` / `"10.0"` — confirm this is actually the next release, not
       left over from the last one)

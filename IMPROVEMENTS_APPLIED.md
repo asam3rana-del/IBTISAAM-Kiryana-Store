@@ -361,6 +361,48 @@ Applied fixes from the full assessment:
       everything else `SYNC_STRESS_TEST_PLAN.md`/`SYNC-CONFLICT-TESTS.md`
       cover — those remain P4's manual execution item.
 
+21. **R8/ProGuard rules prepared, not enabled (Improvement Pack P12)**
+    - `RELEASE_CHECKLIST.md` flagged R8/ProGuard as "off with no explicit
+      decision" — the repo had `isMinifyEnabled` unset and **no
+      `proguard-rules.pro` file at all**, so turning it on later would have
+      started from zero keep rules under release-time pressure.
+    - Audited the app's own reflection surface first (this app deliberately
+      avoids reflection-heavy Gson/Firestore usage — no typed
+      `Gson.fromJson(..., SomeClass::class.java)`, no
+      `DocumentSnapshot.toObject(...)` anywhere): found exactly one real risk,
+      `SettingsActivity.tryOpenActivity()`'s
+      `Class.forName("com.grocerypos.v11.ui.ExpenseActivity")`, which treats
+      `ClassNotFoundException` as "feature doesn't exist yet, show Coming
+      Soon" — a class that gets renamed under minification would silently
+      turn a real, working screen into a permanent "Coming Soon" toast, in
+      release builds only. (That class is manifest-declared, so AGP's default
+      rules already protect it today — added an explicit keep anyway so this
+      doesn't depend on that continuing to be true if the pattern is reused.)
+    - New `app/proguard-rules.pro`: Gson `-keepattributes Signature`/
+      `*Annotation*` (needed for its generic Map<String,Any?> handling, used
+      throughout `SyncQueueHelper.kt`/`SyncApi.kt`), the standard Firestore/
+      gRPC `-dontwarn` block for the well-known Conscrypt/BouncyCastle/
+      OpenJSSE build-failure gotcha, an explicit keep for
+      `androidx.work.ListenableWorker` subclasses' 2-arg constructor
+      (WorkManager instantiates Workers by class name from a persisted
+      WorkSpec — covers `SyncWorker` + `BackupScheduler`'s
+      `BackupCheckpointWorker`), a defensive Room section (Room's own AAR
+      already ships consumer rules, so this is belt-and-suspenders, not
+      filling a gap), and a standard Kotlin-coroutines continuation-fields
+      keep. Each block's comment explains why it's there, not just what it
+      does.
+    - `app/build.gradle.kts`: release buildType now calls
+      `proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),
+      "proguard-rules.pro")` — **`isMinifyEnabled` is still deliberately left
+      at its default (off)**. Enabling R8 stays a human decision (smaller APK
+      vs. one more variable to debug if something misbehaves only in a
+      minified build), same as `RELEASE_CHECKLIST.md` already said; this pass
+      only removes the "starting from nothing" cost of eventually saying yes.
+    - `RELEASE_CHECKLIST.md` and `IMPROVEMENT_CHECKLIST.csv` (new P12 row)
+      updated to point at this file and its pre-enable testing checklist
+      (walk every screen on a real release APK; keep `mapping.txt` from every
+      shipped build for future crash-log deobfuscation).
+
 ## Remaining operational checks
 
 - Run `gradle lintDebug`, `gradle testDebugUnitTest`, and `gradle assembleDebug` in a network-enabled Android/Gradle environment.
