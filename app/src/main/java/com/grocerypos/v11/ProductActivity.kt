@@ -417,6 +417,15 @@ class ProductActivity : ThemedActivity() {
             background = null
             textSize = 14f
             maxLines = 1
+            // FIX (Urdu keyboard on English field): this field only ever holds an
+            // English/Roman alias, but the keyboard was inheriting whatever
+            // language was last used (usually Urdu, from the Product Name field
+            // right above), forcing the user to switch it manually every time.
+            // TYPE_TEXT_VARIATION_VISIBLE_PASSWORD keeps the typed text fully
+            // visible (unlike a real password field) but makes Gboard/any IME
+            // show its plain ASCII QWERTY layout and drop language-switching —
+            // the standard trick for "always show the Latin keyboard here".
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
             imeOptions = EditorInfo.IME_ACTION_NEXT
             layoutParams = LinearLayout.LayoutParams(-1, -2)
         }

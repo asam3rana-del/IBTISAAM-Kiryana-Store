@@ -185,10 +185,23 @@ data class Product(
 // every search screen (dashboard quick-search, Item Search, Items list, Sale/
 // Purchase item pickers, Stock screens, Rate Comparison, etc.) behaves the same
 // way once wired through this instead of re-deriving `name.contains(...)` locally.
+// FIX (English search not matching): was a single whole-phrase `contains` check,
+// so typing more than one word (e.g. "aloo bukhara") only matched if that exact
+// phrase — spacing and all — appeared verbatim in `name` OR in `searchTag`. A
+// searchTag of just "Aloo" (or any tag not containing the full typed phrase)
+// then showed "No matching items" even though the product does exist. Now the
+// query is split into words and matched against `name` + `searchTag` COMBINED,
+// requiring every typed word to appear somewhere in either field (any order) —
+// so a tag like "Aloo Bukhara" matches "bukhara aloo", "aloo", or "bukhara"
+// alike, and a query can also match partly off the Urdu name and partly off the
+// English tag.
 fun Product.matchesQuery(query: String): Boolean {
     val q = query.trim()
     if (q.isEmpty()) return true
-    return name.contains(q, ignoreCase = true) || searchTag.contains(q, ignoreCase = true)
+    val haystack = "$name $searchTag".lowercase()
+    val terms = q.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (terms.isEmpty()) return true
+    return terms.all { haystack.contains(it) }
 }
 
 // ================= 3-tier unit conversion helpers =================
