@@ -158,7 +158,8 @@ internal fun SettingsActivity.showSyncNowLongPressMenu() {
     val options = arrayOf(
         "Resync from a date/time (pull)",
         "Force full push — resend ALL local data (push)",
-        "Fix back-dated Purchase/Sale cash entries"
+        "Fix back-dated Purchase/Sale cash entries",
+        "Recalculate party balances (Customers/Suppliers)"
     )
     android.app.AlertDialog.Builder(this)
         .setTitle("Sync Now — more options")
@@ -167,8 +168,44 @@ internal fun SettingsActivity.showSyncNowLongPressMenu() {
                 0 -> showResyncFromDialog()
                 1 -> resyncAllLocalDataClicked()
                 2 -> fixBackdatedCashTransactionDatesClicked()
+                3 -> recalculatePartyBalancesClicked()
             }
         }
+        .show()
+}
+
+/** One-time repair for Customer.balance/Supplier.balance drifting away from what
+ *  that party's own sale/purchase + payment rows add up to — see
+ *  SyncQueueHelper.recalculatePartyBalances for the full reasoning. Safe to run
+ *  more than once; shows exactly which parties changed and by how much so it
+ *  doubles as a diagnostic for "this party's balance doesn't match any bill". */
+internal fun SettingsActivity.recalculatePartyBalancesClicked() {
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Party balances recalculate karein?")
+        .setMessage(
+            "Har Customer/Supplier ka balance unki apni sale/purchase bills aur payments se " +
+            "dobara ginega, aur jahan stored balance match nahi karta wahan usay theek kar " +
+            "dega. Opening balance touch nahi hoga. Continue?"
+        )
+        .setPositiveButton("Continue") { _, _ ->
+            Toast.makeText(this, "Checking party balances…", Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                val db = com.grocerypos.v11.PosDatabase.get(this@recalculatePartyBalancesClicked)
+                val fixes = com.grocerypos.v11.SyncQueueHelper.recalculatePartyBalances(db, this@recalculatePartyBalancesClicked)
+                if (fixes.isEmpty()) {
+                    Toast.makeText(this@recalculatePartyBalancesClicked, "Koi mismatch nahi mila — sab balances pehle se theek hain.", Toast.LENGTH_LONG).show()
+                } else {
+                    val summary = fixes.joinToString("\n") { "${it.name}: Rs %.2f → Rs %.2f".format(it.oldBalance, it.newBalance) }
+                    android.app.AlertDialog.Builder(this@recalculatePartyBalancesClicked)
+                        .setTitle("${fixes.size} balance(s) theek kar di gayi")
+                        .setMessage(summary)
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                onSyncNowClicked()
+            }
+        }
+        .setNegativeButton("Cancel", null)
         .show()
 }
 

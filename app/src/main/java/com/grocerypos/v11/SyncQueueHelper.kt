@@ -889,4 +889,55 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
         return fixed
     }
+
+    // FIX (party balance drift — "You'll Give/Get" not matching the visible bills):
+    // Customer.balance / Supplier.balance are running totals nudged up/down by
+    // adjustCustomerBalance()/adjustSupplierBalance() at every sale, purchase,
+    // payment, edit, return and delete (see the many call sites across
+    // RoomSaleRepository, RoomPurchaseRepository, PartyTransactionActivity,
+    // HistoryActivity, PurchaseHistoryActivity, SaleHistoryActivity) — they are
+    // NOT recalculated fresh from the ledger on every screen. If even one of
+    // those call sites was ever missed, doubled, or landed differently on two
+    // devices before a sync, the stored balance quietly drifts away from what
+    // the actual Purchase/Sale + Payment rows add up to — showing a "You'll
+    // Give/Get" figure with no bill in the party's own transaction list to
+    // account for it.
+    //
+    // This recomputes each party's balance from scratch, straight from the
+    // same rows PartyTransactionActivity's own list is built from:
+    //   sum(bill.total - bill.paid) for every sale/purchase of that party
+    //   MINUS sum(payment.amount) for every payment NOT tied to a specific
+    //   bill (billReference blank) — a bill-linked payment already reduced
+    //   that bill's own `paid`, via applyBillPaidDelta, so counting it again
+    //   here would double-subtract it.
+    // openingBalance is left untouched (it's a separate fixed starting point,
+    // added on top for display — see PartyTransactionActivity.loadTransactions).
+    // Only writes/reports a party whose stored balance actually differs.
+    data class PartyBalanceFix(val name: String, val oldBalance: Double, val newBalance: Double)
+
+    suspend fun recalculatePartyBalances(db: PosDatabase, context: Context? = null): List<PartyBalanceFix> {
+        val fixes = mutableListOf<PartyBalanceFix>()
+        for (c in db.customerDao().allList()) {
+            val correct = db.saleDao().salesByCustomer(c.id).sumOf { it.total - it.paid } -
+                db.paymentDao().listByParty("customer", c.id).filter { it.billReference.isEmpty() }.sumOf { it.amount }
+            if (kotlin.math.abs(correct - c.balance) > 0.01) {
+                fixes.add(PartyBalanceFix(c.name, c.balance, correct))
+                val updated = c.copy(balance = correct, dirty = true)
+                db.customerDao().update(updated)
+                enqueueCustomer(db, updated)
+            }
+        }
+        for (s in db.supplierDao().allList()) {
+            val correct = db.purchaseDao().purchasesBySupplier(s.id).sumOf { it.total - it.paid } -
+                db.paymentDao().listByParty("supplier", s.id).filter { it.billReference.isEmpty() }.sumOf { it.amount }
+            if (kotlin.math.abs(correct - s.balance) > 0.01) {
+                fixes.add(PartyBalanceFix(s.name, s.balance, correct))
+                val updated = s.copy(balance = correct, dirty = true)
+                db.supplierDao().update(updated)
+                enqueueSupplier(db, updated)
+            }
+        }
+        context?.let { trigger(it) }
+        return fixes
+    }
 }
