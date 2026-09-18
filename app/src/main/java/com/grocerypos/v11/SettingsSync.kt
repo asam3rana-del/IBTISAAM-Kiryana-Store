@@ -157,7 +157,8 @@ internal fun SettingsActivity.onSyncNowClicked() {
 internal fun SettingsActivity.showSyncNowLongPressMenu() {
     val options = arrayOf(
         "Resync from a date/time (pull)",
-        "Force full push — resend ALL local data (push)"
+        "Force full push — resend ALL local data (push)",
+        "Fix back-dated Purchase/Sale cash entries"
     )
     android.app.AlertDialog.Builder(this)
         .setTitle("Sync Now — more options")
@@ -165,8 +166,39 @@ internal fun SettingsActivity.showSyncNowLongPressMenu() {
             when (which) {
                 0 -> showResyncFromDialog()
                 1 -> resyncAllLocalDataClicked()
+                2 -> fixBackdatedCashTransactionDatesClicked()
             }
         }
+        .show()
+}
+
+/** One-time repair for Purchase/Sale cash-drawer rows created before RoomPurchaseRepository/
+ *  RoomSaleRepository started stamping them with the bill's own (possibly back-dated) date
+ *  instead of "now" — see SyncQueueHelper.fixBackdatedCashTransactionDates for the full
+ *  reasoning. Safe to run more than once. */
+internal fun SettingsActivity.fixBackdatedCashTransactionDatesClicked() {
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Fix back-dated cash entries?")
+        .setMessage(
+            "Jo Purchase/Sale back-date karke banayi gayi thi, unki Cash Register entry " +
+            "check karke us bill ki asal tareekh par theek kar degi (jahan wo abhi bhi " +
+            "\"aaj\" ki date par ghalat pari hai). Baaqi entries (payments, Quick Sale, " +
+            "cash in/out) is se touch nahi hongi. Continue?"
+        )
+        .setPositiveButton("Continue") { _, _ ->
+            Toast.makeText(this, "Checking cash entries…", Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                val db = com.grocerypos.v11.PosDatabase.get(this@fixBackdatedCashTransactionDatesClicked)
+                val fixed = com.grocerypos.v11.SyncQueueHelper.fixBackdatedCashTransactionDates(db, this@fixBackdatedCashTransactionDatesClicked)
+                Toast.makeText(
+                    this@fixBackdatedCashTransactionDatesClicked,
+                    if (fixed > 0) "$fixed cash entries ki date theek kar di gayi." else "Koi galat date wali entry nahi mili — sab pehle se theek hai.",
+                    Toast.LENGTH_LONG
+                ).show()
+                onSyncNowClicked()
+            }
+        }
+        .setNegativeButton("Cancel", null)
         .show()
 }
 

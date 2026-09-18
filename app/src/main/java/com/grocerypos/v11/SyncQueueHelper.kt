@@ -851,4 +851,33 @@ object SyncQueueHelper {
         for (r in db.cashRegisterDao().allOnce()) enqueueCashRegister(db, r)
         context?.let { trigger(it) }
     }
+
+    // FIX (back-dated Purchase/Sale cash entries stuck on the wrong date): before
+    // RoomPurchaseRepository/RoomSaleRepository passed createdAt explicitly, every
+    // Purchase/Sale cash-drawer row was stamped with "now" (CashTransaction's
+    // default), even for a bill the user had deliberately back-dated — so it showed
+    // in the Cash Register under today instead of the bill's real date, and never
+    // appeared when checking the register for that back-date. This is a one-time
+    // repair for rows created before that fix: it walks every "Purchase"/"Sale"
+    // cash-drawer row (Quick Sale is skipped — it has no date picker, "now" is
+    // correct there), looks up that bill's own createdAt, and corrects the cash
+    // row to match if it's different. Safe to run more than once — rows already
+    // matching their bill's date are left untouched. Returns how many rows changed.
+    suspend fun fixBackdatedCashTransactionDates(db: PosDatabase, context: Context? = null): Int {
+        var fixed = 0
+        for (t in db.cashTransactionDao().allList()) {
+            val correctDate = when (t.reason) {
+                "Purchase" -> db.purchaseDao().findPurchase(t.reference)?.createdAt
+                "Sale" -> db.saleDao().findSale(t.reference)?.createdAt
+                else -> null
+            } ?: continue
+            if (correctDate == t.createdAt) continue
+            val corrected = t.copy(createdAt = correctDate, dirty = true)
+            db.cashTransactionDao().update(corrected)
+            enqueueCashTransaction(db, corrected)
+            fixed++
+        }
+        context?.let { trigger(it) }
+        return fixed
+    }
 }
