@@ -544,14 +544,17 @@ class BillPreviewActivity : ThemedActivity() {
 
     // ================= Thermal print =================
 
-    // FIX (item table matches on-screen preview): the item list now prints using
-    // borderless PrinterHelper.ReceiptLine.Row3 (header) and ReceiptLine.ItemRow
-    // (one per item) instead of a ruled TableRow grid. This mirrors exactly what
-    // the customer sees on the preview card above: "ITEM / QTY / AMOUNT" header,
-    // then per item — name + qty + amount on one line, "@ rate" smaller directly
-    // underneath — with no box/grid lines anywhere. It also means fewer draw
-    // operations per item (no grid strokes), which plays nicely with the
-    // anti-overlap raster pacing in PrinterHelper (see its FIX/FIX 2 comments).
+    // FIX (item table matches on-screen preview — "print view ki tarah print ana
+    // chahiye"): the preview card's header grew a dedicated RATE column
+    // (ITEM / RATE / QTY / AMOUNT) but the printed receipt was still using the
+    // older 3-column header ("Item / Qty / Amount", no Rate at all) with rate
+    // tucked away as a small "@ rate" note in a different order underneath —
+    // so the two no longer matched. The printed header now uses
+    // PrinterHelper.ReceiptLine.Row4 with all 4 labels, and each item's detail
+    // line under the name now reads rate / qty / amount, left-to-right, the
+    // same order as the header and the preview card — instead of the old
+    // qty / "@ rate" / amount order. Still borderless, no box/grid lines
+    // anywhere, matching the preview exactly.
     private fun printReceipt(
         type: String, reference: String, partyName: String, partyLabel: String,
         dateMillis: Long, lines: List<PreviewLine>, subtotal: Double, discount: Double,
@@ -584,13 +587,12 @@ class BillPreviewActivity : ThemedActivity() {
             if (paymentMethod.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Payment", paymentMethod.replaceFirstChar { it.uppercase() }))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
-            // ---- Item / Qty / Amount — borderless, same layout as the preview card ----
-            // Weights: Item/Qty tuned earlier to stop overlap; Amount widened further
-            // (2.2, was 1.7) so it uses the blank space that was sitting unused on the
-            // right side of the paper.
-            val rowWeights = listOf(2.8f, 1.2f, 2.2f)
+            // ---- Item / Rate / Qty / Amount — borderless, same 4-column header as
+            // the preview card (ITEM / RATE / QTY / AMOUNT). Weights mirror the
+            // preview's own column ratio (Item 2x, Rate/Qty/Amount 1x each). ----
+            val rowWeights = listOf(2f, 1f, 1f, 1f)
             receiptLines.add(
-                PrinterHelper.ReceiptLine.Row3("Item", "Qty", "Amount", rowWeights, bold = true)
+                PrinterHelper.ReceiptLine.Row4("Item", "Rate", "Qty", "Amount", rowWeights, bold = true)
             )
             for (line in lines) {
                 receiptLines.add(
