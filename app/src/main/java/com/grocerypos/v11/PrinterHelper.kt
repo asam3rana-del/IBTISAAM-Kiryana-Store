@@ -622,16 +622,35 @@ object PrinterHelper {
 
     /**
      * Resolves the best available Urdu-capable typeface, in order:
-     *  1. A font bundled by the app at [URDU_FONT_ASSET_PATH]
+     *  1. A named system Arabic font family (Naskh/Sans style), if this
+     *     device's ROM exposes one under a recognized name.
+     *  2. A font bundled by the app at [URDU_FONT_ASSET_PATH]
      *     (app/src/main/assets/fonts/NotoNastaliqUrdu-Regular.ttf — see the
-     *     README.md placed next to that path). This is the only option that
-     *     guarantees the same Nastaliq look on every device.
-     *  2. A named system Arabic font family, if this device's ROM exposes
-     *     one under a recognized name.
+     *     README.md placed next to that path), only if no system Arabic
+     *     font could be resolved.
      *  3. Typeface.DEFAULT — Android's own script-fallback will still shape
      *     Urdu glyphs correctly when drawn via StaticLayout/Canvas as long as
      *     the device has *some* Arabic-capable font installed; only the
      *     calligraphic style is out of our control at that point.
+     *
+     * FIX (product name printing as a stray glyph or just its embedded
+     * English/number part — e.g. "سیون اپ 1.5" printing as only "1.5", even
+     * though the exact same name renders perfectly everywhere else in the
+     * app, including the Items list, which uses the *system* font, not this
+     * bundled one): the bundled font here is a Nastaliq-style face.
+     * Nastaliq's calligraphic diagonal-stacking shaping is known to not be
+     * fully supported by Android's Canvas/StaticLayout text-shaping stack —
+     * certain letter sequences collapse or drop out entirely, while a plain
+     * Latin/number run alongside them (which doesn't need that shaping)
+     * still renders fine. That matches the symptom exactly. The system's
+     * Naskh/Sans Arabic font — the same style everything else in the app
+     * (and the OS itself) already uses successfully — uses much simpler,
+     * reliably-supported shaping, so it's now tried FIRST, with the bundled
+     * Nastaliq font demoted to a fallback for the rare device with no Arabic
+     * system font at all. This does trade the traditional Nastaliq
+     * calligraphic look on receipts for a Naskh-style look — but a
+     * consistently-correct name beats a prettier font that sometimes prints
+     * blank.
      * Result is cached after the first resolution (per process) so this
      * never re-hits the filesystem/font-family lookup on every receipt.
      */
@@ -639,14 +658,6 @@ object PrinterHelper {
         cachedUrduTypeface?.let { return it }
         if (triedLoadingUrduFont) return Typeface.DEFAULT
         triedLoadingUrduFont = true
-
-        try {
-            val tf = Typeface.createFromAsset(context.assets, URDU_FONT_ASSET_PATH)
-            cachedUrduTypeface = tf
-            return tf
-        } catch (e: Exception) {
-            // Bundled font missing — fall through to system options below.
-        }
 
         for (family in SYSTEM_ARABIC_FONT_FAMILIES) {
             try {
@@ -658,6 +669,14 @@ object PrinterHelper {
             } catch (e: Exception) {
                 // Family not present on this ROM — try the next one.
             }
+        }
+
+        try {
+            val tf = Typeface.createFromAsset(context.assets, URDU_FONT_ASSET_PATH)
+            cachedUrduTypeface = tf
+            return tf
+        } catch (e: Exception) {
+            // Bundled font missing/unusable — fall through to the default below.
         }
 
         cachedUrduTypeface = Typeface.DEFAULT
