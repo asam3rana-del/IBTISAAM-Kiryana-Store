@@ -325,6 +325,42 @@ Applied fixes from the full assessment:
       converge) — see `SYNC-CONFLICT-TESTS.md` — and actually publishing the
       updated `firestore.rules` to the live Firebase project.
 
+20. **P9 finished: Room-instrumented sync tests (`SyncQueueHelperInstrumentedTest.kt`)**
+    - Closed the exact gap `SyncQueueHelperTest.kt`'s doc comment and
+      `IMPROVEMENT_CHECKLIST.csv`'s P9 row both named as still open: the
+      `suspend fun`s in `SyncQueueHelper.kt` that read/write `PosDatabase`
+      directly (`enqueueX()` wrappers, `adjustCustomerBalance`/
+      `adjustSupplierBalance`, `decrease/increase/decreaseProductStockForce`,
+      `updateProductCost`/`updateProductPrices`, `enqueueProductOpeningStock`,
+      `saleJson`/`purchaseJson`) can't be plain-JVM tested.
+    - New file: `app/src/androidTest/.../SyncQueueHelperInstrumentedTest.kt`
+      (20 tests), same shape as `MigrationTest.kt` — a real in-memory Room
+      database, no Firebase/network. Covers: serverId getting stamped
+      immediately on `enqueueCustomer`/`enqueueSupplier` (so the next pull
+      doesn't self-duplicate); `enqueueProduct`'s upsert never carrying
+      `stock`; balance/stock delta wrappers updating the row AND queuing the
+      matching `increment_*` delta (including the insufficient-stock
+      no-op-everywhere case for the guarded `decrease()`, and the
+      goes-negative-anyway case for `decreaseProductStockForce`);
+      `logMovement()` now also syncing the `stock_movements` row itself
+      (added under P11's sibling work, not just the increment); `updateCost`/
+      `updatePrices` each queuing a fresh full upsert; `enqueueProductOpeningStock`
+      skipping a zero-qty no-op; `saleJson`/`purchaseJson` resolving
+      customer/supplierServerId (not the meaningless raw local id) and
+      carrying every line item, including `PurchaseItem`'s
+      `itemName`/`retailRate`/`wholesaleRate` snapshot fields from the
+      "gayab after sync" fix; the new (P11) `enqueueCashRegister`; and
+      `enqueueDelete`.
+    - Run: `./gradlew connectedDebugAndroidTest` (device/emulator, same
+      requirement as `MigrationTest.kt`).
+    - `IMPROVEMENT_CHECKLIST.csv`'s P9 row and `TESTS-README.md` updated to
+      match — P9 moved from PARTIAL to DONE.
+    - Still out of scope for automated coverage (needs live Firebase + 2 real
+      devices, not just Room): the actual push()/pull() network round-trip,
+      `SyncApi.applyServerChanges()`'s conflict-audit-log branches, and
+      everything else `SYNC_STRESS_TEST_PLAN.md`/`SYNC-CONFLICT-TESTS.md`
+      cover — those remain P4's manual execution item.
+
 ## Remaining operational checks
 
 - Run `gradle lintDebug`, `gradle testDebugUnitTest`, and `gradle assembleDebug` in a network-enabled Android/Gradle environment.

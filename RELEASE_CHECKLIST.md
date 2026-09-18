@@ -16,7 +16,9 @@ duplicating it.
       leak regression guards)
 - [ ] `./gradlew connectedDebugAndroidTest` passes on a real device/emulator —
       covers `MigrationTest` (added under P3; see the caveat below before trusting
-      it as a hard gate)
+      it as a hard gate) and `SyncQueueHelperInstrumentedTest` (added under P9 —
+      20 tests covering the Room-dependent half of `SyncQueueHelper`: enqueue/
+      trigger/adjustBalance/stock-delta wrappers and saleJson/purchaseJson)
 - [ ] `./gradlew assembleRelease` succeeds and produces a signed APK/AAB
 - [ ] Release keystore credentials are supplied via Gradle properties / CI secrets
       (see `app/build.gradle.kts`'s release `signingConfigs` block for the exact

@@ -70,3 +70,33 @@ add karna padega. Chahein to ye bhi kar deta hoon.
   customer name trimming, stock-unavailable aur invalid-qty error mapping.
 
 Total ab **46 unit tests, 6 files** hain poore project mein.
+
+## Update — P9 Complete: Room-instrumented sync tests (androidTest)
+
+`SyncQueueHelperTest.kt`'s doc comment ne jo "NOT covered here" list chhodi thi
+(`enqueue()`/`trigger()`/har `enqueueX()`, `adjustCustomerBalance`/
+`adjustSupplierBalance`, `decrease/increase/decreaseProductStockForce`,
+`updateProductCost`/`updateProductPrices`, `enqueueProductOpeningStock`,
+`saleJson`/`purchaseJson`) — ye sab seedha `PosDatabase` (Room) se bandhe
+`suspend fun`s hain, is liye plain JVM test nahi ban saktay. Ab
+`app/src/androidTest/.../SyncQueueHelperInstrumentedTest.kt` mein, `MigrationTest.kt`
+jaisa hi ek real in-memory Room database use karke, ye poora cover ho gaya
+(**20 androidTest tests**): serverId turant stamp hona (enqueueCustomer/
+enqueueSupplier), stock/balance delta wrappers (row update + matching
+increment_* delta + insufficient-stock guard ka "kuch nahi hota" case +
+decreaseProductStockForce ka negative-ja-sakta-hai case), stock_movements
+row khud bhi sync hona (logMovement), updateCost/updatePrices ka fresh upsert,
+opening-stock zero-skip, saleJson/purchaseJson (resolved customer/
+supplierServerId + poore line items, PurchaseItem ke itemName/retailRate/
+wholesaleRate snapshot fields sahit), naya enqueueCashRegister (P11), aur
+enqueueDelete.
+
+Run: `./gradlew connectedDebugAndroidTest` (device/emulator chahiye, koi
+Firebase/network nahi). Sandbox note same as `MigrationTest.kt` — is
+environment mein compile-verify nahi ho paaya, har signature asli source
+(`SyncQueueHelper.kt`, `Database.kt`) se match karke likha gaya hai.
+
+`IMPROVEMENT_CHECKLIST.csv`'s P9 row PARTIAL se DONE ho gayi hai. Baqi jo
+automate nahi ho sakta (`SyncApi.applyServerChanges()`'s conflict-audit-log
+branches, asal push()/pull() network round-trip) P4 ka manual execution item
+hi rehta hai — dekho `SYNC-CONFLICT-TESTS.md` / `SYNC_STRESS_TEST_PLAN.md`.
