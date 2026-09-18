@@ -622,6 +622,12 @@ data class Expense(
     val category:String,
     val description:String,
     val amount:Double,
+    // FIX (Bug 2 — expenses never touched Cash in Hand): which drawer this expense
+    // was paid from ("cash" or "bank"), same values CashActivity/CashTransaction
+    // already use. Defaulted to "cash" (the common case, and what every expense
+    // recorded before this column existed was, implicitly) so ExpenseActivity.saveExpense()
+    // can create a matching CashTransaction — see MIGRATION_41_42.
+    @ColumnInfo(defaultValue="cash") val method:String="cash",
     val createdAt:Long=System.currentTimeMillis(),
     val serverId:String?=null,
     val updatedAt:Long=0L,
@@ -1915,6 +1921,19 @@ val MIGRATION_40_41 = object : Migration(40, 41) {
     }
 }
 
+// FIX (Bug 2 — Expenses never touch Cash Register / Cash Activity / Balance Sheet's
+// "Cash in Hand"): plain ADD COLUMN, same low-risk shape as MIGRATION_33_34/40_41/etc.
+// Every expense recorded before this update gets 'cash' (matching how they behaved —
+// there was no other option), so ExpenseActivity.saveExpense() can now also insert a
+// CashTransaction(type="OUT") the same way RoomPurchaseRepository/PartyTransactionActivity
+// already do for purchases/manual payments, making Balance Sheet's
+// "all-time cash_transactions IN(cash) - OUT(cash)" formula finally include expenses.
+val MIGRATION_41_42 = object : Migration(41, 42) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE expenses ADD COLUMN method TEXT NOT NULL DEFAULT 'cash'")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1927,7 +1946,7 @@ val MIGRATION_40_41 = object : Migration(40, 41) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=41, exportSchema=true
+    version=42, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1954,7 +1973,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

@@ -306,8 +306,19 @@ class PaymentsReportActivity : AppCompatActivity() {
             val suppliers = db.supplierDao().allList().associateBy { it.id }
             val bounds = periodBounds()
 
+            // FIX (Bug 1 — bill-payments leaking into this "standalone payments only"
+            // report): mirrors PartyRepository.recalculateBalances()'s reasoning — a
+            // payment whose `reference` matches a real sale invoice / purchase billNo
+            // is the bill-embedded cash row RoomSaleRepository/RoomPurchaseRepository
+            // insert alongside `sale.paid`/`purchase.paid`, not a standalone "Receive
+            // Payment"/"Make Payment" entry. Collected across ALL parties (not scoped
+            // to one, since this report is all-parties) so those get excluded here too.
+            val saleInvoices = db.saleDao().allRaw().map { it.invoice }.toHashSet()
+            val purchaseBillNos = db.purchaseDao().allRaw().map { it.billNo }.toHashSet()
+
             val rows = db.paymentDao().allRaw()
                 .filter { p -> bounds == null || p.createdAt in bounds.first..bounds.second }
+                .filter { p -> p.reference !in saleInvoices && p.reference !in purchaseBillNos }
                 .mapNotNull { p ->
                     when (p.partyType) {
                         "customer" -> customers[p.partyId]?.let { ReportRow(p, it.name, it.id, true) }

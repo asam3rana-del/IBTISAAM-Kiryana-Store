@@ -745,19 +745,23 @@ object SyncApi {
             val description = row["description"] as? String ?: ""
             val amount = (row["amount"] as? Number)?.toDouble() ?: 0.0
             val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            // FIX (Bug 2 — Cash in Hand): older pushes (pre-migration) won't carry
+            // "method" at all, so fall back to "cash" — same default the column itself
+            // uses, and what those expenses actually were before this fix existed.
+            val method = row["method"] as? String ?: "cash"
 
             val existing = expenseDao.findByServerId(serverId)
             if (existing != null) {
                 expenseDao.update(
                     existing.copy(
-                        category = category, description = description, amount = amount,
+                        category = category, description = description, amount = amount, method = method,
                         createdAt = createdAt, updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
                 )
             } else {
                 expenseDao.insert(
                     Expense(
-                        category = category, description = description, amount = amount,
+                        category = category, description = description, amount = amount, method = method,
                         createdAt = createdAt, serverId = serverId,
                         updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )

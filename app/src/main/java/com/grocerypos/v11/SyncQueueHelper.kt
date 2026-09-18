@@ -773,6 +773,10 @@ object SyncQueueHelper {
             "category" to expense.category,
             "description" to expense.description,
             "amount" to expense.amount,
+            // FIX (Bug 2 — Cash in Hand): keep the paid-from method in sync too, so
+            // another device pulling this expense still knows whether to treat it as
+            // cash or bank when it later re-derives cash_transactions from it.
+            "method" to expense.method,
             "createdAt" to expense.createdAt,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current

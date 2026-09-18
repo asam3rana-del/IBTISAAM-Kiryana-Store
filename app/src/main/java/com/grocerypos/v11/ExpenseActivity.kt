@@ -9,6 +9,7 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
@@ -68,6 +69,9 @@ class ExpenseActivity : AppCompatActivity() {
     private lateinit var amount: EditText
     private lateinit var reason: EditText
     private lateinit var categorySpinner: Spinner
+    // FIX (Bug 2 — Cash in Hand): which drawer this expense comes out of, same
+    // "cash"/"bank" choice CashActivity already offers (see methodSpinner there).
+    private lateinit var methodSpinner: Spinner
     private lateinit var miscToggle: TextView
     private lateinit var miscDescBox: LinearLayout
     private lateinit var miscDesc: EditText
@@ -132,6 +136,17 @@ class ExpenseActivity : AppCompatActivity() {
         }
         categoryBox.addView(categorySpinner)
         formCard.addView(categoryBox)
+
+        // ---- Paid from: cash / bank (FIX — Bug 2, so this expense can actually
+        // reduce Cash in Hand / feed the Cash Register the way a purchase or a
+        // manual payment already does) ----
+        formCard.addView(sectionLabel(Loc.t(this, "Paid From", "کہاں سے ادا کیا")))
+        val methodBox = outlinedBox()
+        methodSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@ExpenseActivity, android.R.layout.simple_spinner_dropdown_item, listOf("cash", "bank"))
+        }
+        methodBox.addView(methodSpinner)
+        formCard.addView(methodBox)
 
         // ---- Miscellaneous description: collapsed by default, expands on tap ----
         miscToggle = TextView(this).apply {
@@ -294,6 +309,7 @@ class ExpenseActivity : AppCompatActivity() {
             return
         }
         val category = categorySpinner.selectedItem?.toString() ?: ""
+        val method = methodSpinner.selectedItem?.toString() ?: "cash"
         val misc = miscDesc.text.toString().trim()
         val note = reason.text.toString().trim()
 
@@ -309,10 +325,27 @@ class ExpenseActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ExpenseActivity)
-            val expense = Expense(category = category, description = fullDescription, amount = amt)
+            val expense = Expense(category = category, description = fullDescription, amount = amt, method = method)
             val newId = db.expenseDao().insert(expense)
             val savedExpense = expense.copy(id = newId)
             SyncQueueHelper.enqueue(db, "expense", SyncQueueHelper.expenseEntityId(savedExpense), "create", SyncQueueHelper.expenseJson(savedExpense))
+
+            // FIX (Bug 2 — Expenses never touch Cash Register / Cash Activity /
+            // Balance Sheet's "Cash in Hand"): mirrors RoomPurchaseRepository.savePurchase()
+            // and PartyTransactionActivity's manual-payment flow — every cash movement
+            // needs a matching CashTransaction(type="OUT") or Balance Sheet's all-time
+            // "IN(cash) - OUT(cash)" formula never sees this money leave the drawer.
+            // `reference` ties it back to this expense so an edit/delete (below) can
+            // find and remove the matching drawer entry too, instead of leaving a
+            // stale OUT behind forever.
+            val cashTx = CashTransaction(
+                type = "OUT", method = method, amount = amt,
+                reason = "Expense" + (if (category.isNotEmpty()) ": $category" else ""),
+                reference = "expense:${savedExpense.id}", createdAt = savedExpense.createdAt
+            )
+            val cashTxId = db.cashTransactionDao().insert(cashTx)
+            SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
+
             SyncQueueHelper.trigger(this@ExpenseActivity)
             Toast.makeText(this@ExpenseActivity, Loc.t(this@ExpenseActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
             amount.text.clear()
@@ -321,6 +354,7 @@ class ExpenseActivity : AppCompatActivity() {
             miscDescBox.visibility = View.GONE
             miscToggle.visibility = View.GONE
             categorySpinner.setSelection(0)
+            methodSpinner.setSelection(0)
             loadTotals()
         }
     }
@@ -423,6 +457,10 @@ class ExpenseActivity : AppCompatActivity() {
                         SyncQueueHelper.expenseEntityId(e),
                         this@ExpenseActivity
                     )
+                    // FIX (Bug 2 — Cash in Hand): without this, deleting an expense
+                    // left its CashTransaction(type="OUT") behind, permanently
+                    // understating Cash in Hand by that amount forever after.
+                    SyncQueueHelper.deleteCashTransactionsByReference(db, "expense:${e.id}")
                     loadTotals()
                 }
             }
