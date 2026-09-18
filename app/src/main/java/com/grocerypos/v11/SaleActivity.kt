@@ -109,6 +109,13 @@ class SaleActivity : AppCompatActivity() {
     internal lateinit var unitSpinner: Spinner
     internal lateinit var unitToggleRow: LinearLayout
     internal lateinit var unitPrice: EditText
+    // NEW (Buy-by-amount — "customer mangta hai Rs 100 ki cheez"): lets the
+    // shopkeeper type a Rupee amount instead of a weight/qty and have the app
+    // work out the quantity, instead of doing amount÷rate by hand for every
+    // sugar/rice/loose-item sale. See addItem()/updateItemLineTotal() in
+    // SaleCart.kt.
+    internal lateinit var amountModeToggle: TextView
+    internal var qtyIsAmountMode = false
     // NEW ("10/10 Sale screen" — loss protection, mirrors PurchaseActivity's
     // updateMarginWarning()): warns live if the rate being typed is at or below
     // this item's cost, instead of that only being discoverable later in reports.
@@ -430,7 +437,27 @@ class SaleActivity : AppCompatActivity() {
 
         val qtyUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val qtyBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 6, 0) } }
-        qtyBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Quantity", "مقدار")))
+        val qtyLabelRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        qtyLabelRow.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Quantity", "مقدار")).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        // NEW (Buy-by-amount): small pill next to the Quantity label — tap to
+        // switch this box between "Quantity" (weight/pcs, as before) and
+        // "Amount (Rs)" (type what the customer wants to spend; qty is worked
+        // out from the rate). Kept next to the label rather than a whole
+        // separate field so the box the shopkeeper is already looking at just
+        // changes meaning, instead of adding a new row to scan.
+        amountModeToggle = TextView(this).apply {
+            text = "Rs"
+            textSize = 10.5f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(16, 6, 16, 6)
+            setTextColor(Color.parseColor(textGray))
+            background = strokedBg(border, cardBg, 20)
+            setOnClickListener { toggleQtyAmountMode() }
+        }
+        qtyLabelRow.addView(amountModeToggle)
+        qtyBox.addView(qtyLabelRow)
         qty = EditText(this).apply {
             hint = "0"
             setHintTextColor(Color.parseColor(textGray))

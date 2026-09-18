@@ -214,17 +214,72 @@ internal fun SaleActivity.repriceLinesForSaleType() {
     }
 }
 
+internal fun SaleActivity.toggleQtyAmountMode() {
+    qtyIsAmountMode = !qtyIsAmountMode
+    qty.text.clear()
+    refreshQtyModeUi()
+    updateItemLineTotal()
+}
+
+// Updates the Quantity box's hint + the "Rs" pill's look to match the current
+// mode. Called on toggle and whenever the entry fields are reset, so the pill
+// never shows stale state after Add/Cancel/edit-load.
+internal fun SaleActivity.refreshQtyModeUi() {
+    if (qtyIsAmountMode) {
+        qty.hint = com.grocerypos.v11.util.Loc.t(this, "Amount in Rs", "روپے میں رقم")
+        amountModeToggle.setTextColor(Color.WHITE)
+        amountModeToggle.background = roundedBg(teal, 20)
+    } else {
+        qty.hint = "0"
+        amountModeToggle.setTextColor(Color.parseColor(textGray))
+        amountModeToggle.background = strokedBg(border, cardBg, 20)
+    }
+}
+
 internal fun SaleActivity.updateItemLineTotal() {
+    val price = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
+    if (qtyIsAmountMode) {
+        // Amount mode: what's typed IS the total, and the quantity is the
+        // derived value — shown so the shopkeeper can see roughly how much
+        // they're about to hand over before adding it to the bill.
+        val enteredAmount = qty.text.toString().toDoubleOrNull() ?: 0.0
+        val chosenUnit = unitSpinner.selectedItem?.toString() ?: (selectedProduct?.unit ?: "")
+        if (price > 0 && enteredAmount > 0) {
+            val computedQty = kotlin.math.round((enteredAmount / price) * 1000) / 1000.0
+            itemLineTotalText.text = "\u2248 ${formatQty(computedQty)} $chosenUnit   •   Total Amount: Rs %.0f".format(Math.round(enteredAmount).toDouble())
+        } else {
+            itemLineTotalText.text = "Total Amount: Rs 0"
+        }
+        return
+    }
     val q = qty.text.toString().toDoubleOrNull() ?: 0.0
-    val p = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
-    itemLineTotalText.text = "Total Amount: Rs %.0f".format(Math.round(q * p).toDouble())
+    itemLineTotalText.text = "Total Amount: Rs %.0f".format(Math.round(q * price).toDouble())
 }
 
 // ================= Add item to bill =================
 internal fun SaleActivity.addItem() {
     val n = itemName.text.toString().trim()
-    val q = qty.text.toString().toDoubleOrNull() ?: 0.0
     val price = unitPrice.text.toString().toDoubleOrNull() ?: 0.0
+
+    // NEW (Buy-by-amount): in Rs mode, the qty field holds a Rupee amount, not
+    // a quantity — work out the quantity from the rate before anything below
+    // (stock check, line building) touches it, so the rest of addItem() never
+    // needs to know which mode the shopkeeper was typing in.
+    if (qtyIsAmountMode) {
+        if (price <= 0) {
+            Toast.makeText(this, "Pehle Rate likhein, phir Rs se qty nikalegi", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val enteredAmount = qty.text.toString().toDoubleOrNull() ?: 0.0
+        if (enteredAmount <= 0) {
+            Toast.makeText(this, "Rs amount theek se likhen", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val computedQty = kotlin.math.round((enteredAmount / price) * 1000) / 1000.0
+        qty.setText(formatQty(computedQty))
+    }
+
+    val q = qty.text.toString().toDoubleOrNull() ?: 0.0
     val product = products.find { it.name.equals(n, ignoreCase = true) }
 
     if (product == null) {
@@ -304,6 +359,8 @@ internal fun SaleActivity.addItem() {
     itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
     selectedProduct = null
     lastMainPrice = 0.0
+    qtyIsAmountMode = false
+    refreshQtyModeUi()
     unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("pcs"))
     conversionInfo.visibility = View.GONE
     unitToggleRow.visibility = View.GONE
@@ -430,6 +487,8 @@ internal fun SaleActivity.editLine(index: Int) {
     }
 
     qty.setText(formatQty(line.qty))
+    qtyIsAmountMode = false
+    refreshQtyModeUi()
     lastMainPrice = 0.0
     suppressPriceWatcher = true
     unitPrice.setText(if (line.unitPrice == line.unitPrice.toLong().toDouble()) line.unitPrice.toLong().toString() else line.unitPrice.toString())
@@ -553,6 +612,8 @@ internal fun SaleActivity.clearAll() {
     itemName.text.clear(); qty.text.clear(); unitPrice.text.clear()
     selectedProduct = null
     lastMainPrice = 0.0
+    qtyIsAmountMode = false
+    refreshQtyModeUi()
     conversionInfo.visibility = View.GONE
     unitToggleRow.visibility = View.GONE
     marginWarningText.visibility = View.GONE
