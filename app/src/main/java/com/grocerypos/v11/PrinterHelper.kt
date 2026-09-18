@@ -645,17 +645,23 @@ object PrinterHelper {
             // whole font, but applied globally without changing which lines are already
             // marked bold vs normal (those still look heavier relative to this baseline).
             style = Paint.Style.FILL_AND_STROKE
-            strokeWidth = fontSizePx * 0.035f
+            // FIX ("print dark kro" — print still too light): stroke bumped
+            // 0.035 -> 0.05x so more of each glyph's edge crosses the black/white
+            // threshold below, making the whole receipt print noticeably darker.
+            strokeWidth = fontSizePx * 0.05f
         }
         // SPEED TUNING: slightly tighter spacing than before shrinks the overall
         // bitmap height (and so the total bytes sent to the printer) without making
         // the receipt cramped or hard to read.
         val lineSpacingExtra = (fontSizePx * 0.28f).toInt()
         val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
-        // Table/row cells use a slightly smaller font than the rest of the receipt so
-        // 3-4 columns (Item/Qty/Amount, or Item/Qty/Rate/Amount) fit comfortably on a
-        // 384-dot (58mm) paper width without excessive ellipsizing.
-        val tableFontSize = fontSizePx * 0.78f
+        // Table/row cells use a smaller font than the rest of the receipt so 3-4
+        // columns (Item/Qty/Amount, or Item/Rate/Qty/Amount) fit comfortably on a
+        // 58mm paper width without excessive ellipsizing.
+        // FIX ("is ka size chota kro" — item table too big): trimmed 0.78 -> 0.72.
+        // Combined with the ItemRow-specific 0.92x factors above, the effective size
+        // for item name/rate/qty/amount cells is now noticeably smaller than before.
+        val tableFontSize = fontSizePx * 0.72f
         // FIX (cramped print — text touching between columns/lines): both of these
         // were too tight (8 / 5), which combined with the qty-column overflow bug
         // made everything look crammed together with no visible gaps. Bumped up for
@@ -733,13 +739,14 @@ object PrinterHelper {
                 }
                 is ReceiptLine.ItemRow -> {
                     // Two stacked lines: line 1 is the item name alone (full width,
-                    // bold); line 2 is qty / "@ rate" / amount. Measured using the
-                    // boosted Arabic size for line 1 so there's enough room whether or
-                    // not the item name is Urdu this time. Line 2 is measured at plain
-                    // tableFontSize — must match the size actually used at draw time.
-                    paint.textSize = tableFontSize * ARABIC_ITEM_FONT_BOOST
+                    // bold); line 2 is rate / qty / amount. Measured using the larger of
+                    // the two possible line-1 sizes (Arabic boost vs the plain 0.92x
+                    // size) so there's enough room either way. Line 2 is measured at
+                    // 0.92x tableFontSize — must match the size actually used at draw
+                    // time above.
+                    paint.textSize = tableFontSize * maxOf(ARABIC_ITEM_FONT_BOOST, 0.92f)
                     val fmName = paint.fontMetrics
-                    paint.textSize = tableFontSize
+                    paint.textSize = tableFontSize * 0.92f
                     val fmDetail = paint.fontMetrics
                     paint.textSize = fontSizePx
                     val h = (fmName.bottom - fmName.top).toInt() +
@@ -956,19 +963,50 @@ object PrinterHelper {
                 }
                 is ReceiptLine.ItemRow -> {
                     // FIX (item name truncation — "item k nechey item name aye"): name
-                    // now gets its own full-width line so long/Urdu names no longer get
-                    // squeezed into a narrow shared column and ellipsized. rate/qty/
-                    // amount moved to a second line underneath, in that order — same
-                    // left-to-right order as the Rate/Qty/Amount header columns above.
-                    // No borders, no grid.
+                    // gets its own full-width line so long/Urdu names don't get squeezed
+                    // into a narrow shared column and ellipsized. rate/qty/amount sit on
+                    // a second line underneath.
                     //   line 1: <name>                                   (full width, bold)
                     //   line 2: <rate>              <qty>              <amount>   (amount bold)
+                    //
+                    // FIX (column "sequence" mismatch — "column add ho gae lekin sequence
+                    // nahi"): line 2 used to be drawn as a plain left/center/right split
+                    // across the FULL row width, ignoring [weights] entirely. But the
+                    // header above (Row4: "Item / Rate / Qty / Amount") is laid out in 4
+                    // weighted columns where Item alone gets half the row and Rate/Qty/
+                    // Amount each get a narrow slice on the right — so "Rate"/"Qty"/
+                    // "Amount" sit bunched together on the right side of the header, while
+                    // the old line-2 values were spread evenly across the *entire* width.
+                    // Result: values didn't sit under their own header labels at all. Now
+                    // line 2 uses the exact same column boundaries (via [weights], columns
+                    // 2/3/4 — the Item column's width is skipped since line 2 has no name
+                    // cell) so rate/qty/amount line up under Rate/Qty/Amount every time.
                     val tableLeft = margin.toFloat()
                     val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
-                    val fullTextWidth = (tableRight - tableLeft - tableCellPaddingH * 2).coerceAtLeast(1f)
+                    val tableWidth = tableRight - tableLeft
+                    val fullTextWidth = (tableWidth - tableCellPaddingH * 2).coerceAtLeast(1f)
+
+                    val totalWeight = line.weights.sum().coerceAtLeast(0.01f)
+                    val colX = FloatArray(line.weights.size + 1)
+                    colX[0] = tableLeft
+                    for (i in line.weights.indices) {
+                        colX[i + 1] = colX[i] + (line.weights[i] / totalWeight) * tableWidth
+                    }
+                    // colX[1..] are the Rate/Qty/Amount column boundaries (colX[0..1] is
+                    // the Item column, unused here since line 2 has no name cell). Falls
+                    // back to an even 3-way split if fewer than 4 weights were supplied.
+                    val rateColLeft = if (colX.size > 4) colX[1] else tableLeft
+                    val rateColRight = if (colX.size > 4) colX[2] else tableLeft + tableWidth / 3f
+                    val qtyColLeft = if (colX.size > 4) colX[2] else tableLeft + tableWidth / 3f
+                    val qtyColRight = if (colX.size > 4) colX[3] else tableLeft + tableWidth * 2f / 3f
+                    val amountColRight = if (colX.size > 4) colX[4] else tableRight
 
                     val nameIsUrdu = containsArabicScript(line.name)
-                    val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 1f)
+                    // FIX ("product name size chota kro"): item name no longer gets the
+                    // full Arabic-boosted size for plain (non-Urdu) names — trimmed to
+                    // 0.92x so it visibly sits smaller than before, while Urdu names still
+                    // get the boost (kept legible) at a slightly reduced factor.
+                    val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 0.92f)
 
                     // ---- line 1: item name alone, full row width ----
                     paint.textSize = nameSize
@@ -977,35 +1015,31 @@ object PrinterHelper {
                     val line1Baseline = y + tableRowPaddingV - fm.top
                     val line1Height = fm.bottom - fm.top
 
+                    // Ellipsized against the full printable width so the name always
+                    // fits the page regardless of paper width — "page k mutabiq proper
+                    // fit kro".
                     val fitName = TextUtils.ellipsize(line.name, paint, fullTextWidth, TextUtils.TruncateAt.END).toString()
                     paint.textAlign = if (nameIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
                     val nameX = if (nameIsUrdu) tableRight - tableCellPaddingH else tableLeft + tableCellPaddingH
                     canvas.drawText(fitName, nameX, line1Baseline, paint)
 
-                    // ---- line 2: rate (left) / qty (center) / amount (right, bold) ----
-                    // FIX (print didn't match preview): order used to be qty / "@ rate" /
-                    // amount, which didn't match the on-screen card's column order. Now
-                    // rate / qty / amount, left-to-right, same order as the ITEM / RATE /
-                    // QTY / AMOUNT header above and the preview card's own row order —
-                    // just wrapped onto this second line instead of squeezed into columns
-                    // next to the (full-width) item name.
-                    // Small explicit gap (detailLineGap) below line 1 so the two lines
-                    // don't sit flush against each other on paper.
+                    // ---- line 2: rate / qty / amount, each centered (amount right-
+                    // aligned) under the matching header column ----
                     val detailLineGap = tableRowPaddingV * 0.35f
-                    paint.textSize = tableFontSize
+                    // FIX ("size chota kro"): detail line trimmed slightly below the
+                    // shared tableFontSize so rate/qty/amount print a touch smaller too.
+                    paint.textSize = tableFontSize * 0.92f
                     paint.isFakeBoldText = false
                     fm = paint.fontMetrics
                     val line2Baseline = y + tableRowPaddingV + line1Height + detailLineGap - fm.top
 
-                    paint.textAlign = Paint.Align.LEFT
-                    canvas.drawText(line.rate, tableLeft + tableCellPaddingH, line2Baseline, paint)
-
                     paint.textAlign = Paint.Align.CENTER
-                    canvas.drawText(line.qty, (tableLeft + tableRight) / 2f, line2Baseline, paint)
+                    canvas.drawText(line.rate, (rateColLeft + rateColRight) / 2f, line2Baseline, paint)
+                    canvas.drawText(line.qty, (qtyColLeft + qtyColRight) / 2f, line2Baseline, paint)
 
                     paint.isFakeBoldText = true
                     paint.textAlign = Paint.Align.RIGHT
-                    canvas.drawText(line.amount, tableRight - tableCellPaddingH, line2Baseline, paint)
+                    canvas.drawText(line.amount, amountColRight - tableCellPaddingH, line2Baseline, paint)
                     paint.isFakeBoldText = false
 
                     paint.textSize = fontSizePx
@@ -1057,11 +1091,12 @@ object PrinterHelper {
                     val luminance = r * 0.3 + g * 0.59 + bch * 0.11
                     // FIX (print too light): was <128 — only fairly dark pixels became
                     // black dots, so lighter gray (anti-aliased edges, thin strokes)
-                    // printed as nothing at all. Raised to <195 so those pixels also
-                    // print solid, which — combined with the synthetic-bold stroke
-                    // above — makes the whole receipt noticeably darker and easier to
-                    // read on a faint-printing thermal head.
-                    if (luminance < 195) {
+                    // printed as nothing at all. Raised to <195, then further to <215
+                    // ("print dark kro") so even lighter gray edges print solid, which —
+                    // combined with the synthetic-bold stroke above — makes the whole
+                    // receipt noticeably darker and easier to read on a faint-printing
+                    // thermal head.
+                    if (luminance < 215) {
                         val byteIndex = row * bytesPerRow + (x / 8)
                         val bitIndex = 7 - (x % 8)
                         imageData[byteIndex] = (imageData[byteIndex].toInt() or (1 shl bitIndex)).toByte()
