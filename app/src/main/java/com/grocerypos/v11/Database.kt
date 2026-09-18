@@ -169,6 +169,14 @@ data class Product(
     val openingStock:Double=0.0,
     val tertiaryUnit:String="",
     val tertiaryUnitQty:Double=0.0,
+    // NEW (manual default-unit override — MIGRATION_40_41): which unit tier
+    // should be pre-selected on the Sale screen for this product. -1 means
+    // "Auto" — keep using SaleCart.defaultUnitIndexFor()'s existing 1/2/3-tier
+    // + Beverages-category logic. 0/1/2 means the shopkeeper picked a tier
+    // explicitly in the "Add Item Unit" dialog, and that always wins over the
+    // automatic guess. Added so the Beverages-only special case doesn't have to
+    // be hand-edited in code for every product/category — see SaleCart.kt.
+    val defaultUnitIndex:Int=-1,
     val updatedAt:Long=0L,
     val dirty:Boolean=true,
     // NEW (English search alias): lets a product whose `name` is saved in Urdu
@@ -813,6 +821,14 @@ interface ProductDao {
     suspend fun updatePrices(code:String,salePrice:Double,wholesalePrice:Double)
     @Query("UPDATE products SET unit=:unit WHERE barcode=:code")
     suspend fun updateUnit(code:String,unit:String)
+    // NEW (Bulk Set Default Unit): products that have more than one unit tier
+    // (a secondary unit set) but no manual default-unit override yet — the
+    // queue BulkDefaultUnitActivity works through, one suggestion at a time.
+    // See Product.defaultUnitIndex / SaleCart.kt's defaultUnitIndexFor().
+    @Query("SELECT * FROM products WHERE secondaryUnit!='' AND defaultUnitIndex=-1 ORDER BY name")
+    suspend fun productsNeedingDefaultUnitReview(): List<Product>
+    @Query("UPDATE products SET defaultUnitIndex=:index, dirty=1, updatedAt=:ts WHERE barcode=:code")
+    suspend fun updateDefaultUnitIndex(code:String, index:Int, ts:Long)
     @Query("SELECT * FROM products WHERE stock<=reorderLevel ORDER BY name")
     fun lowStock():Flow<List<Product>>
     @Query("SELECT * FROM products WHERE expiry!='' ORDER BY expiry")
@@ -1889,6 +1905,16 @@ val MIGRATION_39_40 = object : Migration(39, 40) {
     }
 }
 
+// NEW (manual default-unit override): plain ADD COLUMN, same low-risk shape as
+// MIGRATION_33_34/34_35/etc. Existing products get -1 (Auto), so every product
+// saved before this update keeps behaving exactly as it does today until the
+// shopkeeper opens it and picks a default unit explicitly.
+val MIGRATION_40_41 = object : Migration(40, 41) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE products ADD COLUMN defaultUnitIndex INTEGER NOT NULL DEFAULT -1")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1901,7 +1927,7 @@ val MIGRATION_39_40 = object : Migration(39, 40) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=40, exportSchema=true
+    version=41, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -1928,7 +1954,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

@@ -191,7 +191,75 @@ internal fun ProductActivity.openUnitDialog() {
     )
     tertiaryCard.addView(premiumFieldBox(tertiaryQtyField, R.drawable.ic_repeat, orange))
     body.addView(tertiaryCard)
+    body.addView(spacer(16))
+
+    // Default unit for Sale screen — purple accent badge. Lets the shopkeeper
+    // pin which tier should be pre-selected when this product is picked in
+    // Sale, instead of relying only on the fixed Auto rule (1-tier -> only
+    // unit, 3-tier -> 2nd unit, 2-tier -> Beverages=1st/everyone else=2nd).
+    // See SaleCart.kt's defaultUnitIndexFor().
+    val defaultUnitCard = premiumUnitCard()
+    defaultUnitCard.addView(
+        badgedSectionLabel(
+            R.drawable.ic_check,
+            Loc.t(this, "Default Unit for Sale Screen", "سیل اسکرین کے لیے ڈیفالٹ یونٹ"),
+            purple
+        )
+    )
+    defaultUnitCard.addView(
+        TextView(this).apply {
+            text = Loc.t(
+                this@openUnitDialog,
+                "Auto picks it for you (see hint below). Choose one yourself if you'd rather it always show a specific unit.",
+                "آٹو خود بخود منتخب کرتا ہے۔ اگر ہمیشہ کوئی خاص یونٹ دکھانا ہو تو خود منتخب کریں"
+            )
+            textSize = 11.5f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(0, 0, 0, 12)
+        }
+    )
+    val defaultUnitChipRow = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+    }
+    defaultUnitCard.addView(defaultUnitChipRow)
+    body.addView(defaultUnitCard)
     body.addView(spacer(6))
+
+    var chosenDefaultUnitIndex = selectedDefaultUnitIndex
+
+    fun refreshDefaultUnitChips() {
+        val tierNames = mutableListOf(primaryField.text.toString().trim())
+        val s = secondaryField.text.toString().trim()
+        val t = tertiaryField.text.toString().trim()
+        if (s.isNotBlank()) tierNames.add(s)
+        if (s.isNotBlank() && t.isNotBlank()) tierNames.add(t)
+
+        if (chosenDefaultUnitIndex !in 0 until tierNames.size) chosenDefaultUnitIndex = -1
+
+        defaultUnitChipRow.removeAllViews()
+        val options = listOf(-1 to Loc.t(this@openUnitDialog, "Auto", "آٹو")) +
+            tierNames.mapIndexed { index, unitLabel -> index to unitLabel }
+        options.forEachIndexed { i, (indexValue, label) ->
+            val isSelected = indexValue == chosenDefaultUnitIndex
+            defaultUnitChipRow.addView(TextView(this@openUnitDialog).apply {
+                text = label
+                textSize = 12.5f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(20, 12, 20, 12)
+                setTextColor(if (isSelected) Color.WHITE else Color.parseColor(purple))
+                background = if (isSelected) gradientBg(purple, purple, cornerTop = 30, cornerBottom = 30)
+                    else strokedBg(purple, cardWhite, 30)
+                layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
+                    setMargins(if (i == 0) 0 else 8, 0, 0, 0)
+                }
+                setOnClickListener {
+                    chosenDefaultUnitIndex = indexValue
+                    refreshDefaultUnitChips()
+                }
+            })
+        }
+    }
+    refreshDefaultUnitChips()
 
     content.addView(
         scroll,
@@ -313,6 +381,9 @@ internal fun ProductActivity.openUnitDialog() {
         selectedTertiaryUnit = t
         selectedTertiaryQty = if (t == "None") 0.0 else tq
 
+        val finalTierCount = if (t != "None") 3 else if (s != "None") 2 else 1
+        selectedDefaultUnitIndex = if (chosenDefaultUnitIndex in 0 until finalTierCount) chosenDefaultUnitIndex else -1
+
         ensureUnitSaved(p)
         if (s != "None") ensureUnitSaved(s)
         if (t != "None") ensureUnitSaved(t)
@@ -359,9 +430,9 @@ internal fun ProductActivity.openUnitDialog() {
         dialog.dismiss()
     }
 
-    primaryField.addTextChangedListener(simpleWatcher { autoSecondary() })
-    secondaryField.addTextChangedListener(simpleWatcher { autoSecondary(); autoTertiary() })
-    tertiaryField.addTextChangedListener(simpleWatcher { autoTertiary() })
+    primaryField.addTextChangedListener(simpleWatcher { autoSecondary(); refreshDefaultUnitChips() })
+    secondaryField.addTextChangedListener(simpleWatcher { autoSecondary(); autoTertiary(); refreshDefaultUnitChips() })
+    tertiaryField.addTextChangedListener(simpleWatcher { autoTertiary(); refreshDefaultUnitChips() })
 
     primaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(primaryField) }
     secondaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(secondaryField) }

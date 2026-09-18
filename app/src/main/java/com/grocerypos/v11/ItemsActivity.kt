@@ -259,6 +259,31 @@ class ItemsActivity : ThemedActivity() {
             }
         })
 
+        actionsRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1)
+        })
+
+        // ---- "Units" pill button — launches BulkDefaultUnitActivity so the
+        // Sale-screen default unit (see ProductUnitDialog's "Default Unit for
+        // Sale Screen" row) can be reviewed/set for every already-added
+        // multi-unit product one at a time, instead of opening each product. ----
+        actionsRow.addView(TextView(this).apply {
+            text = "Units"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#33FFFFFF"))
+                cornerRadius = 30f
+            }
+            setPadding(18, 12, 18, 12)
+            setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_ruler, "#FFFFFF", 13), null, null, null)
+            compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
+            setOnClickListener {
+                startActivity(Intent(this@ItemsActivity, BulkDefaultUnitActivity::class.java))
+            }
+        })
+
         root.addView(actionsBar)
 
         // ================= TABS =================

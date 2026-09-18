@@ -56,7 +56,7 @@ class ProductActivity : ThemedActivity() {
     private var red = "#E5484D"
     internal var blue = "#3B82F6"
     internal var orange = "#F5A524"
-    private var purple = "#8B5CF6"
+    internal var purple = "#8B5CF6"
     internal var textDark = "#0B2545"
     internal var textMuted = "#7C8798"
     internal var border = "#E3E8EE"
@@ -121,6 +121,11 @@ class ProductActivity : ThemedActivity() {
     internal var selectedSecondaryQty = 0.0
     internal var selectedTertiaryUnit = "None"
     internal var selectedTertiaryQty = 0.0
+    // NEW (manual default-unit override): -1 = Auto (SaleCart's existing
+    // 1/2/3-tier + Beverages logic decides); 0/1/2 = shopkeeper picked that
+    // tier explicitly in the "Add Item Unit" dialog. See ProductUnitDialog.kt's
+    // default-unit chip row and SaleCart.kt's defaultUnitIndexFor().
+    internal var selectedDefaultUnitIndex = -1
 
     internal var selectedOpeningStockUnit = "pcs"
     private var editingProduct: Product? = null
@@ -1343,6 +1348,7 @@ class ProductActivity : ThemedActivity() {
         selectedTertiaryUnit =
             if (product.tertiaryUnit.isBlank()) "None" else product.tertiaryUnit
         selectedTertiaryQty = product.tertiaryUnitQty
+        selectedDefaultUnitIndex = product.defaultUnitIndex
 
         selectedOpeningStockUnit = selectedPrimaryUnit
 
@@ -1528,6 +1534,7 @@ class ProductActivity : ThemedActivity() {
                 if (selectedTertiaryUnit == "None") "" else selectedTertiaryUnit,
             tertiaryUnitQty =
                 if (selectedTertiaryUnit == "None") 0.0 else selectedTertiaryQty,
+            defaultUnitIndex = selectedDefaultUnitIndex,
             reorderLevel = reorderLevel.text.toString().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0,
             searchTag = searchTagInput.text.toString().trim()
         )
@@ -1667,6 +1674,7 @@ class ProductActivity : ThemedActivity() {
         selectedSecondaryQty = 0.0
         selectedTertiaryUnit = "None"
         selectedTertiaryQty = 0.0
+        selectedDefaultUnitIndex = -1
         selectedOpeningStockUnit = "pcs"
 
         selectUnitBtn.text =

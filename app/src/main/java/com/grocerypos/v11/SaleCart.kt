@@ -27,17 +27,38 @@ import com.grocerypos.v11.domain.SaleLine
 import com.grocerypos.v11.pricing.DiscountCalculator
 import com.grocerypos.v11.ui.components.*
 
-internal fun SaleActivity.defaultUnitIndexFor(product: Product): Int {
+// Pulled out of defaultUnitIndexFor() below as a plain top-level function (no
+// SaleActivity receiver needed) so BulkDefaultUnitActivity can show the same
+// "Auto would pick..." suggestion for a product without needing a SaleActivity
+// instance. Only the fixed 1/2/3-tier + Beverages-category rule — the manual
+// per-product override lives in defaultUnitIndexFor() below.
+fun autoDefaultUnitIndexFor(product: Product): Int {
     val hasSecondary = product.secondaryUnit.isNotEmpty()
     val hasTertiary = hasSecondary && product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0
 
     if (!hasSecondary) return 0          // 1-tier: only one unit exists
     if (hasTertiary) return 1            // 3-tier: always default to the 2nd unit
 
-    // 2-tier: Beverages keep the 1st (primary) unit; everything else defaults
-    // to the 2nd (secondary) unit.
+    // 2-tier, Auto: Beverages keep the 1st (primary) unit; everything else
+    // defaults to the 2nd (secondary) unit.
     val isBeverage = product.category.equals(SaleActivity.BEVERAGE_CATEGORY, ignoreCase = true)
     return if (isBeverage) 0 else 1
+}
+
+internal fun SaleActivity.defaultUnitIndexFor(product: Product): Int {
+    val hasSecondary = product.secondaryUnit.isNotEmpty()
+    val hasTertiary = hasSecondary && product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0
+    val tierCount = if (hasTertiary) 3 else if (hasSecondary) 2 else 1
+
+    // NEW (manual default-unit override): a shopkeeper-chosen tier from the
+    // "Add Item Unit" dialog (or from BulkDefaultUnitActivity's queue) always
+    // wins over the automatic guess below — this is what lets a product opt
+    // out of the Beverages-only special case without touching code. -1 (or an
+    // out-of-range value left over from before the product's unit count was
+    // last edited) falls through to Auto.
+    if (product.defaultUnitIndex in 0 until tierCount) return product.defaultUnitIndex
+
+    return autoDefaultUnitIndexFor(product)
 }
 
 internal fun SaleActivity.onItemPicked(name: String) {
