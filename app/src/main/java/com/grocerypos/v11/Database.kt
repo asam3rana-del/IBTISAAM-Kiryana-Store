@@ -789,6 +789,13 @@ interface ProductDao {
     suspend fun distinctSecondaryUnits(): List<String>
     @Query("SELECT DISTINCT tertiaryUnit FROM products WHERE tertiaryUnit!=''")
     suspend fun distinctTertiaryUnits(): List<String>
+    // NEW (Bulk Translate — item search tags): distinct product NAMEs that still
+    // have at least one row with a blank searchTag — i.e. not yet given an
+    // English search alias. Once every product sharing a name has a tag saved,
+    // that name drops out of this list on the next load, same "shrinks as you
+    // go" behavior as the Categories/Units sections above.
+    @Query("SELECT DISTINCT name FROM products WHERE searchTag=''")
+    suspend fun distinctNamesWithoutSearchTag(): List<String>
 
     // FIX (#12 — category/unit master sync incomplete): the rename queries below
     // update product rows directly via SQL, bypassing normal per-row writes — so
@@ -804,6 +811,13 @@ interface ProductDao {
     suspend fun findBySecondaryUnit(v: String): List<Product>
     @Query("SELECT * FROM products WHERE tertiaryUnit=:v")
     suspend fun findByTertiaryUnit(v: String): List<Product>
+    // Same pattern for product-name search tags: find every row sharing a name
+    // (so the caller can re-enqueue them for sync) and set their searchTag in
+    // one UPDATE. Name itself is never touched — only the alias.
+    @Query("SELECT * FROM products WHERE name=:v")
+    suspend fun findByName(v: String): List<Product>
+    @Query("UPDATE products SET searchTag=:tag WHERE name=:v")
+    suspend fun updateSearchTagForName(v: String, tag: String)
 
     // Cascades a rename from BulkTranslateActivity into every product row that
     // used the old value, one column at a time (a unit name can appear in any

@@ -95,9 +95,11 @@ class BulkTranslateActivity : ThemedActivity() {
     // old value -> input field, keeps insertion order for a stable UI
     private val categoryFields = LinkedHashMap<String, EditText>()
     private val unitFields = LinkedHashMap<String, EditText>()
+    private val itemFields = LinkedHashMap<String, EditText>()
 
     private lateinit var catContainer: LinearLayout
     private lateinit var unitContainer: LinearLayout
+    private lateinit var itemContainer: LinearLayout
     private lateinit var emptyText: TextView
     private lateinit var saveBtn: TextView
     private lateinit var loadingText: TextView
@@ -133,7 +135,7 @@ class BulkTranslateActivity : ThemedActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         header.addView(TextView(this).apply {
-            text = "Type the English name once for each Urdu value — it applies to every product using it."
+            text = "Type the English name once for each Urdu value — it applies to every product using it. For items, you can type more than one English name separated by a comma (e.g. \"sugar, chini\")."
             textSize = 12f
             setTextColor(Color.parseColor("#DAD5FF"))
             setPadding(0, 6, 0, 0)
@@ -214,6 +216,11 @@ class BulkTranslateActivity : ThemedActivity() {
         root.addView(sectionHeader("Units"))
         unitContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(unitContainer)
+        root.addView(spacer(24))
+
+        root.addView(sectionHeader("Items (search tags)"))
+        itemContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(itemContainer)
         root.addView(spacer(30))
 
         saveBtn = TextView(this).apply {
@@ -291,19 +298,26 @@ class BulkTranslateActivity : ThemedActivity() {
                 val urduCats = cats.filter { looksUrdu(it) }.sorted()
                 val urduUnits = units.filter { looksUrdu(it) }.sorted()
 
+                // ---- Items: distinct product names that don't have a search tag yet ----
+                val untaggedNames = db.productDao().distinctNamesWithoutSearchTag()
+                    .filter { it.isNotBlank() && looksUrdu(it) }.sorted()
+
                 loadingText.visibility = View.GONE
 
                 // Clear any rows from a previous load (runDuplicateUnitFix calls this
                 // again after fixing, so the container must not just keep appending).
                 catContainer.removeAllViews()
                 unitContainer.removeAllViews()
+                itemContainer.removeAllViews()
                 categoryFields.clear()
                 unitFields.clear()
+                itemFields.clear()
 
                 renderRows(catContainer, urduCats, categoryFields)
                 renderRows(unitContainer, urduUnits, unitFields)
+                renderRows(itemContainer, untaggedNames, itemFields, hint = "English name(s), e.g. sugar, chini")
 
-                if (urduCats.isEmpty() && urduUnits.isEmpty()) {
+                if (urduCats.isEmpty() && urduUnits.isEmpty() && untaggedNames.isEmpty()) {
                     emptyText.visibility = View.VISIBLE
                     saveBtn.visibility = View.GONE
                 } else {
@@ -329,7 +343,8 @@ class BulkTranslateActivity : ThemedActivity() {
     private fun renderRows(
         container: LinearLayout,
         values: List<String>,
-        map: LinkedHashMap<String, EditText>
+        map: LinkedHashMap<String, EditText>,
+        hint: String = "English name"
     ) {
         for (v in values) {
             val row = LinearLayout(this).apply {
@@ -356,7 +371,7 @@ class BulkTranslateActivity : ThemedActivity() {
                 setPadding(14, 0, 14, 0)
             })
             val input = EditText(this).apply {
-                hint = "English name"
+                this.hint = hint
                 setHintTextColor(Color.parseColor(textGray))
                 setTextColor(Color.parseColor(textDark))
                 textSize = 14.5f
@@ -419,6 +434,19 @@ class BulkTranslateActivity : ThemedActivity() {
                     // NEW (Units/Categories master-list sync): push both sides of the rename.
                     SyncQueueHelper.enqueueUnit(db, newUnit)
                     SyncQueueHelper.enqueueDelete(db, "unit", oldVal)
+                    count++
+                }
+
+                // ---- Items: save the English search-tag alias(es) for every product
+                // sharing this Urdu name. Name itself is untouched — only searchTag.
+                // Comma-separated multiple aliases (e.g. "sugar, chini") are stored as
+                // one string; Product.matchesQuery() does a plain substring check
+                // against it, so typing EITHER "sugar" or "chini" finds it. ----
+                for ((oldName, field) in itemFields) {
+                    val newTag = field.text.toString().trim()
+                    if (newTag.isEmpty()) continue
+                    db.productDao().findByName(oldName).forEach { touchedBarcodes.add(it.barcode) }
+                    db.productDao().updateSearchTagForName(oldName, newTag)
                     count++
                 }
 
