@@ -1733,25 +1733,53 @@ class PartyTransactionActivity : AppCompatActivity() {
         val paidDelta = newPaid - oldPaid
         if (paidDelta == 0.0) return newPaid
 
-        db.cashTransactionDao().findByReference(reference)?.let { tx ->
-            val updatedTx = tx.copy(
-                amount = (tx.amount + paidDelta).coerceAtLeast(0.0),
-                updatedAt = System.currentTimeMillis(),
-                dirty = true
-            )
-            db.cashTransactionDao().update(updatedTx)
-            SyncQueueHelper.enqueueCashTransaction(db, updatedTx)
+        // A bill may have been paid in several split transactions. Adjust the
+        // aggregate linked records, not just the first row, otherwise the bill's
+        // `paid` value and cash/payment reports diverge after an item edit/delete.
+        suspend fun reduceCashRecords(amountToRemove: Double) {
+            if (amountToRemove <= 0.0) return
+            var remaining = amountToRemove
+            val rows = db.cashTransactionDao().allByReference(reference)
+                .sortedByDescending { it.createdAt }
+            for (tx in rows) {
+                if (remaining <= 0.0) break
+                val reduction = minOf(remaining, tx.amount.coerceAtLeast(0.0))
+                if (reduction <= 0.0) continue
+                val updatedTx = tx.copy(
+                    amount = (tx.amount - reduction).coerceAtLeast(0.0),
+                    updatedAt = System.currentTimeMillis(),
+                    dirty = true
+                )
+                db.cashTransactionDao().update(updatedTx)
+                SyncQueueHelper.enqueueCashTransaction(db, updatedTx)
+                remaining -= reduction
+            }
         }
-        if (isPurchase) {
-            db.paymentDao().findByReference(reference)?.let { pay ->
+
+        suspend fun reducePaymentRecords(amountToRemove: Double) {
+            if (amountToRemove <= 0.0) return
+            var remaining = amountToRemove
+            val rows = db.paymentDao().allByReference(reference)
+                .sortedByDescending { it.createdAt }
+            for (pay in rows) {
+                if (remaining <= 0.0) break
+                val reduction = minOf(remaining, pay.amount.coerceAtLeast(0.0))
+                if (reduction <= 0.0) continue
                 val updatedPay = pay.copy(
-                    amount = (pay.amount + paidDelta).coerceAtLeast(0.0),
+                    amount = (pay.amount - reduction).coerceAtLeast(0.0),
                     updatedAt = System.currentTimeMillis(),
                     dirty = true
                 )
                 db.paymentDao().update(updatedPay)
                 SyncQueueHelper.enqueuePayment(db, updatedPay)
+                remaining -= reduction
             }
+        }
+
+        if (paidDelta < 0.0) {
+            val reduction = -paidDelta
+            reduceCashRecords(reduction)
+            if (isPurchase) reducePaymentRecords(reduction)
         }
         return newPaid
     }

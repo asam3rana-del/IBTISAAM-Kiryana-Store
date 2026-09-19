@@ -373,7 +373,9 @@ class ExpenseActivity : AppCompatActivity() {
             monthCal.set(Calendar.HOUR_OF_DAY, 0); monthCal.set(Calendar.MINUTE, 0)
             monthCal.set(Calendar.SECOND, 0); monthCal.set(Calendar.MILLISECOND, 0)
             val monthStart = monthCal.timeInMillis
-            val monthEnd = monthStart + 32L * 24 * 60 * 60 * 1000L
+            val monthEndCal = monthCal.clone() as Calendar
+            monthEndCal.add(Calendar.MONTH, 1)
+            val monthEnd = monthEndCal.timeInMillis
 
             todayTotalText.text = "Rs %.2f".format(db.expenseDao().totalBetween(dayStart, dayEnd))
             monthTotalText.text = "Rs %.2f".format(db.expenseDao().totalBetween(monthStart, monthEnd))

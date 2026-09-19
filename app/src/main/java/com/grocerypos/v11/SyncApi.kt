@@ -185,17 +185,26 @@ object SyncApi {
                     // push in this function: the action a device actually took is
                     // always applied, unconditionally, no clock-based comparison.
                     val deleteAt = System.currentTimeMillis()
-                    db.collection(collection).document(entry.entityId)
-                        .set(
-                            mapOf(
-                                "serverId" to entry.entityId,
-                                "_deleted" to true,
-                                "updatedAt" to deleteAt,
-                                "branchId" to BranchConfigStore.current
-                            ),
-                            com.google.firebase.firestore.SetOptions.merge()
-                        )
-                        .await()
+                    val docRef = db.collection(collection).document(entry.entityId)
+                    db.runTransaction { tx ->
+                        val snap = tx.get(docRef)
+                        val serverUpdatedAt = (snap.get("updatedAt") as? Number)?.toLong() ?: Long.MIN_VALUE
+                        // Deterministic last-write-wins using the queue entry timestamp.
+                        // A stale delete must never erase a newer cloud record.
+                        if (deleteAt >= serverUpdatedAt) {
+                            tx.set(
+                                docRef,
+                                mapOf(
+                                    "serverId" to entry.entityId,
+                                    "_deleted" to true,
+                                    "updatedAt" to deleteAt,
+                                    "branchId" to BranchConfigStore.current
+                                ),
+                                com.google.firebase.firestore.SetOptions.merge()
+                            )
+                        }
+                        null
+                    }.await()
                 }
                 "increment_stock", "increment_balance" -> {
                     @Suppress("UNCHECKED_CAST")
@@ -231,20 +240,19 @@ object SyncApi {
                     // PERMISSION_DENIED after 10 retries — see stuck()/resetAllStuck() in
                     // SyncQueueDao). This heals old bad entries automatically on their next
                     // successful push, no manual per-item edit needed.
-                    val map = rawMap + mapOf("branchId" to BranchConfigStore.current)
-                    // CHANGED (local data is authoritative): this used to compare
-                    // incomingUpdatedAt against the server's updatedAt inside a
-                    // transaction and skip the write ("conflict — server version
-                    // kept") whenever the server's timestamp looked newer. On this
-                    // deployment the device's local data is the real/source-of-truth
-                    // data, so pushes must always overwrite whatever is on the
-                    // server rather than sometimes silently keeping the server copy.
-                    // Plain set() (no transaction, no read-then-compare) also avoids
-                    // the extra Firestore "get" that previously needed its own read
-                    // permission for documents that didn't exist yet.
-                    db.collection(collection).document(entry.entityId)
-                        .set(map, com.google.firebase.firestore.SetOptions.merge())
-                        .await()
+                    val incomingUpdatedAt = (rawMap["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                    val map = rawMap + mapOf("branchId" to BranchConfigStore.current, "updatedAt" to incomingUpdatedAt)
+                    val docRef = db.collection(collection).document(entry.entityId)
+                    db.runTransaction { tx ->
+                        val snap = tx.get(docRef)
+                        val serverUpdatedAt = (snap.get("updatedAt") as? Number)?.toLong() ?: Long.MIN_VALUE
+                        // Last-write-wins: a delayed/offline device cannot overwrite a
+                        // newer cloud edit merely because its queue item arrived later.
+                        if (incomingUpdatedAt >= serverUpdatedAt) {
+                            tx.set(docRef, map, com.google.firebase.firestore.SetOptions.merge())
+                        }
+                        null
+                    }.await()
                 }
             }
             true
