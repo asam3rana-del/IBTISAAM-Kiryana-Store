@@ -16,6 +16,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.smallestUnitName
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -225,10 +226,30 @@ class InventoryInsightsActivity : AppCompatActivity() {
     }
 
     // ---------------- Damage / Loss Report ----------------
+    // FIX (Audit finding — same unit-basis bug BalanceSheetActivity/StockReportActivity
+    // were already fixed for): `m.qty` on a stock_movements row is stored in the
+    // product's SMALLEST unit (see SyncQueueHelper.decreaseProductStock/logMovement —
+    // qty is always the smallest-unit delta), while `m.cost` is the rate per PRIMARY
+    // unit (StockAdjustmentActivity.saveAdjustment passes `product.cost` as-is, and
+    // every purchase-driven movement logs the same per-primary-unit figure). Multiplying
+    // them directly overstated "Total loss value" and each row's Rs figure by the
+    // product's unit-conversion factor (e.g. 24x for a product sold as a carton of 24
+    // pieces) — exactly the bug documented on BalanceSheetActivity/StockReportActivity,
+    // just never fixed here. Now divides by the product's CURRENT smallestUnitFactor()
+    // first, same as those two screens (there's no historical per-movement factor
+    // stored, so — like StockReportActivity — this uses the product's current unit
+    // configuration as the best available basis; falls back to the raw cost as-is if the
+    // product has since been deleted).
     private suspend fun loadDamage(db: PosDatabase) {
         val movements = db.stockMovementDao().damageBetween(rangeStart, rangeEnd)
         val products = db.productDao().all().first().associateBy { it.barcode }
-        val totalLoss = movements.sumOf { m -> kotlin.math.abs(m.qty) * m.cost }
+        fun lossValue(m: com.grocerypos.v11.StockMovement): Double {
+            val p = products[m.barcode]
+            val factor = p?.smallestUnitFactor() ?: 0.0
+            val costPerSmallestUnit = if (factor > 0) m.cost / factor else m.cost
+            return kotlin.math.abs(m.qty) * costPerSmallestUnit
+        }
+        val totalLoss = movements.sumOf { m -> lossValue(m) }
         summaryBox.addView(summaryCard("\uD83D\uDCB8", Loc.t(this, "Total loss value", "کل نقصان کی مالیت"), "Rs %.2f".format(totalLoss), red, "#FDE8E8"))
         summaryBox.addView(summaryCard("\uD83D\uDCE6", Loc.t(this, "Entries logged", "درج اندراجات"), "${movements.size}", amber, amberBg))
         if (movements.isEmpty()) { showEmpty(Loc.t(this, "No damage/loss logged for this period", "اس مدت میں کوئی نقصان درج نہیں")); return }
@@ -239,7 +260,7 @@ class InventoryInsightsActivity : AppCompatActivity() {
                 subtitle = (if (m.note.isNotBlank()) m.note + "  •  " else "") + java.text.SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()).format(java.util.Date(m.createdAt)),
                 rightTop = "-%.0f ${m.unit}".format(kotlin.math.abs(m.qty)),
                 rightTopColor = red,
-                rightBottom = "Rs %.2f".format(kotlin.math.abs(m.qty) * m.cost)
+                rightBottom = "Rs %.2f".format(lossValue(m))
             ))
         }
     }

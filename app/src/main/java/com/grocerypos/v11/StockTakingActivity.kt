@@ -22,6 +22,7 @@ import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.formatStockBreakdown
 import com.grocerypos.v11.matchesQuery
+import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.ui.widget.useNumericKeypad
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -244,6 +245,18 @@ class StockTakingActivity : AppCompatActivity() {
      * against the live Product row (not a possibly-stale in-memory copy). */
     private data class Variance(val product: Product, val counted: Double, val delta: Double)
 
+    // FIX (Audit finding — same unit-basis bug as BalanceSheetActivity/StockReportActivity/
+    // InventoryInsightsActivity's Damage report): `v.delta` (counted − system stock) is in
+    // the product's SMALLEST unit, same basis as Product.stock, while `product.cost` is the
+    // rate per PRIMARY unit. `delta * cost` directly overstated the value-impact figure by
+    // the unit-conversion factor for any product sold as a carton/dozen/etc — used below in
+    // both the confirmation dialog and the audit-log summary.
+    private fun valueImpact(v: Variance): Double {
+        val factor = v.product.smallestUnitFactor()
+        val costPerSmallestUnit = if (factor > 0) v.product.cost / factor else v.product.cost
+        return v.delta * costPerSmallestUnit
+    }
+
     private fun reviewAndSave() = lifecycleScope.launch {
         val db = PosDatabase.get(this@StockTakingActivity)
         val latest = db.productDao().all().first().associateBy { it.barcode }
@@ -266,7 +279,7 @@ class StockTakingActivity : AppCompatActivity() {
             return@launch
         }
 
-        val totalValueImpact = variances.sumOf { it.delta * it.product.cost }
+        val totalValueImpact = variances.sumOf { valueImpact(it) }
         val summary = buildString {
             append(variances.size).append(" ")
             append(Loc.t(this@StockTakingActivity, "item(s) have a variance:\n\n", "آئٹمز میں فرق ہے:\n\n"))
@@ -308,7 +321,7 @@ class StockTakingActivity : AppCompatActivity() {
             db, this@StockTakingActivity,
             action = "stock_take",
             reference = sessionId,
-            details = "items_with_variance=${variances.size} value_impact=${variances.sumOf { it.delta * it.product.cost }} note=$note"
+            details = "items_with_variance=${variances.size} value_impact=${variances.sumOf { valueImpact(it) }} note=$note"
         )
 
         Toast.makeText(this@StockTakingActivity, Loc.t(this@StockTakingActivity, "Stock take saved", "اسٹاک گنتی محفوظ ہو گئی"), Toast.LENGTH_SHORT).show()
