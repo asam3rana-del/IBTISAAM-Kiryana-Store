@@ -227,9 +227,13 @@ object PrinterHelper {
     // BOTH the bottom of one receipt and the top of the next. Trimmed to 2, which
     // is still enough tear-off/cutter clearance for the last printed line on
     // every printer this was tested against. If your printer has an auto-cutter
-    // and it ever nicks the last line of text, raise this back to 3; if it has no
-    // cutter and tear-off is easy, you can safely trim it to 1.
-    private val FEED_AND_CUT = byteArrayOf(0x0A, 0x0A, 0x1D, 0x56, 0x01)
+    // FIX 2 (still too much blank paper — "top aur bottom ma page zayda use ho
+    // raha ha", follow-up round): 2 was still leaving a visible gap. Trimmed to
+    // 1 line-feed before the cut command — the GS V 1 cut itself needs no extra
+    // feed to be safe on the printers this was tested against, it just cuts
+    // where the paper already is. If a printer with an actual auto-cutter ever
+    // nicks the last printed line with this value, raise it back to 2.
+    private val FEED_AND_CUT = byteArrayOf(0x0A, 0x1D, 0x56, 0x01)
 
     // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi).
     //
@@ -764,8 +768,11 @@ object PrinterHelper {
 
         data class Block(val line: ReceiptLine, val layout: StaticLayout?, val height: Int)
 
+        // FIX ("top ... page zayda use ho raha" follow-up): trimmed the bitmap's
+        // own top padding too (was 8/4 — a small amount, but it stacks with the
+        // FEED_AND_CUT trim above).
         val blocks = ArrayList<Block>(lines.size)
-        var totalHeight = 8
+        var totalHeight = 2
 
         for (line in lines) {
             when (line) {
@@ -858,7 +865,7 @@ object PrinterHelper {
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.WHITE)
 
-        var y = 4f
+        var y = 2f
         for (block in blocks) {
             when (val line = block.line) {
                 is ReceiptLine.Center, is ReceiptLine.Left -> {
