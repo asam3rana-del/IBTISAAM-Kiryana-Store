@@ -1073,7 +1073,13 @@ class PurchaseActivity : ThemedActivity() {
                 updateSupplierBalanceDisplay(partyName.text.toString().trim())
 
                 products = state.products
-                itemName.setAdapter(ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_dropdown_item_1line, state.products.map { it.name }))
+                // FIX (English search not working here): was a plain name-only
+                // ArrayAdapter, so Android's default dropdown filter only ever
+                // matched the Urdu `name` — typing the English searchTag alias
+                // (Urdu keyboard off) found nothing, even though it worked on
+                // every other search screen. ProductNameAdapter filters through
+                // Product.matchesQuery() (name + searchTag) like they do.
+                itemName.setAdapter(ProductNameAdapter(this@PurchaseActivity) { products })
 
                 allUnits = state.units
                 if (selectedProduct == null) { unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits) }

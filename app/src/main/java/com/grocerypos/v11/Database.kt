@@ -212,6 +212,39 @@ fun Product.matchesQuery(query: String): Boolean {
     return terms.all { haystack.contains(it) }
 }
 
+// FIX (Sale/Purchase item box ignoring English search alias): the Item Name
+// AutoCompleteTextView on Sale/Purchase was wired to a plain
+// `ArrayAdapter(products.map { it.name })`, which relies on Android's built-in
+// dropdown filter — that filter only ever compares against each item's own
+// toString() (the Urdu `name`), so it never saw `searchTag` at all. Every other
+// search screen goes through Product.matchesQuery() (name + searchTag), which
+// is why typing in English worked everywhere except the Sale/Purchase item box:
+// turning off the Urdu keyboard and typing the English alias found nothing there.
+// This adapter drives its own Filter off matchesQuery() instead of the default
+// one, so Sale/Purchase now match the exact same way as every other screen.
+class ProductNameAdapter(
+    context: android.content.Context,
+    private val allProducts: () -> List<Product>
+) : android.widget.ArrayAdapter<String>(context, android.R.layout.simple_dropdown_item_1line, java.util.ArrayList()) {
+
+    override fun getFilter(): android.widget.Filter = object : android.widget.Filter() {
+        override fun performFiltering(constraint: CharSequence?): FilterResults {
+            val q = constraint?.toString().orEmpty()
+            val matched = allProducts().filter { it.matchesQuery(q) }.map { it.name }
+            return FilterResults().apply { values = matched; count = matched.size }
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
+            clear()
+            (results?.values as? List<String>)?.let { addAll(it) }
+            notifyDataSetChanged()
+        }
+
+        override fun convertResultToString(resultValue: Any?): CharSequence = resultValue as? String ?: ""
+    }
+}
+
 // ================= 3-tier unit conversion helpers =================
 // Single source of truth for converting between a product's primary, secondary,
 // and tertiary units and its "smallest unit" (the unit `stock` is actually stored

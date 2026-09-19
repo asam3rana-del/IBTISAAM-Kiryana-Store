@@ -84,6 +84,12 @@ class BillPreviewActivity : ThemedActivity() {
 
     private data class PreviewLine(val name: String, val qty: String, val unit: String, val rate: Double, val amount: Double)
 
+    // Whole-rupee, comma-grouped amount formatting for the "Gate Pass" print
+    // layout (e.g. 266030.0 -> "266,030"), matching the reference wholesaler
+    // slip's amount columns, which show no decimal/paisa places.
+    private fun formatAmt(v: Double): String =
+        java.text.DecimalFormat("#,##0").format(Math.round(v))
+
     private var shopName = "IBTISAAM Kiryana Store"
     private var shopPhone = ""
     private var shopAddress = ""
@@ -575,52 +581,95 @@ class BillPreviewActivity : ThemedActivity() {
                 else -> PrinterHelper.PrinterType.BLUETOOTH
             }
 
-            val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+            val fmt = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
             val receiptLines = mutableListOf<PrinterHelper.ReceiptLine>()
 
+            // ================= "Gate Pass" wholesaler-slip layout =================
+            // FIX ("print format apply kro shuru se akhir tak same same"): rebuilt
+            // to match the reference wholesaler slip section-by-section instead of
+            // the older generic receipt layout. Two things are intentionally NOT a
+            // literal copy of the reference photo, since copying them verbatim
+            // would be wrong for OUR shop's own receipt rather than a faithful port
+            // of the format:
+            //  - the reference's title is "Gate Pass" (that supplier's own document
+            //    name for goods leaving their warehouse) — ours prints "SALE
+            //    RECEIPT"/"PURCHASE RECEIPT" in that same spot instead, since that's
+            //    what this document actually is.
+            //  - the reference's footer is that OTHER company's POS-software vendor
+            //    contact number — replaced with our own receiptFooter setting so we
+            //    don't print a stranger's phone number on every bill.
+            // Everything else (section order, the Amount/Qty/CTN/Barcode column
+            // layout, the Payable/Amount Paid/Prev Balance/Net Balance block) is
+            // ported as-is.
+            receiptLines.add(PrinterHelper.ReceiptLine.Center(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT"))
             receiptLines.add(PrinterHelper.ReceiptLine.Center(shopName))
             if (shopAddress.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.Center(shopAddress))
             if (shopPhone.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.Center(shopPhone))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
-            receiptLines.add(PrinterHelper.ReceiptLine.Center(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT"))
-            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
-            // CHANGE (Gate Pass style header): same reorder as the on-screen preview
-            // above — Customer / Bill No / Cashier / Date / Payment.
-            if (partyName.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(partyLabel, partyName))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Bill No", reference))
+
+            // ---- Customer / Bill / Till block (matches "Cash Customer .. Customer",
+            // code+name, date+time .. Bill No, Till No .. Cashier rows in the
+            // reference) ----
+            receiptLines.add(
+                PrinterHelper.ReceiptLine.TwoCol(
+                    "${paymentMethod.ifBlank { "Cash" }.replaceFirstChar { it.uppercase() }} Customer",
+                    partyLabel
+                )
+            )
+            if (partyName.isNotBlank()) {
+                val codePrefix = partyId?.let { "$it " } ?: ""
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("", "$codePrefix$partyName"))
+            }
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(fmt.format(Date(dateMillis)), "Bill No: $reference"))
             val cashierName = getSharedPreferences("session", MODE_PRIVATE).getString("username", null)
-            if (!cashierName.isNullOrBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Cashier", cashierName))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Date", fmt.format(Date(dateMillis))))
-            if (paymentMethod.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Payment", paymentMethod.replaceFirstChar { it.uppercase() }))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Till No. 01", "Cashier: ${cashierName ?: "-"}"))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
-            // ---- Item / Amount / Qty / Rate — borderless, wholesaler-slip column
-            // order (Amount, then Qty, then Rate) instead of the older Rate/Qty/
-            // Amount order. Weights unchanged (Item 2x, others 1x each). ----
-            val rowWeights = listOf(2f, 1f, 1f, 1f)
+            // ---- Item table: Amount / Qty / CTN / Barcode header + one plain row
+            // per item (amount, qty, ctn, name — CTN is the same quantity shown as a
+            // whole number, exactly like the reference slip's Qty/CTN pair). ----
+            val gateWeights = listOf(1.15f, 0.85f, 0.7f, 2.3f)
             receiptLines.add(
-                PrinterHelper.ReceiptLine.Row4("Item", "Amount", "Qty", "Rate", rowWeights, bold = true)
+                PrinterHelper.ReceiptLine.Row4("Amount", "Qty", "CTN", "Barcode", gateWeights, bold = true)
             )
+            var totalQty = 0.0
             for (line in lines) {
+                val qtyVal = line.qty.toDoubleOrNull() ?: 0.0
+                totalQty += qtyVal
                 receiptLines.add(
-                    PrinterHelper.ReceiptLine.ItemRow(
+                    PrinterHelper.ReceiptLine.GateRow(
+                        amount = formatAmt(line.amount),
+                        qty = "%.3f".format(qtyVal),
+                        ctn = Math.round(qtyVal).toString(),
                         name = line.name,
-                        qty = "${line.qty} ${line.unit}",
-                        rate = "%.2f".format(line.rate),
-                        amount = "%.2f".format(line.amount),
-                        weights = rowWeights
+                        weights = gateWeights
                     )
                 )
             }
-            receiptLines.add(PrinterHelper.ReceiptLine.Blank())
-
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Subtotal", "Rs %.2f".format(subtotal)))
-            if (discount > 0) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Discount", "-Rs %.2f".format(discount)))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("TOTAL", "Rs %.2f".format(total), bold = true))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Paid", "Rs %.2f".format(paid)))
-            val balance = total - paid
-            if (balance > 0.009) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Balance Due", "Rs %.2f".format(balance), bold = true))
+
+            // ---- Totals block (Gross Amt/Total units, Total Count, Payable,
+            // Amount Paid, Prev Balance, Net Balance — same order as the reference).
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(total), "Gross Amt  ${"%.3f".format(totalQty)} = Total units"))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(total), "Total Count"))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(total), "Payable", bold = true))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(paid), "Amount Paid"))
+
+            // Prev/Net balance come from the party's running ledger balance (already
+            // updated to post-transaction by the time this prints), so Prev Balance
+            // is backed out as netBalance - (total - paid). Walk-in/cash sales with
+            // no linked party have no ledger, so both are omitted for them.
+            val pid = partyId
+            if (pid != null) {
+                val netBalance = if (type == "sale") {
+                    db.customerDao().find(pid)?.balance ?: 0.0
+                } else {
+                    db.supplierDao().find(pid)?.balance ?: 0.0
+                }
+                val prevBalance = netBalance - (total - paid)
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(prevBalance), "Prev Balance"))
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(netBalance), "Net Balance", bold = true))
+            }
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
             receiptLines.add(PrinterHelper.ReceiptLine.Center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }))
 

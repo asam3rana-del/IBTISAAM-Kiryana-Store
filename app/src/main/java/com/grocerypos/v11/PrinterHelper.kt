@@ -164,6 +164,25 @@ object PrinterHelper {
             val amount: String,
             val weights: List<Float> = listOf(2.8f, 1.2f, 2.2f)
         ) : ReceiptLine()
+
+        /**
+         * NEW ("Gate Pass" wholesaler-slip layout — "print format apply kro shuru
+         * se akhir tak same same"): one item row laid out EXACTLY like the
+         * reference wholesaler slip — Amount, Qty and CTN as three plain columns
+         * on the LEFT, and the item name (RTL-aware, Urdu/English mixed) filling
+         * the remaining width on the RIGHT, all on a single borderless line —
+         * instead of ItemRow's two-stacked-lines layout. Used with the matching
+         * "Amount / Qty / CTN / Barcode" Row4 header above it so the printed
+         * table matches the reference slip's own column order and header labels.
+         */
+        data class GateRow(
+            val amount: String,
+            val qty: String,
+            val ctn: String,
+            val name: String,
+            val weights: List<Float> = listOf(1.15f, 0.85f, 0.7f, 2.3f),
+            val bold: Boolean = false
+        ) : ReceiptLine()
     }
 
     // Urdu/Arabic item names were reported "muskil se parha jata" (barely readable)
@@ -819,6 +838,15 @@ object PrinterHelper {
                     blocks.add(Block(line, null, h))
                     totalHeight += h
                 }
+                is ReceiptLine.GateRow -> {
+                    val isUrduName = containsArabicScript(line.name)
+                    paint.textSize = tableFontSize * (if (isUrduName) ARABIC_ITEM_FONT_BOOST else 1f)
+                    val fm = paint.fontMetrics
+                    paint.textSize = fontSizePx
+                    val h = (fm.bottom - fm.top).toInt() + tableRowPaddingV
+                    blocks.add(Block(line, null, h))
+                    totalHeight += h
+                }
 
             }
         }
@@ -1087,6 +1115,62 @@ object PrinterHelper {
                     paint.textAlign = Paint.Align.RIGHT
                     canvas.drawText(line.rate, colX[4] - tableCellPaddingH, baseline, paint)
 
+                    paint.textSize = fontSizePx
+                    paint.textAlign = Paint.Align.LEFT
+                    y += block.height
+                }
+                is ReceiptLine.GateRow -> {
+                    // Single-line "Amount | Qty | CTN | Name" row, matching the
+                    // reference wholesaler slip: the three numeric columns sit on the
+                    // left (plain, LTR), and the item name fills the remaining column
+                    // on the right — RTL-anchored + ellipsized via StaticLayout the
+                    // same way ItemRow's name column is, so a long Urdu name still
+                    // shapes/ellipsizes correctly instead of being cut mid-glyph.
+                    val tableLeft = margin.toFloat()
+                    val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
+                    val tableWidth = tableRight - tableLeft
+                    val totalWeight = line.weights.sum().coerceAtLeast(0.01f)
+                    val colX = FloatArray(5)
+                    colX[0] = tableLeft
+                    for (i in 0..3) {
+                        val w = if (i < line.weights.size) line.weights[i] else 0f
+                        colX[i + 1] = colX[i] + (w / totalWeight) * tableWidth
+                    }
+
+                    paint.textSize = tableFontSize
+                    val oldBold = paint.isFakeBoldText
+                    paint.isFakeBoldText = line.bold
+                    val fm = paint.fontMetrics
+                    val baseline = y + tableRowPaddingV / 2 - fm.top
+
+                    paint.textAlign = Paint.Align.LEFT
+                    canvas.drawText(line.amount, colX[0] + tableCellPaddingH, baseline, paint)
+                    paint.textAlign = Paint.Align.CENTER
+                    canvas.drawText(line.qty, (colX[1] + colX[2]) / 2f, baseline, paint)
+                    canvas.drawText(line.ctn, (colX[2] + colX[3]) / 2f, baseline, paint)
+
+                    val nameIsUrdu = containsArabicScript(line.name)
+                    val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 1f)
+                    paint.textSize = nameSize
+                    paint.isFakeBoldText = true
+                    val nameFm = paint.fontMetrics
+                    val nameBaseline = y + tableRowPaddingV / 2 - nameFm.top
+                    val nameColWidth = (colX[4] - colX[3] - tableCellPaddingH * 2).coerceAtLeast(1f)
+                    val fitName = ellipsizeByWidth(paint, line.name, nameColWidth)
+                    val nameDir = if (nameIsUrdu) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
+                    val nameLayout = StaticLayout.Builder
+                        .obtain(fitName, 0, fitName.length, paint, nameColWidth.toInt().coerceAtLeast(1))
+                        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                        .setTextDirection(nameDir)
+                        .setMaxLines(1)
+                        .build()
+                    canvas.save()
+                    val nameX = if (nameIsUrdu) colX[4] - tableCellPaddingH - nameColWidth else colX[3] + tableCellPaddingH
+                    canvas.translate(nameX, nameBaseline - nameLayout.getLineBaseline(0))
+                    nameLayout.draw(canvas)
+                    canvas.restore()
+
+                    paint.isFakeBoldText = oldBold
                     paint.textSize = fontSizePx
                     paint.textAlign = Paint.Align.LEFT
                     y += block.height

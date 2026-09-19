@@ -1291,7 +1291,13 @@ class SaleActivity : AppCompatActivity() {
                 customers = state.customers
                 customerName.setAdapter(ArrayAdapter(this@SaleActivity, android.R.layout.simple_dropdown_item_1line, state.customers.map { it.name }))
                 products = state.products
-                itemName.setAdapter(ArrayAdapter(this@SaleActivity, android.R.layout.simple_dropdown_item_1line, state.products.map { it.name }))
+                // FIX (English search not working here): was a plain name-only
+                // ArrayAdapter, so Android's default dropdown filter only ever
+                // matched the Urdu `name` — typing the English searchTag alias
+                // (Urdu keyboard off) found nothing, even though it worked on
+                // every other search screen. ProductNameAdapter filters through
+                // Product.matchesQuery() (name + searchTag) like they do.
+                itemName.setAdapter(ProductNameAdapter(this@SaleActivity) { products })
             }
         }
         lifecycleScope.launch {
