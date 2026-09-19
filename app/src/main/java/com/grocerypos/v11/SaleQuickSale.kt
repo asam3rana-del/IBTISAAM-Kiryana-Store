@@ -105,6 +105,17 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
     val remaining = products.map { it.name }.filter { it !in topAvailable }
     val orderedNames = (topAvailable + remaining).distinct()
     qsItemName.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, orderedNames))
+    // FIX (English keyboard: typing didn't open the dropdown): forcing
+    // showDropDown() below with empty text when the dialog first opens (so the
+    // full list shows immediately) leaves AutoCompleteTextView's popup in a
+    // state where, inside a Dialog window, it sometimes stops auto-reopening
+    // once the user starts typing and the adapter's Filter completes — a known
+    // AutoCompleteTextView quirk, not something specific to any keyboard/layout.
+    // Forcing it back open after every keystroke's filter pass works around it
+    // reliably.
+    qsItemName.addTextChangedListener(simpleWatcher {
+        if (qsItemName.adapter != null && qsItemName.isFocused) qsItemName.post { qsItemName.showDropDown() }
+    })
     container.addView(qsItemName)
     container.addView(spacer(4))
 
