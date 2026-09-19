@@ -100,10 +100,6 @@ class SettingsActivity : AppCompatActivity() {
     // Shop Information fields
     private lateinit var shopNameField: EditText
     private lateinit var phoneField: EditText
-    private lateinit var addressField: EditText
-    private lateinit var footerField: EditText
-    private lateinit var currencyField: EditText
-    private lateinit var taxField: EditText
 
     // Header shop name label (kept in sync with the Shop Information "Shop Name" field)
     private lateinit var shopNameHeaderText: TextView
@@ -494,25 +490,21 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ---- Shop Info ----
+        // FIX ("Address header footer currency tax ye field khatam kr do"): the
+        // Address / Receipt Footer / Currency / Tax % fields are removed from this
+        // screen — only Shop Name and Phone remain editable here now. Their stored
+        // app_settings values (shop_address / receipt_footer / currency /
+        // tax_percent) are left as whatever they already were — printing (which
+        // reads shop_address/receipt_footer) already treats a blank value as "skip
+        // this line" / falls back to the default thank-you note, so nothing else
+        // needed to change there.
         val shopCard = premiumCard(R.drawable.ic_store, "Shop Information")
         shopNameField = plainField("Shop Name")
         phoneField = plainField("Phone")
-        addressField = plainField("Address")
-        footerField = plainField("Receipt Footer")
-        currencyField = plainField("Currency")
-        taxField = plainField("Tax %")
 
         shopCard.addView(iconFieldBox(R.drawable.ic_store, "Shop Name", shopNameField))
         shopCard.addView(spacer(10))
         shopCard.addView(iconFieldBox(R.drawable.ic_phone, "Phone", phoneField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox(R.drawable.ic_location, "Address", addressField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox(R.drawable.ic_receipt, "Receipt Footer", footerField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox(R.drawable.ic_wallet, "Currency", currencyField))
-        shopCard.addView(spacer(10))
-        shopCard.addView(iconFieldBox(R.drawable.ic_chart, "Tax %", taxField))
         shopCard.addView(spacer(12))
         shopCard.addView(primaryButton("SAVE SETTINGS", navy) { saveShopSettings() })
         container.addView(shopCard)
@@ -892,10 +884,6 @@ class SettingsActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@SettingsActivity)
             shopNameField.setText(db.appSettingDao().get("shop_name")?.value ?: "")
             phoneField.setText(db.appSettingDao().get("shop_phone")?.value ?: "")
-            addressField.setText(db.appSettingDao().get("shop_address")?.value ?: "")
-            footerField.setText(db.appSettingDao().get("receipt_footer")?.value ?: "")
-            currencyField.setText(db.appSettingDao().get("currency")?.value ?: "")
-            taxField.setText(db.appSettingDao().get("tax_percent")?.value ?: "")
         }
     }
 
@@ -904,26 +892,14 @@ class SettingsActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@SettingsActivity)
             val newShopName = shopNameField.text.toString().trim()
             val newPhone = phoneField.text.toString().trim()
-            val newAddress = addressField.text.toString().trim()
-            val newFooter = footerField.text.toString().trim()
-            val newCurrency = currencyField.text.toString().trim()
-            val newTax = taxField.text.toString().trim()
             db.appSettingDao().set(AppSetting("shop_name", newShopName))
             db.appSettingDao().set(AppSetting("shop_phone", newPhone))
-            db.appSettingDao().set(AppSetting("shop_address", newAddress))
-            db.appSettingDao().set(AppSetting("receipt_footer", newFooter))
-            db.appSettingDao().set(AppSetting("currency", newCurrency))
-            db.appSettingDao().set(AppSetting("tax_percent", newTax))
-            // NEW (App Settings sync): push these 6 shop-identity fields so every
-            // device shares the same name/phone/address/footer/currency/tax rate —
-            // see SyncQueueHelper.SYNCED_APP_SETTING_KEYS for exactly which keys
-            // sync (printer/login/session settings deliberately stay local-only).
+            // NEW (App Settings sync): push these shop-identity fields so every
+            // device shares the same name/phone — see
+            // SyncQueueHelper.SYNCED_APP_SETTING_KEYS for exactly which keys sync
+            // (printer/login/session settings deliberately stay local-only).
             SyncQueueHelper.enqueueAppSetting(db, AppSetting("shop_name", newShopName))
-            SyncQueueHelper.enqueueAppSetting(db, AppSetting("shop_phone", newPhone))
-            SyncQueueHelper.enqueueAppSetting(db, AppSetting("shop_address", newAddress))
-            SyncQueueHelper.enqueueAppSetting(db, AppSetting("receipt_footer", newFooter))
-            SyncQueueHelper.enqueueAppSetting(db, AppSetting("currency", newCurrency))
-            SyncQueueHelper.enqueueAppSetting(db, AppSetting("tax_percent", newTax), this@SettingsActivity)
+            SyncQueueHelper.enqueueAppSetting(db, AppSetting("shop_phone", newPhone), this@SettingsActivity)
             if (newShopName.isNotEmpty()) {
                 shopNameHeaderText.text = newShopName
             }
