@@ -274,12 +274,25 @@ class PartyReportsActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    // FIX (returned bills inflating every Party Report below): all six reports in
+    // this file (Item Report, Ledger, Payment History, Statement, Transactions,
+    // P&L) used to read salesByCustomer()/purchasesBySupplier() raw, with no
+    // `.filter { it.status != "returned" }` — unlike the real balance field
+    // (customer.balance/supplier.balance, adjusted correctly on return by
+    // SyncQueueHelper.adjustCustomerBalance/adjustSupplierBalance) and unlike the
+    // global reports (which already exclude returned via the DB queries'
+    // `status!='returned'`). A returned bill's total/paid still don't change (only
+    // its `status` does — see returnSale()), so a returned credit sale kept adding
+    // its full total to a customer's Ledger/Statement closing balance forever,
+    // making these per-party reports disagree with the real (correct) outstanding
+    // balance shown everywhere else, and inflating per-party Revenue/Cost/Profit
+    // and Item Report totals with items that were given back.
     // ================= 1) Party Report by Item =================
     private fun showItemReport(isCustomer: Boolean, id: Long, name: String) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
             val items: List<ItemAgg> = if (isCustomer) {
-                val sales = db.saleDao().salesByCustomer(id)
+                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }
                 val map = LinkedHashMap<String, ItemAgg>()
                 sales.forEach { s ->
                     db.saleDao().itemsForInvoice(s.invoice).forEach { it ->
@@ -290,7 +303,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 }
                 map.values.sortedByDescending { it.amount }
             } else {
-                val purchases = db.purchaseDao().purchasesBySupplier(id)
+                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }
                 val map = LinkedHashMap<String, ItemAgg>()
                 purchases.forEach { p ->
                     db.purchaseDao().itemsForBill(p.billNo).forEach { it ->
@@ -348,7 +361,7 @@ class PartyReportsActivity : AppCompatActivity() {
             )
 
             if (isCustomer) {
-                val sales = db.saleDao().salesByCustomer(id).sortedBy { it.createdAt }
+                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }.sortedBy { it.createdAt }
                 if (sales.isEmpty()) {
                     body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
                 }
@@ -357,7 +370,7 @@ class PartyReportsActivity : AppCompatActivity() {
                     body.addView(ledgerRow(fmt.format(Date(s.createdAt)), dr = s.total, cr = s.paid, balance = running))
                 }
             } else {
-                val purchases = db.purchaseDao().purchasesBySupplier(id).sortedBy { it.createdAt }
+                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }.sortedBy { it.createdAt }
                 if (purchases.isEmpty()) {
                     body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
                 }
@@ -463,11 +476,11 @@ class PartyReportsActivity : AppCompatActivity() {
 
             val payments = mutableListOf<PaymentEntry>()
             if (isCustomer) {
-                db.saleDao().salesByCustomer(id).forEach { s ->
+                db.saleDao().salesByCustomer(id).filter { it.status != "returned" }.forEach { s ->
                     if (s.paid > 0) payments.add(PaymentEntry(s.createdAt, s.paid, Loc.t(this@PartyReportsActivity, "Against Sale", "سیل کے مقابلے میں")))
                 }
             } else {
-                db.purchaseDao().purchasesBySupplier(id).forEach { p ->
+                db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }.forEach { p ->
                     if (p.paid > 0) payments.add(PaymentEntry(p.createdAt, p.paid, Loc.t(this@PartyReportsActivity, "Against Purchase", "خریداری کے مقابلے میں")))
                 }
             }
@@ -550,7 +563,7 @@ class PartyReportsActivity : AppCompatActivity() {
             body.addView(plDivider())
 
             if (isCustomer) {
-                val sales = db.saleDao().salesByCustomer(id).sortedBy { it.createdAt }
+                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }.sortedBy { it.createdAt }
                 if (sales.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
                 sales.forEach { s ->
                     val outstanding = s.total - s.paid
@@ -559,7 +572,7 @@ class PartyReportsActivity : AppCompatActivity() {
                     body.addView(statementRow(fmt.format(Date(s.createdAt)), s.total, running, isCustomer = true))
                 }
             } else {
-                val purchases = db.purchaseDao().purchasesBySupplier(id).sortedBy { it.createdAt }
+                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }.sortedBy { it.createdAt }
                 if (purchases.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
                 purchases.forEach { p ->
                     val outstanding = p.total - p.paid
@@ -626,7 +639,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             if (isCustomer) {
-                val sales = db.saleDao().salesByCustomer(id).sortedByDescending { it.createdAt }
+                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }.sortedByDescending { it.createdAt }
                 if (sales.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No sales yet", "کوئی سیل نہیں ہوئی")))
                 var totalAmt = 0.0
                 sales.forEach { s ->
@@ -637,7 +650,7 @@ class PartyReportsActivity : AppCompatActivity() {
                 body.addView(plDivider())
                 body.addView(rowText(Loc.t(this@PartyReportsActivity, "Total", "کل"), "Rs %.2f".format(totalAmt)))
             } else {
-                val purchases = db.purchaseDao().purchasesBySupplier(id).sortedByDescending { it.createdAt }
+                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }.sortedByDescending { it.createdAt }
                 if (purchases.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی")))
                 var totalAmt = 0.0
                 purchases.forEach { p ->
@@ -667,7 +680,7 @@ class PartyReportsActivity : AppCompatActivity() {
             val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
 
             if (isCustomer) {
-                val sales = db.saleDao().salesByCustomer(id)
+                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }
                 if (sales.isEmpty()) {
                     body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No sales yet", "کوئی سیل نہیں ہوئی")))
                 } else {
@@ -692,7 +705,7 @@ class PartyReportsActivity : AppCompatActivity() {
                     })
                 }
             } else {
-                val purchases = db.purchaseDao().purchasesBySupplier(id)
+                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }
                 if (purchases.isEmpty()) {
                     body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No purchases yet", "کوئی خریداری نہیں ہوئی")))
                 } else {

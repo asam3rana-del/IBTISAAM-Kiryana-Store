@@ -970,8 +970,29 @@ object SyncQueueHelper {
     suspend fun recalculatePartyBalances(db: PosDatabase, context: Context? = null): List<PartyBalanceFix> {
         val fixes = mutableListOf<PartyBalanceFix>()
         for (c in db.customerDao().allList()) {
-            val correct = db.saleDao().salesByCustomer(c.id).sumOf { it.total - it.paid } -
-                db.paymentDao().listByParty("customer", c.id).filter { it.billReference.isEmpty() }.sumOf { it.amount }
+            // FIX (Settings > Fix Balances re-breaking already-returned bills): this
+            // used to sum `total - paid` over EVERY sale, including returned ones —
+            // a returned sale's total/paid don't change (only its status does, see
+            // SaleHistoryActivity.returnSale()), so a returned credit sale's full
+            // outstanding amount got added back into the "correct" balance here,
+            // undoing the reduction returnSale() already applied via
+            // adjustCustomerBalance() at return time. Mirrors PartyRepository.
+            // recalculateBalances() (the other, already-correct "Recalculate"
+            // entry point under Party Reports), which this now matches.
+            val sales = db.saleDao().salesByCustomer(c.id).filter { it.status != "returned" }
+            // FIX (double-counted supplier-side "Purchase payment" bug, same class,
+            // ported here): `billReference.isEmpty()` does NOT exclude the payment
+            // row RoomPurchaseRepository.savePurchase() inserts at purchase time
+            // (reference = billNo) — that row's `billReference` field is separate
+            // and stays blank by default, so it slipped through as a "standalone"
+            // payment and got subtracted a second time on top of `sale.paid`/
+            // `purchase.paid` already reflecting it. Excluding by `reference`
+            // matching a real invoice/billNo (this customer/supplier's own) is the
+            // correct check — see PartyRepository.recalculateBalances()'s matching
+            // comment.
+            val saleInvoices = sales.map { it.invoice }.toHashSet()
+            val correct = sales.sumOf { it.total - it.paid } -
+                db.paymentDao().listByParty("customer", c.id).filter { it.reference !in saleInvoices }.sumOf { it.amount }
             if (kotlin.math.abs(correct - c.balance) > 0.01) {
                 fixes.add(PartyBalanceFix(c.name, c.balance, correct))
                 val updated = c.copy(balance = correct, dirty = true)
@@ -980,8 +1001,10 @@ object SyncQueueHelper {
             }
         }
         for (s in db.supplierDao().allList()) {
-            val correct = db.purchaseDao().purchasesBySupplier(s.id).sumOf { it.total - it.paid } -
-                db.paymentDao().listByParty("supplier", s.id).filter { it.billReference.isEmpty() }.sumOf { it.amount }
+            val purchases = db.purchaseDao().purchasesBySupplier(s.id).filter { it.status != "returned" }
+            val billNos = purchases.map { it.billNo }.toHashSet()
+            val correct = purchases.sumOf { it.total - it.paid } -
+                db.paymentDao().listByParty("supplier", s.id).filter { it.reference !in billNos }.sumOf { it.amount }
             if (kotlin.math.abs(correct - s.balance) > 0.01) {
                 fixes.add(PartyBalanceFix(s.name, s.balance, correct))
                 val updated = s.copy(balance = correct, dirty = true)
