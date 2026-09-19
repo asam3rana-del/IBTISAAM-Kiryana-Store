@@ -31,11 +31,10 @@ android {
     }
 
     signingConfigs {
+        // Use Gradle/Android's standard debug signing setup. Requiring a
+        // repository-local debug.keystore made clean checkouts fail to build.
         getByName("debug") {
-            storeFile = file("${rootProject.projectDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            // Android Gradle Plugin supplies the default debug keystore automatically.
         }
         // FIX (Phase 5 - Stability): added a release signing config — previously there
         // was none, so a `release` build would come out unsigned (can't be installed
