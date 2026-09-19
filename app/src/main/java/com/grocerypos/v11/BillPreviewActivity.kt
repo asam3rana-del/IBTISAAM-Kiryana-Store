@@ -598,39 +598,48 @@ class BillPreviewActivity : ThemedActivity() {
             //  - the reference's footer is that OTHER company's POS-software vendor
             //    contact number — replaced with our own receiptFooter setting so we
             //    don't print a stranger's phone number on every bill.
-            // Everything else (section order, the Amount/Qty/CTN/Barcode column
+            // Everything else (section order, the Amount/Qty/Rate/Barcode column
             // layout, the Payable/Amount Paid/Prev Balance/Net Balance block) is
             // ported as-is.
-            receiptLines.add(PrinterHelper.ReceiptLine.Center(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT"))
+            // FIX ("Sale Receipt us k sath hi date" — date moved onto the title's
+            // own line, right-aligned, instead of sharing a row with Bill No further
+            // down): title left, date right, one TwoCol row.
+            receiptLines.add(
+                PrinterHelper.ReceiptLine.TwoCol(
+                    if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT",
+                    fmt.format(Date(dateMillis)),
+                    bold = true
+                )
+            )
             receiptLines.add(PrinterHelper.ReceiptLine.Center(shopName))
             if (shopAddress.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.Center(shopAddress))
             if (shopPhone.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.Center(shopPhone))
-            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
-            // ---- Customer / Bill / Till block (matches "Cash Customer .. Customer",
-            // code+name, date+time .. Bill No, Till No .. Cashier rows in the
-            // reference) ----
-            receiptLines.add(
-                PrinterHelper.ReceiptLine.TwoCol(
-                    "${paymentMethod.ifBlank { "Cash" }.replaceFirstChar { it.uppercase() }} Customer",
-                    partyLabel
-                )
-            )
+            // ---- Customer / Bill / Till block ----
+            // FIX ("Cash credit customer b hata do" — the old "Cash Customer .....
+            // Customer" row printed the payment-method label against the bare party
+            // type and added nothing useful; removed). Shop name/phone above and
+            // Customer/Bill No/Till/Cashier below now sit right after each other with
+            // no Divider between them ("ye sab sath sath ... extra space k bagair") —
+            // only one Divider now, right before the item table.
             if (partyName.isNotBlank()) {
                 val codePrefix = partyId?.let { "$it " } ?: ""
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("", "$codePrefix$partyName"))
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("$partyLabel:", "$codePrefix$partyName"))
+            } else {
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("$partyLabel:", "Walk-in"))
             }
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(fmt.format(Date(dateMillis)), "Bill No: $reference"))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Bill No:", reference))
             val cashierName = getSharedPreferences("session", MODE_PRIVATE).getString("username", null)
             receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Till No. 01", "Cashier: ${cashierName ?: "-"}"))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
-            // ---- Item table: Amount / Qty / CTN / Barcode header + one plain row
-            // per item (amount, qty, ctn, name — CTN is the same quantity shown as a
-            // whole number, exactly like the reference slip's Qty/CTN pair). ----
+            // ---- Item table: Amount / Qty / Rate / Barcode header + one plain row
+            // per item (amount, qty, rate, name). ----
+            // FIX ("Amount. Qty Rate Barcode" — 3rd column relabeled from CTN to
+            // Rate, showing each item's per-unit rate instead of qty-as-whole-number).
             val gateWeights = listOf(1.15f, 0.85f, 0.7f, 2.3f)
             receiptLines.add(
-                PrinterHelper.ReceiptLine.Row4("Amount", "Qty", "CTN", "Barcode", gateWeights, bold = true)
+                PrinterHelper.ReceiptLine.Row4("Amount", "Qty", "Rate", "Barcode", gateWeights, bold = true)
             )
             var totalQty = 0.0
             for (line in lines) {
@@ -640,7 +649,7 @@ class BillPreviewActivity : ThemedActivity() {
                     PrinterHelper.ReceiptLine.GateRow(
                         amount = formatAmt(line.amount),
                         qty = "%.3f".format(qtyVal),
-                        ctn = Math.round(qtyVal).toString(),
+                        rate = "%.2f".format(line.rate),
                         name = line.name,
                         weights = gateWeights
                     )

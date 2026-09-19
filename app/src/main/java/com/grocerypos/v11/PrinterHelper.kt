@@ -166,19 +166,22 @@ object PrinterHelper {
         ) : ReceiptLine()
 
         /**
-         * NEW ("Gate Pass" wholesaler-slip layout — "print format apply kro shuru
-         * se akhir tak same same"): one item row laid out EXACTLY like the
-         * reference wholesaler slip — Amount, Qty and CTN as three plain columns
-         * on the LEFT, and the item name (RTL-aware, Urdu/English mixed) filling
-         * the remaining width on the RIGHT, all on a single borderless line —
-         * instead of ItemRow's two-stacked-lines layout. Used with the matching
-         * "Amount / Qty / CTN / Barcode" Row4 header above it so the printed
-         * table matches the reference slip's own column order and header labels.
+         * "Gate Pass" wholesaler-slip layout — one item row laid out EXACTLY
+         * like the reference wholesaler slip — Amount, Qty and Rate as three
+         * plain columns on the LEFT, and the item name (RTL-aware, Urdu/English
+         * mixed) filling the remaining width on the RIGHT, all on a single
+         * borderless line — instead of ItemRow's two-stacked-lines layout. Used
+         * with the matching "Amount / Qty / Rate / Barcode" Row4 header above it
+         * so the printed table matches the requested column order/labels.
+         * FIX ("Amount. Qty Rate Barcode" — 3rd column relabeled from CTN to
+         * Rate): this field used to be [ctn] (qty rounded to a whole number);
+         * renamed to [rate] and now carries the per-unit sale/purchase rate
+         * instead, to match the requested header.
          */
         data class GateRow(
             val amount: String,
             val qty: String,
-            val ctn: String,
+            val rate: String,
             val name: String,
             val weights: List<Float> = listOf(1.15f, 0.85f, 0.7f, 2.3f),
             val bold: Boolean = false
@@ -1120,12 +1123,20 @@ object PrinterHelper {
                     y += block.height
                 }
                 is ReceiptLine.GateRow -> {
-                    // Single-line "Amount | Qty | CTN | Name" row, matching the
-                    // reference wholesaler slip: the three numeric columns sit on the
-                    // left (plain, LTR), and the item name fills the remaining column
-                    // on the right — RTL-anchored + ellipsized via StaticLayout the
-                    // same way ItemRow's name column is, so a long Urdu name still
-                    // shapes/ellipsizes correctly instead of being cut mid-glyph.
+                    // Single-line "Amount | Qty | Rate | Name" row, matching the
+                    // requested wholesaler-slip format: the three numeric columns sit
+                    // on the left (plain, LTR), and the item name fills the remaining
+                    // column on the right.
+                    // FIX ("Product item right alignment use kre ... exact پیپسی کے
+                    // نیچے سے شروع ho" — every item name, English or Urdu, must start
+                    // from the SAME fixed edge, matching the guide line drawn on the
+                    // reference photo): previously only Urdu names were right-anchored
+                    // (colX[4]-width) while English names were left-anchored at
+                    // colX[3], so the two scripts' rows didn't line up. Now the layout
+                    // box's RIGHT edge is always pinned at colX[4]-padding regardless
+                    // of script, and English/LTR text is right-aligned *within* that
+                    // box (ALIGN_OPPOSITE) instead of left-aligned, so every row's item
+                    // text starts flush with that same right edge.
                     val tableLeft = margin.toFloat()
                     val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
                     val tableWidth = tableRight - tableLeft
@@ -1147,7 +1158,7 @@ object PrinterHelper {
                     canvas.drawText(line.amount, colX[0] + tableCellPaddingH, baseline, paint)
                     paint.textAlign = Paint.Align.CENTER
                     canvas.drawText(line.qty, (colX[1] + colX[2]) / 2f, baseline, paint)
-                    canvas.drawText(line.ctn, (colX[2] + colX[3]) / 2f, baseline, paint)
+                    canvas.drawText(line.rate, (colX[2] + colX[3]) / 2f, baseline, paint)
 
                     val nameIsUrdu = containsArabicScript(line.name)
                     val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 1f)
@@ -1160,12 +1171,12 @@ object PrinterHelper {
                     val nameDir = if (nameIsUrdu) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
                     val nameLayout = StaticLayout.Builder
                         .obtain(fitName, 0, fitName.length, paint, nameColWidth.toInt().coerceAtLeast(1))
-                        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                        .setAlignment(if (nameIsUrdu) Layout.Alignment.ALIGN_NORMAL else Layout.Alignment.ALIGN_OPPOSITE)
                         .setTextDirection(nameDir)
                         .setMaxLines(1)
                         .build()
                     canvas.save()
-                    val nameX = if (nameIsUrdu) colX[4] - tableCellPaddingH - nameColWidth else colX[3] + tableCellPaddingH
+                    val nameX = colX[4] - tableCellPaddingH - nameColWidth
                     canvas.translate(nameX, nameBaseline - nameLayout.getLineBaseline(0))
                     nameLayout.draw(canvas)
                     canvas.restore()
