@@ -360,24 +360,41 @@ class PartyReportsActivity : AppCompatActivity() {
                 )
             )
 
+            // FIX (Ledger missing general payments — Audit finding): a payment recorded
+            // WITHOUT linking it to a specific bill (PartyTransactionActivity's optional
+            // "Link to a bill" left on "no bill" — see Payment.billReference's doc
+            // comment) still correctly adjusts customer.balance/supplier.balance (so
+            // Balance Sheet/Party list/Dashboard all stay right), but this screen used to
+            // reconstruct its running balance purely from each bill's total/paid — so a
+            // general payment never showed as a row here and the Closing Balance drifted
+            // away from the party's real balance shown everywhere else. Bill-LINKED
+            // payments are deliberately excluded from this merge (billReference.isBlank()
+            // filter) since those are already folded into the linked bill's own `paid`
+            // field below and would otherwise be double-counted.
+            data class LedgerLine(val time: Long, val dr: Double, val cr: Double, val delta: Double)
+            val lines = mutableListOf<LedgerLine>()
+            val partyType = if (isCustomer) "customer" else "supplier"
+            val generalPayments = db.paymentDao().listByParty(partyType, id).filter { it.billReference.isBlank() }
+
             if (isCustomer) {
-                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }.sortedBy { it.createdAt }
-                if (sales.isEmpty()) {
-                    body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
-                }
-                sales.forEach { s ->
-                    running += (s.total - s.paid)
-                    body.addView(ledgerRow(fmt.format(Date(s.createdAt)), dr = s.total, cr = s.paid, balance = running))
-                }
+                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }
+                sales.forEach { s -> lines.add(LedgerLine(s.createdAt, s.total, s.paid, s.total - s.paid)) }
             } else {
-                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }.sortedBy { it.createdAt }
-                if (purchases.isEmpty()) {
-                    body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
-                }
-                purchases.forEach { p ->
-                    running += (p.total - p.paid)
-                    body.addView(ledgerRow(fmt.format(Date(p.createdAt)), dr = p.total, cr = p.paid, balance = running))
-                }
+                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }
+                purchases.forEach { p -> lines.add(LedgerLine(p.createdAt, p.total, p.paid, p.total - p.paid)) }
+            }
+            // A general payment is pure Credit (reduces what's owed either way) with no
+            // Debit side — mirrors adjustCustomerBalance/adjustSupplierBalance(-amount)
+            // in PartyTransactionActivity.savePayment().
+            generalPayments.forEach { pay -> lines.add(LedgerLine(pay.createdAt, 0.0, pay.amount, -pay.amount)) }
+            lines.sortBy { it.time }
+
+            if (lines.isEmpty()) {
+                body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
+            }
+            lines.forEach { ln ->
+                running += ln.delta
+                body.addView(ledgerRow(fmt.format(Date(ln.time)), dr = ln.dr, cr = ln.cr, balance = running))
             }
 
             body.addView(plDivider())
@@ -562,24 +579,34 @@ class PartyReportsActivity : AppCompatActivity() {
             })
             body.addView(plDivider())
 
+            // FIX (Ledger/Statement missing general payments — Audit finding): same gap
+            // and same fix as showLedger() above — a payment made WITHOUT linking it to a
+            // specific bill correctly adjusts the party's real balance but used to be
+            // invisible here, so the Closing Balance shown on this Statement drifted away
+            // from the balance shown on the Party list/Dashboard/Balance Sheet. Bill-
+            // linked payments stay excluded (billReference.isBlank() filter) since those
+            // are already folded into their bill's own `paid` field below.
+            data class StatementLine(val time: Long, val amount: Double, val delta: Double, val label: String)
+            val lines = mutableListOf<StatementLine>()
+            val partyType = if (isCustomer) "customer" else "supplier"
+            val generalPayments = db.paymentDao().listByParty(partyType, id).filter { it.billReference.isBlank() }
+            val paymentLabel = if (isCustomer) Loc.t(this@PartyReportsActivity, "Payment received", "ادائیگی وصول ہوئی") else Loc.t(this@PartyReportsActivity, "Payment made", "ادائیگی کی گئی")
+
             if (isCustomer) {
-                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }.sortedBy { it.createdAt }
-                if (sales.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
-                sales.forEach { s ->
-                    val outstanding = s.total - s.paid
-                    running += outstanding
-                    // ---- No invoice number shown — date is the row's identifier ----
-                    body.addView(statementRow(fmt.format(Date(s.createdAt)), s.total, running, isCustomer = true))
-                }
+                val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }
+                sales.forEach { s -> lines.add(StatementLine(s.createdAt, s.total, s.total - s.paid, "")) }
             } else {
-                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }.sortedBy { it.createdAt }
-                if (purchases.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
-                purchases.forEach { p ->
-                    val outstanding = p.total - p.paid
-                    running += outstanding
-                    // ---- No bill number shown — date is the row's identifier ----
-                    body.addView(statementRow(fmt.format(Date(p.createdAt)), p.total, running, isCustomer = false))
-                }
+                val purchases = db.purchaseDao().purchasesBySupplier(id).filter { it.status != "returned" }
+                purchases.forEach { p -> lines.add(StatementLine(p.createdAt, p.total, p.total - p.paid, "")) }
+            }
+            generalPayments.forEach { pay -> lines.add(StatementLine(pay.createdAt, pay.amount, -pay.amount, paymentLabel)) }
+            lines.sortBy { it.time }
+
+            if (lines.isEmpty()) body.addView(emptyText(Loc.t(this@PartyReportsActivity, "No transactions yet", "کوئی لین دین نہیں ہے")))
+            lines.forEach { ln ->
+                running += ln.delta
+                // ---- No invoice/bill number shown — date is the row's identifier ----
+                body.addView(statementRow(fmt.format(Date(ln.time)), ln.amount, running, isCustomer = isCustomer, label = ln.label))
             }
 
             body.addView(plDivider())
@@ -602,7 +629,11 @@ class PartyReportsActivity : AppCompatActivity() {
     // ---- Reference/invoice number removed — date is now the only identifier shown ----
     // FIX (Phase 2 - Accounting): added isCustomer so the per-row balance color follows
     // the same customer/supplier-aware convention as the Closing Balance above it.
-    private fun statementRow(date: String, total: Double, balanceAfter: Double, isCustomer: Boolean): LinearLayout {
+    // FIX (Ledger/Statement missing general payments — Audit finding): added an
+    // optional `label` so a general-payment row (see showStatement()'s merge) reads
+    // distinctly from a bill row instead of looking like an identical, ambiguous
+    // amount with the opposite effect on the running balance.
+    private fun statementRow(date: String, total: Double, balanceAfter: Double, isCustomer: Boolean, label: String = ""): LinearLayout {
         val isGive = if (isCustomer) balanceAfter < 0 else balanceAfter > 0
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -619,6 +650,14 @@ class PartyReportsActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(textGray))
             })
             addView(top)
+            if (label.isNotEmpty()) {
+                addView(TextView(this@PartyReportsActivity).apply {
+                    text = label
+                    textSize = 11f
+                    setTextColor(Color.parseColor(textGray))
+                    setPadding(0, 1, 0, 1)
+                })
+            }
             addView(TextView(this@PartyReportsActivity).apply {
                 text = Loc.t(this@PartyReportsActivity, "Balance", "بیلنس") + ": Rs %.2f".format(balanceAfter)
                 textSize = 12f
