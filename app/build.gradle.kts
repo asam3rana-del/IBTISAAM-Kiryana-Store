@@ -31,10 +31,22 @@ android {
     }
 
     signingConfigs {
-        // Use Gradle/Android's standard debug signing setup. Requiring a
-        // repository-local debug.keystore made clean checkouts fail to build.
+        // FIX (install error — "something went wrong" — every fresh CI build was
+        // getting signed with a NEW random debug key, because GitHub Actions runners
+        // are ephemeral and Android Gradle Plugin auto-generates a throwaway debug
+        // keystore when none is configured. That meant every new APK's signature
+        // mismatched whatever was already installed on a device, and Android refused
+        // to install the update. Pointing at a debug.keystore committed in the repo
+        // root makes every build — CI or local Android Studio — sign with the SAME
+        // key, so updates install cleanly over an existing install every time. This
+        // is a standard *debug*-only keystore (password "android", the universal
+        // AOSP default), never used for the Play Store release build below, so it's
+        // safe to commit.
         getByName("debug") {
-            // Android Gradle Plugin supplies the default debug keystore automatically.
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
         // FIX (Phase 5 - Stability): added a release signing config — previously there
         // was none, so a `release` build would come out unsigned (can't be installed
