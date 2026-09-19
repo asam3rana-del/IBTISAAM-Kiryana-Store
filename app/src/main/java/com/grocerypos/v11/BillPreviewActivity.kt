@@ -191,9 +191,14 @@ class BillPreviewActivity : ThemedActivity() {
         receiptCard.addView(dashedDivider())
 
         val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-        receiptCard.addView(kv("Invoice/Bill No", reference))
-        receiptCard.addView(kv("Date", fmt.format(Date(dateMillis))))
+        // CHANGE (Gate Pass style header): reordered to Customer / Bill No / Cashier /
+        // Date / Payment, matching the wholesaler slip's field order and labels
+        // ("Bill No" instead of "Ref", added "Cashier" — the logged-in staff name).
         if (partyName.isNotBlank()) receiptCard.addView(kv(partyLabel, partyName))
+        receiptCard.addView(kv("Bill No", reference))
+        val cashierName = getSharedPreferences("session", MODE_PRIVATE).getString("username", null)
+        if (!cashierName.isNullOrBlank()) receiptCard.addView(kv("Cashier", cashierName))
+        receiptCard.addView(kv("Date", fmt.format(Date(dateMillis))))
         if (paymentMethod.isNotBlank()) receiptCard.addView(kv("Payment Method", paymentMethod.replaceFirstChar { it.uppercase() }))
 
         receiptCard.addView(dashedDivider())
@@ -579,9 +584,13 @@ class BillPreviewActivity : ThemedActivity() {
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
             receiptLines.add(PrinterHelper.ReceiptLine.Center(if (type == "sale") "SALE RECEIPT" else "PURCHASE RECEIPT"))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Ref", reference))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Date", fmt.format(Date(dateMillis))))
+            // CHANGE (Gate Pass style header): same reorder as the on-screen preview
+            // above — Customer / Bill No / Cashier / Date / Payment.
             if (partyName.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(partyLabel, partyName))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Bill No", reference))
+            val cashierName = getSharedPreferences("session", MODE_PRIVATE).getString("username", null)
+            if (!cashierName.isNullOrBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Cashier", cashierName))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Date", fmt.format(Date(dateMillis))))
             if (paymentMethod.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Payment", paymentMethod.replaceFirstChar { it.uppercase() }))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
