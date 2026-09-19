@@ -246,7 +246,18 @@ class DayBookActivity : AppCompatActivity() {
             // silently missing from Day Book entirely. Now only cash entries tied to
             // an actual sale/purchase bill (reference = that bill's invoice/billNo,
             // never "manual-…") are excluded.
-            val cashTx = db.cashTransactionDao().between(start, end).filter { it.reference.isBlank() || it.reference.startsWith("manual-") }
+            // FIX (sale/purchase return invisible in Day Book): a return now records a
+            // dated "return:<invoice/billNo>" reversal entry (see SyncQueueHelper.
+            // reverseCashByReference) instead of deleting/shrinking the original cash
+            // row. That reference is neither blank nor "manual-…", so without this it
+            // would fall into the same "already represented by the sale/purchase row"
+            // exclusion above — except a return has no row of its own on today's date
+            // (the sale/purchase row stays on its ORIGINAL date), so the return would
+            // never appear anywhere. "return:" entries are let through here so the
+            // return itself shows as its own Cash In/Cash Out line on the day it happened.
+            val cashTx = db.cashTransactionDao().between(start, end).filter {
+                it.reference.isBlank() || it.reference.startsWith("manual-") || it.reference.startsWith("return:")
+            }
 
             val entries = mutableListOf<DayBookEntry>()
 

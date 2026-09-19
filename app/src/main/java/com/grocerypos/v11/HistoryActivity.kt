@@ -309,7 +309,10 @@ class HistoryActivity : AppCompatActivity() {
                     SyncQueueHelper.enqueueReturn(db, ReturnLine(id = returnId, reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
                 }
                 if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
-                SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
+                // FIX (sale return had no visible effect in Cash Book/Day Book — mirrors
+                // SaleHistoryActivity.returnSale()'s matching fix): records a dated
+                // reversal instead of deleting the original cash row outright.
+                SyncQueueHelper.reverseCashByReference(db, invoice, sale.paid, "OUT", "Sale Return")
                 // FIX (returned sale never syncs to other devices): markReturned() was a
                 // raw SQL UPDATE with no matching enqueueSale() afterward — same "bypasses
                 // sync" class of bug as the whole-purchase-return fix above, just missing
@@ -617,7 +620,10 @@ class HistoryActivity : AppCompatActivity() {
                         if (purchase.supplierId != null && oldOutstanding > 0) {
                             SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -oldOutstanding)
                         }
-                        SyncQueueHelper.deleteCashTransactionsByReference(db, billNo)
+                        // FIX (purchase return had no visible effect in Cash Book/Day
+                        // Book — mirrors the sale-return fix): a dated reversal instead
+                        // of deleting the original cash row outright.
+                        SyncQueueHelper.reverseCashByReference(db, billNo, purchase.paid, "IN", "Purchase Return")
                         SyncQueueHelper.deletePaymentsByReference(db, billNo)
                         // FIX (whole-bill return silently un-returning itself — see
                         // PurchaseHistoryActivity's matching comment): the updatePurchase()
@@ -689,11 +695,12 @@ class HistoryActivity : AppCompatActivity() {
         val paidDelta = newPaid - oldPaid
         if (paidDelta == 0.0) return newPaid
 
-        db.cashTransactionDao().findByReference(reference)?.let { tx ->
-            val updatedTx = tx.copy(amount = (tx.amount + paidDelta).coerceAtLeast(0.0), updatedAt = System.currentTimeMillis(), dirty = true)
-            db.cashTransactionDao().update(updatedTx)
-            SyncQueueHelper.enqueueCashTransaction(db, updatedTx)
-        }
+        // FIX (partial purchase return had no visible effect in Cash Book/Day Book):
+        // this used to shrink the original cash_transactions row's amount in place,
+        // silently rewriting the ORIGINAL purchase day's cash history with no trace
+        // of the return itself. Now records a dated reversal for the reduced amount
+        // instead — see SyncQueueHelper.reverseCashByReference()'s doc comment.
+        SyncQueueHelper.reverseCashByReference(db, reference, -paidDelta, "IN", "Purchase Return")
         db.paymentDao().findByReference(reference)?.let { pay ->
             val updatedPay = pay.copy(amount = (pay.amount + paidDelta).coerceAtLeast(0.0), updatedAt = System.currentTimeMillis(), dirty = true)
             db.paymentDao().update(updatedPay)

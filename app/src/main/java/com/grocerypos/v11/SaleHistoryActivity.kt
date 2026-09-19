@@ -520,7 +520,12 @@ class SaleHistoryActivity : ThemedActivity() {
                 if (sale.customerId != null && sale.paid < sale.total) {
                     SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
                 }
-                SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
+                // FIX (sale return had no visible effect in Cash Book/Day Book): used to
+                // delete the sale's cash_transactions row outright, which erased the
+                // original sale day's cash history AND left no trace of the return
+                // happening today. Now records a dated reversal instead — see
+                // SyncQueueHelper.reverseCashByReference()'s doc comment.
+                SyncQueueHelper.reverseCashByReference(db, invoice, sale.paid, "OUT", "Sale Return")
                 // FIX (returned sale never syncs to other devices — see HistoryActivity.
                 // returnSale()'s matching comment): markReturned() was a raw SQL UPDATE
                 // with no enqueueSale() afterward, so this status change never pushed.

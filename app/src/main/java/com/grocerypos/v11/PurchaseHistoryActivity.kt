@@ -739,12 +739,12 @@ class PurchaseHistoryActivity : ThemedActivity() {
                     if (purchase.supplierId != null && oldOutstanding > 0) {
                         SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -oldOutstanding)
                     }
-                    // FIX (deleted-payment-survives-sync bug — see RoomPurchaseRepository.
-                    // deletePurchase()'s matching comment): raw deleteByReference() calls
-                    // never enqueued a sync delete for the removed payment/cash-transaction
-                    // rows, so a full purchase return that clears the bill's payment left
-                    // that payment behind on every other device/Firestore forever.
-                    SyncQueueHelper.deleteCashTransactionsByReference(db, billNo)
+                    // FIX (purchase return had no visible effect in Cash Book/Day Book):
+                    // this used to delete the purchase's cash_transactions row outright,
+                    // which erased the original purchase day's cash history AND left no
+                    // trace of the return happening today. Now records a dated reversal
+                    // instead — see SyncQueueHelper.reverseCashByReference()'s doc comment.
+                    SyncQueueHelper.reverseCashByReference(db, billNo, purchase.paid, "IN", "Purchase Return")
                     SyncQueueHelper.deletePaymentsByReference(db, billNo)
                     // FIX (whole-bill return silently un-returning itself): markReturned()
                     // set status='returned' via raw SQL, but the very next line's
@@ -819,11 +819,12 @@ class PurchaseHistoryActivity : ThemedActivity() {
         val paidDelta = newPaid - oldPaid
         if (paidDelta == 0.0) return newPaid
 
-        db.cashTransactionDao().findByReference(reference)?.let { tx ->
-            val updatedTx = tx.copy(amount = (tx.amount + paidDelta).coerceAtLeast(0.0), updatedAt = System.currentTimeMillis(), dirty = true)
-            db.cashTransactionDao().update(updatedTx)
-            SyncQueueHelper.enqueueCashTransaction(db, updatedTx)
-        }
+        // FIX (partial purchase return had no visible effect in Cash Book/Day Book):
+        // this used to shrink the original cash_transactions row's amount in place,
+        // silently rewriting the ORIGINAL purchase day's cash history with no trace
+        // of the return itself. Now records a dated reversal for the reduced amount
+        // instead — see SyncQueueHelper.reverseCashByReference()'s doc comment.
+        SyncQueueHelper.reverseCashByReference(db, reference, -paidDelta, "IN", "Purchase Return")
         db.paymentDao().findByReference(reference)?.let { pay ->
             val updatedPay = pay.copy(amount = (pay.amount + paidDelta).coerceAtLeast(0.0), updatedAt = System.currentTimeMillis(), dirty = true)
             db.paymentDao().update(updatedPay)

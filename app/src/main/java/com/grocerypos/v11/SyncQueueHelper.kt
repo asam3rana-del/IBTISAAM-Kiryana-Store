@@ -464,6 +464,54 @@ object SyncQueueHelper {
         }
     }
 
+    // FIX (sale/purchase return had no visible effect in Cash Book / Day Book): a
+    // return used to call deleteCashTransactionsByReference() (whole return) or
+    // silently shrink the original cash_transactions row in place (partial return).
+    // Both erase the ORIGINAL day's cash history retroactively (Day Book for that
+    // date now under-reports what actually happened) and leave zero trace of the
+    // return itself on the day it happened — nothing shows up in Cash Book or Day
+    // Book to say "this money went back out/came back in".
+    //
+    // Proper fix: leave the original cash_transactions row(s) untouched (that cash
+    // really was received/paid that day — Day Book/Cash Book for that date should
+    // keep saying so) and record the return as a brand-new, dated-today reversal
+    // entry instead. Split proportionally across whatever methods (cash/bank/etc.)
+    // the original payment used, so a split-payment bill reverses correctly too.
+    //
+    // reference is tagged "return:<original>" (not blank, not "manual-", and never
+    // equal to the original invoice/billNo) so it: (a) shows up as its own visible
+    // line in Day Book (see DayBookActivity.loadDay()'s cashTx filter), and (b)
+    // never gets swept up by an exact allByReference(invoice)/findByReference(invoice)
+    // lookup elsewhere (e.g. a later edit on the same bill).
+    suspend fun reverseCashByReference(
+        db: PosDatabase,
+        reference: String,
+        amountToReverse: Double,
+        reverseType: String, // "OUT" to reverse a sale (cash paid back to customer), "IN" to reverse a purchase (cash received back from supplier)
+        reasonLabel: String,
+        context: Context? = null
+    ) {
+        if (amountToReverse <= 0.009) return
+        val original = db.cashTransactionDao().allByReference(reference)
+        if (original.isEmpty()) return
+        val originalTotal = original.sumOf { it.amount }
+        if (originalTotal <= 0.009) return
+        val ratio = (amountToReverse / originalTotal).coerceIn(0.0, 1.0)
+        for (tx in original) {
+            val portion = tx.amount * ratio
+            if (portion <= 0.009) continue
+            val reversal = CashTransaction(
+                type = reverseType,
+                method = tx.method,
+                amount = portion,
+                reason = reasonLabel,
+                reference = "return:$reference"
+            )
+            val id = db.cashTransactionDao().insert(reversal)
+            enqueueCashTransaction(db, reversal.copy(id = id), context)
+        }
+    }
+
     // ---------- Payload builders ----------
 
     fun customerJson(c: Customer): String {
