@@ -104,7 +104,18 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
     val topAvailable = topNames.filter { name -> products.any { it.name == name } }
     val remaining = products.map { it.name }.filter { it !in topAvailable }
     val orderedNames = (topAvailable + remaining).distinct()
-    qsItemName.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, orderedNames))
+    // FIX (English/Urdu search not working in Quick Sale): this dialog used a
+    // plain ArrayAdapter(orderedNames), which relies on Android's built-in
+    // dropdown filter — that only ever does a prefix match against each item's
+    // own toString() (the raw product name), so it never checked searchTag
+    // (the English alias for an Urdu-named item) and never matched mid-name
+    // substrings either. SaleActivity/PurchaseActivity's own item boxes were
+    // already fixed to use ProductNameAdapter (drives its own Filter off
+    // Product.matchesQuery(), which checks name + searchTag) — Quick Sale was
+    // just never switched over to it. Preserves the same top-selling-first
+    // ordering by feeding it the ordered Product list instead of just names.
+    val orderedProducts = orderedNames.mapNotNull { name -> products.find { it.name == name } }
+    qsItemName.setAdapter(ProductNameAdapter(this) { orderedProducts })
     // FIX (English keyboard: typing didn't open the dropdown): forcing
     // showDropDown() below with empty text when the dialog first opens (so the
     // full list shows immediately) leaves AutoCompleteTextView's popup in a
