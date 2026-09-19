@@ -1069,16 +1069,23 @@ object PrinterHelper {
                     nameLayout.draw(canvas)
                     canvas.restore()
 
+                    // FIX (wholesaler-slip column order — "Amount-Qty-Rate"): the
+                    // Item / Rate / Qty / Amount header above was reordered to
+                    // Item / Amount / Qty / Rate to match the wholesaler receipt
+                    // format, so the values drawn in each column must swap places
+                    // too — Amount now goes in col2 (kept bold, since it's still the
+                    // important figure), Rate now goes in col4 (plain, no longer
+                    // bold, since Amount already carries the bold emphasis).
                     paint.textSize = tableFontSize
-                    paint.isFakeBoldText = false
+                    paint.isFakeBoldText = true
                     paint.textAlign = Paint.Align.CENTER
-                    canvas.drawText(line.rate, (colX[1] + colX[2]) / 2f, baseline, paint)
+                    canvas.drawText(line.amount, (colX[1] + colX[2]) / 2f, baseline, paint)
+
+                    paint.isFakeBoldText = false
                     canvas.drawText(line.qty, (colX[2] + colX[3]) / 2f, baseline, paint)
 
-                    paint.isFakeBoldText = true
                     paint.textAlign = Paint.Align.RIGHT
-                    canvas.drawText(line.amount, colX[4] - tableCellPaddingH, baseline, paint)
-                    paint.isFakeBoldText = false
+                    canvas.drawText(line.rate, colX[4] - tableCellPaddingH, baseline, paint)
 
                     paint.textSize = fontSizePx
                     paint.textAlign = Paint.Align.LEFT

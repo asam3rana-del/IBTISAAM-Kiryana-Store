@@ -206,10 +206,8 @@ class BillPreviewActivity : ThemedActivity() {
                 setTypeface(typeface, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
             })
-            // CHANGE (Rate column): rate used to sit as a small "@ 145.00" line under the
-            // item name. It now has its own RATE column between ITEM and QTY.
             addView(TextView(this@BillPreviewActivity).apply {
-                text = "RATE"; textSize = 11f; gravity = Gravity.CENTER
+                text = "AMOUNT"; textSize = 11f; gravity = Gravity.CENTER
                 setTextColor(Color.parseColor(textGray))
                 setTypeface(typeface, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -221,7 +219,7 @@ class BillPreviewActivity : ThemedActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(TextView(this@BillPreviewActivity).apply {
-                text = "AMOUNT"; textSize = 11f; gravity = Gravity.END
+                text = "RATE"; textSize = 11f; gravity = Gravity.END
                 setTextColor(Color.parseColor(textGray))
                 setTypeface(typeface, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -245,8 +243,9 @@ class BillPreviewActivity : ThemedActivity() {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
                 })
                 addView(TextView(this@BillPreviewActivity).apply {
-                    text = "%.2f".format(line.rate); textSize = 13f; gravity = Gravity.CENTER
+                    text = "%.2f".format(line.amount); textSize = 13.5f; gravity = Gravity.CENTER
                     setTextColor(Color.parseColor(textDark))
+                    setTypeface(typeface, Typeface.BOLD)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
                 addView(TextView(this@BillPreviewActivity).apply {
@@ -255,9 +254,8 @@ class BillPreviewActivity : ThemedActivity() {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
                 addView(TextView(this@BillPreviewActivity).apply {
-                    text = "%.2f".format(line.amount); textSize = 13.5f; gravity = Gravity.END
+                    text = "%.2f".format(line.rate); textSize = 13f; gravity = Gravity.END
                     setTextColor(Color.parseColor(textDark))
-                    setTypeface(typeface, Typeface.BOLD)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
             })
@@ -587,12 +585,12 @@ class BillPreviewActivity : ThemedActivity() {
             if (paymentMethod.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Payment", paymentMethod.replaceFirstChar { it.uppercase() }))
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
-            // ---- Item / Rate / Qty / Amount — borderless, same 4-column header as
-            // the preview card (ITEM / RATE / QTY / AMOUNT). Weights mirror the
-            // preview's own column ratio (Item 2x, Rate/Qty/Amount 1x each). ----
+            // ---- Item / Amount / Qty / Rate — borderless, wholesaler-slip column
+            // order (Amount, then Qty, then Rate) instead of the older Rate/Qty/
+            // Amount order. Weights unchanged (Item 2x, others 1x each). ----
             val rowWeights = listOf(2f, 1f, 1f, 1f)
             receiptLines.add(
-                PrinterHelper.ReceiptLine.Row4("Item", "Rate", "Qty", "Amount", rowWeights, bold = true)
+                PrinterHelper.ReceiptLine.Row4("Item", "Amount", "Qty", "Rate", rowWeights, bold = true)
             )
             for (line in lines) {
                 receiptLines.add(
