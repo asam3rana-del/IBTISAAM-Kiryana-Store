@@ -612,15 +612,17 @@ class BillPreviewActivity : ThemedActivity() {
                 )
             )
             receiptLines.add(PrinterHelper.ReceiptLine.Center(shopName))
-            if (shopAddress.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.Center(shopAddress))
+            // FIX ("Bhikhi Urdu ma adrees a raha ha wo b khatam nhi howa" — the
+            // shop address line was never actually asked for, only Shop name +
+            // Phone number were in the original list; removed).
             if (shopPhone.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.Center(shopPhone))
 
-            // ---- Customer / Bill / Till block ----
+            // ---- Customer / Bill block ----
             // FIX ("Cash credit customer b hata do" — the old "Cash Customer .....
             // Customer" row printed the payment-method label against the bare party
             // type and added nothing useful; removed). Shop name/phone above and
-            // Customer/Bill No/Till/Cashier below now sit right after each other with
-            // no Divider between them ("ye sab sath sath ... extra space k bagair") —
+            // Customer/Bill No below now sit right after each other with no
+            // Divider between them ("ye sab sath sath ... extra space k bagair") —
             // only one Divider now, right before the item table.
             if (partyName.isNotBlank()) {
                 val codePrefix = partyId?.let { "$it " } ?: ""
@@ -629,8 +631,8 @@ class BillPreviewActivity : ThemedActivity() {
                 receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("$partyLabel:", "Walk-in"))
             }
             receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Bill No:", reference))
-            val cashierName = getSharedPreferences("session", MODE_PRIVATE).getString("username", null)
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Till No. 01", "Cashier: ${cashierName ?: "-"}"))
+            // FIX ("Till no aur cashier name b khatam nhi howa" — also never asked
+            // for in the original list, removed same as the address line above).
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
             // ---- Item table: Amount / Qty / Rate / Barcode header + one plain row
@@ -641,10 +643,8 @@ class BillPreviewActivity : ThemedActivity() {
             receiptLines.add(
                 PrinterHelper.ReceiptLine.Row4("Amount", "Qty", "Rate", "Barcode", gateWeights, bold = true)
             )
-            var totalQty = 0.0
             for (line in lines) {
                 val qtyVal = line.qty.toDoubleOrNull() ?: 0.0
-                totalQty += qtyVal
                 receiptLines.add(
                     PrinterHelper.ReceiptLine.GateRow(
                         amount = formatAmt(line.amount),
@@ -657,10 +657,14 @@ class BillPreviewActivity : ThemedActivity() {
             }
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
-            // ---- Totals block (Gross Amt/Total units, Total Count, Payable,
-            // Amount Paid, Prev Balance, Net Balance — same order as the reference).
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(total), "Gross Amt  ${"%.3f".format(totalQty)} = Total units"))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(total), "Total Count"))
+            // ---- Totals block: Gross Amount, Payable, Amount Paid, Prev Balance,
+            // Net Balance.
+            // FIX (per user's own hand-drawn sample receipt): dropped the
+            // "= X.XXX Total units" suffix off Gross Amount (plain label now, no
+            // qty text) and dropped the separate "Total Count" row entirely — it
+            // always printed the exact same number as Payable right below it, so
+            // the sample keeps only one of the two.
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(total), "Gross Amount"))
             receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(total), "Payable", bold = true))
             receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(paid), "Amount Paid"))
 

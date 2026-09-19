@@ -743,10 +743,11 @@ object PrinterHelper {
             // threshold below, making the whole receipt print noticeably darker.
             strokeWidth = fontSizePx * 0.05f
         }
-        // SPEED TUNING: slightly tighter spacing than before shrinks the overall
-        // bitmap height (and so the total bytes sent to the printer) without making
-        // the receipt cramped or hard to read.
-        val lineSpacingExtra = (fontSizePx * 0.28f).toInt()
+        // FIX ("line space 1 line kam kro" — reduce the gap between every line by
+        // roughly a line's worth): trimmed 0.28 -> 0.16. This is per-line, so it
+        // compounds across the whole receipt (title, shop info, customer/bill
+        // rows, totals) rather than a one-time trim.
+        val lineSpacingExtra = (fontSizePx * 0.16f).toInt()
         val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
         // Table/row cells use a smaller font than the rest of the receipt so 3-4
         // columns (Item/Qty/Amount, or Item/Rate/Qty/Amount) fit comfortably on a
@@ -763,7 +764,8 @@ object PrinterHelper {
         // FIX (overall print size): tightened 12 -> 9 — combined with the smaller
         // Arabic boost above, this noticeably shortens the printed receipt (less
         // wasted paper) without crowding the rows.
-        val tableRowPaddingV = 9 // extra top/bottom padding inside each row
+        // FIX ("line space 1 line kam kro"): item-table rows tightened too, 9 -> 7.
+        val tableRowPaddingV = 7 // extra top/bottom padding inside each row
         val tableCellPaddingH = 8 // left/right padding inside each cell, before ellipsizing
 
         data class Block(val line: ReceiptLine, val layout: StaticLayout?, val height: Int)
@@ -779,16 +781,36 @@ object PrinterHelper {
                 is ReceiptLine.Center, is ReceiptLine.Left -> {
                     val text = if (line is ReceiptLine.Center) line.text else (line as ReceiptLine.Left).text
                     val dir = if (containsArabicScript(text)) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
-                    val alignment = if (line is ReceiptLine.Center) Layout.Alignment.ALIGN_CENTER else Layout.Alignment.ALIGN_NORMAL
-                    val layout = StaticLayout.Builder
-                        .obtain(text, 0, text.length, paint, contentWidth)
-                        .setAlignment(alignment)
-                        .setTextDirection(dir)
-                        .setLineSpacing(0f, 1.15f)
-                        .build()
-                    val h = layout.height + lineSpacingExtra
-                    blocks.add(Block(line, layout, h))
-                    totalHeight += h
+                    // FIX ("Shop name center ma nhi araha" — Urdu/RTL text wasn't
+                    // visually centering even though ALIGN_CENTER was requested):
+                    // StaticLayout's ALIGN_CENTER has a known unreliable interaction
+                    // with an RTL paragraph direction on some Android versions — it
+                    // can anchor to the paragraph's natural (right) edge instead of
+                    // the true horizontal center. A single line that fits within
+                    // contentWidth is now centered by directly measuring its shaped
+                    // width and drawing it with Paint.Align.CENTER at the row's
+                    // midpoint instead — the same reliable measure-and-draw approach
+                    // already used for every other value on the receipt (TwoCol,
+                    // GateRow, Row4), which has never had this problem. StaticLayout
+                    // is still used as a fallback for text too wide to fit one line
+                    // (so long Center text, like a long footer line, still wraps).
+                    if (line is ReceiptLine.Center && paint.measureText(text) <= contentWidth) {
+                        val fm = paint.fontMetrics
+                        val h = (fm.bottom - fm.top).toInt() + lineSpacingExtra
+                        blocks.add(Block(line, null, h))
+                        totalHeight += h
+                    } else {
+                        val alignment = if (line is ReceiptLine.Center) Layout.Alignment.ALIGN_CENTER else Layout.Alignment.ALIGN_NORMAL
+                        val layout = StaticLayout.Builder
+                            .obtain(text, 0, text.length, paint, contentWidth)
+                            .setAlignment(alignment)
+                            .setTextDirection(dir)
+                            .setLineSpacing(0f, 1.15f)
+                            .build()
+                        val h = layout.height + lineSpacingExtra
+                        blocks.add(Block(line, layout, h))
+                        totalHeight += h
+                    }
                 }
                 is ReceiptLine.TwoCol -> {
                     val fm = paint.fontMetrics
@@ -869,10 +891,22 @@ object PrinterHelper {
         for (block in blocks) {
             when (val line = block.line) {
                 is ReceiptLine.Center, is ReceiptLine.Left -> {
-                    canvas.save()
-                    canvas.translate(margin.toFloat(), y)
-                    block.layout!!.draw(canvas)
-                    canvas.restore()
+                    if (block.layout != null) {
+                        canvas.save()
+                        canvas.translate(margin.toFloat(), y)
+                        block.layout.draw(canvas)
+                        canvas.restore()
+                    } else {
+                        // Direct single-line centered draw — see the FIX comment on
+                        // the measurement pass above.
+                        val text = (line as ReceiptLine.Center).text
+                        val fm = paint.fontMetrics
+                        val baseline = y - fm.top
+                        val oldAlign = paint.textAlign
+                        paint.textAlign = Paint.Align.CENTER
+                        canvas.drawText(text, PRINTER_DOTS_WIDTH / 2f, baseline, paint)
+                        paint.textAlign = oldAlign
+                    }
                     y += block.height
                 }
                 is ReceiptLine.TwoCol -> {
