@@ -321,8 +321,21 @@ class DayBookActivity : AppCompatActivity() {
             val totalSales = sales.filter { it.status != "returned" }.sumOf { it.total }
             val totalPurchases = purchases.filter { it.status != "returned" }.sumOf { it.total }
             val totalExpenses = expenses.sumOf { it.amount }
-            val cashIn = cashTx.filter { it.type == "IN" }.sumOf { it.amount } + sales.filter { it.status != "returned" }.sumOf { it.paid }
-            val cashOut = cashTx.filter { it.type == "OUT" }.sumOf { it.amount } + purchases.filter { it.status != "returned" }.sumOf { it.paid }
+            // FIX (audit — Day Book Cash In/Out overstated): a payment linked to a bill is
+            // ALREADY inside that bill's `paid` (applyBillPaidDelta) AND is its own manual
+            // cash entry counted in cashTx above => counted twice (and on the bill's original
+            // day, not the day the money actually moved). Take linked payments back out of
+            // the bill's paid so each rupee is counted once, on its own date.
+            val linkedByBill = db.paymentDao().allRaw()
+                .filter { it.billReference.isNotBlank() }
+                .groupBy { it.billReference }
+                .mapValues { (_, v) -> v.sumOf { p -> p.amount } }
+            val salesPaidOwn = sales.filter { it.status != "returned" }
+                .sumOf { (it.paid - (linkedByBill[it.invoice] ?: 0.0)).coerceAtLeast(0.0) }
+            val purchasesPaidOwn = purchases.filter { it.status != "returned" }
+                .sumOf { (it.paid - (linkedByBill[it.billNo] ?: 0.0)).coerceAtLeast(0.0) }
+            val cashIn = cashTx.filter { it.type == "IN" }.sumOf { it.amount } + salesPaidOwn
+            val cashOut = cashTx.filter { it.type == "OUT" }.sumOf { it.amount } + purchasesPaidOwn
             val net = cashIn - cashOut - totalExpenses
 
             renderSummary(totalSales, totalPurchases, totalExpenses, cashIn, cashOut)

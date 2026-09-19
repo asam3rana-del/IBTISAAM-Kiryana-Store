@@ -46,9 +46,20 @@ object SyncQueueHelper {
     // local autoincrement, like customer/supplier/expense/cash_transaction) plus
     // DeviceTag is what's actually unique — see FIX (payment sync incomplete) at
     // paymentJson() below.
-    fun paymentEntityId(payment: Payment) = "payment:${DeviceTag.current}-${payment.id}"
-    fun expenseEntityId(expense: Expense) = "expense:${DeviceTag.current}-${expense.id}"
-    fun cashTransactionEntityId(t: CashTransaction) = "cash_transaction:${DeviceTag.current}-${t.id}"
+    // FIX (audit — foreign-origin rows re-stamped on edit => duplicates): these three used to
+    // ALWAYS rebuild the id from THIS device's tag + THIS device's local autoincrement id,
+    // even for a row that was pulled from another device (whose serverId is that other
+    // device's id). Editing such a row (or a "force resync") therefore re-stamped it with a
+    // brand-new id and pushed it as a NEW Firestore document, while the original document
+    // stayed alive — the next pull then inserted the original again => duplicate
+    // payment / expense / cash entry on every device. A row that already carries a serverId
+    // keeps it; only a never-synced local row falls back to the device-tag id.
+    fun paymentEntityId(payment: Payment) =
+        payment.serverId?.takeIf { it.isNotBlank() } ?: "payment:${DeviceTag.current}-${payment.id}"
+    fun expenseEntityId(expense: Expense) =
+        expense.serverId?.takeIf { it.isNotBlank() } ?: "expense:${DeviceTag.current}-${expense.id}"
+    fun cashTransactionEntityId(t: CashTransaction) =
+        t.serverId?.takeIf { it.isNotBlank() } ?: "cash_transaction:${DeviceTag.current}-${t.id}"
     fun userEntityId(u: User) = "user:${u.username}"
     fun zakatYearEntityId(y: ZakatYear) = "zakat_year:${DeviceTag.current}-${y.id}"
     fun zakatPaymentEntityId(p: ZakatPayment) = "zakat_payment:${DeviceTag.current}-${p.id}"
@@ -462,6 +473,53 @@ object SyncQueueHelper {
         for (t in txns) {
             enqueue(db, "cash_transaction", t.serverId ?: cashTransactionEntityId(t), "delete", "{}")
         }
+    }
+
+    // ADDED (audit — bill return/delete left its linked payments behind): a payment recorded
+    // via "Receive/Make Payment > link to a bill" is folded into the bill's `paid` AND kept as
+    // its own payment + cash row. When the bill is returned or deleted those rows used to stay
+    // as orphan "standalone" payments (skewing Fix Balances, Payments report and the cash book).
+    //   refundType != null  -> RETURN: the money goes back, so record a dated reversal for
+    //                          each linked payment's cash entry, then drop the payment row.
+    //   refundType == null  -> DELETE (bill treated as never having happened, same as the bill's
+    //                          own cash rows): drop the payment row and its cash rows.
+    // Does NOT touch the party balance: the bill's own balance reversal already used
+    // total - paid (paid includes these payments), so the balance is already right.
+    suspend fun voidLinkedPayments(
+        db: PosDatabase,
+        billRef: String,
+        refundType: String?,
+        refundLabel: String,
+        context: Context? = null
+    ) {
+        for (p in db.paymentDao().linkedPayments(billRef)) {
+            if (refundType != null) {
+                reverseCashByReference(db, p.reference, p.amount, refundType, refundLabel, context)
+            } else {
+                deleteCashTransactionsByReference(db, p.reference)
+            }
+            deletePayment(db, p)
+        }
+    }
+
+    // ADDED (audit — one-time repair of the "expense saved twice" bug, see ExpenseActivity):
+    // expenses created before the fix were pushed without a local serverId, so the next pull
+    // inserted the server copy as a SECOND local row. Both rows describe the SAME Firestore
+    // document, so the twin is removed LOCALLY ONLY (no sync-delete — that would tombstone the
+    // shared document) and the original adopts the document's serverId. Safe by construction:
+    // only an unstamped row with a twin that is identical down to the millisecond AND carries
+    // this device's own id prefix is ever touched.
+    suspend fun mergeOwnDuplicateExpenses(db: PosDatabase): Int {
+        val prefix = "expense:${DeviceTag.current}-"
+        var merged = 0
+        for (orig in db.expenseDao().unstamped()) {
+            val twin = db.expenseDao().findOwnTwin(prefix, orig.createdAt, orig.amount, orig.category, orig.description, orig.method) ?: continue
+            if (twin.id == orig.id) continue
+            db.expenseDao().delete(twin)
+            db.expenseDao().update(orig.copy(serverId = twin.serverId, updatedAt = maxOf(orig.updatedAt, twin.updatedAt), dirty = false))
+            merged++
+        }
+        return merged
     }
 
     // FIX (sale/purchase return had no visible effect in Cash Book / Day Book): a

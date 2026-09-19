@@ -374,7 +374,15 @@ class PartyReportsActivity : AppCompatActivity() {
             data class LedgerLine(val time: Long, val dr: Double, val cr: Double, val delta: Double)
             val lines = mutableListOf<LedgerLine>()
             val partyType = if (isCustomer) "customer" else "supplier"
-            val generalPayments = db.paymentDao().listByParty(partyType, id).filter { it.billReference.isBlank() }
+            // FIX (audit — bug introduced by the fix above): billReference.isBlank() alone also
+            // lets through the bill-EMBEDDED "Purchase payment" row (reference == billNo), which
+            // is already the bill's own `paid`. Suppliers' ledger therefore counted every
+            // purchase payment twice and the Closing Balance came out too low. Exclude any row
+            // whose reference is one of this party's own bills.
+            val ownBillIds: Set<String> = if (isCustomer) db.saleDao().salesByCustomer(id).map { it.invoice }.toHashSet()
+                else db.purchaseDao().purchasesBySupplier(id).map { it.billNo }.toHashSet()
+            val generalPayments = db.paymentDao().listByParty(partyType, id)
+                .filter { it.billReference.isBlank() && it.reference !in ownBillIds }
 
             if (isCustomer) {
                 val sales = db.saleDao().salesByCustomer(id).filter { it.status != "returned" }
@@ -589,7 +597,11 @@ class PartyReportsActivity : AppCompatActivity() {
             data class StatementLine(val time: Long, val amount: Double, val delta: Double, val label: String)
             val lines = mutableListOf<StatementLine>()
             val partyType = if (isCustomer) "customer" else "supplier"
-            val generalPayments = db.paymentDao().listByParty(partyType, id).filter { it.billReference.isBlank() }
+            // FIX (audit): same embedded-payment double count as showLedger() above.
+            val ownBillIds: Set<String> = if (isCustomer) db.saleDao().salesByCustomer(id).map { it.invoice }.toHashSet()
+                else db.purchaseDao().purchasesBySupplier(id).map { it.billNo }.toHashSet()
+            val generalPayments = db.paymentDao().listByParty(partyType, id)
+                .filter { it.billReference.isBlank() && it.reference !in ownBillIds }
             val paymentLabel = if (isCustomer) Loc.t(this@PartyReportsActivity, "Payment received", "ادائیگی وصول ہوئی") else Loc.t(this@PartyReportsActivity, "Payment made", "ادائیگی کی گئی")
 
             if (isCustomer) {

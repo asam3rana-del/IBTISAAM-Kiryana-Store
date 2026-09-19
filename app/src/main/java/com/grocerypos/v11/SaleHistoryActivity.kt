@@ -526,6 +526,8 @@ class SaleHistoryActivity : ThemedActivity() {
                 // happening today. Now records a dated reversal instead — see
                 // SyncQueueHelper.reverseCashByReference()'s doc comment.
                 SyncQueueHelper.reverseCashByReference(db, invoice, sale.paid, "OUT", "Sale Return")
+                // FIX (audit): also refund/drop bill-linked payments — see HistoryActivity.returnSale().
+                SyncQueueHelper.voidLinkedPayments(db, invoice, "OUT", "Sale Return")
                 // FIX (returned sale never syncs to other devices — see HistoryActivity.
                 // returnSale()'s matching comment): markReturned() was a raw SQL UPDATE
                 // with no enqueueSale() afterward, so this status change never pushed.
@@ -583,6 +585,8 @@ class SaleHistoryActivity : ThemedActivity() {
                 // device/Firestore even after the sale itself was gone here.
                 SyncQueueHelper.deletePaymentsByReference(db, invoice)
                 SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
+                // FIX (audit): bill-linked payments would otherwise live on as orphan payments.
+                SyncQueueHelper.voidLinkedPayments(db, invoice, null, "")
             }
             // FIX (deleted sale never disappears on other devices): this screen's
             // own delete path never enqueued a "sale" delete entry at all — mirrors

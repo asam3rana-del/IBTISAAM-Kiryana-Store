@@ -769,13 +769,15 @@ class PartyTransactionActivity : AppCompatActivity() {
             if (!requireAdminOrAbort()) return@launch
             val db = PosDatabase.get(this@PartyTransactionActivity)
             db.withTransaction {
-                db.paymentDao().deleteByReference(payment.reference)
-                SyncQueueHelper.enqueueDelete(db, "payment", SyncQueueHelper.paymentEntityId(payment))
-
-                db.cashTransactionDao().findByReference(payment.reference)?.let { tx ->
-                    db.cashTransactionDao().deleteByReference(payment.reference)
-                    SyncQueueHelper.enqueueDelete(db, "cash_transaction", SyncQueueHelper.cashTransactionEntityId(tx))
-                }
+                // FIX (audit — "deleted payment comes back after sync"): this used to
+                // delete EVERY row sharing the reference straight from Room but only queue a
+                // sync-delete for ONE payment (and one cash entry), built from THIS device's
+                // id. Any extra row (leftover duplicate) or any row that originated on the
+                // other device therefore stayed alive on the server and was pulled back in.
+                // These helpers read the rows first and queue a delete for each with its
+                // real serverId.
+                SyncQueueHelper.deletePaymentsByReference(db, payment.reference)
+                SyncQueueHelper.deleteCashTransactionsByReference(db, payment.reference)
 
                 // Reverse exactly what savePayment() applied: it adjusted by -amount,
                 // so undoing it is +amount.
@@ -852,7 +854,17 @@ class PartyTransactionActivity : AppCompatActivity() {
             // NEW: standalone payments recorded via the Receive Payment/Make Payment button
             // — merged chronologically with the sale/purchase bills below so the full money
             // trail for this party shows in one list instead of only ever showing bills.
+            // FIX (audit — supplier list showed a phantom "Payment Made" row for every purchase,
+            // with live Edit/Delete buttons): savePurchase() writes a "Purchase payment" row
+            // (reference == the purchase's billNo) for whatever was paid at bill time. That
+            // money is already the purchase's own `paid`, so listing it again double-counted
+            // "Total Paid" and let the user Edit/Delete it here — which moved the party balance
+            // WITHOUT touching the purchase's `paid` (permanent drift). Only genuine standalone
+            // payments (manual Receive/Make Payment) belong in this list.
+            val ownBillIds: Set<String> = if (isCustomer) db.saleDao().salesByCustomer(partyId).map { it.invoice }.toHashSet()
+                else db.purchaseDao().purchasesBySupplier(partyId).map { it.billNo }.toHashSet()
             val payments = db.paymentDao().listByParty(if (isCustomer) "customer" else "supplier", partyId)
+                .filter { it.reference !in ownBillIds }
 
             val entries = mutableListOf<TxEntry>()
 
@@ -922,7 +934,9 @@ class PartyTransactionActivity : AppCompatActivity() {
             }
             // Suppliers have no dueDate field on Purchase in the current schema, so
             // "Overdue" is customer-only for now — the tile still shows Rs 0.00 for suppliers.
-            val paymentsSum = payments.sumOf { it.amount }
+            // FIX (audit): a payment linked to a bill is already folded into that bill's `paid`
+            // (applyBillPaidDelta) — counting it again here inflated "Total Paid".
+            val paymentsSum = payments.filter { it.billReference.isBlank() }.sumOf { it.amount }
             updateDashboardStats(totalAmount, totalPaidOnBills, paymentsSum, overdueAmount, creditLimit, lastActivityAt)
 
             payments.forEach { pay ->
@@ -1369,7 +1383,11 @@ class PartyTransactionActivity : AppCompatActivity() {
                     db.saleDao().updateSale(updatedSale)
 
                     sale.customerId?.let { custId ->
-                        SyncQueueHelper.adjustCustomerBalance(db, custId, deltaAmount)
+                        // FIX (audit): the balance is total - paid. When `paid` had to be capped
+                        // (bill got cheaper than what was already paid) the outstanding did NOT
+                        // fall by the full deltaAmount — the shrunk `paid` must be added back or
+                        // the customer ends up with a phantom credit on top of the cash refund.
+                        SyncQueueHelper.adjustCustomerBalance(db, custId, deltaAmount + (sale.paid - newPaid))
                         db.customerDao().find(custId)?.let { c -> SyncQueueHelper.enqueueCustomer(db, c) }
                     }
                     if (product != null) {
@@ -1425,7 +1443,11 @@ class PartyTransactionActivity : AppCompatActivity() {
                         deletedWholeSale = true
                         db.saleDao().deleteSale(sale.invoice)
                         sale.customerId?.let { custId ->
-                            SyncQueueHelper.adjustCustomerBalance(db, custId, -item.amount)
+                            // FIX (audit): only the OUTSTANDING part of the bill was ever on the
+                            // customer's balance (total - paid). Subtracting the last item's full
+                            // amount also removed the paid part => phantom credit.
+                            val outstanding = sale.total - sale.paid
+                            if (outstanding > 0.009) SyncQueueHelper.adjustCustomerBalance(db, custId, -outstanding)
                             db.customerDao().find(custId)?.let { c -> SyncQueueHelper.enqueueCustomer(db, c) }
                         }
                         // FIX (#9 — cash transaction consistency): the whole sale is
@@ -1438,6 +1460,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                         // deletePurchase()'s matching comment): raw deleteByReference() never
                         // enqueued the removal, so it never reached other devices/Firestore.
                         SyncQueueHelper.deleteCashTransactionsByReference(db, sale.invoice)
+                        SyncQueueHelper.voidLinkedPayments(db, sale.invoice, null, "")
                         SyncQueueHelper.enqueueDelete(db, "sale", SyncQueueHelper.saleEntityId(sale))
                     } else {
                         val newTotal = sale.total - item.amount
@@ -1449,7 +1472,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                         )
                         db.saleDao().updateSale(updatedSale)
                         sale.customerId?.let { custId ->
-                            SyncQueueHelper.adjustCustomerBalance(db, custId, -item.amount)
+                            // FIX (audit): outstanding change = -item.amount + (paid that got capped).
+                            SyncQueueHelper.adjustCustomerBalance(db, custId, -item.amount + (sale.paid - newPaid))
                             db.customerDao().find(custId)?.let { c -> SyncQueueHelper.enqueueCustomer(db, c) }
                         }
                         SyncQueueHelper.enqueueSale(db, updatedSale)
@@ -1588,7 +1612,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                     db.purchaseDao().updatePurchase(updatedPurchase)
 
                     purchase.supplierId?.let { supId ->
-                        SyncQueueHelper.adjustSupplierBalance(db, supId, deltaAmount)
+                        // FIX (audit): see applySaleItemEdit() — add back the capped `paid`.
+                        SyncQueueHelper.adjustSupplierBalance(db, supId, deltaAmount + (purchase.paid - newPaid))
                         db.supplierDao().find(supId)?.let { s -> SyncQueueHelper.enqueueSupplier(db, s) }
                     }
                     if (product != null) {
@@ -1664,7 +1689,9 @@ class PartyTransactionActivity : AppCompatActivity() {
                         deletedWholePurchase = true
                         db.purchaseDao().deletePurchase(purchase.billNo)
                         purchase.supplierId?.let { supId ->
-                            SyncQueueHelper.adjustSupplierBalance(db, supId, -item.amount)
+                            // FIX (audit): only total - paid was ever on the supplier's balance.
+                            val outstanding = purchase.total - purchase.paid
+                            if (outstanding > 0.009) SyncQueueHelper.adjustSupplierBalance(db, supId, -outstanding)
                             db.supplierDao().find(supId)?.let { s -> SyncQueueHelper.enqueueSupplier(db, s) }
                         }
                         // FIX (#9 — cash transaction consistency): the whole purchase is
@@ -1678,6 +1705,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                         // there, but wasn't. Using the safe helpers actually closes it.
                         SyncQueueHelper.deletePaymentsByReference(db, purchase.billNo)
                         SyncQueueHelper.deleteCashTransactionsByReference(db, purchase.billNo)
+                        SyncQueueHelper.voidLinkedPayments(db, purchase.billNo, null, "")
                         SyncQueueHelper.enqueueDelete(db, "purchase", SyncQueueHelper.purchaseEntityId(purchase))
                     } else {
                         val newTotal = purchase.total - item.amount
@@ -1689,7 +1717,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                         )
                         db.purchaseDao().updatePurchase(updatedPurchase)
                         purchase.supplierId?.let { supId ->
-                            SyncQueueHelper.adjustSupplierBalance(db, supId, -item.amount)
+                            // FIX (audit): outstanding change = -item.amount + (paid that got capped).
+                            SyncQueueHelper.adjustSupplierBalance(db, supId, -item.amount + (purchase.paid - newPaid))
                             db.supplierDao().find(supId)?.let { s -> SyncQueueHelper.enqueueSupplier(db, s) }
                         }
                         SyncQueueHelper.enqueuePurchase(db, updatedPurchase)
@@ -1733,28 +1762,11 @@ class PartyTransactionActivity : AppCompatActivity() {
         val paidDelta = newPaid - oldPaid
         if (paidDelta == 0.0) return newPaid
 
-        // A bill may have been paid in several split transactions. Adjust the
-        // aggregate linked records, not just the first row, otherwise the bill's
-        // `paid` value and cash/payment reports diverge after an item edit/delete.
-        suspend fun reduceCashRecords(amountToRemove: Double) {
-            if (amountToRemove <= 0.0) return
-            var remaining = amountToRemove
-            val rows = db.cashTransactionDao().allByReference(reference)
-                .sortedByDescending { it.createdAt }
-            for (tx in rows) {
-                if (remaining <= 0.0) break
-                val reduction = minOf(remaining, tx.amount.coerceAtLeast(0.0))
-                if (reduction <= 0.0) continue
-                val updatedTx = tx.copy(
-                    amount = (tx.amount - reduction).coerceAtLeast(0.0),
-                    updatedAt = System.currentTimeMillis(),
-                    dirty = true
-                )
-                db.cashTransactionDao().update(updatedTx)
-                SyncQueueHelper.enqueueCashTransaction(db, updatedTx)
-                remaining -= reduction
-            }
-        }
+        // FIX (audit — inconsistent with returns): this used to SHRINK the original cash row in
+        // place, silently rewriting the original day's cash book (and any already-closed Cash
+        // Register day now showed a phantom shortage). The excess the bill no longer owes is
+        // money handed back today, so record it as a dated reversal exactly like a return does
+        // (SyncQueueHelper.reverseCashByReference); the original day stays untouched.
 
         suspend fun reducePaymentRecords(amountToRemove: Double) {
             if (amountToRemove <= 0.0) return
@@ -1778,7 +1790,11 @@ class PartyTransactionActivity : AppCompatActivity() {
 
         if (paidDelta < 0.0) {
             val reduction = -paidDelta
-            reduceCashRecords(reduction)
+            SyncQueueHelper.reverseCashByReference(
+                db, reference, reduction,
+                if (isPurchase) "IN" else "OUT",
+                if (isPurchase) "Purchase Adjustment" else "Sale Adjustment"
+            )
             if (isPurchase) reducePaymentRecords(reduction)
         }
         return newPaid

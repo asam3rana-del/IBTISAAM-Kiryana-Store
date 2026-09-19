@@ -306,6 +306,8 @@ class RoomPurchaseRepository(
             // silently stayed behind on every other device (and in Firestore) forever.
             SyncQueueHelper.deletePaymentsByReference(db, billNo)
             SyncQueueHelper.deleteCashTransactionsByReference(db, billNo)
+            // FIX (audit): bill-linked payments would otherwise live on as orphan payments.
+            SyncQueueHelper.voidLinkedPayments(db, billNo, null, "")
         }
         SyncQueueHelper.enqueue(
             db, "purchase", "purchase:$billNo", "delete",
@@ -450,8 +452,17 @@ class RoomPurchaseRepository(
                 if (supplierId != null && outstanding > 0) {
                     SyncQueueHelper.adjustSupplierBalance(db, supplierId!!, outstanding)
                 }
-                if (supplierId != null && amountPaid > 0) {
-                    val payment = Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = amountPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment")
+                // FIX (audit — editing a purchase that already had a bill-linked payment counted
+                // that money twice in Payments/cash book): see RoomSaleRepository.saveSale().
+                // amountPaid includes payments recorded later via "Make Payment > link to bill";
+                // those keep their own payment + cash rows, so only the remainder is re-recorded.
+                val linkedPaid = if (original != null) db.paymentDao().linkedPaidForBill(billNo) else 0.0
+                val ownPaid = (amountPaid - linkedPaid).coerceAtLeast(0.0)
+                if (supplierId != null && ownPaid > 0) {
+                    // FIX (audit): createdAt used to default to "now" while the matching cash
+                    // entry below uses the purchase's own (possibly back-dated) date, so the
+                    // same money sat on two different days.
+                    val payment = Payment(reference = billNo, partyType = "supplier", partyId = supplierId, amount = ownPaid, method = paymentMethod, note = if (original != null) "Purchase payment (edited)" else "Purchase payment", createdAt = purchaseDateMillis)
                     val paymentId = db.paymentDao().insert(payment)
                     SyncQueueHelper.enqueuePayment(db, payment.copy(id = paymentId))
                 }
@@ -464,7 +475,14 @@ class RoomPurchaseRepository(
                 // RoomSaleRepository.saveSale's effectivePayments.
                 val effectivePayments = if (payments.isNotEmpty()) payments
                     else if (amountPaid > 0.009) listOf(paymentMethod to amountPaid) else emptyList()
-                for ((payMethod, amount) in effectivePayments) {
+                var linkedToSkip = linkedPaid
+                for ((payMethod, rawAmount) in effectivePayments) {
+                    var amount = rawAmount
+                    if (linkedToSkip > 0.009) {
+                        val cut = minOf(linkedToSkip, amount)
+                        amount -= cut
+                        linkedToSkip -= cut
+                    }
                     if (amount <= 0.009) continue
                     // FIX (back-dated purchase missing from Cash Register on that date):
                     // this always defaulted to CashTransaction's createdAt=now, so a

@@ -1146,6 +1146,12 @@ interface ProductDao {
     // device already pushed gets updated in place instead of inserted as a duplicate.
     @Update suspend fun update(e:Expense)
     @Query("SELECT * FROM expenses WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):Expense?
+    // ADDED (audit — one-time cleanup of the "expense saved twice" bug): rows never stamped with
+    // a serverId, and the pulled twin of such a row (same fields, serverId in THIS device's id
+    // format). See SyncQueueHelper.mergeOwnDuplicateExpenses().
+    @Query("SELECT * FROM expenses WHERE serverId IS NULL") suspend fun unstamped():List<Expense>
+    @Query("SELECT * FROM expenses WHERE substr(serverId,1,length(:prefix))=:prefix AND createdAt=:createdAt AND amount=:amount AND category=:category AND description=:description AND method=:method LIMIT 1")
+    suspend fun findOwnTwin(prefix:String, createdAt:Long, amount:Double, category:String, description:String, method:String):Expense?
 }
 
 @Dao interface HeldDao {
@@ -1212,6 +1218,12 @@ interface ProductDao {
 @Dao interface PaymentDao {
     @Insert suspend fun insert(p:Payment): Long
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double
+    // ADDED (audit): total of the standalone payments linked to one bill via billReference
+    // (i.e. NOT the bill's own embedded payment row, whose reference == the bill). Those are
+    // already part of the bill's `paid`, so an edit of the bill must not re-record them.
+    @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE billReference=:bill AND reference!=:bill") suspend fun linkedPaidForBill(bill:String):Double
+    // ADDED (audit): the standalone payments linked to one bill (see linkedPaidForBill above).
+    @Query("SELECT * FROM payments WHERE billReference=:bill AND reference!=:bill") suspend fun linkedPayments(bill:String):List<Payment>
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE method=:method AND createdAt BETWEEN :start AND :end") suspend fun totalByMethodBetween(method:String,start:Long,end:Long):Double
     @Query("DELETE FROM payments WHERE reference=:ref") suspend fun deleteByReference(ref:String)
     // FIX (duplicate-payment-on-sync bug): every deleteByReference() call site used to
@@ -1359,6 +1371,10 @@ interface ProductDao {
 @Dao interface CashRegisterDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(r:CashRegister)
     @Query("SELECT * FROM cash_register WHERE date=:date LIMIT 1") suspend fun find(date:String):CashRegister?
+    // ADDED (audit): most recent CLOSED register before `date` (keys are yyyy-MM-dd, so string
+    // order == date order). Used to carry the opening balance forward even when the shop
+    // skipped a day (holiday / forgot to open) instead of only looking at "yesterday".
+    @Query("SELECT * FROM cash_register WHERE date < :date AND closed = 1 ORDER BY date DESC LIMIT 1") suspend fun lastClosedBefore(date:String):CashRegister?
     @Query("SELECT * FROM cash_register ORDER BY date DESC") fun all():Flow<List<CashRegister>>
     // NEW (Cash Register sync): one-shot snapshot for SyncQueueHelper.resyncAllLocalData(),
     // same pattern as UnitDao.allOnce()/CategoryDao.allOnce() — a plain suspend list instead

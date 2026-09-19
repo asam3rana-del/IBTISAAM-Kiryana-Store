@@ -211,23 +211,46 @@ object SyncApi {
                     val map = gson.fromJson(entry.payloadJson, Map::class.java) as Map<String, Any?>
                     val delta = (map["delta"] as? Number)?.toDouble() ?: 0.0
                     val fieldName = if (entry.operation == "increment_stock") "stock" else "balance"
-                    val updateMap = mapOf(
-                        fieldName to com.google.firebase.firestore.FieldValue.increment(delta),
-                        "updatedAt" to (map["updatedAt"] ?: System.currentTimeMillis()),
-                        // FIX (bulk stuck-item repair): always stamp the CURRENT branch code,
-                        // never the one baked into this entry's payload at enqueue time. An
-                        // entry enqueued before Branch Code / branch_members was configured
-                        // correctly on this device would otherwise carry a blank or stale
-                        // branchId forever — retrying it verbatim (e.g. via "Retry Now") can
-                        // never succeed no matter how many times it's retried, since Firestore
-                        // Rules check this field against branch_members on every attempt. The
-                        // device's branch code rarely if ever changes after setup, so re-stamping
-                        // it fresh on every push is always correct, not just a one-time patch.
-                        "branchId" to BranchConfigStore.current
-                    )
-                    db.collection(collection).document(entry.entityId)
-                        .set(updateMap, com.google.firebase.firestore.SetOptions.merge())
-                        .await()
+                    // FIX (audit — retried increment applied TWICE): a plain set(FieldValue.increment)
+                    // is not idempotent. Firestore's own offline write queue keeps the write and
+                    // delivers it later, while THIS app's queue also marks the entry failed
+                    // (timeout / worker cancelled / app killed before markSynced) and retries it
+                    // => the balance or stock moved twice. Now the increment runs inside a
+                    // TRANSACTION (which fails cleanly when offline instead of being queued) and
+                    // records this entry's unique op id in the same document, so a retry of an
+                    // entry that already landed is recognised and skipped. Stored inside the
+                    // entity doc itself (no new collection => Firestore rules unchanged); ids
+                    // older than 30 days / beyond 1000 entries are pruned to keep the doc small.
+                    val opId = "${com.grocerypos.v11.DeviceTag.current}-${entry.id}-${entry.createdAt}"
+                    val docRef = db.collection(collection).document(entry.entityId)
+                    val nowTs = System.currentTimeMillis()
+                    val updatedAtValue: Any = map["updatedAt"] ?: nowTs
+                    val branchNow = BranchConfigStore.current
+                    db.runTransaction { tx ->
+                        val snap = tx.get(docRef)
+                        @Suppress("UNCHECKED_CAST")
+                        val applied = (snap.get("appliedOps") as? Map<String, Any?>) ?: emptyMap()
+                        if (applied.containsKey(opId)) return@runTransaction null
+                        val cutoff = nowTs - 30L * 24 * 60 * 60 * 1000
+                        val kept = LinkedHashMap<String, Any?>()
+                        applied.entries
+                            .filter { (it.value as? Number)?.toLong()?.let { t -> t >= cutoff } == true }
+                            .sortedBy { (it.value as Number).toLong() }
+                            .takeLast(999)
+                            .forEach { kept[it.key] = it.value }
+                        kept[opId] = nowTs
+                        tx.set(
+                            docRef,
+                            mapOf(
+                                fieldName to com.google.firebase.firestore.FieldValue.increment(delta),
+                                "updatedAt" to updatedAtValue,
+                                "branchId" to branchNow,
+                                "appliedOps" to kept
+                            ),
+                            com.google.firebase.firestore.SetOptions.mergeFields(fieldName, "updatedAt", "branchId", "appliedOps")
+                        )
+                        null
+                    }.await()
                 }
                 else -> {
                     @Suppress("UNCHECKED_CAST")

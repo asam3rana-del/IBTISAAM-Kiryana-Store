@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
+import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
@@ -183,6 +184,35 @@ class BalanceSheetActivity : AppCompatActivity() {
                 addDivider(it)
                 addStatementRow(it, Loc.t(this@BalanceSheetActivity, "Total Liabilities + Capital", "کل واجبات + سرمایہ"), totalLiabilities + capital + netProfit, bold = true, big = true)
             })
+
+            // ADDED (audit — the sheet could never show a mistake): Capital is a plug, so Assets always
+            // equal Liabilities + Capital no matter what is wrong underneath. These checks compare
+            // the figures against independent sources so real problems become visible.
+            val warnings = mutableListOf<String>()
+            val drift = PartyRepository(db, applicationContext).recalculateBalances(dryRun = true)
+            if (drift.customersFixed > 0 || drift.suppliersFixed > 0) {
+                warnings.add(Loc.t(
+                    this@BalanceSheetActivity,
+                    "${drift.customersFixed} customer(s) and ${drift.suppliersFixed} supplier(s) have a stored balance that does not match their bills/payments — run Fix Balances.",
+                    "${drift.customersFixed} کسٹمر اور ${drift.suppliersFixed} سپلائر کا بیلنس ان کے بلوں/ادائیگیوں سے میل نہیں کھاتا — Fix Balances چلائیں۔"
+                ))
+            }
+            if (cashInHand < -0.009 || bankBalance < -0.009) {
+                warnings.add(Loc.t(
+                    this@BalanceSheetActivity,
+                    "Cash or Bank is negative — an opening balance was probably never entered (add it once as a Cash In entry) or an entry is wrong.",
+                    "کیش یا بینک منفی ہے — غالباً ابتدائی رقم درج نہیں ہوئی (ایک بار کیش ان میں لکھیں) یا کوئی انٹری غلط ہے۔"
+                ))
+            }
+            if (warnings.isNotEmpty()) {
+                resultsBox.addView(spacer(10))
+                resultsBox.addView(TextView(this@BalanceSheetActivity).apply {
+                    text = "\u26A0 " + warnings.joinToString("\n\n\u26A0 ")
+                    textSize = 12.5f
+                    setTextColor(Color.parseColor(red))
+                    setPadding(6, 4, 6, 8)
+                })
+            }
 
             resultsBox.addView(spacer(10))
             resultsBox.addView(TextView(this@BalanceSheetActivity).apply {

@@ -212,10 +212,12 @@ class CashRegisterActivity : AppCompatActivity() {
 
         stateContainer.removeAllViews()
         if (reg == null) {
-            val yCal = Calendar.getInstance()
-            yCal.add(Calendar.DAY_OF_YEAR, -1)
-            val yesterday = db.cashRegisterDao().find(dateKeyFmt.format(yCal.time))
-            renderNotOpened(yesterday?.closingCash ?: 0.0, yesterday?.closingBank ?: 0.0)
+            // FIX (audit): the opening balance only ever looked at literally "yesterday".
+            // If the register wasn't opened/closed on the previous day (holiday, forgot,
+            // shop closed) the new day silently started from Rs 0. Carry forward from the
+            // most recent CLOSED register instead.
+            val lastClosed = db.cashRegisterDao().lastClosedBefore(todayKey())
+            renderNotOpened(lastClosed?.closingCash ?: 0.0, lastClosed?.closingBank ?: 0.0)
         } else if (!reg.closed) {
             renderOpen(reg, cashIn, cashOut, bankIn, bankOut)
         } else {
@@ -319,7 +321,7 @@ class CashRegisterActivity : AppCompatActivity() {
 
         if (prefillCash != 0.0 || prefillBank != 0.0) {
             card.addView(TextView(this).apply {
-                text = Loc.t(this@CashRegisterActivity, "Carried forward from yesterday's closing", "کل کی بندش سے منتقل شدہ")
+                text = Loc.t(this@CashRegisterActivity, "Carried forward from last closing", "پچھلی بندش سے منتقل شدہ")
                 textSize = 11f; setTextColor(Color.parseColor(textMuted)); setPadding(2, 0, 0, 14)
             })
         }
@@ -334,6 +336,14 @@ class CashRegisterActivity : AppCompatActivity() {
                 val ob = bankInput.text.toString().toDoubleOrNull() ?: 0.0
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@CashRegisterActivity)
+                    // FIX (audit): upsert() is REPLACE. If another device already opened (or even
+                    // closed) today's register and this screen was stale, tapping OPEN wiped
+                    // that register's closing figures and re-opened it. Re-check first.
+                    if (db.cashRegisterDao().find(todayKey()) != null) {
+                        Toast.makeText(this@CashRegisterActivity, Loc.t(this@CashRegisterActivity, "Today's register is already opened on another device", "آج کا رجسٹر کسی اور ڈیوائس پر پہلے ہی کھل چکا ہے"), Toast.LENGTH_LONG).show()
+                        refresh()
+                        return@launch
+                    }
                     val newReg = CashRegister(date = todayKey(), openingCash = oc, openingBank = ob, closingCash = 0.0, closingBank = 0.0, closed = false)
                     db.cashRegisterDao().upsert(newReg)
                     com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, newReg, this@CashRegisterActivity)

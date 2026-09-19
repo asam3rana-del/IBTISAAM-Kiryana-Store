@@ -328,7 +328,12 @@ class ExpenseActivity : AppCompatActivity() {
             val expense = Expense(category = category, description = fullDescription, amount = amt, method = method)
             val newId = db.expenseDao().insert(expense)
             val savedExpense = expense.copy(id = newId)
-            SyncQueueHelper.enqueue(db, "expense", SyncQueueHelper.expenseEntityId(savedExpense), "create", SyncQueueHelper.expenseJson(savedExpense))
+            // FIX (audit — every new expense showed up TWICE after the next sync): this used
+            // to call the raw enqueue(), which never stamps the local row's serverId. The
+            // pull that follows a push returns this device's own document too, and with no
+            // serverId on the local row findByServerId() found nothing, so the pull inserted
+            // a second copy. enqueueExpense() stamps serverId first, so the pull just updates.
+            SyncQueueHelper.enqueueExpense(db, savedExpense)
 
             // FIX (Bug 2 — Expenses never touch Cash Register / Cash Activity /
             // Balance Sheet's "Cash in Hand"): mirrors RoomPurchaseRepository.savePurchase()
@@ -341,7 +346,10 @@ class ExpenseActivity : AppCompatActivity() {
             val cashTx = CashTransaction(
                 type = "OUT", method = method, amount = amt,
                 reason = "Expense" + (if (category.isNotEmpty()) ": $category" else ""),
-                reference = "expense:${savedExpense.id}", createdAt = savedExpense.createdAt
+                // FIX (audit): reference used the bare LOCAL id ("expense:7"). Two devices
+                // both have an expense #7, so deleting one device's expense also deleted the
+                // OTHER device's cash-out entry (same reference). Now device-unique.
+                reference = SyncQueueHelper.expenseEntityId(savedExpense), createdAt = savedExpense.createdAt
             )
             val cashTxId = db.cashTransactionDao().insert(cashTx)
             SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
@@ -462,7 +470,11 @@ class ExpenseActivity : AppCompatActivity() {
                     // FIX (Bug 2 — Cash in Hand): without this, deleting an expense
                     // left its CashTransaction(type="OUT") behind, permanently
                     // understating Cash in Hand by that amount forever after.
-                    SyncQueueHelper.deleteCashTransactionsByReference(db, "expense:${e.id}")
+                    SyncQueueHelper.deleteCashTransactionsByReference(db, SyncQueueHelper.expenseEntityId(e))
+                    // Legacy rows (saved before this fix) used "expense:<localId>". That old
+                    // format is only safe to touch for an expense created on THIS device.
+                    val madeHere = e.serverId == null || e.serverId.startsWith("expense:${com.grocerypos.v11.DeviceTag.current}-")
+                    if (madeHere) SyncQueueHelper.deleteCashTransactionsByReference(db, "expense:${e.id}")
                     loadTotals()
                 }
             }

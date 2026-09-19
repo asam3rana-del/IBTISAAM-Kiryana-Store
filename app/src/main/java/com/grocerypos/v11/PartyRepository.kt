@@ -102,7 +102,10 @@ class PartyRepository(
     // adjustCustomerBalance/adjustSupplierBalance path every other write already
     // uses — so the correction is a normal, sync-safe increment like any other,
     // not a raw overwrite that could clobber another device's not-yet-synced change.
-    suspend fun recalculateBalances(): RecalcResult {
+    // [dryRun] = true (ADDED, audit): only COUNT the parties whose stored balance has drifted from
+    // their bills/payments, without writing or queuing anything — used by the Balance Sheet's
+    // data-check line.
+    suspend fun recalculateBalances(dryRun: Boolean = false): RecalcResult {
         var customersFixed = 0
         var suppliersFixed = 0
         val customers = db.customerDao().allList()
@@ -119,12 +122,15 @@ class PartyRepository(
             // reference is a unique timestamp, never a real invoice number —
             // should reduce the balance here.
             val saleInvoices = sales.map { it.invoice }.toHashSet()
+            // FIX (audit — "Fix Balances" corrupted parties that had a bill-linked payment): a
+            // payment linked to a bill (billReference) is already inside that bill's `paid`
+            // (applyBillPaidDelta), so it must not be subtracted a second time here.
             val payments = db.paymentDao().listByParty("customer", c.id)
-                .filter { it.reference !in saleInvoices }
+                .filter { it.reference !in saleInvoices && !(it.billReference.isNotBlank() && it.billReference in saleInvoices) }
             val trueBalance = sales.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
             val delta = trueBalance - c.balance
             if (Math.abs(delta) > 0.009) {
-                SyncQueueHelper.adjustCustomerBalance(db, c.id, delta)
+                if (!dryRun) SyncQueueHelper.adjustCustomerBalance(db, c.id, delta)
                 customersFixed++
             }
         }
@@ -139,16 +145,17 @@ class PartyRepository(
             // standalone payments (unique timestamped reference, never a real
             // billNo) get subtracted here.
             val billNos = purchases.map { it.billNo }.toHashSet()
+            // FIX (audit): same as the customer side — skip bill-linked payments.
             val payments = db.paymentDao().listByParty("supplier", s.id)
-                .filter { it.reference !in billNos }
+                .filter { it.reference !in billNos && !(it.billReference.isNotBlank() && it.billReference in billNos) }
             val trueBalance = purchases.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
             val delta = trueBalance - s.balance
             if (Math.abs(delta) > 0.009) {
-                SyncQueueHelper.adjustSupplierBalance(db, s.id, delta)
+                if (!dryRun) SyncQueueHelper.adjustSupplierBalance(db, s.id, delta)
                 suppliersFixed++
             }
         }
-        if (customersFixed > 0 || suppliersFixed > 0) SyncQueueHelper.trigger(appContext)
+        if (!dryRun && (customersFixed > 0 || suppliersFixed > 0)) SyncQueueHelper.trigger(appContext)
         return RecalcResult(customersFixed, suppliersFixed)
     }
 

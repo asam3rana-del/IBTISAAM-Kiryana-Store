@@ -264,7 +264,19 @@ class RoomSaleRepository(
             // this falls back to exactly the old single-entry behavior.
             val effectivePayments = if (payments.isNotEmpty()) payments
                 else if (paid > 0.009) listOf(method to paid) else emptyList()
-            for ((payMethod, amount) in effectivePayments) {
+            // FIX (audit — editing a bill that already had a bill-linked payment counted that
+            // money twice in the cash book): the edit screen pre-fills `paid` with sale.paid,
+            // which already includes payments recorded later via "Receive Payment > link to
+            // bill". Those payments have their own cash entry (manual-...), so re-creating a
+            // full-`paid` cash-in here doubled them. Skip that part.
+            var linkedToSkip = if (original != null) db.paymentDao().linkedPaidForBill(invoice) else 0.0
+            for ((payMethod, rawAmount) in effectivePayments) {
+                var amount = rawAmount
+                if (linkedToSkip > 0.009) {
+                    val cut = minOf(linkedToSkip, amount)
+                    amount -= cut
+                    linkedToSkip -= cut
+                }
                 if (amount <= 0.009) continue
                 // FIX (same bug as RoomPurchaseRepository.savePurchase): a back-dated
                 // sale's cash-in entry defaulted to createdAt=now instead of the
@@ -334,6 +346,8 @@ class RoomSaleRepository(
             // enqueued the removal — see RoomPurchaseRepository.deletePurchase()'s
             // matching comment.
             SyncQueueHelper.deleteCashTransactionsByReference(db, invoice)
+            // FIX (audit): bill-linked payments would otherwise live on as orphan payments.
+            SyncQueueHelper.voidLinkedPayments(db, invoice, null, "")
         }
         // FIX (deleted sale never disappears on other devices): this deleted the sale
         // row locally and triggered a sync push, but never actually enqueued a "sale"

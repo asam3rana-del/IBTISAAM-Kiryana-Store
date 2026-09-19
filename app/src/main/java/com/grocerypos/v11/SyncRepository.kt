@@ -73,6 +73,9 @@ object SyncRepository {
 
         // ---- 3. APPLY: merge pulled changes into Room ----
         SyncApi.applyServerChanges(db, changes)
+        // One-time-style repair, cheap when there is nothing to do (queries only unstamped
+        // expense rows): removes the local twin created by the old "expense saved twice" bug.
+        try { com.grocerypos.v11.SyncQueueHelper.mergeOwnDuplicateExpenses(db) } catch (e: Exception) { /* never block sync */ }
 
         prefs.edit().putLong(KEY_LAST_SYNC, changes.serverTime).apply()
 

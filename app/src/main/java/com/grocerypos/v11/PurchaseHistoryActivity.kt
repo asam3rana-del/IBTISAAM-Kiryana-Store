@@ -746,6 +746,8 @@ class PurchaseHistoryActivity : ThemedActivity() {
                     // instead — see SyncQueueHelper.reverseCashByReference()'s doc comment.
                     SyncQueueHelper.reverseCashByReference(db, billNo, purchase.paid, "IN", "Purchase Return")
                     SyncQueueHelper.deletePaymentsByReference(db, billNo)
+                    // FIX (audit): also take back / drop payments linked to this bill.
+                    SyncQueueHelper.voidLinkedPayments(db, billNo, "IN", "Purchase Return")
                     // FIX (whole-bill return silently un-returning itself): markReturned()
                     // set status='returned' via raw SQL, but the very next line's
                     // updatePurchase(updatedPurchase) is a Room @Update — it REPLACES the

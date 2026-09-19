@@ -313,6 +313,9 @@ class HistoryActivity : AppCompatActivity() {
                 // SaleHistoryActivity.returnSale()'s matching fix): records a dated
                 // reversal instead of deleting the original cash row outright.
                 SyncQueueHelper.reverseCashByReference(db, invoice, sale.paid, "OUT", "Sale Return")
+                // FIX (audit): sale.paid includes payments linked to this bill, but the reversal
+                // above only sees the bill's own cash rows — refund those too and drop them.
+                SyncQueueHelper.voidLinkedPayments(db, invoice, "OUT", "Sale Return")
                 // FIX (returned sale never syncs to other devices): markReturned() was a
                 // raw SQL UPDATE with no matching enqueueSale() afterward — same "bypasses
                 // sync" class of bug as the whole-purchase-return fix above, just missing
@@ -344,6 +347,8 @@ class HistoryActivity : AppCompatActivity() {
                 }
                 if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
                 SyncQueueHelper.deleteCashTransactionsByReference(db, invoice); db.saleDao().deleteItems(invoice); db.saleDao().deleteSale(invoice)
+                // FIX (audit): bill-linked payments would otherwise live on as orphan payments.
+                SyncQueueHelper.voidLinkedPayments(db, invoice, null, "")
             }
             // FIX (deleted sale never disappears on other devices): this delete path
             // never enqueued a "sale" delete entry at all — mirrors RoomSaleRepository.
@@ -625,6 +630,8 @@ class HistoryActivity : AppCompatActivity() {
                         // of deleting the original cash row outright.
                         SyncQueueHelper.reverseCashByReference(db, billNo, purchase.paid, "IN", "Purchase Return")
                         SyncQueueHelper.deletePaymentsByReference(db, billNo)
+                        // FIX (audit): also take back / drop payments linked to this bill.
+                        SyncQueueHelper.voidLinkedPayments(db, billNo, "IN", "Purchase Return")
                         // FIX (whole-bill return silently un-returning itself — see
                         // PurchaseHistoryActivity's matching comment): the updatePurchase()
                         // @Update call right after markReturned() replaces the whole row

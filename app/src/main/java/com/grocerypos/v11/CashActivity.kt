@@ -8,7 +8,9 @@ import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
 import com.grocerypos.v11.CashTransaction
+import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
@@ -52,6 +54,8 @@ class CashActivity : AppCompatActivity() {
         fieldFill = p.fieldFill
     }
 
+    private val NON_EXPENSE = "Non-expense (Withdrawal / Transfer)"
+
     private val expenseCategories = listOf(
         "Food Authority License Fees",
         "Utility Bills",
@@ -61,7 +65,11 @@ class CashActivity : AppCompatActivity() {
         "Fines",
         "Rent",
         "Income Tax Fees",
-        "Miscellaneous"
+        "Miscellaneous",
+        // ADDED (audit): every Cash Out used to be forced under an expense category, so money that
+        // is NOT a business expense (owner withdrawal, bank deposit/transfer) had no honest
+        // choice. This one records a plain cash movement with no Expense.
+        NON_EXPENSE
     )
 
     private lateinit var amount: EditText
@@ -313,7 +321,13 @@ class CashActivity : AppCompatActivity() {
     // ---- logic: category now only applies to CASH OUT entries. CASH IN entries never carry an
     // expense category in the reason text, and the category/misc fields are hidden for CASH IN
     // so users aren't shown irrelevant fields (Rent, Utility Bills, etc.) on money coming in. ----
+    // FIX (audit — double-tap saved the entry twice): the amount field is only cleared AFTER the
+    // suspending insert finishes, so a second tap in that window read the same amount and
+    // inserted a duplicate cash entry (the same duplicate class as the Sale History issue).
+    private var saving = false
+
     private fun saveEntry(type: String) {
+        if (saving) return
         val amt = amount.text.toString().toDoubleOrNull()
         if (amt == null || amt <= 0.0) {
             Toast.makeText(this, Loc.t(this, "Enter a valid amount", "صحیح رقم لکھیں"), Toast.LENGTH_SHORT).show()
@@ -326,7 +340,7 @@ class CashActivity : AppCompatActivity() {
 
         val fullReason = buildString {
             // Category only makes sense for expenses (CASH OUT). Skip it entirely for CASH IN.
-            if (type == "OUT" && category.isNotEmpty()) {
+            if (type == "OUT" && category.isNotEmpty() && category != NON_EXPENSE) {
                 append(category)
                 if (category == "Miscellaneous" && misc.isNotEmpty()) {
                     if (isNotEmpty()) append(" - ")
@@ -339,21 +353,56 @@ class CashActivity : AppCompatActivity() {
             }
         }
 
+        saving = true
         lifecycleScope.launch {
-            val db = PosDatabase.get(this@CashActivity)
-            val tx = CashTransaction(type = type, method = method, amount = amt, reason = fullReason)
-            val newId = db.cashTransactionDao().insert(tx)
-            val savedTx = tx.copy(id = newId)
-            SyncQueueHelper.enqueueCashTransaction(db, savedTx)
-            SyncQueueHelper.trigger(this@CashActivity)
-            Toast.makeText(this@CashActivity, Loc.t(this@CashActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
-            amount.text.clear()
-            reason.text.clear()
-            miscDesc.text.clear()
-            miscDescBox.visibility = View.GONE
-            miscToggle.visibility = View.GONE
-            categorySpinner.setSelection(0)
-            loadTodayTotals()
+            try {
+                val db = PosDatabase.get(this@CashActivity)
+                // FIX (audit — Cash Out with an expense category never became an Expense): the
+                // category was only text inside the cash entry's reason, so Expenses screen,
+                // Reports P&L and Balance Sheet profit ignored it (profit overstated) while the
+                // same spend entered on the Expense screen was counted. A Cash Out under a real
+                // category now creates the Expense + its linked cash entry exactly like
+                // ExpenseActivity.saveExpense(), in one transaction.
+                if (type == "OUT" && category.isNotEmpty() && category != NON_EXPENSE) {
+                    val expenseDesc = buildString {
+                        if (category == "Miscellaneous" && misc.isNotEmpty()) append(misc)
+                        if (note.isNotEmpty()) {
+                            if (isNotEmpty()) append(" | ")
+                            append(note)
+                        }
+                    }
+                    db.withTransaction {
+                        val expense = Expense(category = category, description = expenseDesc, amount = amt, method = method)
+                        val expenseId = db.expenseDao().insert(expense)
+                        val savedExpense = expense.copy(id = expenseId)
+                        SyncQueueHelper.enqueueExpense(db, savedExpense)
+                        val cashTx = CashTransaction(
+                            type = "OUT", method = method, amount = amt,
+                            reason = "Expense: $category",
+                            reference = SyncQueueHelper.expenseEntityId(savedExpense),
+                            createdAt = savedExpense.createdAt
+                        )
+                        val cashTxId = db.cashTransactionDao().insert(cashTx)
+                        SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
+                    }
+                } else {
+                    val tx = CashTransaction(type = type, method = method, amount = amt, reason = fullReason)
+                    val newId = db.cashTransactionDao().insert(tx)
+                    val savedTx = tx.copy(id = newId)
+                    SyncQueueHelper.enqueueCashTransaction(db, savedTx)
+                }
+                SyncQueueHelper.trigger(this@CashActivity)
+                Toast.makeText(this@CashActivity, Loc.t(this@CashActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
+                amount.text.clear()
+                reason.text.clear()
+                miscDesc.text.clear()
+                miscDescBox.visibility = View.GONE
+                miscToggle.visibility = View.GONE
+                categorySpinner.setSelection(0)
+                loadTodayTotals()
+            } finally {
+                saving = false
+            }
         }
     }
 
