@@ -53,6 +53,29 @@ class SyncQueueHelperTest {
         assertEquals("customer:${DeviceTag.current}-42", id)
     }
 
+    // AUDIT FIX: a row that already carries a serverId (e.g. pulled from ANOTHER device) must keep
+    // it — rebuilding the id from this device's tag re-stamped it and created a duplicate document.
+    @Test
+    fun `payment expense and cash transaction ids keep an existing serverId`() {
+        val p = Payment(id = 5L, reference = "r", partyType = "customer", partyId = 1L, amount = 10.0, method = "cash", serverId = "payment:OTHER-9")
+        val e = Expense(id = 5L, category = "Rent", description = "", amount = 10.0, serverId = "expense:OTHER-9")
+        val t = CashTransaction(id = 5L, type = "IN", method = "cash", amount = 10.0, serverId = "cash_transaction:OTHER-9")
+        assertEquals("payment:OTHER-9", SyncQueueHelper.paymentEntityId(p))
+        assertEquals("expense:OTHER-9", SyncQueueHelper.expenseEntityId(e))
+        assertEquals("cash_transaction:OTHER-9", SyncQueueHelper.cashTransactionEntityId(t))
+        assertTrue(p.serverId == SyncQueueHelper.paymentJson(p).let { (jsonMap(it)["serverId"] as String) })
+    }
+
+    @Test
+    fun `payment expense and cash transaction ids fall back to DeviceTag when never synced`() {
+        val p = Payment(id = 5L, reference = "r", partyType = "customer", partyId = 1L, amount = 10.0, method = "cash")
+        val e = Expense(id = 6L, category = "Rent", description = "", amount = 10.0)
+        val t = CashTransaction(id = 7L, type = "IN", method = "cash", amount = 10.0)
+        assertEquals("payment:${DeviceTag.current}-5", SyncQueueHelper.paymentEntityId(p))
+        assertEquals("expense:${DeviceTag.current}-6", SyncQueueHelper.expenseEntityId(e))
+        assertEquals("cash_transaction:${DeviceTag.current}-7", SyncQueueHelper.cashTransactionEntityId(t))
+    }
+
     @Test
     fun `supplierEntityId embeds DeviceTag and local id`() {
         val supplier = Supplier(id = 7L, name = "ABC Traders")
