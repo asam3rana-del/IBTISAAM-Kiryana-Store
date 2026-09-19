@@ -805,24 +805,21 @@ object PrinterHelper {
                     totalHeight += h
                 }
                 is ReceiptLine.ItemRow -> {
-                    // Two stacked lines: line 1 is the item name alone (full width,
-                    // bold); line 2 is rate / qty / amount. Measured using the larger of
-                    // the two possible line-1 sizes (Arabic boost vs the plain 0.92x
-                    // size) so there's enough room either way. Line 2 is measured at
-                    // 0.92x tableFontSize — must match the size actually used at draw
-                    // time above.
-                    paint.textSize = tableFontSize * maxOf(ARABIC_ITEM_FONT_BOOST, 0.92f)
-                    val fmName = paint.fontMetrics
-                    paint.textSize = tableFontSize * 0.92f
-                    val fmDetail = paint.fontMetrics
+                    // FIX ("Product name ab same row use kre hi jo baqi use kr rahe
+                    // ha" — name should sit on the SAME single row as rate/qty/amount,
+                    // matching the classic single-line "Item Rate Qty Amount" table
+                    // format instead of the earlier 2-line-per-item layout). Height is
+                    // now just one line tall, sized off the same nameSize used at draw
+                    // time below so the two passes agree.
+                    val isUrduName = containsArabicScript(line.name)
+                    paint.textSize = tableFontSize * (if (isUrduName) ARABIC_ITEM_FONT_BOOST else 1f)
+                    val fm = paint.fontMetrics
                     paint.textSize = fontSizePx
-                    val h = (fmName.bottom - fmName.top).toInt() +
-                        (fmDetail.bottom - fmDetail.top).toInt() +
-                        (tableRowPaddingV * 0.35f).toInt() + // detailLineGap — must match the draw-time value below
-                        tableRowPaddingV * 2
+                    val h = (fm.bottom - fm.top).toInt() + tableRowPaddingV
                     blocks.add(Block(line, null, h))
                     totalHeight += h
                 }
+
             }
         }
 
@@ -1029,121 +1026,65 @@ object PrinterHelper {
                     y += block.height
                 }
                 is ReceiptLine.ItemRow -> {
-                    // FIX (item name truncation — "item k nechey item name aye"): name
-                    // gets its own full-width line so long/Urdu names don't get squeezed
-                    // into a narrow shared column and ellipsized. rate/qty/amount sit on
-                    // a second line underneath.
-                    //   line 1: <name>                                   (full width, bold)
-                    //   line 2: <rate>              <qty>              <amount>   (amount bold)
-                    //
-                    // FIX (column "sequence" mismatch — "column add ho gae lekin sequence
-                    // nahi"): line 2 used to be drawn as a plain left/center/right split
-                    // across the FULL row width, ignoring [weights] entirely. But the
-                    // header above (Row4: "Item / Rate / Qty / Amount") is laid out in 4
-                    // weighted columns where Item alone gets half the row and Rate/Qty/
-                    // Amount each get a narrow slice on the right — so "Rate"/"Qty"/
-                    // "Amount" sit bunched together on the right side of the header, while
-                    // the old line-2 values were spread evenly across the *entire* width.
-                    // Result: values didn't sit under their own header labels at all. Now
-                    // line 2 uses the exact same column boundaries (via [weights], columns
-                    // 2/3/4 — the Item column's width is skipped since line 2 has no name
-                    // cell) so rate/qty/amount line up under Rate/Qty/Amount every time.
+                    // FIX ("Product name ab same row use kre hi jo baqi use kr rahe
+                    // ha" — item name now sits on the SAME single row as rate/qty/
+                    // amount, matching the classic "Item Rate Qty Amount" table format,
+                    // using the exact same 4 weighted columns as the "Item / Rate /
+                    // Qty / Amount" header (Row4) above — same layout logic as Row4,
+                    // just with a bold name/amount and bidi-safe ellipsizing for the
+                    // name (same ellipsizeByWidth()+StaticLayout approach as before —
+                    // it just now has less width, since it shares the row with three
+                    // other columns instead of getting the full row to itself, so a
+                    // long name may show truncated with "…" more often than before).
                     val tableLeft = margin.toFloat()
                     val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
                     val tableWidth = tableRight - tableLeft
-                    val fullTextWidth = (tableWidth - tableCellPaddingH * 2).coerceAtLeast(1f)
-
                     val totalWeight = line.weights.sum().coerceAtLeast(0.01f)
-                    val colX = FloatArray(line.weights.size + 1)
+                    val colX = FloatArray(5)
                     colX[0] = tableLeft
-                    for (i in line.weights.indices) {
-                        colX[i + 1] = colX[i] + (line.weights[i] / totalWeight) * tableWidth
+                    for (i in 0..3) {
+                        val w = if (i < line.weights.size) line.weights[i] else 0f
+                        colX[i + 1] = colX[i] + (w / totalWeight) * tableWidth
                     }
-                    // colX[1..] are the Rate/Qty/Amount column boundaries (colX[0..1] is
-                    // the Item column, unused here since line 2 has no name cell). Falls
-                    // back to an even 3-way split if fewer than 4 weights were supplied.
-                    val rateColLeft = if (colX.size > 4) colX[1] else tableLeft
-                    val rateColRight = if (colX.size > 4) colX[2] else tableLeft + tableWidth / 3f
-                    val qtyColLeft = if (colX.size > 4) colX[2] else tableLeft + tableWidth / 3f
-                    val qtyColRight = if (colX.size > 4) colX[3] else tableLeft + tableWidth * 2f / 3f
-                    val amountColRight = if (colX.size > 4) colX[4] else tableRight
 
                     val nameIsUrdu = containsArabicScript(line.name)
-                    // FIX ("product name size chota kro"): item name no longer gets the
-                    // full Arabic-boosted size for plain (non-Urdu) names — trimmed to
-                    // 0.92x so it visibly sits smaller than before, while Urdu names still
-                    // get the boost (kept legible) at a slightly reduced factor.
-                    val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 0.92f)
-
-                    // ---- line 1: item name alone, full row width ----
+                    val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 1f)
                     paint.textSize = nameSize
                     paint.isFakeBoldText = true
-                    var fm = paint.fontMetrics
-                    val line1Baseline = y + tableRowPaddingV - fm.top
-                    val line1Height = fm.bottom - fm.top
+                    val fm = paint.fontMetrics
+                    val baseline = y + tableRowPaddingV / 2 - fm.top
 
-                    // FIX (product name not printing in its proper column/row — name
-                    // showed as a single garbled glyph instead of the full text,
-                    // especially for a Urdu name with an embedded English/number run
-                    // like "385ml"): this used to be a raw paint.textAlign +
-                    // canvas.drawText(fitName, ...) call, same as every other line in
-                    // this file *except* this one. Plain canvas.drawText does not run
-                    // Unicode bidi reordering across mixed-direction text — so a mixed
-                    // name got drawn out of order, collapsing to what looked like one
-                    // stray glyph. Center/Left lines above already avoid this by going
-                    // through StaticLayout with setTextDirection(...), which does full
-                    // bidi + shaping. Item names now go through the same StaticLayout
-                    // path so a mixed Urdu/English/number name prints complete and in
-                    // the correct column, exactly like the on-screen preview card.
-                    //
-                    // FIX 2 (a long mixed-content name collapsing to a tiny fragment,
-                    // e.g. printing just "1.5" instead of the full name): the first fix
-                    // used StaticLayout's own setEllipsize(TruncateAt.END), which has a
-                    // known bidi bug and can cut at the wrong point for mixed-direction
-                    // text. Truncation is now done manually via ellipsizeByWidth()
-                    // (plain pixel measurement, no bidi-ellipsize bug) before handing
-                    // the already-fitting string to StaticLayout — StaticLayout is only
-                    // ever asked to lay out text that already fits, so there's no
-                    // ellipsizing decision left for it to get wrong.
+                    val itemColWidth = (colX[1] - colX[0] - tableCellPaddingH * 2).coerceAtLeast(1f)
+                    val fitName = ellipsizeByWidth(paint, line.name, itemColWidth)
                     val nameDir = if (nameIsUrdu) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
-                    val nameWidthPx = fullTextWidth.toInt().coerceAtLeast(1)
-                    val fitName = ellipsizeByWidth(paint, line.name, fullTextWidth)
                     val nameLayout = StaticLayout.Builder
-                        .obtain(fitName, 0, fitName.length, paint, nameWidthPx)
+                        .obtain(fitName, 0, fitName.length, paint, itemColWidth.toInt().coerceAtLeast(1))
                         .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                         .setTextDirection(nameDir)
                         .setMaxLines(1)
                         .build()
                     canvas.save()
-                    // Translate so the layout's own first-line baseline lands exactly
-                    // on line1Baseline (matches where the old drawText call baselined).
-                    canvas.translate(tableLeft + tableCellPaddingH, line1Baseline - nameLayout.getLineBaseline(0))
+                    val nameX = if (nameIsUrdu) colX[1] - tableCellPaddingH - itemColWidth else colX[0] + tableCellPaddingH
+                    canvas.translate(nameX, baseline - nameLayout.getLineBaseline(0))
                     nameLayout.draw(canvas)
                     canvas.restore()
 
-                    // ---- line 2: rate / qty / amount, each centered (amount right-
-                    // aligned) under the matching header column ----
-                    val detailLineGap = tableRowPaddingV * 0.35f
-                    // FIX ("size chota kro"): detail line trimmed slightly below the
-                    // shared tableFontSize so rate/qty/amount print a touch smaller too.
-                    paint.textSize = tableFontSize * 0.92f
+                    paint.textSize = tableFontSize
                     paint.isFakeBoldText = false
-                    fm = paint.fontMetrics
-                    val line2Baseline = y + tableRowPaddingV + line1Height + detailLineGap - fm.top
-
                     paint.textAlign = Paint.Align.CENTER
-                    canvas.drawText(line.rate, (rateColLeft + rateColRight) / 2f, line2Baseline, paint)
-                    canvas.drawText(line.qty, (qtyColLeft + qtyColRight) / 2f, line2Baseline, paint)
+                    canvas.drawText(line.rate, (colX[1] + colX[2]) / 2f, baseline, paint)
+                    canvas.drawText(line.qty, (colX[2] + colX[3]) / 2f, baseline, paint)
 
                     paint.isFakeBoldText = true
                     paint.textAlign = Paint.Align.RIGHT
-                    canvas.drawText(line.amount, amountColRight - tableCellPaddingH, line2Baseline, paint)
+                    canvas.drawText(line.amount, colX[4] - tableCellPaddingH, baseline, paint)
                     paint.isFakeBoldText = false
 
                     paint.textSize = fontSizePx
                     paint.textAlign = Paint.Align.LEFT
                     y += block.height
                 }
+
             }
         }
         return bitmap
