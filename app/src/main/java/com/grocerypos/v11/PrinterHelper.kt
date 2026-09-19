@@ -1201,6 +1201,18 @@ object PrinterHelper {
                     canvas.drawText(line.qty, (colX[1] + colX[2]) / 2f, baseline, paint)
                     canvas.drawText(line.rate, (colX[2] + colX[3]) / 2f, baseline, paint)
 
+                    // FIX ("Bus alignment issue reh gia ha" — item names still
+                    // weren't lining up to the same right edge across rows even
+                    // after the box-position fix above): the underlying cause was
+                    // the same StaticLayout+RTL alignment bug just fixed for the
+                    // shop name — ALIGN_NORMAL/ALIGN_OPPOSITE inside StaticLayout
+                    // don't reliably anchor to the requested edge for these
+                    // paragraph directions on this Android version. Switched to the
+                    // same reliable fix: skip StaticLayout for this column entirely
+                    // and directly measure + draw the (already ellipsized) name with
+                    // Paint.Align.RIGHT at the fixed right edge (colX[4]-padding) —
+                    // the same approach already used for every other value on the
+                    // receipt, which has never had this problem.
                     val nameIsUrdu = containsArabicScript(line.name)
                     val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 1f)
                     paint.textSize = nameSize
@@ -1209,18 +1221,8 @@ object PrinterHelper {
                     val nameBaseline = y + tableRowPaddingV / 2 - nameFm.top
                     val nameColWidth = (colX[4] - colX[3] - tableCellPaddingH * 2).coerceAtLeast(1f)
                     val fitName = ellipsizeByWidth(paint, line.name, nameColWidth)
-                    val nameDir = if (nameIsUrdu) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
-                    val nameLayout = StaticLayout.Builder
-                        .obtain(fitName, 0, fitName.length, paint, nameColWidth.toInt().coerceAtLeast(1))
-                        .setAlignment(if (nameIsUrdu) Layout.Alignment.ALIGN_NORMAL else Layout.Alignment.ALIGN_OPPOSITE)
-                        .setTextDirection(nameDir)
-                        .setMaxLines(1)
-                        .build()
-                    canvas.save()
-                    val nameX = colX[4] - tableCellPaddingH - nameColWidth
-                    canvas.translate(nameX, nameBaseline - nameLayout.getLineBaseline(0))
-                    nameLayout.draw(canvas)
-                    canvas.restore()
+                    paint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText(fitName, colX[4] - tableCellPaddingH, nameBaseline, paint)
 
                     paint.isFakeBoldText = oldBold
                     paint.textSize = fontSizePx
