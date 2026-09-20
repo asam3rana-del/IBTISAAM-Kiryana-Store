@@ -82,6 +82,7 @@ class BulkMissingRatesActivity : ThemedActivity() {
     private lateinit var card: LinearLayout
     private lateinit var nameLabel: TextView
     private lateinit var categoryLabel: TextView
+    private lateinit var costUnitPanel: LinearLayout
     private lateinit var retailField: EditText
     private lateinit var wholesaleField: EditText
     private lateinit var retailMissingTag: TextView
@@ -161,6 +162,18 @@ class BulkMissingRatesActivity : ThemedActivity() {
             setPadding(0, 3, 0, 0)
         }
         card.addView(categoryLabel)
+        card.addView(spacer(12))
+
+        // NEW: Purchase Rate + unit tiers panel — a product might be bought as
+        // one unit (e.g. Ctn) but sold in another (Pcs/Dzn), so knowing the cost
+        // AND which unit each rate below applies to is needed to fill Retail/
+        // Wholesale correctly, not just the bare product name.
+        costUnitPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 12, 16, 12)
+            background = strokedBg(border, "#F6F7FB", 12)
+        }
+        card.addView(costUnitPanel)
         card.addView(spacer(16))
 
         // ---- Retail Rate field, with a small amber "Missing" tag when it's the
@@ -324,6 +337,57 @@ class BulkMissingRatesActivity : ThemedActivity() {
         wholesaleField.setText(trimNum(current.wholesalePrice))
         retailMissingTag.visibility = if (current.salePrice <= 0.0) View.VISIBLE else View.GONE
         wholesaleMissingTag.visibility = if (current.wholesalePrice <= 0.0) View.VISIBLE else View.GONE
+        renderCostUnitPanel(current)
+    }
+
+    // NEW: shows the Purchase Rate (cost) per primary unit, plus every unit
+    // tier this product has (Primary always; Secondary/Tertiary only if set,
+    // with their pack-size conversion) — so it's clear which unit the Retail/
+    // Wholesale rate above should be priced against before typing a number in.
+    private fun costUnitPanel_row(label: String, value: String, bold: Boolean = false) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        addView(TextView(this@BulkMissingRatesActivity).apply {
+            text = label
+            textSize = 12.5f
+            setTextColor(Color.parseColor(textGray))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        addView(TextView(this@BulkMissingRatesActivity).apply {
+            text = value
+            textSize = 12.5f
+            setTypeface(typeface, if (bold) Typeface.BOLD else Typeface.NORMAL)
+            setTextColor(Color.parseColor(textDark))
+        })
+    }
+
+    private fun renderCostUnitPanel(product: Product) {
+        costUnitPanel.removeAllViews()
+        costUnitPanel.addView(costUnitPanel_row(
+            "Purchase Rate (Cost)",
+            "Rs %.2f / %s".format(product.cost, product.unit),
+            bold = true
+        ))
+        costUnitPanel.addView(spacer(6))
+        costUnitPanel.addView(costUnitPanel_row("Primary Unit", product.unit))
+        if (product.secondaryUnit.isNotBlank()) {
+            costUnitPanel.addView(spacer(4))
+            val qtyText = if (product.secondaryUnitQty > 0)
+                " (1 ${product.secondaryUnit} = ${trimNum(product.secondaryUnitQty)} ${product.unit})" else ""
+            costUnitPanel.addView(costUnitPanel_row("Secondary Unit", product.secondaryUnit + qtyText))
+        }
+        if (product.tertiaryUnit.isNotBlank()) {
+            costUnitPanel.addView(spacer(4))
+            val qtyText = if (product.tertiaryUnitQty > 0)
+                " (1 ${product.tertiaryUnit} = ${trimNum(product.tertiaryUnitQty)} ${product.unit})" else ""
+            costUnitPanel.addView(costUnitPanel_row("Tertiary Unit", product.tertiaryUnit + qtyText))
+        }
+        costUnitPanel.addView(spacer(6))
+        costUnitPanel.addView(TextView(this).apply {
+            text = "Enter Retail/Wholesale below per ${product.unit} (the primary unit)."
+            textSize = 11f
+            setTextColor(Color.parseColor(textGray))
+            setPadding(0, 4, 0, 0)
+        })
     }
 
     // Saves whatever the shopkeeper entered for this product (both fields —
