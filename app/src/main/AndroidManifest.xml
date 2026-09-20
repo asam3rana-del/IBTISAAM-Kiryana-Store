@@ -100,6 +100,7 @@
              into every product row (category/unit/secondaryUnit/tertiaryUnit). -->
         <activity android:name=".ui.BulkTranslateActivity" android:exported="false" />
         <activity android:name=".ui.BulkDefaultUnitActivity" android:exported="false" />
+        <activity android:name=".ui.BulkMissingRatesActivity" android:exported="false" />
 
         <!-- NEW: Backup & Reports — combined CSV + PDF export (full data or custom
              date range), with Open/Print/Share from the result screen. -->
