@@ -107,21 +107,6 @@ class PurchaseActivity : ThemedActivity() {
     private lateinit var qty: EditText
     private lateinit var unitSpinner: Spinner
     private lateinit var unitToggleRow: LinearLayout
-    // NEW (Roman Urdu request: purchase ke doran product ke unit ka English naam
-    // add karne ke liye baar baar Purchase band karke Items > Bulk Translate jaana
-    // parta tha) — a small "EN" pencil button next to the Unit field. Only shows
-    // when the currently selected unit still looks Urdu; tapping it renames that
-    // unit to English everywhere (same as Bulk Translate) without ever leaving
-    // this screen — see promptRenameUnitToEnglish()/renameUnitBtn below.
-    private lateinit var renameUnitBtn: TextView
-    // NEW (Roman Urdu request: "Default unit for sale wo b add kr do") — a
-    // second small button next to Unit, visible whenever the picked product
-    // has more than one unit tier (Secondary/Tertiary set). Opens the same
-    // Primary/Secondary/Tertiary/Auto chip picker as Product's "Add Item
-    // Unit" dialog and BulkDefaultUnitActivity's queue, so the shop owner can
-    // set which unit the Sale screen should default to right here in
-    // Purchase — no separate trip to Items > that queue screen.
-    private lateinit var defaultUnitBtn: TextView
     private lateinit var rate: EditText
     private lateinit var totalLotPrice: EditText
     // NEW ("10/10 Purchase screen" item #7): retail (salePrice) / wholesale rate,
@@ -464,24 +449,7 @@ class PurchaseActivity : ThemedActivity() {
         }
         qtyBox.addView(qty)
         val unitBox = innerField().apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) } }
-        val unitLabelRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        unitLabelRow.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Unit", "یونٹ")).apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
-        renameUnitBtn = TextView(this).apply {
-            text = "EN \u270E"; textSize = 10.5f; setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor(teal)); background = strokedBg(teal, cardWhite, 20); setPadding(14, 4, 14, 4)
-            visibility = View.GONE
-            setOnClickListener { promptRenameUnitToEnglish() }
-        }
-        unitLabelRow.addView(renameUnitBtn)
-        defaultUnitBtn = TextView(this).apply {
-            text = "\uD83C\uDFAF"; textSize = 12f; setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor(navy)); background = strokedBg(navy, cardWhite, 20); setPadding(12, 4, 12, 4)
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(6, 0, 0, 0) }
-            setOnClickListener { promptSetDefaultSaleUnit() }
-        }
-        unitLabelRow.addView(defaultUnitBtn)
-        unitBox.addView(unitLabelRow)
+        unitBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Unit", "یونٹ")))
         unitSpinner = Spinner(this)
         unitBox.addView(unitSpinner)
         qtyUnitRow.addView(qtyBox)
@@ -603,7 +571,7 @@ class PurchaseActivity : ThemedActivity() {
                 lastMainRetailRate = 0.0; lastMainWholesaleRate = 0.0
                 currentProductSalePriceMain = 0.0; currentProductWholesalePriceMain = 0.0
                 marginWarningText.visibility = View.GONE
-                conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE; updateRenameUnitButtonVisibility(); updateDefaultUnitButtonVisibility()
+                conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
                 totalAmountText.text = "Total Amount: Rs 0"
                 hideKeyboard()
             }
@@ -887,7 +855,6 @@ class PurchaseActivity : ThemedActivity() {
                 unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, allUnits)
                 conversionInfo.visibility = View.GONE
                 unitToggleRow.visibility = View.GONE
-                updateRenameUnitButtonVisibility(); updateDefaultUnitButtonVisibility()
             }
         })
 
@@ -937,7 +904,7 @@ class PurchaseActivity : ThemedActivity() {
         deleteButton.setOnClickListener { confirmDeletePurchase() }
 
         unitSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { refillAutoRate(); updateLineTotal(); updateRenameUnitButtonVisibility(); updateDefaultUnitButtonVisibility() }
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { refillAutoRate(); updateLineTotal() }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
@@ -1115,7 +1082,7 @@ class PurchaseActivity : ThemedActivity() {
                 itemName.setAdapter(ProductNameAdapter(this@PurchaseActivity) { products })
 
                 allUnits = state.units
-                if (selectedProduct == null) { unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits); updateRenameUnitButtonVisibility(); updateDefaultUnitButtonVisibility() }
+                if (selectedProduct == null) { unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allUnits) }
 
                 if (!state.firmName.isNullOrBlank()) firmNameText.text = state.firmName
             }
@@ -1386,7 +1353,6 @@ class PurchaseActivity : ThemedActivity() {
         }
         unitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, unitOptions)
         buildUnitChips(unitOptions, product.unit)
-        updateRenameUnitButtonVisibility(); updateDefaultUnitButtonVisibility()
         conversionInfo.text = buildString {
             if (unitOptions.contains(product.secondaryUnit) && product.secondaryUnitQty > 0) { append("1 ${product.unit} = ${product.secondaryUnitQty} ${product.secondaryUnit}") }
             if (unitOptions.contains(product.tertiaryUnit) && product.tertiaryUnitQty > 0) { if (isNotEmpty()) append("   •   "); append("1 ${product.secondaryUnit} = ${product.tertiaryUnitQty} ${product.tertiaryUnit}") }
@@ -1565,7 +1531,7 @@ class PurchaseActivity : ThemedActivity() {
         lastMainRetailRate = 0.0; lastMainWholesaleRate = 0.0
         currentProductSalePriceMain = 0.0; currentProductWholesalePriceMain = 0.0
         marginWarningText.visibility = View.GONE
-        conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE; updateRenameUnitButtonVisibility(); updateDefaultUnitButtonVisibility()
+        conversionInfo.visibility = View.GONE; unitToggleRow.visibility = View.GONE
         totalAmountText.text = "Total Amount: Rs 0"
         itemName.requestFocus()
         if (editBillNo == null) saveDraft()
@@ -1611,7 +1577,6 @@ class PurchaseActivity : ThemedActivity() {
         val unitOptions = (unitSpinner.adapter as? ArrayAdapter<*>)?.let { adapter -> (0 until adapter.count).map { adapter.getItem(it).toString() } } ?: listOf(line.unit)
         val unitIndex = unitOptions.indexOf(line.unit)
         if (unitIndex >= 0) { unitSpinner.setSelection(unitIndex); buildUnitChips(unitOptions, line.unit) }
-        updateRenameUnitButtonVisibility(); updateDefaultUnitButtonVisibility()
         updateLineTotal()
         addItemButton.text = com.grocerypos.v11.util.Loc.t(this, "UPDATE ITEM", "آئٹم اپ ڈیٹ کریں")
         cancelEditButton.visibility = View.VISIBLE
@@ -1709,120 +1674,6 @@ class PurchaseActivity : ThemedActivity() {
         }
     }
     private fun trimNum(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
-    // Detects Urdu/Arabic-script text — same check BulkTranslateActivity uses so a
-    // unit that's already English (e.g. "pcs") never shows the EN button.
-    private fun looksUrdu(s: String): Boolean = s.any { it.code in 0x0600..0x06FF }
-
-    private fun updateRenameUnitButtonVisibility() {
-        val current = unitSpinner.selectedItem?.toString()
-        renameUnitBtn.visibility = if (current != null && looksUrdu(current)) View.VISIBLE else View.GONE
-    }
-
-    // Same "more than one unit tier" test BulkDefaultUnitActivity's queue uses
-    // (productsNeedingDefaultUnitReview()'s secondaryUnit!='' condition) — a
-    // single-unit product has nothing to default between, so the button stays
-    // hidden for it.
-    private fun updateDefaultUnitButtonVisibility() {
-        defaultUnitBtn.visibility = if (selectedProduct?.secondaryUnit?.isNotBlank() == true) View.VISIBLE else View.GONE
-    }
-
-    private fun tierNamesFor(product: Product): List<String> {
-        val names = mutableListOf(product.unit)
-        if (product.secondaryUnit.isNotEmpty()) {
-            names.add(product.secondaryUnit)
-            if (product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0) names.add(product.tertiaryUnit)
-        }
-        return names
-    }
-
-    // The fix for "Default unit for sale wo b add kr do": lets the shop owner
-    // set/change Product.defaultUnitIndex for the CURRENTLY picked product
-    // right here in Purchase — same chip picker (Auto + each tier) and same
-    // write (PurchaseRepository.updateDefaultUnitIndex, which mirrors
-    // BulkDefaultUnitActivity's own write) as the separate queue screen, so
-    // this product no longer needs a trip there either.
-    private fun promptSetDefaultSaleUnit() {
-        val product = selectedProduct ?: return
-        val tierNames = tierNamesFor(product)
-        if (tierNames.size < 2) return
-        hideKeyboard()
-        var chosenIndex = if (product.defaultUnitIndex in 0 until tierNames.size) product.defaultUnitIndex else autoDefaultUnitIndexFor(product)
-
-        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 8, 28, 8) }
-        val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        body.addView(chipRow)
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Default Unit for Sale Screen", "سیل اسکرین کے لیے ڈیفالٹ یونٹ"))
-            .setView(body)
-            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Save", "محفوظ کریں")) { _, _ ->
-                safeLaunch("updateDefaultUnitIndex") {
-                    viewModel.updateDefaultUnitIndex(product.barcode, chosenIndex)
-                    selectedProduct = selectedProduct?.let { if (it.barcode == product.barcode) it.copy(defaultUnitIndex = chosenIndex) else it }
-                    Toast.makeText(this@PurchaseActivity, com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Default unit saved", "ڈیفالٹ یونٹ محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .create()
-
-        fun renderChips() {
-            chipRow.removeAllViews()
-            val options = listOf(-1 to com.grocerypos.v11.util.Loc.t(this, "Auto", "آٹو")) + tierNames.mapIndexed { i, label -> i to label }
-            options.forEachIndexed { i, (indexValue, label) ->
-                val isSelected = indexValue == chosenIndex
-                chipRow.addView(TextView(this).apply {
-                    text = label; textSize = 12.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(20, 12, 20, 12)
-                    setTextColor(if (isSelected) Color.WHITE else Color.parseColor(navy))
-                    background = if (isSelected) roundedBg(navy, 30) else strokedBg(navy, cardWhite, 30)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(if (i == 0) 0 else 8, 0, 0, 0) }
-                    setOnClickListener { chosenIndex = indexValue; renderChips() }
-                })
-            }
-        }
-        renderChips()
-        dialog.show()
-    }
-
-    // The actual fix for "purchase bar bar band karke unit ka English naam add
-    // karna parta hai": renames the CURRENTLY selected unit to English right here,
-    // via the same master-table-swap + cascade-into-every-product Room call Bulk
-    // Translate uses (PurchaseRepository.renameUnitToEnglish) — no navigating away
-    // from Purchase, and the in-progress bill/lines are untouched.
-    private fun promptRenameUnitToEnglish() {
-        val oldUnit = unitSpinner.selectedItem?.toString() ?: return
-        hideKeyboard()
-        val input = EditText(this).apply { setPadding(32, 24, 32, 24); hint = "e.g. pcs, kg, dozen" }
-        android.app.AlertDialog.Builder(this)
-            .setTitle(com.grocerypos.v11.util.Loc.t(this, "English name for \"$oldUnit\"", "\"$oldUnit\" کا انگریزی نام"))
-            .setView(input)
-            .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Save", "محفوظ کریں")) { _, _ ->
-                val newUnit = input.text.toString().trim()
-                if (newUnit.isEmpty()) return@setPositiveButton
-                safeLaunch("renameUnitToEnglish") {
-                    viewModel.renameUnitToEnglish(oldUnit, newUnit)
-                    // Reflect the rename immediately in this screen's local state —
-                    // the Flow from observeUnits()/observeProducts() will also catch
-                    // up, but this avoids waiting on it for the line being entered.
-                    allUnits = allUnits.map { if (it == oldUnit) newUnit else it }.distinct()
-                    selectedProduct?.let { p ->
-                        selectedProduct = p.copy(
-                            unit = if (p.unit == oldUnit) newUnit else p.unit,
-                            secondaryUnit = if (p.secondaryUnit == oldUnit) newUnit else p.secondaryUnit,
-                            tertiaryUnit = if (p.tertiaryUnit == oldUnit) newUnit else p.tertiaryUnit
-                        )
-                    }
-                    val options = (unitSpinner.adapter as? ArrayAdapter<*>)?.let { adapter -> (0 until adapter.count).map { i -> adapter.getItem(i).toString() } } ?: listOf(newUnit)
-                    val newOptions = options.map { if (it == oldUnit) newUnit else it }
-                    unitSpinner.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, newOptions)
-                    unitSpinner.setSelection(newOptions.indexOf(newUnit).coerceAtLeast(0))
-                    buildUnitChips(newOptions, newUnit)
-                    updateRenameUnitButtonVisibility(); updateDefaultUnitButtonVisibility()
-                    Toast.makeText(this@PurchaseActivity, com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Unit renamed to \"$newUnit\"", "یونٹ \"$newUnit\" میں تبدیل ہو گیا"), Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .show()
-    }
-
     private fun promptAddUnitInline(onAdded: (String) -> Unit) {
         hideKeyboard(); val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
         android.app.AlertDialog.Builder(this).setTitle(com.grocerypos.v11.util.Loc.t(this, "New Unit", "نیا یونٹ")).setView(input).setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Add", "شامل کریں")) { _, _ ->
@@ -1940,7 +1791,35 @@ class PurchaseActivity : ThemedActivity() {
         fun microLabel(text: String) = TextView(this).apply { this.text = text; textSize = 11.5f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 8); letterSpacing = 0.04f }
         body.addView(microLabel("PRODUCT NAME"))
         val nameField = EditText(this).apply { setText(prefillName); setTextColor(Color.parseColor(textDark)); background = strokedBg(border, fieldFill, 14); setPadding(18, 16, 18, 16); textSize = 15f }
-        body.addView(nameField); body.addView(spacer(18))
+        body.addView(nameField); body.addView(spacer(10))
+        // NEW: English search-tag field, same as ProductActivity's Add/Edit Product screen.
+        // Lets a product added mid-purchase get its English/Roman search alias right away,
+        // without having to leave Purchase and edit it later from the Products screen.
+        val searchTagBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18, 8, 8, 8)
+            background = strokedBg(border, fieldFill, 14)
+        }
+        val searchTagField = EditText(this).apply {
+            hint = com.grocerypos.v11.util.Loc.t(
+                this@PurchaseActivity,
+                "Search Tag in English (optional)",
+                "تلاش کے لیے انگریزی لفظ (اختیاری)"
+            )
+            setHintTextColor(Color.parseColor(textMuted))
+            setTextColor(Color.parseColor(textDark))
+            background = null
+            textSize = 14f
+            maxLines = 1
+            // Same trick as ProductActivity: forces the Latin/QWERTY keyboard on this
+            // field even if the Product Name field above just left it in Urdu mode.
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
+        }
+        searchTagBox.addView(searchTagField)
+        body.addView(searchTagBox); body.addView(spacer(18))
         body.addView(microLabel("CATEGORY"))
         val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, fieldFill, 14); setPadding(14, 2, 14, 2) }; val categorySpinnerDialog = Spinner(this); categorySpinnerBox.addView(categorySpinnerDialog); body.addView(categorySpinnerBox); body.addView(spacer(20))
         safeLaunch("loadCategoriesForDialog") { val cats = viewModel.categories(); categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats) }
@@ -1973,36 +1852,6 @@ class PurchaseActivity : ThemedActivity() {
         val terQtyField = EditText(this).apply { hint = "1 Secondary = how many Tertiary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
         terQtyField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) terQtyField.post { terQtyField.selectAll() } }
         terQtyBox.addView(terQtyField); body.addView(terQtyBox); body.addView(spacer(20))
-        // NEW (Roman Urdu request: "Default unit for sale wo b add kr do") — same
-        // Auto/Primary/Secondary/Tertiary chip picker as Product's "Add Item Unit"
-        // dialog, so a brand-new product created mid-purchase can have its Sale-
-        // screen default unit set right away instead of silently landing on Auto
-        // and later showing up in the BulkDefaultUnitActivity review queue.
-        body.addView(microLabel("DEFAULT UNIT FOR SALE SCREEN"))
-        val newProductDefaultUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        body.addView(newProductDefaultUnitRow); body.addView(spacer(20))
-        var newProductDefaultUnitIndex = -1
-        fun refreshNewProductDefaultUnitChips() {
-            val names = mutableListOf(primarySpinner.selectedItem?.toString() ?: "pcs")
-            val s = secondarySpinner.selectedItem?.toString() ?: "None"
-            val t = tertiarySpinner.selectedItem?.toString() ?: "None"
-            if (s != "None") names.add(s)
-            if (s != "None" && t != "None") names.add(t)
-            if (newProductDefaultUnitIndex !in 0 until names.size) newProductDefaultUnitIndex = -1
-            newProductDefaultUnitRow.removeAllViews()
-            val options = listOf(-1 to com.grocerypos.v11.util.Loc.t(this, "Auto", "آٹو")) + names.mapIndexed { i, label -> i to label }
-            options.forEachIndexed { i, (indexValue, label) ->
-                val isSelected = indexValue == newProductDefaultUnitIndex
-                newProductDefaultUnitRow.addView(TextView(this).apply {
-                    text = label; textSize = 12.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(20, 12, 20, 12)
-                    setTextColor(if (isSelected) Color.WHITE else Color.parseColor(navy))
-                    background = if (isSelected) roundedBg(navy, 30) else strokedBg(navy, cardWhite, 30)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(if (i == 0) 0 else 8, 0, 0, 0) }
-                    setOnClickListener { newProductDefaultUnitIndex = indexValue; refreshNewProductDefaultUnitChips() }
-                })
-            }
-        }
-        refreshNewProductDefaultUnitChips()
         // NEW ("10/10 Purchase screen" item #7): a brand-new product created mid-purchase
         // used to get salePrice=wholesalePrice=0.0 with no prompt at all — now defaults
         // to the purchase rate being entered (a sane starting point) but stays editable.
@@ -2029,9 +1878,9 @@ class PurchaseActivity : ThemedActivity() {
             terQtyField.setText(trimNum(std))
             terQtyField.post { terQtyField.selectAll() }
         }
-        primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty(); refreshNewProductDefaultUnitChips() } override fun onNothingSelected(p: AdapterView<*>?) {} }
-        secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty(); autoFillTertiaryQty(); refreshNewProductDefaultUnitChips() } override fun onNothingSelected(p: AdapterView<*>?) {} }
-        tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty(); refreshNewProductDefaultUnitChips() } override fun onNothingSelected(p: AdapterView<*>?) {} }
+        primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
+        secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty(); autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
+        tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }; content.addView(footer)
         val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
         footer.addView(TextView(this).apply { text = "Cancel"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, fieldFill, 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }; setOnClickListener { dialog.dismiss() } })
@@ -2044,7 +1893,7 @@ class PurchaseActivity : ThemedActivity() {
                 if (secondaryUnit != "None" && secondaryQty <= 0) { secQtyField.error = "Enter qty"; return@setOnClickListener }
                 if (tertiaryUnit != "None" && secondaryUnit == "None") { Toast.makeText(this@PurchaseActivity, "Select Secondary first", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
                 if (secondaryUnit == "None") { tertiaryUnit = "None"; tertiaryQty = 0.0 }
-                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = retailField.text.toString().toDoubleOrNull() ?: 0.0, wholesalePrice = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty, defaultUnitIndex = newProductDefaultUnitIndex)
+                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = retailField.text.toString().toDoubleOrNull() ?: 0.0, wholesalePrice = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty, searchTag = searchTagField.text.toString().trim())
                 safeLaunch("saveNewProduct") { viewModel.addProduct(newProduct); Toast.makeText(this@PurchaseActivity, "Product added", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
             }
         })
