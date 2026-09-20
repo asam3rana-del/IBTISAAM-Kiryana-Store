@@ -60,6 +60,47 @@ class RoomPurchaseRepository(
         db.unitDao().insert(UnitType(name))
     }
 
+    // NEW (Purchase screen inline unit translate): lets the shop owner rename an
+    // existing unit (typically Urdu, e.g. "عدد") to its English name (e.g. "pcs")
+    // right from the Purchase screen's unit picker, instead of having to close
+    // Purchase, go to Items > Bulk Translate to do it, then come back and re-pick
+    // the product. Same steps as BulkTranslateActivity's "Units" rename: swap the
+    // master units-table row, cascade into every product's primary/secondary/
+    // tertiary unit column, then push both the new unit and the touched products
+    // to sync so other devices/branches see the rename too.
+    override suspend fun renameUnitToEnglish(oldValue: String, newValue: String) {
+        val old = oldValue.trim()
+        val new = newValue.trim()
+        if (old.isEmpty() || new.isEmpty() || old == new) return
+        val dao = db.productDao()
+        val touchedBarcodes = mutableSetOf<String>()
+        dao.findByPrimaryUnit(old).forEach { touchedBarcodes.add(it.barcode) }
+        dao.findBySecondaryUnit(old).forEach { touchedBarcodes.add(it.barcode) }
+        dao.findByTertiaryUnit(old).forEach { touchedBarcodes.add(it.barcode) }
+        val newUnit = UnitType(new)
+        db.unitDao().insert(newUnit)
+        db.unitDao().deleteByName(old)
+        dao.renamePrimaryUnitInProducts(old, new)
+        dao.renameSecondaryUnitInProducts(old, new)
+        dao.renameTertiaryUnitInProducts(old, new)
+        SyncQueueHelper.enqueueUnit(db, newUnit)
+        SyncQueueHelper.enqueueDelete(db, "unit", old)
+        touchedBarcodes.forEach { barcode ->
+            dao.find(barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
+        }
+        if (touchedBarcodes.isNotEmpty()) SyncQueueHelper.trigger(appContext)
+    }
+
+    // Same write BulkDefaultUnitActivity's stepper does for one product at a
+    // time — exposed here so the Purchase screen can set/change it inline too.
+    override suspend fun updateDefaultUnitIndex(barcode: String, index: Int) {
+        db.productDao().updateDefaultUnitIndex(barcode, index, System.currentTimeMillis())
+        db.productDao().find(barcode)?.let { updated ->
+            SyncQueueHelper.enqueueProduct(db, updated)
+            SyncQueueHelper.trigger(appContext)
+        }
+    }
+
     override suspend fun addSupplier(name: String, phone: String, openingBalance: Double): Supplier {
         val supplier = Supplier(name = name, phone = phone, openingBalance = openingBalance)
         val id = db.supplierDao().insert(supplier)

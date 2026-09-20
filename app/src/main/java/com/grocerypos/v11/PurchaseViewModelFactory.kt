@@ -18,7 +18,9 @@ import com.grocerypos.v11.domain.ObserveProductsUseCase
 import com.grocerypos.v11.domain.ObserveSuppliersForPurchaseUseCase
 import com.grocerypos.v11.domain.ObserveUnitsUseCase
 import com.grocerypos.v11.domain.ProcessScannedItemsUseCase
+import com.grocerypos.v11.domain.RenameUnitToEnglishUseCase
 import com.grocerypos.v11.domain.SavePurchaseUseCase
+import com.grocerypos.v11.domain.UpdateDefaultUnitIndexUseCase
 
 /**
  * Wires PurchaseRepository + its UseCases and hands them to PurchaseViewModel.
@@ -43,6 +45,8 @@ class PurchaseViewModelFactory(context: Context) : ViewModelProvider.Factory {
             addSupplierUseCase = AddSupplierUseCase(repository),
             addProductUseCase = AddProductUseCase(repository),
             addUnitUseCase = AddUnitUseCase(repository),
+            renameUnitToEnglishUseCase = RenameUnitToEnglishUseCase(repository),
+            updateDefaultUnitIndexUseCase = UpdateDefaultUnitIndexUseCase(repository),
             processScannedItemsUseCase = ProcessScannedItemsUseCase(repository),
             savePurchaseUseCase = SavePurchaseUseCase(repository),
             deletePurchaseUseCase = DeletePurchaseUseCase(repository)

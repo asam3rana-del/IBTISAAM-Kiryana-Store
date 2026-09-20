@@ -70,6 +70,20 @@ class AddUnitUseCase(private val repository: PurchaseRepository) {
     suspend operator fun invoke(name: String) = repository.addUnit(name)
 }
 
+/** Inline "translate this unit to English" action for the Purchase screen — see
+ * PurchaseRepository.renameUnitToEnglish for what it actually does. */
+class RenameUnitToEnglishUseCase(private val repository: PurchaseRepository) {
+    suspend operator fun invoke(oldValue: String, newValue: String) =
+        repository.renameUnitToEnglish(oldValue, newValue)
+}
+
+/** Inline "set Default Unit for Sale Screen" action for the Purchase screen —
+ * see PurchaseRepository.updateDefaultUnitIndex. */
+class UpdateDefaultUnitIndexUseCase(private val repository: PurchaseRepository) {
+    suspend operator fun invoke(barcode: String, index: Int) =
+        repository.updateDefaultUnitIndex(barcode, index)
+}
+
 /** A single scanned bill row, before it's matched against known products. */
 data class ScannedLine(val name: String, val qty: Double, val rate: Double)
 

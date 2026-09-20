@@ -86,6 +86,21 @@ interface PurchaseRepository {
 
     suspend fun addUnit(name: String)
 
+    /** Renames an existing unit value (typically an Urdu one) to [newValue] — same
+     * master-table-swap + cascade-into-every-product pattern as BulkTranslateActivity's
+     * "Units" rename, just triggered inline from the Purchase screen so the shop
+     * owner doesn't have to leave Purchase, go to Items > Bulk Translate, translate
+     * it there, then come back and re-pick the product. See
+     * RoomPurchaseRepository.renameUnitToEnglish for the exact steps. */
+    suspend fun renameUnitToEnglish(oldValue: String, newValue: String)
+
+    /** Sets (or clears, with index -1 for "Auto") which unit tier — primary/
+     * secondary/tertiary — the Sale screen should default to for this product.
+     * Same field or Add New Product's Default Unit for Sale Screen row —
+     * added here so it can also be set inline from the Purchase screen
+     * instead of only through Items or the BulkDefaultUnitActivity queue. */
+    suspend fun updateDefaultUnitIndex(barcode: String, index: Int)
+
     /** Quick-add from the purchase screen's "+" button. Enqueued for sync just like
      * Party's own supplier add (see RoomPurchaseRepository.addSupplier) — this used
      * to skip sync entirely, which meant a supplier created here was invisible on

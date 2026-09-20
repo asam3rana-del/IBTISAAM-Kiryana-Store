@@ -21,7 +21,9 @@ import com.grocerypos.v11.domain.ObserveProductsUseCase
 import com.grocerypos.v11.domain.ObserveSuppliersForPurchaseUseCase
 import com.grocerypos.v11.domain.ObserveUnitsUseCase
 import com.grocerypos.v11.domain.ProcessScannedItemsUseCase
+import com.grocerypos.v11.domain.RenameUnitToEnglishUseCase
 import com.grocerypos.v11.domain.SavePurchaseUseCase
+import com.grocerypos.v11.domain.UpdateDefaultUnitIndexUseCase
 import com.grocerypos.v11.domain.ScannedLine
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +74,8 @@ class PurchaseViewModel(
     private val addSupplierUseCase: AddSupplierUseCase,
     private val addProductUseCase: AddProductUseCase,
     private val addUnitUseCase: AddUnitUseCase,
+    private val renameUnitToEnglishUseCase: RenameUnitToEnglishUseCase,
+    private val updateDefaultUnitIndexUseCase: UpdateDefaultUnitIndexUseCase,
     private val processScannedItemsUseCase: ProcessScannedItemsUseCase,
     private val savePurchaseUseCase: SavePurchaseUseCase,
     private val deletePurchaseUseCase: DeletePurchaseUseCase
@@ -120,6 +124,12 @@ class PurchaseViewModel(
     suspend fun addProduct(product: Product) = addProductUseCase(product)
 
     suspend fun addUnit(name: String) = addUnitUseCase(name)
+
+    suspend fun renameUnitToEnglish(oldValue: String, newValue: String) =
+        renameUnitToEnglishUseCase(oldValue, newValue)
+
+    suspend fun updateDefaultUnitIndex(barcode: String, index: Int) =
+        updateDefaultUnitIndexUseCase(barcode, index)
 
     suspend fun processScannedItems(scanned: List<ScannedLine>): List<PurchaseLine> =
         processScannedItemsUseCase(scanned, _uiState.value.products)
