@@ -876,6 +876,14 @@ interface ProductDao {
     suspend fun productsNeedingDefaultUnitReview(): List<Product>
     @Query("UPDATE products SET defaultUnitIndex=:index, dirty=1, updatedAt=:ts WHERE barcode=:code")
     suspend fun updateDefaultUnitIndex(code:String, index:Int, ts:Long)
+    // NEW (Bulk Missing Rates — replaces the old CSV "Rate List" export/review):
+    // every product where Retail (salePrice) or Wholesale rate hasn't been
+    // entered yet (still 0), the queue BulkMissingRatesActivity works through
+    // one at a time — same shape as productsNeedingDefaultUnitReview() above.
+    @Query("SELECT * FROM products WHERE salePrice<=0 OR wholesalePrice<=0 ORDER BY name")
+    suspend fun productsWithMissingRates(): List<Product>
+    @Query("UPDATE products SET salePrice=:salePrice, wholesalePrice=:wholesalePrice, dirty=1, updatedAt=:ts WHERE barcode=:code")
+    suspend fun updateRatesReview(code:String, salePrice:Double, wholesalePrice:Double, ts:Long)
     @Query("SELECT * FROM products WHERE stock<=reorderLevel ORDER BY name")
     fun lowStock():Flow<List<Product>>
     @Query("SELECT * FROM products WHERE expiry!='' ORDER BY expiry")

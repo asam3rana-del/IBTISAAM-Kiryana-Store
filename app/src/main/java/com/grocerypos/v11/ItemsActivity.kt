@@ -192,10 +192,10 @@ class ItemsActivity : ThemedActivity() {
         }
         actionsBar.addView(actionsRow)
 
-        // ---- Rate List export — dumps every product's unit/wholesale/retail rate
-        // (all 3 unit tiers) into one CSV, so rates can be reviewed/audited in one
-        // glance in Excel/Sheets instead of scrolling and opening each product card
-        // one by one on this screen. ----
+        // ---- "Rate List" pill button — CHANGED: used to export every product's
+        // rates to a CSV for review in Excel/Sheets. Now launches
+        // BulkMissingRatesActivity, same one-at-a-time stepper as Translate/Units,
+        // showing only products still missing a Retail or Wholesale rate. ----
         actionsRow.addView(TextView(this).apply {
             text = "Rate List"
             textSize = 11f
@@ -208,7 +208,9 @@ class ItemsActivity : ThemedActivity() {
             setPadding(18, 12, 18, 12)
             setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_document, "#FFFFFF", 13), null, null, null)
             compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
-            setOnClickListener { exportRateListCsv() }
+            setOnClickListener {
+                startActivity(Intent(this@ItemsActivity, BulkMissingRatesActivity::class.java))
+            }
         })
 
         actionsRow.addView(View(this).apply {
