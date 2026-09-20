@@ -1852,6 +1852,50 @@ class PurchaseActivity : ThemedActivity() {
         val terQtyField = EditText(this).apply { hint = "1 Secondary = how many Tertiary?"; setHintTextColor(Color.parseColor(textMuted)); setTextColor(Color.parseColor(textDark)); background = null; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
         terQtyField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) terQtyField.post { terQtyField.selectAll() } }
         terQtyBox.addView(terQtyField); body.addView(terQtyBox); body.addView(spacer(20))
+        // NEW: "Default Unit for Sale Screen" chip picker, same purple-badge control as
+        // ProductActivity's Units dialog (ProductUnitDialog.kt). Lets a product created
+        // mid-purchase get its Sale-screen default unit pinned right away, instead of
+        // always falling back to Auto until someone opens it from the Products screen.
+        val purple = "#8B5CF6"
+        body.addView(microLabel("DEFAULT UNIT FOR SALE SCREEN"))
+        body.addView(TextView(this).apply {
+            text = com.grocerypos.v11.util.Loc.t(
+                this@PurchaseActivity,
+                "Auto picks it for you. Choose one yourself if you'd rather it always show a specific unit.",
+                "آٹو خود بخود منتخب کرتا ہے۔ اگر ہمیشہ کوئی خاص یونٹ دکھانا ہو تو خود منتخب کریں"
+            )
+            textSize = 11.5f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(0, 0, 0, 10)
+        })
+        val defaultUnitChipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        body.addView(defaultUnitChipRow); body.addView(spacer(20))
+        var chosenDefaultUnitIndex = -1
+        fun refreshDefaultUnitChips() {
+            val tierNames = mutableListOf(primarySpinner.selectedItem?.toString() ?: "")
+            val s = secondarySpinner.selectedItem?.toString() ?: "None"
+            val t = tertiarySpinner.selectedItem?.toString() ?: "None"
+            if (s != "None") tierNames.add(s)
+            if (s != "None" && t != "None") tierNames.add(t)
+            if (chosenDefaultUnitIndex !in 0 until tierNames.size) chosenDefaultUnitIndex = -1
+            defaultUnitChipRow.removeAllViews()
+            val options = listOf(-1 to com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Auto", "آٹو")) +
+                tierNames.mapIndexed { index, unitLabel -> index to unitLabel }
+            options.forEachIndexed { i, (indexValue, label) ->
+                val isSelected = indexValue == chosenDefaultUnitIndex
+                defaultUnitChipRow.addView(TextView(this@PurchaseActivity).apply {
+                    text = label
+                    textSize = 12.5f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setPadding(20, 12, 20, 12)
+                    setTextColor(if (isSelected) Color.WHITE else Color.parseColor(purple))
+                    background = if (isSelected) gradientBg(purple, purple, cornerTop = 30, cornerBottom = 30)
+                        else strokedBg(purple, cardWhite, 30)
+                    layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(if (i == 0) 0 else 8, 0, 0, 0) }
+                    setOnClickListener { chosenDefaultUnitIndex = indexValue; refreshDefaultUnitChips() }
+                })
+            }
+        }
         // NEW ("10/10 Purchase screen" item #7): a brand-new product created mid-purchase
         // used to get salePrice=wholesalePrice=0.0 with no prompt at all — now defaults
         // to the purchase rate being entered (a sane starting point) but stays editable.
@@ -1878,9 +1922,10 @@ class PurchaseActivity : ThemedActivity() {
             terQtyField.setText(trimNum(std))
             terQtyField.post { terQtyField.selectAll() }
         }
-        primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
-        secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty(); autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
-        tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty() } override fun onNothingSelected(p: AdapterView<*>?) {} }
+        primarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty(); refreshDefaultUnitChips() } override fun onNothingSelected(p: AdapterView<*>?) {} }
+        secondarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillSecondaryQty(); autoFillTertiaryQty(); refreshDefaultUnitChips() } override fun onNothingSelected(p: AdapterView<*>?) {} }
+        tertiarySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener { override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { autoFillTertiaryQty(); refreshDefaultUnitChips() } override fun onNothingSelected(p: AdapterView<*>?) {} }
+        refreshDefaultUnitChips()
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(28, 18, 28, 26) }; content.addView(footer)
         val dialog = android.app.AlertDialog.Builder(this).setView(content).create()
         footer.addView(TextView(this).apply { text = "Cancel"; gravity = Gravity.CENTER; textSize = 14f; setTextColor(Color.parseColor(textMuted)); setTypeface(typeface, android.graphics.Typeface.BOLD); background = strokedBg(border, fieldFill, 14); setPadding(0, 22, 0, 22); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, 0, 8, 0) }; setOnClickListener { dialog.dismiss() } })
@@ -1893,7 +1938,7 @@ class PurchaseActivity : ThemedActivity() {
                 if (secondaryUnit != "None" && secondaryQty <= 0) { secQtyField.error = "Enter qty"; return@setOnClickListener }
                 if (tertiaryUnit != "None" && secondaryUnit == "None") { Toast.makeText(this@PurchaseActivity, "Select Secondary first", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
                 if (secondaryUnit == "None") { tertiaryUnit = "None"; tertiaryQty = 0.0 }
-                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = retailField.text.toString().toDoubleOrNull() ?: 0.0, wholesalePrice = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty, searchTag = searchTagField.text.toString().trim())
+                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = retailField.text.toString().toDoubleOrNull() ?: 0.0, wholesalePrice = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty, searchTag = searchTagField.text.toString().trim(), defaultUnitIndex = chosenDefaultUnitIndex)
                 safeLaunch("saveNewProduct") { viewModel.addProduct(newProduct); Toast.makeText(this@PurchaseActivity, "Product added", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
             }
         })
