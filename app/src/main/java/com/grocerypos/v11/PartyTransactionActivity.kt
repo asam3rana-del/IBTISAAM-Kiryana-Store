@@ -909,6 +909,11 @@ class PartyTransactionActivity : AppCompatActivity() {
                 db.purchaseDao().purchasesBySupplier(partyId).forEach { p ->
                     totalAmount += p.total
                     totalPaidOnBills += p.paid
+                    // NEW: Purchase.dueDate now exists (MIGRATION_42_43) — same overdue
+                    // rule as the customer/Sale branch above.
+                    if (p.status != "returned" && p.dueDate > 0L && p.dueDate < now && (p.total - p.paid) > 0.009) {
+                        overdueAmount += (p.total - p.paid)
+                    }
                     if (lastActivityAt == null || p.createdAt > lastActivityAt!!) lastActivityAt = p.createdAt
 
                     val dateText = fmt.format(Date(p.createdAt))
@@ -932,8 +937,6 @@ class PartyTransactionActivity : AppCompatActivity() {
                     ))
                 }
             }
-            // Suppliers have no dueDate field on Purchase in the current schema, so
-            // "Overdue" is customer-only for now — the tile still shows Rs 0.00 for suppliers.
             // FIX (audit): a payment linked to a bill is already folded into that bill's `paid`
             // (applyBillPaidDelta) — counting it again here inflated "Total Paid".
             val paymentsSum = payments.filter { it.billReference.isBlank() }.sumOf { it.amount }

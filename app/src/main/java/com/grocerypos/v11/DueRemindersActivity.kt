@@ -15,6 +15,7 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.DueSale
+import com.grocerypos.v11.DuePurchase
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.util.Loc
@@ -66,6 +67,13 @@ class DueRemindersActivity : AppCompatActivity() {
     private lateinit var resultsBox: LinearLayout
     private lateinit var summaryBox: LinearLayout
 
+    // NEW (Overdue for suppliers): this screen used to be sales-only — now a
+    // Sales/Purchases tab picks which ledger's still-owed list is shown, reusing
+    // the exact same due-date-picker flow for both.
+    private var showPurchases = false
+    private lateinit var salesTab: TextView
+    private lateinit var purchasesTab: TextView
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         loadThemeColors()
@@ -77,6 +85,29 @@ class DueRemindersActivity : AppCompatActivity() {
         }
 
         root.addView(premiumHeader(R.drawable.ic_alarm, Loc.t(this, "Due Date Reminders", "ادائیگی کی یاد دہانی"), Loc.t(this, "Credit sales still owed, by due date", "ادھار سیلز جو ابھی واجب الادا ہیں")))
+
+        val tabRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) }
+        }
+        fun tabPill(label: String, isPurchases: Boolean): TextView = TextView(this).apply {
+            text = label
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, 20, 0, 20)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(if (isPurchases) 6 else 0, 0, if (isPurchases) 0 else 6, 0)
+            }
+            setOnClickListener {
+                showPurchases = isPurchases
+                loadData()
+            }
+        }
+        salesTab = tabPill(Loc.t(this, "Sales (Customers)", "سیلز (کسٹمرز)"), false)
+        purchasesTab = tabPill(Loc.t(this, "Purchases (Suppliers)", "خریداری (سپلائرز)"), true)
+        tabRow.addView(salesTab); tabRow.addView(purchasesTab)
+        root.addView(tabRow)
 
         summaryBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(summaryBox)
@@ -102,11 +133,25 @@ class DueRemindersActivity : AppCompatActivity() {
         if (::resultsBox.isInitialized) loadData()
     }
 
+    private fun refreshTabs() {
+        salesTab.background = if (!showPurchases) roundedBg(primary, 14) else strokedBg(border, cardBg, 14)
+        salesTab.setTextColor(if (!showPurchases) Color.WHITE else Color.parseColor(textGray))
+        purchasesTab.background = if (showPurchases) roundedBg(primary, 14) else strokedBg(border, cardBg, 14)
+        purchasesTab.setTextColor(if (showPurchases) Color.WHITE else Color.parseColor(textGray))
+    }
+
     private fun loadData() = lifecycleScope.launch {
+        refreshTabs()
         val db = PosDatabase.get(this@DueRemindersActivity)
-        val sales = db.saleDao().dueSales()
-        renderSummary(sales)
-        renderList(sales)
+        if (showPurchases) {
+            val purchases = db.purchaseDao().duePurchases()
+            renderSummaryPurchases(purchases)
+            renderListPurchases(purchases)
+        } else {
+            val sales = db.saleDao().dueSales()
+            renderSummary(sales)
+            renderList(sales)
+        }
     }
 
     private fun renderSummary(sales: List<DueSale>) {
@@ -242,6 +287,125 @@ class DueRemindersActivity : AppCompatActivity() {
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
             // FIX (consistent date picker style across the app): force calendar
             // mode so this matches the grid-calendar picker used everywhere else.
+            datePicker.calendarViewShown = true; datePicker.spinnersShown = false
+        }.show()
+    }
+
+    // ================= NEW: same flow as above, for supplier purchases =================
+    private fun renderSummaryPurchases(purchases: List<DuePurchase>) {
+        summaryBox.removeAllViews()
+        val today = startOfToday()
+        val overdue = purchases.count { it.dueDate in 1 until today }
+        val totalDue = purchases.sumOf { it.total - it.paid }
+        summaryBox.addView(summaryCard(R.drawable.ic_warning, Loc.t(this, "Overdue", "میعاد گزری"), "$overdue", red, "#FDE8E8"))
+        summaryBox.addView(summaryCard(R.drawable.ic_wallet, Loc.t(this, "Total outstanding", "کل بقایا"), "Rs %.2f".format(totalDue), amber, amberBg))
+    }
+
+    private fun renderListPurchases(purchases: List<DuePurchase>) {
+        resultsBox.removeAllViews()
+        if (purchases.isEmpty()) {
+            resultsBox.addView(TextView(this).apply {
+                text = Loc.t(this@DueRemindersActivity, "Nothing outstanding — all purchases are paid off", "کوئی بقایا نہیں — تمام خریداری ادا ہو چکی ہے")
+                setTextColor(Color.parseColor(textGray))
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setPadding(0, 40, 0, 0)
+            })
+            return
+        }
+        val today = startOfToday()
+        val tomorrow = today + 24 * 60 * 60 * 1000L
+        val in3Days = today + 3 * 24 * 60 * 60 * 1000L
+
+        purchases.forEach { p ->
+            val due = p.total - p.paid
+            val (badgeText, badgeColor) = when {
+                p.dueDate <= 0L -> Loc.t(this, "No date set", "تاریخ طے نہیں") to textGray
+                p.dueDate < today -> Loc.t(this, "OVERDUE", "میعاد گزر گئی") to red
+                p.dueDate < tomorrow -> Loc.t(this, "DUE TODAY", "آج واجب الادا") to red
+                p.dueDate < in3Days -> Loc.t(this, "DUE SOON", "جلد واجب الادا") to amber
+                else -> Loc.t(this, "UPCOMING", "آنے والا") to teal
+            }
+
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(20, 16, 20, 16)
+                background = strokedBg(border, cardBg, 18)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 10) }
+                applyElevation(this, 2f)
+            }
+            val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val nameCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            nameCol.addView(TextView(this).apply { text = p.supplierName; textSize = 14.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
+            nameCol.addView(TextView(this).apply { text = p.billNo; textSize = 11.5f; setTextColor(Color.parseColor(textGray)); setPadding(0, 2, 0, 0) })
+            topRow.addView(nameCol)
+            topRow.addView(TextView(this).apply {
+                text = badgeText; textSize = 10f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.WHITE)
+                background = roundedBg(badgeColor, 8); setPadding(14, 5, 14, 5)
+            })
+            card.addView(topRow)
+            card.addView(spacer(8))
+
+            val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val leftInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            leftInfo.addView(TextView(this).apply { text = "Rs %.2f".format(due) + "  " + Loc.t(this@DueRemindersActivity, "due", "واجب الادا"); textSize = 13.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(primary)) })
+            leftInfo.addView(TextView(this).apply {
+                text = if (p.dueDate > 0L) Loc.t(this@DueRemindersActivity, "Due: ", "تاریخ: ") + SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(p.dueDate))
+                       else Loc.t(this@DueRemindersActivity, "Tap to set a due date", "تاریخ طے کرنے کے لیے دبائیں")
+                textSize = 11.5f; setTextColor(Color.parseColor(textGray)); setPadding(0, 2, 0, 0)
+            })
+            bottomRow.addView(leftInfo)
+
+            if (p.supplierPhone.isNotBlank()) {
+                bottomRow.addView(ImageView(this).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_send, "#25D366", 18))
+                    setPadding(20, 10, 20, 10)
+                    background = ovalBg("#DDF6E8")
+                    setOnClickListener { sendWhatsAppReminderPurchase(p, due) }
+                })
+                bottomRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(10, 1) })
+                bottomRow.addView(ImageView(this).apply {
+                    setImageDrawable(tintedDrawable(R.drawable.ic_phone, primary, 18))
+                    setPadding(20, 10, 20, 10)
+                    background = ovalBg(purpleBg)
+                    setOnClickListener {
+                        startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${p.supplierPhone}")))
+                    }
+                })
+            }
+            card.addView(bottomRow)
+
+            card.setOnClickListener { showDatePickerPurchase(p) }
+            resultsBox.addView(card)
+        }
+    }
+
+    private fun sendWhatsAppReminderPurchase(purchase: DuePurchase, due: Double) {
+        var digits = purchase.supplierPhone.replace(Regex("[^0-9]"), "")
+        if (digits.startsWith("0")) digits = "92" + digits.substring(1)
+        else if (!digits.startsWith("92") && digits.length <= 10) digits = "92$digits"
+
+        val message = "Assalam o Alaikum ${purchase.supplierName}, humare bill (Bill ${purchase.billNo}) mein Rs %.0f abhi baaki hai. Barah-e-karam jald ada karenge. Shukriya!".format(due)
+        val uri = Uri.parse("https://wa.me/$digits?text=${Uri.encode(message)}")
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (e: Exception) {
+            Toast.makeText(this, "WhatsApp nahi khul saka. Installed hai?", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showDatePickerPurchase(purchase: DuePurchase) {
+        val cal = Calendar.getInstance()
+        if (purchase.dueDate > 0L) cal.timeInMillis = purchase.dueDate
+        DatePickerDialog(this, { _, y, m, d ->
+            val picked = Calendar.getInstance().apply {
+                set(y, m, d, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            lifecycleScope.launch {
+                PosDatabase.get(this@DueRemindersActivity).purchaseDao().setDueDate(purchase.billNo, picked)
+                loadData()
+            }
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
             datePicker.calendarViewShown = true; datePicker.spinnersShown = false
         }.show()
     }

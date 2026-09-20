@@ -45,6 +45,10 @@ data class ItemMovement(val barcode:String,val product:String,val totalQty:Doubl
 // grouped as "no date set" instead of overdue/upcoming.
 data class DueSale(val invoice:String,val customerId:Long?,val customerName:String,val customerPhone:String,val total:Double,val paid:Double,val dueDate:Long,val createdAt:Long)
 
+// NEW (Overdue for suppliers): same shape as DueSale, for a purchase that still
+// owes the supplier money. See PurchaseDao.duePurchases()/setDueDate().
+data class DuePurchase(val billNo:String,val supplierId:Long?,val supplierName:String,val supplierPhone:String,val total:Double,val paid:Double,val dueDate:Long,val createdAt:Long)
+
 @Entity(tableName="units")
 data class UnitType(@PrimaryKey val name:String)
 
@@ -579,7 +583,11 @@ data class Purchase(
     // auto-generated `billNo`. Blank means not entered. Used for a stronger,
     // exact duplicate-bill check (PurchaseDao.findDuplicateBySupplierInvoice)
     // alongside the existing same-party+same-amount heuristic. See MIGRATION_33_34.
-    @ColumnInfo(defaultValue="") val supplierInvoiceNo:String=""
+    @ColumnInfo(defaultValue="") val supplierInvoiceNo:String="",
+    // NEW (Overdue for suppliers — was always Rs 0.00 with no dueDate field to check
+    // against): same plain-ADD-COLUMN shape and 0L "no date set" convention as
+    // Sale.dueDate (MIGRATION_29_30). See MIGRATION_42_43.
+    @ColumnInfo(defaultValue="0") val dueDate:Long=0L
 )
 
 @Entity(tableName="purchase_items", indices=[Index(value=["lineUid"], unique=true)])
@@ -1301,6 +1309,23 @@ interface ProductDao {
     // itself not trigger a false alarm — pass "" when not editing.
     @Query("SELECT pu.* FROM purchases pu LEFT JOIN suppliers s ON pu.supplierId=s.id WHERE pu.supplierInvoiceNo=:invoiceNo AND pu.supplierInvoiceNo!='' AND pu.billNo!=:excludeBillNo AND s.name=:party COLLATE NOCASE LIMIT 1")
     suspend fun findDuplicateBySupplierInvoice(party:String, invoiceNo:String, excludeBillNo:String):Purchase?
+
+    // NEW (Overdue for suppliers): same shape as SaleDao.setDueDate — lets a due
+    // date be set/changed for a purchase without touching anything else on it.
+    @Query("UPDATE purchases SET dueDate=:dueDate, updatedAt=:now, dirty=1 WHERE billNo=:billNo")
+    suspend fun setDueDate(billNo:String, dueDate:Long, now:Long=System.currentTimeMillis())
+
+    // NEW (Overdue for suppliers): mirrors SaleDao.dueSales() — every active purchase
+    // still owing the supplier money, whether or not a due date has been set yet.
+    @Query("""
+        SELECT pu.billNo as billNo, pu.supplierId as supplierId,
+            COALESCE(s.name,'Cash Purchase') as supplierName, COALESCE(s.phone,'') as supplierPhone,
+            pu.total as total, pu.paid as paid, pu.dueDate as dueDate, pu.createdAt as createdAt
+        FROM purchases pu LEFT JOIN suppliers s ON s.id=pu.supplierId
+        WHERE pu.status='active' AND (pu.total - pu.paid) > 0.009
+        ORDER BY (pu.dueDate = 0) ASC, pu.dueDate ASC, pu.createdAt ASC
+    """)
+    suspend fun duePurchases():List<DuePurchase>
 }
 
 @Dao interface ReturnDao {
@@ -1983,6 +2008,16 @@ val MIGRATION_41_42 = object : Migration(41, 42) {
     }
 }
 
+// NEW (Overdue for suppliers): Purchase.dueDate, same plain ADD COLUMN shape as
+// MIGRATION_29_30's sales.dueDate. Every purchase recorded before this update gets
+// 0 ("no date set" — same convention DueRemindersActivity already uses for sales),
+// so nothing is ever wrongly marked overdue just because it predates this column.
+val MIGRATION_42_43 = object : Migration(42, 43) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE purchases ADD COLUMN dueDate INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -1995,7 +2030,7 @@ val MIGRATION_41_42 = object : Migration(41, 42) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=42, exportSchema=true
+    version=43, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -2022,7 +2057,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path
