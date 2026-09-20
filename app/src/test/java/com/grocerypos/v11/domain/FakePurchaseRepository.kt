@@ -71,6 +71,25 @@ class FakePurchaseRepository(
         units.add(UnitType(name))
     }
 
+    override suspend fun renameUnitToEnglish(oldValue: String, newValue: String) {
+        if (oldValue.isBlank() || newValue.isBlank() || oldValue == newValue) return
+        units.removeAll { it.name == oldValue }
+        units.add(UnitType(newValue))
+        for (i in products.indices) {
+            val p = products[i]
+            products[i] = p.copy(
+                unit = if (p.unit == oldValue) newValue else p.unit,
+                secondaryUnit = if (p.secondaryUnit == oldValue) newValue else p.secondaryUnit,
+                tertiaryUnit = if (p.tertiaryUnit == oldValue) newValue else p.tertiaryUnit
+            )
+        }
+    }
+
+    override suspend fun updateDefaultUnitIndex(barcode: String, index: Int) {
+        val i = products.indexOfFirst { it.barcode == barcode }
+        if (i >= 0) products[i] = products[i].copy(defaultUnitIndex = index)
+    }
+
     override suspend fun addSupplier(name: String, phone: String, openingBalance: Double): Supplier {
         val newSupplier = Supplier(id = (suppliers.size + 1).toLong(), name = name, phone = phone, openingBalance = openingBalance)
         suppliers.add(newSupplier)
