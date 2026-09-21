@@ -82,3 +82,18 @@ against real SQLite, so a future edit to any `MIGRATION_X_Y` (or a newly added
 of surfacing as a white-screen crash on a shopkeeper's device after an update — which is
 exactly the failure mode `MIGRATION_27_28`'s own comment describes already happening
 once in this app's history.
+
+
+---
+
+## Stuck Balance — MIGRATION_43_44 (customers.stuckBalance)
+
+`MIGRATION_43_44` is a single `ALTER TABLE customers ADD COLUMN stuckBalance REAL NOT NULL DEFAULT 0.0`.
+`MigrationTest.kt` above only chains up to v33, so this step is **not** covered by it — check manually
+(or add a v43 -> v44 case once the v43 schema JSON exists under `app/schemas/`):
+
+1. Install the previous build (DB v43), add a customer with an opening balance and a credit sale.
+2. Upgrade in place to this build (do not clear data) — the app must open without a crash.
+3. That customer shows exactly the same figures as before, with **no** Daily/Stuck/Total split
+   (stuckBalance defaults to 0).
+4. Edit the customer as Admin, set Stuck Balance, save — the split appears (Daily / Stuck / Total).
