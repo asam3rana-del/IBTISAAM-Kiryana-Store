@@ -458,6 +458,13 @@ class ItemSearchActivity : ThemedActivity() {
                 })
             }
 
+            // NEW: Current Stock — this card is the first thing shown when a user
+            // searches an item, so "kitna stock pada hai" should be answerable
+            // right here instead of only on the Products/Items screen. Uses the
+            // same formatStockBreakdown() helper as everywhere else so the number
+            // always matches Products/Purchase/Sale/Dashboard screens.
+            statRow("Current Stock", product.formatStockBreakdown(), navy)
+
             if (latestSale != null) {
                 val saleUnit = latestSale.unit.ifBlank { product.unit }
                 statRow("Current Sale Rate", "Rs %.2f / %s".format(latestSale.unitPrice, saleUnit), teal)

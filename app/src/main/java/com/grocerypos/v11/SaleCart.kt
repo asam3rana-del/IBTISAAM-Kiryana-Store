@@ -132,8 +132,47 @@ internal fun SaleActivity.refillAutoPrice() {
     suppressPriceWatcher = true
     unitPrice.setText(if (price > 0) "%.2f".format(price) else "")
     suppressPriceWatcher = false
+    customerRateHint.visibility = View.GONE
     updateItemLineTotal()
     updateMarginWarning()
+    suggestCustomerRate()
+}
+
+// NEW: "customer ka apna rate" auto-suggest — if this exact customer has been
+// charged a (possibly discounted/increased) rate for this exact item before,
+// use THAT rate instead of the standard retail/wholesale price, so a
+// deliberately custom-priced regular customer doesn't need their rate
+// re-typed by hand every single bill. Falls back silently to the standard
+// price when there's no match (new customer, or never sold this item to them
+// before) or when the shopkeeper has already started typing their own number.
+internal fun SaleActivity.suggestCustomerRate() {
+    val product = selectedProduct ?: return
+    val enteredName = customerName.text.toString().trim()
+    if (enteredName.isEmpty()) return
+    val customer = customers.find { it.name.equals(enteredName, ignoreCase = true) } ?: return
+    val priceBeforeLookup = unitPrice.text.toString()
+    val barcodeAtLookup = product.barcode
+    lifecycleScope.launch {
+        val rate = PosDatabase.get(this@SaleActivity).saleDao().lastRateForCustomerItem(customer.id, barcodeAtLookup) ?: return@launch
+        // Bail if the item row or price changed while we were querying (user
+        // picked a different item, or already typed their own rate).
+        if (selectedProduct?.barcode != barcodeAtLookup) return@launch
+        if (unitPrice.text.toString() != priceBeforeLookup) return@launch
+        val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
+        val primaryRate = product.toPrimaryUnitRate(rate.unitPrice, rate.unit.ifBlank { product.unit })
+        val priceInChosenUnit = product.fromPrimaryUnitRate(primaryRate, chosenUnit)
+        if (priceInChosenUnit <= 0) return@launch
+        lastMainPrice = primaryRate
+        suppressPriceWatcher = true
+        unitPrice.setText("%.2f".format(priceInChosenUnit))
+        suppressPriceWatcher = false
+        updateItemLineTotal()
+        updateMarginWarning()
+        customerRateHint.visibility = View.VISIBLE
+        customerRateHint.text = com.grocerypos.v11.util.Loc.t(this@SaleActivity,
+            "${customer.name}'s usual rate applied: Rs %.2f / %s".format(priceInChosenUnit, chosenUnit),
+            "${customer.name} کا معمول کا ریٹ لگا دیا گیا: روپے %.2f / %s".format(priceInChosenUnit, chosenUnit))
+    }
 }
 
 // NEW ("10/10 Sale screen" — loss protection, mirrors PurchaseActivity's

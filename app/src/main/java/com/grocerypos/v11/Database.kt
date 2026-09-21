@@ -26,6 +26,12 @@ data class CustomerSalesTotal(val customerName:String,val total:Double)
 data class DailyProfit(val day:String,val profit:Double)
 data class PartyItemReport(val product:String,val totalAmount:Double,val totalQty:Double)
 data class ItemSaleRecord(val customerName:String,val qty:Double,val unit:String,val unitPrice:Double,val createdAt:Long)
+// NEW: per-customer custom rate lookup — used by the Sale screen to auto-fill
+// the last rate actually charged to THIS customer for THIS item, so a
+// deliberately-discounted (or up-charged) regular customer gets their usual
+// rate suggested automatically instead of the shopkeeper having to remember
+// and retype it every time.
+data class CustomerItemRate(val unitPrice:Double, val unit:String, val createdAt:Long)
 data class ItemPurchaseRecord(val supplierName:String,val qty:Double,val unit:String,val unitCost:Double,val createdAt:Long)
 
 // ---- Day Book (Roznamcha) — merged chronological ledger read models ----
@@ -1050,7 +1056,7 @@ interface ProductDao {
     @Query("SELECT COUNT(*) FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun countBetween(start:Long,end:Long):Int
     @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned' GROUP BY day ORDER BY day") suspend fun dailySales(start:Long,end:Long):List<DailySales>
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned') GROUP BY product ORDER BY totalQty DESC LIMIT 5") suspend fun topProducts(start:Long,end:Long):List<TopProduct>
-    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC LIMIT 100") suspend fun allSales():List<SaleWithCustomer>
+    @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC") suspend fun allSales():List<SaleWithCustomer>
     // NEW (bill-wise profit in Sale History): profit per invoice, for the same
     // window as allSales() above (matched by invoice at the call site). Returned
     // sales are excluded (no profit to show once a bill is reversed).
@@ -1059,7 +1065,7 @@ interface ProductDao {
             (s.total - COALESCE((SELECT SUM(si.cost) FROM sale_items si WHERE si.invoice = s.invoice),0)) as profit
         FROM sales s
         WHERE s.status != 'returned'
-        ORDER BY s.createdAt DESC LIMIT 100
+        ORDER BY s.createdAt DESC
     """)
     suspend fun allSaleProfits():List<SaleProfit>
     @Query("SELECT * FROM sales WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun salesByCustomer(customerId:Long):List<Sale>
@@ -1111,6 +1117,10 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(si.cost),0) FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.createdAt BETWEEN :start AND :end AND s.status!='returned'") suspend fun cogsBetween(start:Long,end:Long):Double
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.customerId=:customerId AND s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun itemReportByCustomer(customerId:Long):List<PartyItemReport>
     @Query("SELECT COALESCE((SELECT name FROM customers WHERE customers.id=s.customerId),'Walk-in') as customerName, si.qty as qty, si.unit as unit, si.unitPrice as unitPrice, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode ORDER BY s.createdAt DESC") suspend fun saleRecordsForItem(barcode:String):List<ItemSaleRecord>
+    // NEW: last rate charged to a specific customer for a specific item (most
+    // recent, returned sales excluded) — powers the Sale screen's "use this
+    // customer's usual rate" auto-suggest.
+    @Query("SELECT si.unitPrice as unitPrice, si.unit as unit, s.createdAt as createdAt FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE si.barcode=:barcode AND s.customerId=:customerId AND s.status!='returned' ORDER BY s.createdAt DESC LIMIT 1") suspend fun lastRateForCustomerItem(customerId:Long, barcode:String):CustomerItemRate?
     @Query("SELECT COALESCE(SUM(qty),0) FROM sale_items WHERE barcode=:barcode AND invoice IN (SELECT invoice FROM sales WHERE status='active')") suspend fun totalActiveQtySold(barcode:String):Int
     @Query("SELECT si.product as product, COALESCE(SUM(si.amount),0) as totalAmount, COALESCE(SUM(si.qty),0) as totalQty FROM sale_items si JOIN sales s ON si.invoice=s.invoice WHERE s.status!='returned' GROUP BY si.product ORDER BY totalAmount DESC") suspend fun allTimeItemTotals():List<PartyItemReport>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paid, createdAt, status FROM sales WHERE createdAt BETWEEN :start AND :end ORDER BY createdAt ASC") suspend fun salesBetween(start:Long,end:Long):List<DayBookSale>
@@ -1294,7 +1304,7 @@ interface ProductDao {
     @Insert suspend fun items(items:List<PurchaseItem>)
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun totalBetween(start:Long,end:Long):Double
-    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC LIMIT 100") suspend fun allPurchases():List<PurchaseWithSupplier>
+    @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC") suspend fun allPurchases():List<PurchaseWithSupplier>
     @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC") suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
     // ADDED (Parties tab — last transaction date, see SaleDao.lastActivityByCustomer
     // for the matching customer-side query and rationale).

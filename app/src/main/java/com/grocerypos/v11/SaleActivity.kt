@@ -120,6 +120,10 @@ class SaleActivity : AppCompatActivity() {
     // updateMarginWarning()): warns live if the rate being typed is at or below
     // this item's cost, instead of that only being discoverable later in reports.
     internal lateinit var marginWarningText: TextView
+    // NEW: shows when this item's price was auto-filled from a customer's own
+    // rate history (e.g. "Ahmed Store ka pichla rate: Rs 80 laga diya gaya")
+    // instead of the standard retail/wholesale price.
+    internal lateinit var customerRateHint: TextView
     internal lateinit var conversionInfo: TextView
     internal lateinit var itemLineTotalText: TextView
     // ---- ADDED (Billed Items inline edit — brings Sale up to Purchase's existing
@@ -505,6 +509,14 @@ class SaleActivity : AppCompatActivity() {
         rateBox.addView(unitPrice)
         itemEntrySection.addView(rateBox)
 
+        customerRateHint = TextView(this).apply {
+            text = ""; textSize = 12f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(16, 10, 16, 10); visibility = View.GONE
+            background = strokedBg("#FBE3C7", "#FFF7EC", 10)
+        }
+        itemEntrySection.addView(customerRateHint)
+        itemEntrySection.addView(spacer(6))
+
         marginWarningText = TextView(this).apply {
             text = ""; textSize = 12f; setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(16, 10, 16, 10); visibility = View.GONE
@@ -870,6 +882,9 @@ class SaleActivity : AppCompatActivity() {
             customerName.setText(name)
             customerName.setSelection(customerName.text.length)
             goToSaleTypeFromCustomer()
+            // If an item row is already active (customer picked AFTER the
+            // item), re-check for that customer's usual rate on this item too.
+            suggestCustomerRate()
         }
         customerName.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_NEXT ||
