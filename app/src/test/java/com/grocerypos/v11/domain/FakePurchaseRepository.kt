@@ -71,6 +71,16 @@ class FakePurchaseRepository(
         units.add(UnitType(name))
     }
 
+    // FIX (build: "FakePurchaseRepository is not abstract and does not
+    // implement abstract member 'addCategory'" — PurchaseRepository already
+    // declared addCategory, this test double just never added the override):
+    // recorded the same way categoriesResult/addUnit are, so a test can both
+    // drive AddCategoryUseCase and assert what got "saved".
+    val addedCategories: MutableList<String> = mutableListOf()
+    override suspend fun addCategory(name: String) {
+        addedCategories.add(name)
+    }
+
     override suspend fun renameUnitToEnglish(oldValue: String, newValue: String) {
         if (oldValue.isBlank() || newValue.isBlank() || oldValue == newValue) return
         units.removeAll { it.name == oldValue }
