@@ -211,6 +211,7 @@ class BulkMissingRatesActivity : ThemedActivity() {
             background = null
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             textSize = 15f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         retailField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) retailField.post { retailField.selectAll() } }
         retailBox.addView(retailField)
@@ -251,6 +252,7 @@ class BulkMissingRatesActivity : ThemedActivity() {
             background = null
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             textSize = 15f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         wholesaleField.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) wholesaleField.post { wholesaleField.selectAll() } }
         wholesaleBox.addView(wholesaleField)
