@@ -18,6 +18,8 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
+import com.grocerypos.v11.fromPrimaryUnitRate
+import com.grocerypos.v11.toPrimaryUnitRate
 import com.grocerypos.v11.ui.components.*
 import kotlinx.coroutines.launch
 
@@ -85,6 +87,10 @@ class BulkMissingRatesActivity : ThemedActivity() {
     private lateinit var costUnitPanel: LinearLayout
     private lateinit var retailField: EditText
     private lateinit var wholesaleField: EditText
+    private lateinit var retailUnitRow: LinearLayout
+    private lateinit var wholesaleUnitRow: LinearLayout
+    private var retailChosenUnit: String = ""
+    private var wholesaleChosenUnit: String = ""
     private lateinit var retailMissingTag: TextView
     private lateinit var wholesaleMissingTag: TextView
     private lateinit var saveNextBtn: TextView
@@ -198,6 +204,11 @@ class BulkMissingRatesActivity : ThemedActivity() {
         retailLabelRow.addView(retailMissingTag)
         card.addView(retailLabelRow)
         card.addView(spacer(6))
+        // NEW: unit chips (Ctn / Dzn / pcs etc.) so this rate can be entered in
+        // whichever unit is easiest — same conversion math as the Purchase screen.
+        retailUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
+        card.addView(retailUnitRow)
+        card.addView(spacer(8))
         val retailBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -239,6 +250,9 @@ class BulkMissingRatesActivity : ThemedActivity() {
         wholesaleLabelRow.addView(wholesaleMissingTag)
         card.addView(wholesaleLabelRow)
         card.addView(spacer(6))
+        wholesaleUnitRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
+        card.addView(wholesaleUnitRow)
+        card.addView(spacer(8))
         val wholesaleBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -318,6 +332,76 @@ class BulkMissingRatesActivity : ThemedActivity() {
 
     private fun trimNum(v: Double): String = if (v == 0.0) "" else if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
+    // Same as trimNum but rounds to 2dp first, since unit-converted rates
+    // (e.g. Rs 500/Ctn -> Rs per pcs) rarely land on a clean number.
+    private fun formatConvertedRate(v: Double): String {
+        if (v <= 0.0) return ""
+        val rounded = Math.round(v * 100) / 100.0
+        return if (rounded == rounded.toLong().toDouble()) rounded.toLong().toString() else "%.2f".format(rounded)
+    }
+
+    private fun unitOptionsFor(product: Product): List<String> {
+        val opts = mutableListOf(product.unit)
+        if (product.secondaryUnit.isNotBlank()) opts.add(product.secondaryUnit)
+        if (product.tertiaryUnit.isNotBlank()) opts.add(product.tertiaryUnit)
+        return opts.distinct()
+    }
+
+    // Builds the unit chip row for one rate field. Tapping a different unit
+    // converts whatever's currently typed (via the product's primary-unit
+    // basis) so the number follows the unit instead of just relabeling it —
+    // same toPrimaryUnitRate/fromPrimaryUnitRate math the Purchase screen uses.
+    private fun buildRateUnitChips(
+        row: LinearLayout,
+        product: Product,
+        field: EditText,
+        selectedUnit: String,
+        onUnitChanged: (String) -> Unit
+    ) {
+        row.removeAllViews()
+        val options = unitOptionsFor(product)
+        if (options.size < 2) { row.visibility = View.GONE; return }
+        row.visibility = View.VISIBLE
+        options.forEachIndexed { index, unitLabel ->
+            val isSelected = unitLabel == selectedUnit
+            row.addView(TextView(this).apply {
+                text = unitLabel
+                textSize = 12f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(24, 10, 24, 10)
+                setTextColor(if (isSelected) Color.WHITE else Color.parseColor(teal))
+                background = if (isSelected) roundedBg(teal, 30) else strokedBg(teal, cardBg, 30)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(if (index == 0) 0 else 8, 0, 0, 0) }
+                setOnClickListener {
+                    if (unitLabel == selectedUnit) return@setOnClickListener
+                    val typed = field.text.toString().toDoubleOrNull() ?: 0.0
+                    if (typed > 0) {
+                        val primaryRate = product.toPrimaryUnitRate(typed, selectedUnit)
+                        field.setText(formatConvertedRate(product.fromPrimaryUnitRate(primaryRate, unitLabel)))
+                        field.post { field.selectAll() }
+                    }
+                    onUnitChanged(unitLabel)
+                }
+            })
+        }
+    }
+
+    private fun refreshRetailUnitChips(product: Product) {
+        buildRateUnitChips(retailUnitRow, product, retailField, retailChosenUnit) { newUnit ->
+            retailChosenUnit = newUnit
+            refreshRetailUnitChips(product)
+        }
+    }
+
+    private fun refreshWholesaleUnitChips(product: Product) {
+        buildRateUnitChips(wholesaleUnitRow, product, wholesaleField, wholesaleChosenUnit) { newUnit ->
+            wholesaleChosenUnit = newUnit
+            refreshWholesaleUnitChips(product)
+        }
+    }
+
     private fun showCurrent() {
         val current = queue.firstOrNull()
         if (current == null) {
@@ -335,10 +419,16 @@ class BulkMissingRatesActivity : ThemedActivity() {
         nameLabel.text = current.name
         categoryLabel.text = current.category.ifBlank { "General" }
 
+        // Rates are stored per PRIMARY unit, so every fresh product starts
+        // with both chips on the primary unit — matches what's already saved.
+        retailChosenUnit = current.unit
+        wholesaleChosenUnit = current.unit
         retailField.setText(trimNum(current.salePrice))
         wholesaleField.setText(trimNum(current.wholesalePrice))
         retailMissingTag.visibility = if (current.salePrice <= 0.0) View.VISIBLE else View.GONE
         wholesaleMissingTag.visibility = if (current.wholesalePrice <= 0.0) View.VISIBLE else View.GONE
+        refreshRetailUnitChips(current)
+        refreshWholesaleUnitChips(current)
         renderCostUnitPanel(current)
     }
 
@@ -385,7 +475,10 @@ class BulkMissingRatesActivity : ThemedActivity() {
         }
         costUnitPanel.addView(spacer(6))
         costUnitPanel.addView(TextView(this).apply {
-            text = "Enter Retail/Wholesale below per ${product.unit} (the primary unit)."
+            text = if (unitOptionsFor(product).size > 1)
+                "Tap a unit chip above Retail/Wholesale (e.g. Ctn, Dzn, ${product.unit}) to enter that rate in whichever unit is easiest — it converts automatically."
+            else
+                "Enter Retail/Wholesale below per ${product.unit} (the primary unit)."
             textSize = 11f
             setTextColor(Color.parseColor(textGray))
             setPadding(0, 4, 0, 0)
@@ -400,8 +493,14 @@ class BulkMissingRatesActivity : ThemedActivity() {
         saveNextBtn.isEnabled = false
         lifecycleScope.launch {
             try {
-                val retail = retailField.text.toString().toDoubleOrNull() ?: 0.0
-                val wholesale = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0
+                // Convert whatever unit each chip is currently set to back down
+                // to the PRIMARY unit before saving — salePrice/wholesalePrice
+                // are always stored per primary unit (same basis productDao's
+                // missing-rate query and every other screen read them against).
+                val retailTyped = retailField.text.toString().toDoubleOrNull() ?: 0.0
+                val wholesaleTyped = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0
+                val retail = if (retailTyped > 0) current.toPrimaryUnitRate(retailTyped, retailChosenUnit) else 0.0
+                val wholesale = if (wholesaleTyped > 0) current.toPrimaryUnitRate(wholesaleTyped, wholesaleChosenUnit) else 0.0
                 val db = PosDatabase.get(this@BulkMissingRatesActivity)
                 db.productDao().updateRatesReview(current.barcode, retail, wholesale, System.currentTimeMillis())
                 db.productDao().find(current.barcode)?.let { updated ->

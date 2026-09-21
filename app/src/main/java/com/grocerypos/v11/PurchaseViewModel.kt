@@ -9,6 +9,7 @@ import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.data.PurchaseEditData
 import com.grocerypos.v11.data.PurchaseLine
 import com.grocerypos.v11.data.SavePurchaseResult
+import com.grocerypos.v11.domain.AddCategoryUseCase
 import com.grocerypos.v11.domain.AddProductUseCase
 import com.grocerypos.v11.domain.AddSupplierUseCase
 import com.grocerypos.v11.domain.AddUnitUseCase
@@ -74,6 +75,7 @@ class PurchaseViewModel(
     private val addSupplierUseCase: AddSupplierUseCase,
     private val addProductUseCase: AddProductUseCase,
     private val addUnitUseCase: AddUnitUseCase,
+    private val addCategoryUseCase: AddCategoryUseCase,
     private val renameUnitToEnglishUseCase: RenameUnitToEnglishUseCase,
     private val updateDefaultUnitIndexUseCase: UpdateDefaultUnitIndexUseCase,
     private val processScannedItemsUseCase: ProcessScannedItemsUseCase,
@@ -124,6 +126,8 @@ class PurchaseViewModel(
     suspend fun addProduct(product: Product) = addProductUseCase(product)
 
     suspend fun addUnit(name: String) = addUnitUseCase(name)
+
+    suspend fun addCategory(name: String) = addCategoryUseCase(name)
 
     suspend fun renameUnitToEnglish(oldValue: String, newValue: String) =
         renameUnitToEnglishUseCase(oldValue, newValue)

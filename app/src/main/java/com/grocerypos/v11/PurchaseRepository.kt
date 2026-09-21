@@ -86,6 +86,11 @@ interface PurchaseRepository {
 
     suspend fun addUnit(name: String)
 
+    /** Adds a new category from the Purchase screen's "Add New Product" dialog,
+     * same master-table insert as ProductActivity's "Add New Category" — see
+     * RoomPurchaseRepository.addCategory. */
+    suspend fun addCategory(name: String)
+
     /** Renames an existing unit value (typically an Urdu one) to [newValue] — same
      * master-table-swap + cascade-into-every-product pattern as BulkTranslateActivity's
      * "Units" rename, just triggered inline from the Purchase screen so the shop

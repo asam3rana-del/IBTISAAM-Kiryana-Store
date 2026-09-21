@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.data.PurchaseRepository
 import com.grocerypos.v11.data.RoomPurchaseRepository
+import com.grocerypos.v11.domain.AddCategoryUseCase
 import com.grocerypos.v11.domain.AddProductUseCase
 import com.grocerypos.v11.domain.AddSupplierUseCase
 import com.grocerypos.v11.domain.AddUnitUseCase
@@ -45,6 +46,7 @@ class PurchaseViewModelFactory(context: Context) : ViewModelProvider.Factory {
             addSupplierUseCase = AddSupplierUseCase(repository),
             addProductUseCase = AddProductUseCase(repository),
             addUnitUseCase = AddUnitUseCase(repository),
+            addCategoryUseCase = AddCategoryUseCase(repository),
             renameUnitToEnglishUseCase = RenameUnitToEnglishUseCase(repository),
             updateDefaultUnitIndexUseCase = UpdateDefaultUnitIndexUseCase(repository),
             processScannedItemsUseCase = ProcessScannedItemsUseCase(repository),

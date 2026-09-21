@@ -3,6 +3,7 @@ package com.grocerypos.v11.data
 import android.content.Context
 import androidx.room.withTransaction
 import com.grocerypos.v11.CashTransaction
+import com.grocerypos.v11.Category
 import com.grocerypos.v11.DeviceTag
 import com.grocerypos.v11.Payment
 import com.grocerypos.v11.PosDatabase
@@ -58,6 +59,14 @@ class RoomPurchaseRepository(
 
     override suspend fun addUnit(name: String) {
         db.unitDao().insert(UnitType(name))
+    }
+
+    // NEW (Purchase screen inline "Add New Category"): same master-table insert
+    // as ProductActivity's "Add New Category" button, just triggered from the
+    // Purchase screen's "Add New Product" dialog so the shop owner doesn't have
+    // to leave Purchase to create a category first.
+    override suspend fun addCategory(name: String) {
+        db.categoryDao().insert(Category(name))
     }
 
     // NEW (Purchase screen inline unit translate): lets the shop owner rename an

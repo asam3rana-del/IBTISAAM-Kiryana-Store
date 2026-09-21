@@ -1681,6 +1681,18 @@ class PurchaseActivity : ThemedActivity() {
             if (v.isNotEmpty()) safeLaunch("addUnit") { viewModel.addUnit(v); Toast.makeText(this@PurchaseActivity, com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Unit added", "یونٹ شامل ہو گیا"), Toast.LENGTH_SHORT).show(); onAdded(v) }
         }.setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null).show()
     }
+
+    // NEW: "Add New Category" inline from the Purchase screen's "Add New Product"
+    // dialog — same master-table insert as ProductActivity's "Add New Category",
+    // just triggered here so the shop owner doesn't have to leave Purchase to
+    // create a category first before adding a new product mid-purchase.
+    private fun promptAddCategoryInline(onAdded: (String) -> Unit) {
+        hideKeyboard(); val input = EditText(this).apply { setPadding(32, 24, 32, 24) }
+        android.app.AlertDialog.Builder(this).setTitle(com.grocerypos.v11.util.Loc.t(this, "New Category", "نئی کیٹیگری")).setView(input).setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Add", "شامل کریں")) { _, _ ->
+            val v = input.text.toString().trim()
+            if (v.isNotEmpty()) safeLaunch("addCategory") { viewModel.addCategory(v); Toast.makeText(this@PurchaseActivity, com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Category added", "کیٹیگری شامل ہو گئی"), Toast.LENGTH_SHORT).show(); onAdded(v) }
+        }.setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Cancel", "منسوخ کریں"), null).show()
+    }
     private fun handleScannedItems(json: String) {
         val arr = try { JSONArray(json) } catch (e: Exception) { Log.e(TAG, "handleScannedItems: bad json", e); return }
         val scanned = mutableListOf<ScannedLine>()
@@ -1821,8 +1833,20 @@ class PurchaseActivity : ThemedActivity() {
         searchTagBox.addView(searchTagField)
         body.addView(searchTagBox); body.addView(spacer(18))
         body.addView(microLabel("CATEGORY"))
-        val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, fieldFill, 14); setPadding(14, 2, 14, 2) }; val categorySpinnerDialog = Spinner(this); categorySpinnerBox.addView(categorySpinnerDialog); body.addView(categorySpinnerBox); body.addView(spacer(20))
-        safeLaunch("loadCategoriesForDialog") { val cats = viewModel.categories(); categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats) }
+        val categoryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val categorySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, fieldFill, 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        val categorySpinnerDialog = Spinner(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
+        categorySpinnerBox.addView(categorySpinnerDialog); categoryRow.addView(categorySpinnerBox); categoryRow.addView(spacer(8).apply { layoutParams = LinearLayout.LayoutParams((10 * resources.displayMetrics.density).toInt(), 1) })
+        var allCategories = listOf<String>()
+        categoryRow.addView(circleIcon("+", teal, 34) {
+            promptAddCategoryInline { newCat ->
+                allCategories = (allCategories + newCat).distinct()
+                categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, allCategories)
+                categorySpinnerDialog.setSelection(allCategories.indexOf(newCat))
+            }
+        })
+        body.addView(categoryRow); body.addView(spacer(20))
+        safeLaunch("loadCategoriesForDialog") { val cats = viewModel.categories(); allCategories = cats; categorySpinnerDialog.adapter = ArrayAdapter(this@PurchaseActivity, android.R.layout.simple_spinner_dropdown_item, cats) }
         body.addView(microLabel("PRIMARY UNIT"))
         val primaryRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val primarySpinnerBox = LinearLayout(this).apply { background = strokedBg(border, fieldFill, 14); setPadding(14, 2, 14, 2); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
