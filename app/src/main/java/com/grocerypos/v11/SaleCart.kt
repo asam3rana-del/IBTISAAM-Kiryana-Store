@@ -155,7 +155,7 @@ internal fun SaleActivity.suggestCustomerRate() {
     val priceBeforeLookup = unitPrice.text.toString()
     val barcodeAtLookup = product.barcode
     lifecycleScope.launch {
-        val rate = PosDatabase.get(this@SaleActivity).saleDao().lastRateForCustomerItem(customer.id, barcodeAtLookup) ?: return@launch
+        val rate = PosDatabase.get(this@suggestCustomerRate).saleDao().lastRateForCustomerItem(customer.id, barcodeAtLookup) ?: return@launch
         // Bail if the item row or price changed while we were querying (user
         // picked a different item, or already typed their own rate).
         if (selectedProduct?.barcode != barcodeAtLookup) return@launch
@@ -171,7 +171,7 @@ internal fun SaleActivity.suggestCustomerRate() {
         updateItemLineTotal()
         updateMarginWarning()
         customerRateHint.visibility = View.VISIBLE
-        customerRateHint.text = com.grocerypos.v11.util.Loc.t(this@SaleActivity,
+        customerRateHint.text = com.grocerypos.v11.util.Loc.t(this@suggestCustomerRate,
             "${customer.name}'s usual rate applied: Rs %.2f / %s".format(priceInChosenUnit, chosenUnit),
             "${customer.name} کا معمول کا ریٹ لگا دیا گیا: روپے %.2f / %s".format(priceInChosenUnit, chosenUnit))
     }
