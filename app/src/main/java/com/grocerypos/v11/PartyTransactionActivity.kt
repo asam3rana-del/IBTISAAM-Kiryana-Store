@@ -120,6 +120,15 @@ class PartyTransactionActivity : AppCompatActivity() {
     private lateinit var closingValueText: TextView
     private lateinit var closingLabelText: TextView
 
+    // NEW (Stuck Balance): a small extra card under the balance card, shown ONLY for a
+    // customer who has a stuck amount. Everyone else never sees it (visibility = GONE).
+    private lateinit var stuckCard: LinearLayout
+    private lateinit var stuckDailyValue: TextView
+    private lateinit var stuckAmountValue: TextView
+    private lateinit var stuckTotalValue: TextView
+    private var currentDaily = 0.0
+    private var currentStuck = 0.0
+
     // ---- NEW (Customer Dashboard 10/10): consolidated stat tiles — Total Sales/
     // Purchases, Total Paid, Overdue, Credit Limit, Last Purchase — so a party's full
     // picture (dashboard screenshot: "Customer open karne par ek hi jagah hon") shows
@@ -300,6 +309,54 @@ class PartyTransactionActivity : AppCompatActivity() {
         closingCol.addView(closingValueText)
         balanceCard.addView(closingCol)
         root.addView(balanceCard)
+
+        // ---- NEW (Stuck Balance): Daily / Stuck / Total split. Hidden until a customer
+        // with a non-zero stuck amount is loaded (see updateStuckCard). ----
+        stuckCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 14, 20, 14)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(cardWhite))
+                cornerRadius = 16f
+                setStroke(1, Color.parseColor(cardBorder))
+            }
+            elevation = 2f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 16) }
+            visibility = View.GONE
+        }
+        fun stuckLine(label: String, bold: Boolean): TextView {
+            val valueView = TextView(this).apply {
+                text = "Rs 0.00"
+                textSize = if (bold) 15f else 13.5f
+                setTypeface(typeface, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                setTextColor(Color.parseColor(textDark))
+            }
+            stuckCard.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, if (bold) 8 else 3, 0, if (bold) 0 else 3)
+                addView(TextView(this@PartyTransactionActivity).apply {
+                    text = label
+                    textSize = if (bold) 13f else 12f
+                    if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(if (bold) textDark else labelGray))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(valueView)
+            })
+            return valueView
+        }
+        stuckDailyValue = stuckLine(Loc.t(this, "Daily Payable", "روزانہ واجب الادا"), false)
+        stuckAmountValue = stuckLine(Loc.t(this, "Stuck (Purana)", "اسٹک (پرانا)"), false)
+        // thin divider before the Total line
+        stuckCard.addView(View(this).apply {
+            setBackgroundColor(Color.parseColor(cardBorder))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { setMargins(0, 6, 0, 0) }
+        })
+        stuckTotalValue = stuckLine(Loc.t(this, "Total Payable", "کل واجب الادا"), true)
+        root.addView(stuckCard)
 
         // ---- NEW (Customer Dashboard 10/10): 2x2 stat grid + Share Statement button.
         // Values are filled in by updateDashboardStats(), called from loadTransactions()
@@ -838,18 +895,24 @@ class PartyTransactionActivity : AppCompatActivity() {
             // same load pass (onResume / after a payment or bill edit). ----
             val opening: Double
             val running: Double
+            val stuck: Double
             var creditLimit = 0.0
             if (isCustomer) {
                 val customer = db.customerDao().find(partyId)
                 opening = customer?.openingBalance ?: 0.0
                 running = customer?.balance ?: 0.0
+                stuck = customer?.stuckBalance ?: 0.0
                 creditLimit = customer?.creditLimit ?: 0.0
             } else {
                 val supplier = db.supplierDao().find(partyId)
                 opening = supplier?.openingBalance ?: 0.0
                 running = supplier?.balance ?: 0.0
+                stuck = 0.0
             }
-            updateBalanceCard(opening, opening + running)
+            // NEW (Stuck Balance): the headline "You'll Get" figure is the TOTAL (daily +
+            // stuck); the split card below explains it. stuck == 0.0 => identical to before.
+            updateBalanceCard(opening, opening + running + stuck)
+            updateStuckCard(opening + running, stuck)
 
             // NEW: standalone payments recorded via the Receive Payment/Make Payment button
             // — merged chronologically with the sale/purchase bills below so the full money
@@ -1004,6 +1067,20 @@ class PartyTransactionActivity : AppCompatActivity() {
         style(chipPayments, TxFilter.PAYMENTS)
     }
 
+    /** NEW (Stuck Balance): fills + shows/hides the Daily / Stuck / Total card. */
+    private fun updateStuckCard(daily: Double, stuck: Double) {
+        currentDaily = daily
+        currentStuck = stuck
+        if (stuck == 0.0) {
+            stuckCard.visibility = View.GONE
+            return
+        }
+        stuckDailyValue.text = "Rs %.2f".format(daily)
+        stuckAmountValue.text = "Rs %.2f".format(stuck)
+        stuckTotalValue.text = "Rs %.2f".format(daily + stuck)
+        stuckCard.visibility = View.VISIBLE
+    }
+
     /** Updates the opening/closing balance card. Closing direction mirrors the
      * same type-aware give/get rule used everywhere else in the Party screens:
      * customer closing > 0 = they owe us (green, You'll Get); supplier
@@ -1137,6 +1214,11 @@ class PartyTransactionActivity : AppCompatActivity() {
         sb.append(if (isCustomer) Loc.t(this, "Customer Statement", "\u06A9\u0633\u0679\u0645\u0631 \u0633\u0679\u06CC\u0679\u0645\u0646\u0679")
             else Loc.t(this, "Supplier Statement", "\u0633\u067E\u0644\u0627\u0626\u0631 \u0633\u0679\u06CC\u0679\u0645\u0646\u0679")).append("\n")
         sb.append(Loc.t(this, "Outstanding", "\u0628\u0642\u0627\u06CC\u0627")).append(": ").append(closingValueText.text).append("\n")
+        // NEW (Stuck Balance): make the Outstanding figure explainable on the shared statement.
+        if (currentStuck != 0.0) {
+            sb.append(Loc.t(this, "Daily Payable", "روزانہ واجب الادا")).append(": Rs %.2f".format(currentDaily)).append("\n")
+            sb.append(Loc.t(this, "Stuck (Purana)", "اسٹک (پرانا)")).append(": Rs %.2f".format(currentStuck)).append("\n")
+        }
         sb.append("----------------------------\n")
         allEntries.sortedBy { it.createdAt }.forEach { e ->
             sb.append(fmt.format(Date(e.createdAt))).append("  \u2014  ").append(e.searchText).append("\n")

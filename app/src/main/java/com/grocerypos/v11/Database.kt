@@ -465,8 +465,23 @@ data class Customer(
     val balance:Double=0.0,
     val serverId:String?=null,
     val updatedAt:Long=0L,
-    val dirty:Boolean=true
+    val dirty:Boolean=true,
+    // NEW (Stuck Balance — MIGRATION_43_44): an old, frozen amount the customer owes that
+    // does NOT move with daily sales/payments (unlike openingBalance + balance, which is
+    // the "daily/running" part). 0.0 for almost every customer — the UI only shows the
+    // Daily / Stuck / Total split when this is non-zero. Kept LAST with a default so no
+    // existing Customer(...) call needs to change. See Customer.dailyPayable()/totalPayable().
+    val stuckBalance:Double=0.0
 )
+
+// NEW (Stuck Balance): single source of truth for the two headline figures, so no screen
+// re-derives them by hand (they used to write `openingBalance + balance` inline everywhere).
+//   Daily Payable = the running part (opening + bills - payments) — what changes day to day.
+//   Total Payable = Daily Payable + the stuck amount — what the customer owes in all.
+// For a customer with stuckBalance == 0.0 both are identical to the old "closing" figure.
+fun Customer.dailyPayable(): Double = openingBalance + balance
+fun Customer.totalPayable(): Double = openingBalance + balance + stuckBalance
+fun Customer.hasStuck(): Boolean = stuckBalance != 0.0
 
 @Entity(tableName="suppliers")
 data class Supplier(
@@ -2026,6 +2041,14 @@ val MIGRATION_42_43 = object : Migration(42, 43) {
     }
 }
 
+// NEW (Stuck Balance): Customer.stuckBalance. Plain ADD COLUMN, default 0 — every existing
+// customer keeps behaving exactly as before (no stuck amount) until one is entered.
+val MIGRATION_43_44 = object : Migration(43, 44) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE customers ADD COLUMN stuckBalance REAL NOT NULL DEFAULT 0.0")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -2038,7 +2061,7 @@ val MIGRATION_42_43 = object : Migration(42, 43) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=43, exportSchema=true
+    version=44, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -2065,7 +2088,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

@@ -19,6 +19,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
+import com.grocerypos.v11.totalPayable
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.R
@@ -174,7 +175,11 @@ class PartyDashboardActivity : AppCompatActivity() {
         // ADDED (Khatabook-style party list — screenshot reference): most recent
         // sale/purchase/payment timestamp for this party, across all three tables.
         // null means the party has no transactions yet (freshly added party).
-        val lastActivityAt: Long? = null
+        val lastActivityAt: Long? = null,
+        // NEW (Stuck Balance): the stuck part of `closing` for a customer (0.0 for suppliers
+        // and almost every customer). `closing` is already the TOTAL payable (daily + stuck);
+        // the row uses this only to show the Daily / Stuck split under the name.
+        val stuck: Double = 0.0
     )
 
     // OVERDUE: dueDate has passed. DUE_TODAY: dueDate is today. Anything further out
@@ -841,7 +846,7 @@ class PartyDashboardActivity : AppCompatActivity() {
 
                 val items = mutableListOf<PartyItem>()
                 for (c in customers) {
-                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.openingBalance + c.balance, isCustomer = true, dueStatus = dueByCustomer[c.id], lastActivityAt = customerLastAt[c.id]))
+                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.totalPayable(), isCustomer = true, dueStatus = dueByCustomer[c.id], lastActivityAt = customerLastAt[c.id], stuck = c.stuckBalance))
                 }
                 for (s in suppliers) {
                     items.add(PartyItem(id = s.id, name = s.name, phone = s.phone, closing = s.openingBalance + s.balance, isCustomer = false, lastActivityAt = supplierLastAt[s.id]))
@@ -985,6 +990,17 @@ class PartyDashboardActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor(labelGray))
                 setPadding(0, 4, 0, 0)
             })
+            // NEW (Stuck Balance): only for a customer who has a stuck amount — the big figure on
+            // the right is the TOTAL, this line explains it as Daily + Stuck.
+            if (item.stuck != 0.0) {
+                infoCol.addView(TextView(this@PartyDashboardActivity).apply {
+                    text = Loc.t(this@PartyDashboardActivity, "Daily", "روزانہ") + " Rs %.0f".format(item.closing - item.stuck) +
+                        "  •  " + Loc.t(this@PartyDashboardActivity, "Stuck", "اسٹک") + " Rs %.0f".format(item.stuck)
+                    textSize = 11f
+                    setTextColor(Color.parseColor(labelGray))
+                    setPadding(0, 2, 0, 0)
+                })
+            }
             // ---- IMPROVEMENT PACK (Payments 10/10 — link due reminders to Payments):
             // small badge when this customer has an active reminder due today or
             // overdue, so the person doing collections can see who to call for a

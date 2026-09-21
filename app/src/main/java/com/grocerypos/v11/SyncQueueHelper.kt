@@ -582,6 +582,9 @@ object SyncQueueHelper {
             // via the increment_balance operation, never overwritten by a full snapshot.
             "creditLimit" to c.creditLimit,
             "openingBalance" to c.openingBalance,
+            // NEW (Stuck Balance): a plain snapshot field like openingBalance — it never
+            // moves with sales/payments, so (unlike "balance") last-write-wins is correct.
+            "stuckBalance" to c.stuckBalance,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )

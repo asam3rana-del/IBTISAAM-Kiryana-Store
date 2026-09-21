@@ -195,8 +195,14 @@ class PartyRepository(
                     db.paymentDao().update(updated)
                     SyncQueueHelper.enqueuePayment(db, updated)
                 }
-                if (dup.openingBalance != 0.0) {
-                    keeper = keeper.copy(openingBalance = keeper.openingBalance + dup.openingBalance, dirty = true)
+                // NEW (Stuck Balance): a duplicate's stuck amount must not be lost in the merge —
+                // it is summed into the keeper exactly like openingBalance.
+                if (dup.openingBalance != 0.0 || dup.stuckBalance != 0.0) {
+                    keeper = keeper.copy(
+                        openingBalance = keeper.openingBalance + dup.openingBalance,
+                        stuckBalance = keeper.stuckBalance + dup.stuckBalance,
+                        dirty = true
+                    )
                     db.customerDao().update(keeper)
                     SyncQueueHelper.enqueueCustomer(db, keeper)
                 }

@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
+import com.grocerypos.v11.totalPayable
 import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.data.DuplicatePaymentGroup
@@ -75,6 +76,19 @@ class PartyActivity : AppCompatActivity() {
     private lateinit var phoneField: EditText
     private lateinit var creditLimitField: EditText
     private lateinit var creditLimitBox: LinearLayout
+    // NEW (Stuck Balance): optional field on the Add form. Only shown for the Customers tab
+    // AND only to Admin/Manager (everyone, cashier included, can SEE it in lists/history).
+    private lateinit var stuckBalanceField: EditText
+    private lateinit var stuckBalanceBox: LinearLayout
+
+    // NEW (Stuck Balance): who may add/edit the stuck amount — Admin and Manager. Same
+    // session pref + fail-safe default ("cashier") as the other role gates in this app,
+    // so a missing/unknown role can never edit it.
+    private val canEditStuck: Boolean
+        get() {
+            val role = getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier"
+            return role == "admin" || role == "manager"
+        }
     private lateinit var openingBalanceField: EditText
     private lateinit var listContainer: LinearLayout
     private lateinit var saveButton: Button
@@ -209,6 +223,19 @@ class PartyActivity : AppCompatActivity() {
         }
         openingBox.addView(openingBalanceField)
         formCard.addView(openingBox)
+
+        // NEW (Stuck Balance): a second, separate opening amount for an old amount that
+        // doesn't move with daily sales. Leave empty for normal customers.
+        formCard.addView(spacer(10))
+        stuckBalanceBox = innerField()
+        stuckBalanceField = EditText(this).apply {
+            hint = Loc.t(this@PartyActivity, "Stuck Balance (Rs, optional — old amount that doesn't move)", "اسٹک بیلنس (روپے، اختیاری — پرانا رکا ہوا رقم)")
+            background = null
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        stuckBalanceBox.addView(stuckBalanceField)
+        formCard.addView(stuckBalanceBox)
         formCard.addView(spacer(14))
 
         saveButton = Button(this).apply {
@@ -408,6 +435,7 @@ class PartyActivity : AppCompatActivity() {
         lastState = state
         buildTabs(state.showingCustomers)
         creditLimitBox.visibility = if (state.showingCustomers) View.VISIBLE else View.GONE
+        stuckBalanceBox.visibility = if (state.showingCustomers && canEditStuck) View.VISIBLE else View.GONE
         sectionAccentText.text = if (state.showingCustomers)
             Loc.t(this, "Add Customer", "کسٹمر شامل کریں")
         else
@@ -432,7 +460,7 @@ class PartyActivity : AppCompatActivity() {
         listContainer.removeAllViews()
         if (state.showingCustomers) {
             val filtered = state.customers.filter {
-                matches(it.name, it.phone) && (!duesOnly || (it.openingBalance + it.balance) != 0.0)
+                matches(it.name, it.phone) && (!duesOnly || it.totalPayable() != 0.0)
             }
             if (filtered.isEmpty()) {
                 val msg = if (state.customers.isEmpty()) Loc.t(this, "No customers yet", "کوئی کسٹمر نہیں ہے")
@@ -441,7 +469,7 @@ class PartyActivity : AppCompatActivity() {
             }
             for (c in filtered) {
                 listContainer.addView(
-                    partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, R.drawable.ic_person, isCustomer = true,
+                    partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, R.drawable.ic_person, isCustomer = true, stuck = c.stuckBalance,
                         onClick = { openCustomerHistory(c) },
                         onEdit = { editCustomerDialog(c) },
                         onDelete = { confirmDeleteCustomer(c) },
@@ -559,6 +587,7 @@ class PartyActivity : AppCompatActivity() {
             phoneField.text.clear()
             creditLimitField.text.clear()
             openingBalanceField.text.clear()
+            stuckBalanceField.text.clear()
         }
     }
 
@@ -758,6 +787,9 @@ class PartyActivity : AppCompatActivity() {
         val phone = phoneField.text.toString()
         val limit = creditLimitField.text.toString().toDoubleOrNull() ?: 0.0
         val opening = openingBalanceField.text.toString().toDoubleOrNull() ?: 0.0
+        // NEW (Stuck Balance): the box is hidden for cashiers / suppliers, but read it
+        // defensively anyway — a hidden field is always empty so this is 0.0 there.
+        val stuck = if (canEditStuck) stuckBalanceField.text.toString().toDoubleOrNull() ?: 0.0 else 0.0
 
         // ---- IMPROVEMENT PACK (Party 10/10): warn on an exact-name collision before
         // creating a second party with the same name — the #1 cause of a shop
@@ -780,7 +812,7 @@ class PartyActivity : AppCompatActivity() {
                     "\"$trimmed\" نام کی ایک پارٹی پہلے سے موجود ہے۔ کیا اسی نام سے ایک اور شامل کی جائے؟"
                 ))
                 .setPositiveButton(Loc.t(this, "Add anyway", "پھر بھی شامل کریں")) { d, _ ->
-                    viewModel.addParty(name, phone, limit, opening)
+                    viewModel.addParty(name, phone, limit, opening, stuck)
                     d.dismiss()
                 }
                 .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
@@ -788,7 +820,7 @@ class PartyActivity : AppCompatActivity() {
         } else {
             // ViewModel decides customer vs supplier from its own state and ignores
             // creditLimit on the supplier path, so this call doesn't need to branch.
-            viewModel.addParty(name, phone, limit, opening)
+            viewModel.addParty(name, phone, limit, opening, stuck)
         }
     }
 
@@ -811,9 +843,13 @@ class PartyActivity : AppCompatActivity() {
         onClick: () -> Unit,
         onEdit: () -> Unit,
         onDelete: () -> Unit,
-        onCall: (() -> Unit)? = null
+        onCall: (() -> Unit)? = null,
+        // NEW (Stuck Balance): 0.0 for suppliers and for almost every customer — then this
+        // row looks exactly as before. Non-zero => the big figure becomes TOTAL payable and
+        // the small line shows the Daily / Stuck split.
+        stuck: Double = 0.0
     ): LinearLayout {
-        val closing = opening + running
+        val closing = opening + running + stuck
         val isGive = if (isCustomer) closing < 0 else closing > 0
         val outerRow = premiumCard().apply {
             orientation = LinearLayout.VERTICAL
@@ -848,7 +884,11 @@ class PartyActivity : AppCompatActivity() {
         }
         val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
         balRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
+            text = if (stuck != 0.0)
+                Loc.t(this@PartyActivity, "Daily", "روزانہ") + ": Rs %.2f".format(opening + running) +
+                    "  •  " + Loc.t(this@PartyActivity, "Stuck", "اسٹک") + ": Rs %.2f".format(stuck)
+            else
+                Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
             textSize = 11f
             setTextColor(Color.parseColor(labelGray))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -929,7 +969,13 @@ class PartyActivity : AppCompatActivity() {
         val phoneEdit = EditText(this).apply { setText(c.phone); hint = Loc.t(this@PartyActivity, "Phone", "فون"); inputType = InputType.TYPE_CLASS_PHONE }
         val limitEdit = EditText(this).apply { setText(c.creditLimit.toString()); hint = Loc.t(this@PartyActivity, "Credit Limit", "کریڈٹ لیمٹ"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
         val openingEdit = EditText(this).apply { setText(c.openingBalance.toString()); hint = Loc.t(this@PartyActivity, "Opening Balance", "ابتدائی بیلنس"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL }
-        for (f in listOf(nameEdit, phoneEdit, limitEdit, openingEdit)) {
+        // NEW (Stuck Balance): Admin/Manager only. Empty box = no stuck amount (or clears it).
+        val stuckEdit: EditText? = if (canEditStuck) EditText(this).apply {
+            setText(if (c.stuckBalance == 0.0) "" else c.stuckBalance.toString())
+            hint = Loc.t(this@PartyActivity, "Stuck Balance (optional)", "اسٹک بیلنس (اختیاری)")
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        } else null
+        for (f in listOfNotNull(nameEdit, phoneEdit, limitEdit, openingEdit, stuckEdit)) {
             container.addView(f)
             container.addView(spacer(10))
         }
@@ -948,7 +994,9 @@ class PartyActivity : AppCompatActivity() {
                     name = newName,
                     phone = phoneEdit.text.toString(),
                     creditLimit = limitEdit.text.toString().toDoubleOrNull() ?: c.creditLimit,
-                    openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: c.openingBalance
+                    openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: c.openingBalance,
+                    // null (cashier: field not shown) keeps the stored stuck amount untouched.
+                    stuckBalance = stuckEdit?.let { it.text.toString().toDoubleOrNull() ?: 0.0 }
                 )
                 d.dismiss()
             }
@@ -998,7 +1046,7 @@ class PartyActivity : AppCompatActivity() {
     // drops the running-balance tracking for money still owed either way, so the
     // person should see that number before confirming, not discover it's gone. ----
     private fun confirmDeleteCustomer(c: Customer) {
-        val closing = c.openingBalance + c.balance
+        val closing = c.totalPayable()
         val message = if (closing != 0.0) {
             val direction = if (closing > 0)
                 Loc.t(this, "you'll get from them", "آپ نے ان سے لینے ہیں")
@@ -1053,7 +1101,7 @@ class PartyActivity : AppCompatActivity() {
     private fun openCustomerHistory(c: Customer) {
         lifecycleScope.launch {
             val sales = viewModel.customerHistory(c)
-            val content = historyDialogContainer(c.name, blue, R.drawable.ic_person, c.openingBalance, c.balance)
+            val content = historyDialogContainer(c.name, blue, R.drawable.ic_person, c.openingBalance, c.balance, c.stuckBalance)
             val body = content.getChildAt(1) as LinearLayout
 
             if (sales.isEmpty()) {
@@ -1106,7 +1154,7 @@ class PartyActivity : AppCompatActivity() {
     }
 
     // ================= shared dialog helpers (premium gradient header dialog) =================
-    private fun historyDialogContainer(name: String, colorHex: String, iconRes: Int, opening: Double, running: Double): LinearLayout {
+    private fun historyDialogContainer(name: String, colorHex: String, iconRes: Int, opening: Double, running: Double, stuck: Double = 0.0): LinearLayout {
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -1137,17 +1185,32 @@ class PartyActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         val balRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0) }
+        // NEW (Stuck Balance): with a stuck amount the header reads Daily (left) and TOTAL
+        // (right, bold) with the stuck figure on its own line; otherwise exactly as before.
         balRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
+            text = if (stuck != 0.0)
+                Loc.t(this@PartyActivity, "Daily", "روزانہ") + ": Rs %.2f".format(opening + running)
+            else
+                Loc.t(this@PartyActivity, "Opening", "ابتدائی") + ": Rs %.2f".format(opening)
             setTextColor(Color.parseColor("#F2F3FF")); textSize = 11f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         balRow.addView(TextView(this).apply {
-            text = Loc.t(this@PartyActivity, "Closing", "اختتامی") + ": Rs %.2f".format(opening + running)
+            text = if (stuck != 0.0)
+                Loc.t(this@PartyActivity, "Total", "کل") + ": Rs %.2f".format(opening + running + stuck)
+            else
+                Loc.t(this@PartyActivity, "Closing", "اختتامی") + ": Rs %.2f".format(opening + running)
             setTextColor(Color.WHITE); textSize = 12f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         headerTextCol.addView(balRow)
+        if (stuck != 0.0) {
+            headerTextCol.addView(TextView(this).apply {
+                text = Loc.t(this@PartyActivity, "Stuck", "اسٹک") + ": Rs %.2f".format(stuck)
+                setTextColor(Color.parseColor("#F2F3FF")); textSize = 11f
+                setPadding(0, 2, 0, 0)
+            })
+        }
         header.addView(headerTextCol)
         outer.addView(header)
 

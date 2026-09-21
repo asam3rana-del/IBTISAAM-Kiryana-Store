@@ -40,7 +40,9 @@ class SaveCustomerUseCase(private val repository: PartyRepository) {
         name: String,
         phone: String,
         creditLimit: Double,
-        openingBalance: Double
+        openingBalance: Double,
+        // NEW (Stuck Balance): optional; 0.0 for the vast majority of customers.
+        stuckBalance: Double = 0.0
     ): SavePartyResult {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return SavePartyResult.NameRequired
@@ -50,7 +52,8 @@ class SaveCustomerUseCase(private val repository: PartyRepository) {
                 phone = phone.trim(),
                 creditLimit = creditLimit,
                 openingBalance = openingBalance,
-                balance = 0.0
+                balance = 0.0,
+                stuckBalance = stuckBalance
             )
         )
         return SavePartyResult.Success
@@ -83,7 +86,11 @@ class UpdateCustomerUseCase(private val repository: PartyRepository) {
         name: String,
         phone: String,
         creditLimit: Double,
-        openingBalance: Double
+        openingBalance: Double,
+        // NEW (Stuck Balance): null = "caller doesn't touch it" (e.g. a non-admin edit
+        // where the field isn't even shown) — keeps the existing stuck amount instead of
+        // silently zeroing it. A real value (including 0.0 to clear it) overwrites.
+        stuckBalance: Double? = null
     ): SavePartyResult {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return SavePartyResult.NameRequired
@@ -92,7 +99,8 @@ class UpdateCustomerUseCase(private val repository: PartyRepository) {
                 name = trimmedName,
                 phone = phone.trim(),
                 creditLimit = creditLimit,
-                openingBalance = openingBalance
+                openingBalance = openingBalance,
+                stuckBalance = stuckBalance ?: existing.stuckBalance
             )
         )
         return SavePartyResult.Success

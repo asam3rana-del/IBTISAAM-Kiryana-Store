@@ -123,10 +123,10 @@ class PartyViewModel(
 
     /** Add-form Save button — adds a customer or supplier depending on the
      * currently selected tab. */
-    fun addParty(name: String, phone: String, creditLimit: Double, openingBalance: Double) {
+    fun addParty(name: String, phone: String, creditLimit: Double, openingBalance: Double, stuckBalance: Double = 0.0) {
         viewModelScope.launch {
             val result = if (_uiState.value.showingCustomers) {
-                saveCustomer(name, phone, creditLimit, openingBalance)
+                saveCustomer(name, phone, creditLimit, openingBalance, stuckBalance)
             } else {
                 saveSupplier(name, phone, openingBalance)
             }
@@ -134,9 +134,9 @@ class PartyViewModel(
         }
     }
 
-    fun editCustomer(existing: Customer, name: String, phone: String, creditLimit: Double, openingBalance: Double) {
+    fun editCustomer(existing: Customer, name: String, phone: String, creditLimit: Double, openingBalance: Double, stuckBalance: Double? = null) {
         viewModelScope.launch {
-            val result = updateCustomer(existing, name, phone, creditLimit, openingBalance)
+            val result = updateCustomer(existing, name, phone, creditLimit, openingBalance, stuckBalance)
             _events.emit(if (result is SavePartyResult.Success) PartyEvent.Updated else PartyEvent.NameRequired)
         }
     }

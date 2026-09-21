@@ -18,6 +18,7 @@ import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
+import com.grocerypos.v11.totalPayable
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -167,8 +168,10 @@ class PartyReportsActivity : AppCompatActivity() {
                 val customers = db.customerDao().all().first()
                 if (customers.isEmpty()) rows.add(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
                 customers.forEach { c ->
-                    rows.add(partyRow(c.name, c.openingBalance + c.balance, isCustomer = true) {
-                        showReportMenu(true, c.id, c.name, c.openingBalance)
+                    // NEW (Stuck Balance): the list figure is the TOTAL payable (daily + stuck);
+                    // for a customer with no stuck amount this is the same as before.
+                    rows.add(partyRow(c.name, c.totalPayable(), isCustomer = true) {
+                        showReportMenu(true, c.id, c.name, c.openingBalance, c.stuckBalance)
                     })
                 }
             } else {
@@ -227,7 +230,7 @@ class PartyReportsActivity : AppCompatActivity() {
     }
 
     // ---- Tap a party -> choose which report (custom-styled sheet, matches navRow list) ----
-    private fun showReportMenu(isCustomer: Boolean, id: Long, name: String, opening: Double) {
+    private fun showReportMenu(isCustomer: Boolean, id: Long, name: String, opening: Double, stuck: Double = 0.0) {
         val plLabel = if (isCustomer)
             Loc.t(this, "Customer-wise Profit", "کسٹمر کے لحاظ سے منافع")
         else
@@ -260,9 +263,9 @@ class PartyReportsActivity : AppCompatActivity() {
                 dialog.dismiss()
                 when (which) {
                     0 -> showItemReport(isCustomer, id, name)
-                    1 -> showLedger(isCustomer, id, name, opening)
+                    1 -> showLedger(isCustomer, id, name, opening, stuck)
                     2 -> showPaymentHistory(isCustomer, id, name)
-                    3 -> showStatement(isCustomer, id, name, opening)
+                    3 -> showStatement(isCustomer, id, name, opening, stuck)
                     4 -> showTransactions(isCustomer, id, name)
                     5 -> showPartyPL(isCustomer, id, name)
                 }
@@ -338,7 +341,7 @@ class PartyReportsActivity : AppCompatActivity() {
     // and a Credit (amount paid at that time) with a running balance carried forward.
     // This is more detailed than the Statement below — it shows Dr and Cr side by side
     // per entry instead of just the net outstanding change.
-    private fun showLedger(isCustomer: Boolean, id: Long, name: String, opening: Double) {
+    private fun showLedger(isCustomer: Boolean, id: Long, name: String, opening: Double, stuck: Double = 0.0) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
             val fmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
@@ -406,16 +409,35 @@ class PartyReportsActivity : AppCompatActivity() {
             }
 
             body.addView(plDivider())
-            body.addView(rowText(Loc.t(this@PartyReportsActivity, "Closing Balance", "اختتامی بیلنس"), "Rs %.2f".format(running)).apply {
+            // NEW (Stuck Balance): with a stuck amount the running column above is the DAILY
+            // part only — label it so, then list Stuck and Total Payable underneath.
+            val ledgerClosingLabel = if (stuck != 0.0) Loc.t(this@PartyReportsActivity, "Daily Payable", "روزانہ واجب الادا")
+                else Loc.t(this@PartyReportsActivity, "Closing Balance", "اختتامی بیلنس")
+            body.addView(rowText(ledgerClosingLabel, "Rs %.2f".format(running)).apply {
                 (getChildAt(0) as TextView).setTypeface(null, Typeface.BOLD)
                 (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (running > 0) red else teal))
             })
+            addStuckSummary(body, running, stuck, if (running + stuck > 0) red else teal)
 
             AlertDialog.Builder(this@PartyReportsActivity)
                 .setView(content)
                 .setPositiveButton(Loc.t(this@PartyReportsActivity, "Close", "بند کریں"), null)
                 .show()
         }
+    }
+
+    // NEW (Stuck Balance): appends "Stuck (Purana)" and a bold "Total Payable" row under a
+    // Ledger/Statement's (now "Daily Payable") closing row. No-op when stuck == 0.0, so
+    // every ordinary customer and every supplier sees exactly the report they saw before.
+    private fun addStuckSummary(body: LinearLayout, dailyClosing: Double, stuck: Double, totalColorHex: String) {
+        if (stuck == 0.0) return
+        body.addView(rowText(Loc.t(this, "Stuck (Purana)", "اسٹک (پرانا)"), "Rs %.2f".format(stuck)))
+        body.addView(plDivider())
+        body.addView(rowText(Loc.t(this, "Total Payable", "کل واجب الادا"), "Rs %.2f".format(dailyClosing + stuck)).apply {
+            (getChildAt(0) as TextView).setTypeface(null, Typeface.BOLD)
+            (getChildAt(1) as TextView).setTextColor(Color.parseColor(totalColorHex))
+            (getChildAt(1) as TextView).setTypeface(null, Typeface.BOLD)
+        })
     }
 
     private fun ledgerHeaderRow(): LinearLayout {
@@ -573,7 +595,7 @@ class PartyReportsActivity : AppCompatActivity() {
     }
 
     // ================= 4) Party Statement (running balance) =================
-    private fun showStatement(isCustomer: Boolean, id: Long, name: String, opening: Double) {
+    private fun showStatement(isCustomer: Boolean, id: Long, name: String, opening: Double, stuck: Double = 0.0) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
             val fmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
@@ -626,10 +648,14 @@ class PartyReportsActivity : AppCompatActivity() {
             // (a positive supplier balance means WE owe them, which is not the same "red"
             // meaning as a positive customer balance) — same isGive pattern used elsewhere.
             val closingIsGive = if (isCustomer) running < 0 else running > 0
-            body.addView(rowText(Loc.t(this@PartyReportsActivity, "Closing Balance", "اختتامی بیلنس"), "Rs %.2f".format(running)).apply {
+            // NEW (Stuck Balance): same Daily / Stuck / Total split as the Ledger.
+            val statementClosingLabel = if (stuck != 0.0) Loc.t(this@PartyReportsActivity, "Daily Payable", "روزانہ واجب الادا")
+                else Loc.t(this@PartyReportsActivity, "Closing Balance", "اختتامی بیلنس")
+            body.addView(rowText(statementClosingLabel, "Rs %.2f".format(running)).apply {
                 (getChildAt(0) as TextView).setTypeface(null, Typeface.BOLD)
                 (getChildAt(1) as TextView).setTextColor(Color.parseColor(if (closingIsGive) red else teal))
             })
+            addStuckSummary(body, running, stuck, if (if (isCustomer) running + stuck < 0 else running + stuck > 0) red else teal)
 
             AlertDialog.Builder(this@PartyReportsActivity)
                 .setView(content)

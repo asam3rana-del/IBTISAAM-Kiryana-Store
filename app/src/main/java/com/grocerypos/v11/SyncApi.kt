@@ -432,6 +432,9 @@ object SyncApi {
             val balance = (row["balance"] as? Number)?.toDouble() ?: 0.0
             val creditLimit = (row["creditLimit"] as? Number)?.toDouble() ?: 0.0
             val openingBalance = (row["openingBalance"] as? Number)?.toDouble() ?: 0.0
+            // NEW (Stuck Balance): null when the row came from a device/build that predates
+            // this field — in that case keep OUR stuck amount instead of zeroing it.
+            val stuckBalanceRemote = (row["stuckBalance"] as? Number)?.toDouble()
             val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
             val localPendingBalance = pendingDelta("customer", serverId, "increment_balance")
             // FIX (2-device sync — same class of bug as the purchase/sale fix above):
@@ -457,6 +460,7 @@ object SyncApi {
                     existing.copy(
                         name = name, phone = phone, balance = balance + localPendingBalance,
                         creditLimit = creditLimit, openingBalance = openingBalance,
+                        stuckBalance = stuckBalanceRemote ?: existing.stuckBalance,
                         updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
@@ -465,6 +469,7 @@ object SyncApi {
                     Customer(
                         name = name, phone = phone, balance = balance + localPendingBalance,
                         creditLimit = creditLimit, openingBalance = openingBalance,
+                        stuckBalance = stuckBalanceRemote ?: 0.0,
                         serverId = serverId, updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )

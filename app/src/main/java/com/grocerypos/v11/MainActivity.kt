@@ -757,7 +757,7 @@ class MainActivity : ThemedActivity() {
             combine(db.customerDao().all(), db.supplierDao().all()) { customers, suppliers ->
                 Pair(customers, suppliers)
             }.collectLatest { (customers, suppliers) ->
-                val customerClosings = customers.map { it.openingBalance + it.balance }
+                val customerClosings = customers.map { it.totalPayable() } // NEW (Stuck Balance): total = daily + stuck
                 val supplierClosings = suppliers.map { it.openingBalance + it.balance }
 
                 val getFromCustomers = customerClosings.filter { it > 0 }.sumOf { it }

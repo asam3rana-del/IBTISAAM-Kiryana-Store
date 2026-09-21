@@ -510,9 +510,10 @@ class BackupExportActivity : AppCompatActivity() {
 
         builder.addSectionHeading("Customers")
         builder.addTable(
-            listOf("Name", "Phone", "Opening Bal", "Current Bal"),
-            listOf(1.6f, 1.2f, 1f, 1f),
-            data.customers.map { listOf(it.name, it.phone, "Rs %.2f".format(it.openingBalance), "Rs %.2f".format(it.balance)) }
+            // NEW (Stuck Balance): extra column — 0.00 for every customer without a stuck amount.
+            listOf("Name", "Phone", "Opening Bal", "Current Bal", "Stuck Bal"),
+            listOf(1.5f, 1.1f, 1f, 1f, 1f),
+            data.customers.map { listOf(it.name, it.phone, "Rs %.2f".format(it.openingBalance), "Rs %.2f".format(it.balance), "Rs %.2f".format(it.stuckBalance)) }
         )
         data.customers.forEach { c ->
             val ledger = data.customerLedgers[c.id] ?: return@forEach
@@ -602,8 +603,8 @@ class BackupExportActivity : AppCompatActivity() {
         data.purchases.forEach { row(fmtDt.format(Date(it.createdAt)), it.billNo, it.supplierName, "%.2f".format(it.total), "%.2f".format(it.paid), it.status) }
 
         section("CUSTOMERS")
-        row("Name", "Phone", "Opening Balance", "Current Balance")
-        data.customers.forEach { row(it.name, it.phone, "%.2f".format(it.openingBalance), "%.2f".format(it.balance)) }
+        row("Name", "Phone", "Opening Balance", "Current Balance", "Stuck Balance")
+        data.customers.forEach { row(it.name, it.phone, "%.2f".format(it.openingBalance), "%.2f".format(it.balance), "%.2f".format(it.stuckBalance)) }
 
         section("CUSTOMER LEDGERS")
         data.customers.forEach { c ->
