@@ -248,7 +248,11 @@ class ItemSearchActivity : ThemedActivity() {
                     detailContainer.addView(
                         rateRow(
                             party = r.customerName,
-                            qtyLabel = "${r.qty} ${product.unit}",
+                            // FIX: use the unit THAT LINE was actually sold in (si.unit),
+                            // not product.unit (the product's primary unit) — a sale
+                            // rung up in Pcs must not be relabelled as Ctn just because
+                            // Ctn happens to be this product's default unit.
+                            qtyLabel = "${r.qty} ${r.unit.ifBlank { product.unit }}",
                             rate = r.unitPrice,
                             date = fmt.format(Date(r.createdAt)),
                             colorHex = teal,
@@ -272,20 +276,33 @@ class ItemSearchActivity : ThemedActivity() {
                 val bySupplier = purchaseRecords.groupBy { it.supplierName }
                 val summaries = bySupplier.map { (supplier, records) ->
                     // records are already newest-first (query orders by createdAt DESC),
-                    // so the first one per supplier is that supplier's latest rate.
+                    // so the first one per supplier is that supplier's latest rate and
+                    // the second (if any) is the rate just before it, for the trend arrow.
                     val lastRate = records.first().unitCost
                     val avgRate = records.sumOf { it.unitCost } / records.size
-                    Triple(supplier, lastRate, Pair(avgRate, records.size))
-                }.sortedBy { it.second }
-                val cheapestRate = summaries.minOf { it.second }
-                summaries.forEach { (supplier, lastRate, avgAndCount) ->
+                    SupplierSummary(
+                        supplier = supplier,
+                        lastRate = lastRate,
+                        avgRate = avgRate,
+                        purchaseCount = records.size,
+                        lastPurchaseAt = records.first().createdAt,
+                        prevRate = records.getOrNull(1)?.unitCost
+                    )
+                }.sortedBy { it.lastRate }
+                val cheapestRate = summaries.minOf { it.lastRate }
+                // NEW: savings badge on the best-rate card — how much cheaper the
+                // best rate is than the next-cheapest DISTINCT rate (so a tie between
+                // two suppliers at the same rate doesn't show "Rs 0.00 cheaper").
+                val distinctRates = summaries.map { it.lastRate }.distinct().sorted()
+                val savingsVsNext = if (distinctRates.size > 1) distinctRates[1] - distinctRates[0] else null
+                val now = System.currentTimeMillis()
+                summaries.forEach { s ->
                     detailContainer.addView(
                         supplierCompareRow(
-                            supplier = supplier,
-                            lastRate = lastRate,
-                            avgRate = avgAndCount.first,
-                            purchaseCount = avgAndCount.second,
-                            isBest = lastRate == cheapestRate,
+                            summary = s,
+                            isBest = s.lastRate == cheapestRate,
+                            savingsVsNext = savingsVsNext,
+                            daysSincePurchase = ((now - s.lastPurchaseAt) / (1000L * 60 * 60 * 24)).toInt(),
                             product = product
                         )
                     )
@@ -303,7 +320,9 @@ class ItemSearchActivity : ThemedActivity() {
                     detailContainer.addView(
                         rateRow(
                             party = r.supplierName,
-                            qtyLabel = "${r.qty} ${product.unit}",
+                            // FIX: same as sale rows above — use that purchase line's
+                            // own unit (pi.unit), not product.unit.
+                            qtyLabel = "${r.qty} ${r.unit.ifBlank { product.unit }}",
                             rate = r.unitCost,
                             date = fmt.format(Date(r.createdAt)),
                             colorHex = orange,
@@ -344,10 +363,27 @@ class ItemSearchActivity : ThemedActivity() {
         }
     }
 
+    // NEW: one grouped-by-supplier summary row for the Compare Suppliers table.
+    private data class SupplierSummary(
+        val supplier: String,
+        val lastRate: Double,
+        val avgRate: Double,
+        val purchaseCount: Int,
+        val lastPurchaseAt: Long,
+        val prevRate: Double? // rate from the purchase just before the latest one, for the trend arrow
+    )
+
+    // Below this many days since the last purchase, we warn that the rate might
+    // no longer be current (supplier may have since changed it).
+    private val STALE_RATE_DAYS = 30
+
     // NEW: one row of the Compare Suppliers table — supplier name, their last rate
-    // and running average, purchase count, and a "BEST RATE" badge on whoever is
-    // currently cheapest (by last rate).
-    private fun supplierCompareRow(supplier: String, lastRate: Double, avgRate: Double, purchaseCount: Int, isBest: Boolean, product: Product): LinearLayout {
+    // and running average, purchase count, a "BEST RATE" badge + savings-vs-next
+    // on whoever is currently cheapest, a trend arrow vs their own previous rate,
+    // and a staleness warning if their last purchase was a while ago.
+    private fun supplierCompareRow(summary: SupplierSummary, isBest: Boolean, savingsVsNext: Double?, daysSincePurchase: Int, product: Product): LinearLayout {
+        val supplier = summary.supplier
+        val lastRate = summary.lastRate
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 14, 18, 14)
@@ -375,6 +411,26 @@ class ItemSearchActivity : ThemedActivity() {
                 })
                 top.addView(View(this@ItemSearchActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
             }
+            // NEW: trend arrow — how this supplier's rate moved vs their own
+            // previous purchase (not vs other suppliers). Rising cost = orange ↑,
+            // falling cost = teal ↓. No arrow on a single purchase or unchanged rate.
+            summary.prevRate?.let { prev ->
+                if (lastRate > prev) {
+                    top.addView(TextView(this@ItemSearchActivity).apply {
+                        text = "▲"
+                        textSize = 11f
+                        setTextColor(Color.parseColor(orange))
+                        setPadding(0, 0, 6, 0)
+                    })
+                } else if (lastRate < prev) {
+                    top.addView(TextView(this@ItemSearchActivity).apply {
+                        text = "▼"
+                        textSize = 11f
+                        setTextColor(Color.parseColor(teal))
+                        setPadding(0, 0, 6, 0)
+                    })
+                }
+            }
             top.addView(TextView(this@ItemSearchActivity).apply {
                 text = "Rs %.2f".format(lastRate)
                 textSize = 14f
@@ -384,11 +440,33 @@ class ItemSearchActivity : ThemedActivity() {
             addView(top)
             unitBreakdownRow(product, lastRate, if (isBest) navy else textMuted)?.let { addView(it) }
             addView(TextView(this@ItemSearchActivity).apply {
-                text = "Last rate  •  Avg Rs %.2f over %d purchase%s".format(avgRate, purchaseCount, if (purchaseCount == 1) "" else "s")
+                text = "Last rate  •  Avg Rs %.2f over %d purchase%s".format(summary.avgRate, summary.purchaseCount, if (summary.purchaseCount == 1) "" else "s")
                 textSize = 11.5f
                 setTextColor(Color.parseColor(textMuted))
                 setPadding(0, 4, 0, 0)
             })
+            // NEW: savings badge — only on the best-rate card, only when there's a
+            // genuinely different (non-tied) next rate to compare against.
+            if (isBest && savingsVsNext != null && savingsVsNext > 0) {
+                addView(TextView(this@ItemSearchActivity).apply {
+                    text = "Rs %.2f cheaper than the next best rate".format(savingsVsNext)
+                    textSize = 11.5f
+                    setTextColor(Color.parseColor(teal))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setPadding(0, 4, 0, 0)
+                })
+            }
+            // NEW: staleness warning — this supplier's rate hasn't been confirmed
+            // by a purchase in a while, so it may no longer reflect what they'd
+            // actually charge today.
+            if (daysSincePurchase >= STALE_RATE_DAYS) {
+                addView(TextView(this@ItemSearchActivity).apply {
+                    text = "⚠ Rate may be outdated — last bought $daysSincePurchase days ago"
+                    textSize = 11f
+                    setTextColor(Color.parseColor(orange))
+                    setPadding(0, 4, 0, 0)
+                })
+            }
         }
     }
 
