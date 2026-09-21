@@ -70,6 +70,12 @@ class AddUnitUseCase(private val repository: PurchaseRepository) {
     suspend operator fun invoke(name: String) = repository.addUnit(name)
 }
 
+/** Inline "Add New Category" action for the Purchase screen — see
+ * PurchaseRepository.addCategory / RoomPurchaseRepository.addCategory. */
+class AddCategoryUseCase(private val repository: PurchaseRepository) {
+    suspend operator fun invoke(name: String) = repository.addCategory(name)
+}
+
 /** Inline "translate this unit to English" action for the Purchase screen — see
  * PurchaseRepository.renameUnitToEnglish for what it actually does. */
 class RenameUnitToEnglishUseCase(private val repository: PurchaseRepository) {

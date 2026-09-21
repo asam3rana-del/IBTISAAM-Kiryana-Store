@@ -246,18 +246,28 @@ class PartyActivity : AppCompatActivity() {
         // ---- IMPROVEMENT PACK (Party 10/10): search box + "Dues only" filter chip.
         // Lets a shop with a long party list actually find someone instead of
         // scrolling, and instantly see who still owes / is owed money. ----
-        val filterRow = LinearLayout(this).apply {
+        // FIX (search box + action chips squeezed into one row): these used to share
+        // a single HORIZONTAL row where the search box had weight=1 and five fixed-width
+        // chips ("Dues only", "Fix Balances", "Merge Duplicates", "Cleanup Payments",
+        // "Cleanup Orphaned") sat next to it. On a normal phone width that left almost no
+        // room for the search box (it rendered as a near-invisible sliver) and squashed the
+        // chips together with barely any gap between them. The search box now gets its own
+        // full-width row, and the chips sit in a horizontally scrollable row below with
+        // consistent spacing, so nothing is cramped and everything stays tappable.
+        val searchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, 12)
+            setPadding(0, 0, 0, 10)
         }
         val searchBox = innerField().apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
         searchField = EditText(this).apply {
             hint = Loc.t(this@PartyActivity, "Search by name or phone", "نام یا فون سے تلاش کریں")
             background = null
             textSize = 14f
+            setLeadingIcon(R.drawable.ic_search, "#9AA0AE", 16, 8)
+            compoundDrawablePadding = (8 * d).toInt()
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -268,10 +278,20 @@ class PartyActivity : AppCompatActivity() {
             })
         }
         searchBox.addView(searchField)
-        filterRow.addView(searchBox)
-        filterRow.addView(spacer(10).apply {
-            layoutParams = LinearLayout.LayoutParams((10 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
-        })
+        searchRow.addView(searchBox)
+        root.addView(searchRow)
+
+        val filterRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val filterScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = (12 * d).toInt()
+            }
+            addView(filterRow)
+        }
         duesOnlyChip = TextView(this).apply {
             text = Loc.t(this@PartyActivity, "Dues only", "صرف واجبات")
             textSize = 12f
@@ -360,7 +380,7 @@ class PartyActivity : AppCompatActivity() {
             setOnClickListener { viewModel.findOrphanedPayments() }
         }
         filterRow.addView(orphanedPaymentsChip)
-        root.addView(filterRow)
+        root.addView(filterScroll)
 
         listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listContainer)

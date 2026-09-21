@@ -101,6 +101,17 @@ class BillPreviewActivity : ThemedActivity() {
     private var totalAmount = 0.0
     private lateinit var receiptCardRef: LinearLayout
 
+    // FIX ("sale ki receipt ma customer ka [total] balance show nahi howa" — this
+    // on-screen card (also what gets captured and sent over WhatsApp) only ever
+    // showed THIS bill's own Balance Due, never the party's running total — so an
+    // opening balance, or dues from earlier bills, was invisible on every new
+    // sale's receipt even though it's always included in "You'll Get" on the
+    // party's own screen. printReceipt() below already computes this correctly
+    // for the physical/thermal print path (Prev Balance / Net Balance); these
+    // hold the same inputs so the on-screen card can show the same two rows.
+    private var billPaidAmount = 0.0
+    private var billType = "sale"
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         loadThemeColors()
@@ -121,6 +132,8 @@ class BillPreviewActivity : ThemedActivity() {
 
         referenceNo = reference
         totalAmount = total
+        billPaidAmount = paid
+        billType = type
 
         val lines = decodeItems(itemsEncoded)
         val isSale = type == "sale"
@@ -398,6 +411,26 @@ class BillPreviewActivity : ThemedActivity() {
             )
             shopSubLine.text = subParts.joinToString("  •  ")
             footerLine.text = receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }
+
+            // FIX (see billPaidAmount/billType note above): same Prev Balance / Net
+            // Balance rows the printed receipt already shows, now added to the
+            // on-screen card too — so it also shows in the WhatsApp bitmap, which is
+            // captured straight from this card.
+            val pid = partyId
+            if (pid != null) {
+                val netBalance = if (billType == "sale") {
+                    db.customerDao().find(pid)?.balance ?: 0.0
+                } else {
+                    db.supplierDao().find(pid)?.balance ?: 0.0
+                }
+                val prevBalance = netBalance - (totalAmount - billPaidAmount)
+                val insertAt = receiptCardRef.indexOfChild(footerLine)
+                receiptCardRef.addView(kv("Prev Balance", "Rs %.2f".format(prevBalance)), insertAt)
+                receiptCardRef.addView(
+                    kv("Net Balance", "Rs %.2f".format(netBalance), bold = true, valueColor = if (netBalance > 0.009) "#C62828" else textDark),
+                    insertAt + 1
+                )
+            }
         }
     }
 
