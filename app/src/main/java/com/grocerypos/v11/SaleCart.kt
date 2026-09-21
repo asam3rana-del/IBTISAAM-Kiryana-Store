@@ -22,10 +22,12 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
 import com.grocerypos.v11.domain.SaleLine
 import com.grocerypos.v11.pricing.DiscountCalculator
 import com.grocerypos.v11.ui.components.*
+import kotlinx.coroutines.launch
 
 // Pulled out of defaultUnitIndexFor() below as a plain top-level function (no
 // SaleActivity receiver needed) so BulkDefaultUnitActivity can show the same
