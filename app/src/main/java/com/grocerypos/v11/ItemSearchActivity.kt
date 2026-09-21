@@ -239,28 +239,78 @@ class ItemSearchActivity : ThemedActivity() {
             val purchaseRecords = db.purchaseDao().purchaseRecordsForItem(product.barcode)
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
+            // ---- Build the per-supplier summaries ONCE up front (not inline inside
+            // the Compare Suppliers section like before) — the new Quick Summary
+            // card above it needs the same "who's cheapest" answer, so both read
+            // off this single list instead of computing it twice. ----
+            val supplierSummaries: List<SupplierSummary> = if (purchaseRecords.isEmpty()) emptyList() else {
+                val bySupplier = purchaseRecords.groupBy { it.supplierName }
+                bySupplier.map { (supplier, records) ->
+                    // records are already newest-first (query orders by createdAt DESC),
+                    // so the first one per supplier is that supplier's latest rate and
+                    // the second (if any) is the rate just before it, for the trend arrow.
+                    val lastUnit = records.first().unit.ifBlank { product.unit }
+                    val lastRate = records.first().unitCost
+                    // FIX: different purchases (even from the same supplier, and
+                    // definitely across different suppliers) can be rung up in
+                    // different tiers — one per-Carton, another per-Piece. Comparing
+                    // or averaging those raw numbers directly would be comparing
+                    // apples to oranges (a Rs 60/Pcs line is NOT cheaper than a
+                    // Rs 2650/Ctn line just because 60 < 2650). Every record is
+                    // normalized to the product's PRIMARY-unit rate first — that's
+                    // the only fair common basis — and only the headline "Rs X"
+                    // figure stays in the transaction's own unit for readability.
+                    val primaryLastRate = product.toPrimaryUnitRate(lastRate, lastUnit)
+                    val avgPrimaryRate = records.sumOf { product.toPrimaryUnitRate(it.unitCost, it.unit.ifBlank { product.unit }) } / records.size
+                    SupplierSummary(
+                        supplier = supplier,
+                        lastRate = lastRate,
+                        lastUnit = lastUnit,
+                        primaryLastRate = primaryLastRate,
+                        avgRate = product.fromPrimaryUnitRate(avgPrimaryRate, lastUnit),
+                        purchaseCount = records.size,
+                        lastPurchaseAt = records.first().createdAt,
+                        prevPrimaryRate = records.getOrNull(1)?.let { product.toPrimaryUnitRate(it.unitCost, it.unit.ifBlank { product.unit }) }
+                    )
+                }.sortedBy { it.primaryLastRate }
+            }
+            val bestSupplier = supplierSummaries.minByOrNull { it.primaryLastRate }
+
+            // ---- NEW: Quick Summary — the single "am I making money, and who's
+            // cheapest" card at the very top, so a shopkeeper doesn't have to read
+            // three separate lists just to get today's answer. Only shown when
+            // there's at least a sale or a purchase to summarize. ----
+            if (saleRecords.isNotEmpty() || bestSupplier != null) {
+                detailContainer.addView(quickSummaryCard(product, saleRecords.firstOrNull(), bestSupplier))
+                detailContainer.addView(spacer(14))
+            }
+
             // ---- Sale rate history (newest first, so latest sale rate is on top) ----
             detailContainer.addView(sectionHeader("Sale Rate History", teal))
+            detailContainer.addView(sectionSubtitle("Jis rate par yeh item becha gaya, sabse naya pehle"))
             if (saleRecords.isEmpty()) {
                 detailContainer.addView(emptyRow("No sales of this item yet"))
             } else {
-                saleRecords.forEachIndexed { index, r ->
-                    detailContainer.addView(
-                        rateRow(
-                            party = r.customerName,
-                            // FIX: use the unit THAT LINE was actually sold in (si.unit),
-                            // not product.unit (the product's primary unit) — a sale
-                            // rung up in Pcs must not be relabelled as Ctn just because
-                            // Ctn happens to be this product's default unit.
-                            qtyLabel = "${r.qty} ${r.unit.ifBlank { product.unit }}",
-                            rate = r.unitPrice,
-                            date = fmt.format(Date(r.createdAt)),
-                            colorHex = teal,
-                            isLatest = index == 0,
-                            product = product
-                        )
+                val saleRows = saleRecords.mapIndexed { index, r ->
+                    rateRow(
+                        party = r.customerName,
+                        // FIX: use the unit THAT LINE was actually sold in (si.unit),
+                        // not product.unit (the product's primary unit) — a sale
+                        // rung up in Pcs must not be relabelled as Ctn just because
+                        // Ctn happens to be this product's default unit.
+                        qtyLabel = "${r.qty} ${r.unit.ifBlank { product.unit }}",
+                        rate = r.unitPrice,
+                        unit = r.unit.ifBlank { product.unit },
+                        date = fmt.format(Date(r.createdAt)),
+                        colorHex = teal,
+                        isLatest = index == 0,
+                        product = product
                     )
                 }
+                // NEW: collapse long history to the latest 3 with a "Show more"
+                // toggle, so an item with dozens of sales doesn't turn this screen
+                // into an endless scroll before the user even reaches Purchase History.
+                addCollapsibleRows(saleRows, visibleCount = 3, colorHex = teal)
             }
 
             detailContainer.addView(spacer(14))
@@ -270,38 +320,26 @@ class ItemSearchActivity : ThemedActivity() {
             // for this item (last rate) and who tends to be cheapest overall (avg
             // rate), without reading through the full chronological list above. ----
             detailContainer.addView(sectionHeader("Compare Suppliers", navy))
-            if (purchaseRecords.isEmpty()) {
+            detailContainer.addView(sectionSubtitle("Har supplier ka aakhri rate — sabse sasta upar, BEST RATE badge ke sath"))
+            if (supplierSummaries.isEmpty()) {
                 detailContainer.addView(emptyRow("No supplier data yet for this item"))
             } else {
-                val bySupplier = purchaseRecords.groupBy { it.supplierName }
-                val summaries = bySupplier.map { (supplier, records) ->
-                    // records are already newest-first (query orders by createdAt DESC),
-                    // so the first one per supplier is that supplier's latest rate and
-                    // the second (if any) is the rate just before it, for the trend arrow.
-                    val lastRate = records.first().unitCost
-                    val avgRate = records.sumOf { it.unitCost } / records.size
-                    SupplierSummary(
-                        supplier = supplier,
-                        lastRate = lastRate,
-                        avgRate = avgRate,
-                        purchaseCount = records.size,
-                        lastPurchaseAt = records.first().createdAt,
-                        prevRate = records.getOrNull(1)?.unitCost
-                    )
-                }.sortedBy { it.lastRate }
-                val cheapestRate = summaries.minOf { it.lastRate }
+                val cheapestPrimaryRate = supplierSummaries.minOf { it.primaryLastRate }
                 // NEW: savings badge on the best-rate card — how much cheaper the
                 // best rate is than the next-cheapest DISTINCT rate (so a tie between
                 // two suppliers at the same rate doesn't show "Rs 0.00 cheaper").
-                val distinctRates = summaries.map { it.lastRate }.distinct().sorted()
-                val savingsVsNext = if (distinctRates.size > 1) distinctRates[1] - distinctRates[0] else null
+                // Kept in primary-unit terms here since the two suppliers being
+                // compared may not share a display unit; supplierCompareRow converts
+                // it into that row's own lastUnit right before showing it.
+                val distinctPrimaryRates = supplierSummaries.map { it.primaryLastRate }.distinct().sorted()
+                val savingsVsNextPrimary = if (distinctPrimaryRates.size > 1) distinctPrimaryRates[1] - distinctPrimaryRates[0] else null
                 val now = System.currentTimeMillis()
-                summaries.forEach { s ->
+                supplierSummaries.forEach { s ->
                     detailContainer.addView(
                         supplierCompareRow(
                             summary = s,
-                            isBest = s.lastRate == cheapestRate,
-                            savingsVsNext = savingsVsNext,
+                            isBest = s.primaryLastRate == cheapestPrimaryRate,
+                            savingsVsNextPrimary = savingsVsNextPrimary,
                             daysSincePurchase = ((now - s.lastPurchaseAt) / (1000L * 60 * 60 * 24)).toInt(),
                             product = product
                         )
@@ -313,47 +351,169 @@ class ItemSearchActivity : ThemedActivity() {
 
             // ---- Purchase rate history (newest first, so latest cost rate is on top) ----
             detailContainer.addView(sectionHeader("Purchase Rate History", orange))
+            detailContainer.addView(sectionSubtitle("Jis rate par yeh item khareeda gaya, sabse naya pehle"))
             if (purchaseRecords.isEmpty()) {
                 detailContainer.addView(emptyRow("No purchases of this item yet"))
             } else {
-                purchaseRecords.forEachIndexed { index, r ->
-                    detailContainer.addView(
-                        rateRow(
-                            party = r.supplierName,
-                            // FIX: same as sale rows above — use that purchase line's
-                            // own unit (pi.unit), not product.unit.
-                            qtyLabel = "${r.qty} ${r.unit.ifBlank { product.unit }}",
-                            rate = r.unitCost,
-                            date = fmt.format(Date(r.createdAt)),
-                            colorHex = orange,
-                            isLatest = index == 0,
-                            product = product
-                        )
+                val purchaseRows = purchaseRecords.mapIndexed { index, r ->
+                    rateRow(
+                        party = r.supplierName,
+                        // FIX: same as sale rows above — use that purchase line's
+                        // own unit (pi.unit), not product.unit.
+                        qtyLabel = "${r.qty} ${r.unit.ifBlank { product.unit }}",
+                        rate = r.unitCost,
+                        unit = r.unit.ifBlank { product.unit },
+                        date = fmt.format(Date(r.createdAt)),
+                        colorHex = orange,
+                        isLatest = index == 0,
+                        product = product
+                    )
+                }
+                addCollapsibleRows(purchaseRows, visibleCount = 3, colorHex = orange)
+            }
+        }
+    }
+
+    // NEW: one-line plain-language explainer shown under each section header, so
+    // someone opening this screen for the first time doesn't have to guess what
+    // "Compare Suppliers" or "Sale Rate History" actually means.
+    private fun sectionSubtitle(text: String) = TextView(this).apply {
+        this.text = text
+        textSize = 11f
+        setTextColor(Color.parseColor(textMuted))
+        setPadding(4, 0, 4, 10)
+    }
+
+    // NEW: shows the latest N rows, and — only if there are more than that —
+    // a tappable "Show N more / Show less" toggle that reveals the rest without
+    // a second screen or a separate tap-through. Extra rows are pre-built and
+    // just hidden/shown, so toggling is instant.
+    private fun addCollapsibleRows(rows: List<View>, visibleCount: Int, colorHex: String) {
+        rows.take(visibleCount).forEach { detailContainer.addView(it) }
+        val remaining = rows.size - visibleCount
+        if (remaining <= 0) return
+        val extra = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        rows.drop(visibleCount).forEach { extra.addView(it) }
+        detailContainer.addView(extra)
+        lateinit var toggle: TextView
+        toggle = TextView(this).apply {
+            text = "Show $remaining more ▾"
+            textSize = 12.5f
+            setTextColor(Color.parseColor(colorHex))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(4, 2, 4, 14)
+            setOnClickListener {
+                val expanding = extra.visibility == View.GONE
+                extra.visibility = if (expanding) View.VISIBLE else View.GONE
+                toggle.text = if (expanding) "Show less ▴" else "Show $remaining more ▾"
+            }
+        }
+        detailContainer.addView(toggle)
+    }
+
+    // NEW: the "am I making money, and who's cheapest" card — one glance instead
+    // of reading three separate lists. Shows the latest sale rate, the currently
+    // cheapest supplier's rate, and the margin between them (converted onto the
+    // SAME unit basis via toPrimaryUnitRate/fromPrimaryUnitRate before subtracting,
+    // since a sale rung up per-Pcs and a purchase rung up per-Ctn are not directly
+    // comparable numbers otherwise). Any piece that's missing (no sales yet, or no
+    // purchases yet) is simply left out rather than shown as a misleading zero.
+    private fun quickSummaryCard(product: Product, latestSale: ItemSaleRecord?, bestSupplier: SupplierSummary?): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 16, 20, 16)
+            background = strokedBg(navy, "#F0F4FA", 14)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+
+            addView(TextView(this@ItemSearchActivity).apply {
+                text = "QUICK SUMMARY"
+                textSize = 10.5f
+                setTextColor(Color.parseColor(navy))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 0, 0, 10)
+            })
+
+            fun statRow(label: String, valueText: String, valueColor: String) {
+                addView(LinearLayout(this@ItemSearchActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, 0, 0, 8)
+                    addView(TextView(this@ItemSearchActivity).apply {
+                        text = label
+                        textSize = 12.5f
+                        setTextColor(Color.parseColor(textMuted))
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    })
+                    addView(TextView(this@ItemSearchActivity).apply {
+                        text = valueText
+                        textSize = 13.5f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setTextColor(Color.parseColor(valueColor))
+                    })
+                })
+            }
+
+            if (latestSale != null) {
+                val saleUnit = latestSale.unit.ifBlank { product.unit }
+                statRow("Current Sale Rate", "Rs %.2f / %s".format(latestSale.unitPrice, saleUnit), teal)
+            }
+            if (bestSupplier != null) {
+                statRow("Best Purchase Rate", "Rs %.2f / %s  (${bestSupplier.supplier})".format(bestSupplier.lastRate, bestSupplier.lastUnit), orange)
+            }
+            // Margin only makes sense once we have BOTH a sale rate and a purchase
+            // rate to compare — and only once they're put on the same unit basis.
+            if (latestSale != null && bestSupplier != null) {
+                val saleUnit = latestSale.unit.ifBlank { product.unit }
+                val costInSaleUnit = product.fromPrimaryUnitRate(bestSupplier.primaryLastRate, saleUnit)
+                if (costInSaleUnit > 0) {
+                    val margin = latestSale.unitPrice - costInSaleUnit
+                    val marginPct = (margin / costInSaleUnit) * 100
+                    val marginColor = if (margin >= 0) teal else "#D9534F"
+                    statRow(
+                        "Profit Margin",
+                        "%s Rs %.2f / %s  (%.1f%%)".format(if (margin >= 0) "+" else "", margin, saleUnit, marginPct),
+                        marginColor
                     )
                 }
             }
         }
     }
 
-    // NEW: given a rate in the product's PRIMARY unit, format the same rate in
-    // every OTHER tier of the product's unit ladder (secondary/tertiary), e.g.
-    // "Rs 769.17 / Dzn  •  Rs 64.10 / Pc" for a Carton→Dozen→Piece product.
-    // Reuses Product.fromPrimaryUnitRate() (the same conversion Sale/Purchase
+    // NEW: given a rate entered in [enteredUnit] (may be ANY tier — Pcs, Dzn, Ctn,
+    // whatever that specific sale/purchase line actually used), format the same
+    // rate in every OTHER tier of the product's unit ladder, e.g.
+    // "Rs 2880.00 / Ctn  •  Rs 720.00 / Dzn" when the line itself was rung up
+    // per-Pcs. Converts through the primary-unit rate as a common pivot (via
+    // toPrimaryUnitRate/fromPrimaryUnitRate — the same conversion Sale/Purchase
     // screens use) so this can never drift out of sync with actual pricing math.
+    // FIX: previously this always treated the incoming rate as if it were a
+    // PRIMARY-unit (Ctn) rate and only dropped the primary tier from the
+    // breakdown — correct only when the sale/purchase itself happened to be in
+    // the primary unit. A line sold in Pcs got its Pcs rate silently relabelled
+    // as a Ctn rate and divided down from there, producing a wrong Dzn/Pcs
+    // breakdown. Now it pivots off whichever unit the line was ACTUALLY in.
     // Returns "" for a 1-tier product (nothing to break down).
-    private fun Product.rateBreakdownLabel(primaryRate: Double): String {
+    private fun Product.rateBreakdownLabel(enteredRate: Double, enteredUnit: String): String {
         val ladder = unitLadder()
         if (ladder.size <= 1) return ""
+        val primaryRate = toPrimaryUnitRate(enteredRate, enteredUnit)
         // unitLadder() is smallest-first; reverse to largest-first ([primary, ...,
-        // smallest]) and drop the primary tier since that's already the main
-        // "Rs X" figure shown above this line.
-        return ladder.asReversed().drop(1).joinToString("   •   ") { tier ->
-            "Rs %.2f / ${tier.unit}".format(fromPrimaryUnitRate(primaryRate, tier.unit))
-        }
+        // smallest]) and drop whichever tier IS enteredUnit, since that's already
+        // the main "Rs X" figure shown above this line.
+        return ladder.asReversed()
+            .filterNot { it.unit.trim().equals(enteredUnit.trim(), ignoreCase = true) }
+            .joinToString("   •   ") { tier ->
+                "Rs %.2f / ${tier.unit}".format(fromPrimaryUnitRate(primaryRate, tier.unit))
+            }
     }
 
-    private fun unitBreakdownRow(product: Product, rate: Double, colorHex: String): TextView? {
-        val label = product.rateBreakdownLabel(rate)
+    private fun unitBreakdownRow(product: Product, rate: Double, unit: String, colorHex: String): TextView? {
+        val label = product.rateBreakdownLabel(rate, unit)
         if (label.isEmpty()) return null
         return TextView(this).apply {
             text = label
@@ -366,11 +526,13 @@ class ItemSearchActivity : ThemedActivity() {
     // NEW: one grouped-by-supplier summary row for the Compare Suppliers table.
     private data class SupplierSummary(
         val supplier: String,
-        val lastRate: Double,
-        val avgRate: Double,
+        val lastRate: Double,       // headline figure, in lastUnit (the unit that purchase line actually used)
+        val lastUnit: String,       // unit that supplier's LATEST purchase line was actually rung up in
+        val primaryLastRate: Double, // same rate normalized to the product's PRIMARY unit — for cross-supplier comparison only, never displayed directly
+        val avgRate: Double,        // average cost, normalized then converted back into lastUnit so it reads naturally next to the headline figure
         val purchaseCount: Int,
         val lastPurchaseAt: Long,
-        val prevRate: Double? // rate from the purchase just before the latest one, for the trend arrow
+        val prevPrimaryRate: Double? // primary-unit-normalized rate from the purchase just before the latest one, for the trend arrow
     )
 
     // Below this many days since the last purchase, we warn that the rate might
@@ -381,7 +543,7 @@ class ItemSearchActivity : ThemedActivity() {
     // and running average, purchase count, a "BEST RATE" badge + savings-vs-next
     // on whoever is currently cheapest, a trend arrow vs their own previous rate,
     // and a staleness warning if their last purchase was a while ago.
-    private fun supplierCompareRow(summary: SupplierSummary, isBest: Boolean, savingsVsNext: Double?, daysSincePurchase: Int, product: Product): LinearLayout {
+    private fun supplierCompareRow(summary: SupplierSummary, isBest: Boolean, savingsVsNextPrimary: Double?, daysSincePurchase: Int, product: Product): LinearLayout {
         val supplier = summary.supplier
         val lastRate = summary.lastRate
         return LinearLayout(this).apply {
@@ -412,17 +574,21 @@ class ItemSearchActivity : ThemedActivity() {
                 top.addView(View(this@ItemSearchActivity).apply { layoutParams = LinearLayout.LayoutParams(8, 1) })
             }
             // NEW: trend arrow — how this supplier's rate moved vs their own
-            // previous purchase (not vs other suppliers). Rising cost = orange ↑,
-            // falling cost = teal ↓. No arrow on a single purchase or unchanged rate.
-            summary.prevRate?.let { prev ->
-                if (lastRate > prev) {
+            // previous purchase (not vs other suppliers). Compared on the
+            // primary-unit-normalized rate, since the previous purchase may have
+            // been rung up in a different unit tier than the latest one — comparing
+            // the raw entered numbers directly would be meaningless in that case.
+            // Rising cost = orange ▲, falling cost = teal ▼. No arrow on a single
+            // purchase or an unchanged (normalized) rate.
+            summary.prevPrimaryRate?.let { prevPrimary ->
+                if (summary.primaryLastRate > prevPrimary) {
                     top.addView(TextView(this@ItemSearchActivity).apply {
                         text = "▲"
                         textSize = 11f
                         setTextColor(Color.parseColor(orange))
                         setPadding(0, 0, 6, 0)
                     })
-                } else if (lastRate < prev) {
+                } else if (summary.primaryLastRate < prevPrimary) {
                     top.addView(TextView(this@ItemSearchActivity).apply {
                         text = "▼"
                         textSize = 11f
@@ -438,7 +604,7 @@ class ItemSearchActivity : ThemedActivity() {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             addView(top)
-            unitBreakdownRow(product, lastRate, if (isBest) navy else textMuted)?.let { addView(it) }
+            unitBreakdownRow(product, lastRate, summary.lastUnit, if (isBest) navy else textMuted)?.let { addView(it) }
             addView(TextView(this@ItemSearchActivity).apply {
                 text = "Last rate  •  Avg Rs %.2f over %d purchase%s".format(summary.avgRate, summary.purchaseCount, if (summary.purchaseCount == 1) "" else "s")
                 textSize = 11.5f
@@ -446,7 +612,10 @@ class ItemSearchActivity : ThemedActivity() {
                 setPadding(0, 4, 0, 0)
             })
             // NEW: savings badge — only on the best-rate card, only when there's a
-            // genuinely different (non-tied) next rate to compare against.
+            // genuinely different (non-tied) next rate to compare against. Converted
+            // from the primary-unit difference into THIS row's own lastUnit so it
+            // reads naturally next to the headline "Rs X" figure above.
+            val savingsVsNext = savingsVsNextPrimary?.let { product.fromPrimaryUnitRate(it, summary.lastUnit) }
             if (isBest && savingsVsNext != null && savingsVsNext > 0) {
                 addView(TextView(this@ItemSearchActivity).apply {
                     text = "Rs %.2f cheaper than the next best rate".format(savingsVsNext)
@@ -485,7 +654,7 @@ class ItemSearchActivity : ThemedActivity() {
         setPadding(4, 4, 4, 12)
     }
 
-    private fun rateRow(party: String, qtyLabel: String, rate: Double, date: String, colorHex: String, isLatest: Boolean, product: Product): LinearLayout {
+    private fun rateRow(party: String, qtyLabel: String, rate: Double, unit: String, date: String, colorHex: String, isLatest: Boolean, product: Product): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 14, 18, 14)
@@ -521,7 +690,7 @@ class ItemSearchActivity : ThemedActivity() {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             addView(top)
-            unitBreakdownRow(product, rate, colorHex)?.let { addView(it) }
+            unitBreakdownRow(product, rate, unit, colorHex)?.let { addView(it) }
             addView(TextView(this@ItemSearchActivity).apply {
                 text = "$qtyLabel  •  $date"
                 textSize = 11.5f
