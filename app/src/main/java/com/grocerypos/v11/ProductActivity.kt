@@ -33,6 +33,7 @@ import com.grocerypos.v11.matchesQuery
 import com.grocerypos.v11.isValidSmallestQty
 import com.grocerypos.v11.smallestUnitName
 import com.grocerypos.v11.toSmallestUnits
+import com.grocerypos.v11.fromSmallestUnits
 import com.grocerypos.v11.util.Loc
 import com.grocerypos.v11.util.ThemeManager
 import kotlinx.coroutines.flow.collectLatest
@@ -1491,8 +1492,39 @@ class ProductActivity : ThemedActivity() {
         val resolvedOpeningStock: Double
 
         if (existing != null) {
-            resolvedStock = existing.stock
-            resolvedOpeningStock = existing.openingStock
+            // FIX (unit-ladder rescale bug): `stock`/`openingStock` are stored as a
+            // raw count of the product's SMALLEST unit. If this edit changed the
+            // unit ladder (added/changed secondary or tertiary unit, or the
+            // primary unit itself), the smallest unit's real-world size just
+            // changed — but the raw number was being carried over unchanged
+            // (existing.stock), silently reinterpreting it under the NEW ladder.
+            // e.g. adding "1 Petti = 12 Tray, 1 Tray = 30 Pcs" to a product whose
+            // stock was stored as a plain count of Petti made 6 (Petti) suddenly
+            // mean 6 Pcs instead of 6*360 Pcs — stock appears to collapse.
+            //
+            // Fix: re-express the OLD stock in the OLD primary unit (anchor that
+            // is assumed stable across the edit), then convert that same
+            // primary-unit quantity into the NEW smallest unit. If the primary
+            // unit name itself changed too, this can't perfectly disambiguate —
+            // toSmallestUnits() falls back to the new smallest tier in that case,
+            // same as everywhere else in the app.
+            val newDraft = draftProduct()
+            val ladderChanged =
+                existing.unit != newDraft.unit ||
+                existing.secondaryUnit != newDraft.secondaryUnit ||
+                existing.secondaryUnitQty != newDraft.secondaryUnitQty ||
+                existing.tertiaryUnit != newDraft.tertiaryUnit ||
+                existing.tertiaryUnitQty != newDraft.tertiaryUnitQty
+
+            if (ladderChanged) {
+                val oldPrimaryStockQty = existing.fromSmallestUnits(existing.stock, existing.unit)
+                val oldPrimaryOpeningQty = existing.fromSmallestUnits(existing.openingStock, existing.unit)
+                resolvedStock = newDraft.toSmallestUnits(oldPrimaryStockQty, existing.unit)
+                resolvedOpeningStock = newDraft.toSmallestUnits(oldPrimaryOpeningQty, existing.unit)
+            } else {
+                resolvedStock = existing.stock
+                resolvedOpeningStock = existing.openingStock
+            }
         } else {
             val openingQty = stock.text.toString().toDoubleOrNull() ?: 0.0
             resolvedStock = openingStockToSmallest(
