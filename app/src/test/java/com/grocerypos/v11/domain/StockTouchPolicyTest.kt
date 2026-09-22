@@ -197,4 +197,50 @@ class StockTouchPolicyTest {
         val items = listOf(purchaseItem(barcode = "B1"), purchaseItem(barcode = "B2"))
         assertTrue(StockTouchPolicy.purchaseItemsUnchanged(lines, items))
     }
+
+    // ---------------------------------------------------------------------
+    // Purchase side — purchaseChangedLines() (per-line, not whole-bill)
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun `changedLines - fully unchanged bill yields two empty lists`() {
+        val lines = listOf(purchaseLine(barcode = "B1"), purchaseLine(barcode = "B2"))
+        val items = listOf(purchaseItem(barcode = "B1"), purchaseItem(barcode = "B2"))
+        val (toReverse, toApply) = StockTouchPolicy.purchaseChangedLines(lines, items)
+        assertTrue(toReverse.isEmpty())
+        assertTrue(toApply.isEmpty())
+    }
+
+    @Test
+    fun `changedLines - editing one line leaves the other line untouched on both sides`() {
+        // B1 edited (qty 2 -> 5), B2 left exactly as it was.
+        val lines = listOf(purchaseLine(barcode = "B1", qty = 5.0), purchaseLine(barcode = "B2"))
+        val items = listOf(purchaseItem(barcode = "B1", qty = 2.0), purchaseItem(barcode = "B2"))
+        val (toReverse, toApply) = StockTouchPolicy.purchaseChangedLines(lines, items)
+        // Only B1's original row needs reversing...
+        assertTrue(toReverse.size == 1 && toReverse[0].barcode == "B1")
+        // ...and only B1's edited line needs reapplying. B2 never appears on
+        // either side, so its stock/cost is left completely alone — this is
+        // the exact case that used to trip "already kam ho chuka hai" on B2
+        // just because B1 was the one actually being edited.
+        assertTrue(toApply.size == 1 && toApply[0].barcode == "B1")
+    }
+
+    @Test
+    fun `changedLines - a newly added line has no original counterpart to reverse`() {
+        val lines = listOf(purchaseLine(barcode = "B1"), purchaseLine(barcode = "B2"))
+        val items = listOf(purchaseItem(barcode = "B1"))
+        val (toReverse, toApply) = StockTouchPolicy.purchaseChangedLines(lines, items)
+        assertTrue(toReverse.isEmpty())
+        assertTrue(toApply.size == 1 && toApply[0].barcode == "B2")
+    }
+
+    @Test
+    fun `changedLines - a removed line has no edited counterpart to reapply`() {
+        val lines = listOf(purchaseLine(barcode = "B1"))
+        val items = listOf(purchaseItem(barcode = "B1"), purchaseItem(barcode = "B2"))
+        val (toReverse, toApply) = StockTouchPolicy.purchaseChangedLines(lines, items)
+        assertTrue(toReverse.size == 1 && toReverse[0].barcode == "B2")
+        assertTrue(toApply.isEmpty())
+    }
 }
