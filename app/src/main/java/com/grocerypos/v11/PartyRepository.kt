@@ -178,6 +178,18 @@ class PartyRepository(
     suspend fun liveSupplierBalances(): Map<Long, Double> =
         db.supplierDao().allList().associate { it.id to trueSupplierBalance(it.id) }
 
+    // ADDED (balance drift — Purchase/Sale entry screens): a cheap single-party version
+    // of the above, for screens that only need one party's live balance right now (e.g.
+    // the running "Party balance" shown while filling out a Purchase/Sale bill) instead
+    // of recomputing every party in the shop just to read one number. Same source of
+    // truth as liveSupplierBalances()/liveCustomerBalances() — never the stored
+    // `.balance` field — so this can never show a different figure than the Dashboard
+    // or Party screens for the same party.
+    suspend fun liveSupplierBalance(supplierId: Long): Double = trueSupplierBalance(supplierId)
+
+    /** Single-customer version of [liveSupplierBalance] — see that comment. */
+    suspend fun liveCustomerBalance(customerId: Long): Double = trueCustomerBalance(customerId)
+
     suspend fun recalculateBalances(dryRun: Boolean = false): RecalcResult {
         var customersFixed = 0
         var suppliersFixed = 0

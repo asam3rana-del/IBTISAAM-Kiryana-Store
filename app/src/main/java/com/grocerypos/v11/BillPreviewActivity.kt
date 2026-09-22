@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
+import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.launch
 import java.io.File
@@ -87,6 +88,22 @@ class BillPreviewActivity : ThemedActivity() {
     // Whole-rupee, comma-grouped amount formatting for the "Gate Pass" print
     // layout (e.g. 266030.0 -> "266,030"), matching the reference wholesaler
     // slip's amount columns, which show no decimal/paisa places.
+    // PERMANENT FIX (balance drift — same bug as PurchaseActivity's "Party balance"
+    // line): the stored `customer.balance`/`supplier.balance` fields are only ever
+    // nudged by SyncQueueHelper's adjust*Balance calls and can drift from the real
+    // bills, so a receipt printed/shown here could disagree with the Dashboard for the
+    // same party. Compute it fresh from the ledger instead — see PartyRepository.
+    private suspend fun liveNetBalance(db: com.grocerypos.v11.PosDatabase, isSale: Boolean, partyId: Long): Double {
+        val repo = PartyRepository(db, applicationContext)
+        return if (isSale) {
+            val c = db.customerDao().find(partyId) ?: return 0.0
+            c.openingBalance + repo.liveCustomerBalance(partyId) + c.stuckBalance
+        } else {
+            val s = db.supplierDao().find(partyId) ?: return 0.0
+            s.openingBalance + repo.liveSupplierBalance(partyId)
+        }
+    }
+
     private fun formatAmt(v: Double): String =
         java.text.DecimalFormat("#,##0").format(Math.round(v))
 
@@ -418,11 +435,7 @@ class BillPreviewActivity : ThemedActivity() {
             // captured straight from this card.
             val pid = partyId
             if (pid != null) {
-                val netBalance = if (billType == "sale") {
-                    db.customerDao().find(pid)?.balance ?: 0.0
-                } else {
-                    db.supplierDao().find(pid)?.balance ?: 0.0
-                }
+                val netBalance = liveNetBalance(db, billType == "sale", pid)
                 val prevBalance = netBalance - (totalAmount - billPaidAmount)
                 val insertAt = receiptCardRef.indexOfChild(footerLine)
                 receiptCardRef.addView(kv("Prev Balance", "Rs %.2f".format(prevBalance)), insertAt)
@@ -707,11 +720,7 @@ class BillPreviewActivity : ThemedActivity() {
             // no linked party have no ledger, so both are omitted for them.
             val pid = partyId
             if (pid != null) {
-                val netBalance = if (type == "sale") {
-                    db.customerDao().find(pid)?.balance ?: 0.0
-                } else {
-                    db.supplierDao().find(pid)?.balance ?: 0.0
-                }
+                val netBalance = liveNetBalance(db, type == "sale", pid)
                 val prevBalance = netBalance - (total - paid)
                 receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(prevBalance), "Prev Balance"))
                 receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(formatAmt(netBalance), "Net Balance", bold = true))

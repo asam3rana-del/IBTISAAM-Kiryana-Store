@@ -26,6 +26,7 @@ import androidx.activity.viewModels
 import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.*
+import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.data.PurchaseEditData
 import com.grocerypos.v11.data.PurchaseLine
 import com.grocerypos.v11.domain.ScannedLine
@@ -151,6 +152,16 @@ class PurchaseActivity : ThemedActivity() {
     private lateinit var scrollArea: ScrollView
 
     private var suppliers = listOf<Supplier>()
+    // PERMANENT FIX (balance drift — this screen showing a different figure than the
+    // Dashboard for the same supplier): party balances everywhere else already come
+    // from PartyRepository's live ledger computation, never the stored, driftable
+    // `.balance` field — see PartyRepository.liveSupplierBalance(). This screen's own
+    // "Party balance" line needs the same source of truth, or it can show a stale
+    // number the Dashboard/Party screens don't agree with.
+    private val partyRepo by lazy { PartyRepository(PosDatabase.get(this), applicationContext) }
+    // Guards against a slow lookup for an old party name landing after the user has
+    // already moved on to typing/selecting a different party.
+    private var balanceLookupToken = 0
     private var products = listOf<Product>()
     private var allUnits = listOf("pcs", "kg", "box", "dozen", "carton", "ctn", "outer", "dabbi")
     private val lines = mutableListOf<PurchaseLine>()
@@ -1115,8 +1126,20 @@ class PurchaseActivity : ThemedActivity() {
     private fun updateSupplierBalanceDisplay(name: String) {
         val supplier = suppliers.find { it.name.equals(name, ignoreCase = true) }
         if (supplier == null) { supplierBalanceText.text = "Rs 0.00"; supplierBalanceText.setTextColor(Color.parseColor(textMuted)); return }
-        supplierBalanceText.text = "Rs %.2f".format(supplier.balance)
-        supplierBalanceText.setTextColor(Color.parseColor(if (supplier.balance > 0) red else successGreen))
+        // PERMANENT FIX (balance drift): read the live ledger balance (bills + payments,
+        // recomputed fresh) instead of the stored `supplier.balance` field, which only
+        // ever moves via SyncQueueHelper.adjustSupplierBalance nudges and can drift away
+        // from the real bills — exactly what let this screen show a different number
+        // than the Dashboard for the same supplier. See PartyRepository's big comment.
+        val token = ++balanceLookupToken
+        supplierBalanceText.text = "…"
+        supplierBalanceText.setTextColor(Color.parseColor(textMuted))
+        lifecycleScope.launch {
+            val live = supplier.openingBalance + partyRepo.liveSupplierBalance(supplier.id)
+            if (token != balanceLookupToken) return@launch // a newer lookup superseded this one
+            supplierBalanceText.text = "Rs %.2f".format(live)
+            supplierBalanceText.setTextColor(Color.parseColor(if (live > 0) red else successGreen))
+        }
     }
 
     private fun premiumCard() = LinearLayout(this).apply {
