@@ -692,6 +692,14 @@ class ItemsActivity : ThemedActivity() {
                     // add the new name, repoint every product that used the old
                     // name (existing helper — already used by BulkTranslateActivity),
                     // then remove the old category row.
+                    // FIX (#12 — category/unit master sync incomplete, missed here): same
+                    // gap already fixed in BulkTranslateActivity.saveAll()/RoomPurchaseRepository.
+                    // renameUnitToEnglish()/DuplicateUnitFix — renameCategoryInProducts() is a
+                    // raw SQL UPDATE that never touches sync on its own, so every touched
+                    // product must be re-read (post-rename) and enqueued too. Only the category
+                    // master-list row was being pushed here, leaving every product under this
+                    // category still showing the OLD name on other devices.
+                    val touchedBarcodes = db.productDao().findByCategory(category.name).map { it.barcode }
                     val newCategory = Category(newName)
                     db.categoryDao().insert(newCategory)
                     db.productDao().renameCategoryInProducts(category.name, newName)
@@ -701,6 +709,10 @@ class ItemsActivity : ThemedActivity() {
                     // list stays in sync too.
                     SyncQueueHelper.enqueueCategory(db, newCategory, this@ItemsActivity)
                     SyncQueueHelper.enqueueDelete(db, "category", category.name, this@ItemsActivity)
+                    touchedBarcodes.forEach { barcode ->
+                        db.productDao().find(barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
+                    }
+                    if (touchedBarcodes.isNotEmpty()) SyncQueueHelper.trigger(this@ItemsActivity)
                     Toast.makeText(this@ItemsActivity, "Category renamed", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -722,10 +734,18 @@ class ItemsActivity : ThemedActivity() {
             .setPositiveButton("Delete") { _, _ ->
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@ItemsActivity)
+                    // FIX (#12 — category/unit master sync incomplete, missed here): see
+                    // promptEditCategory() above — the moved-out products must be re-enqueued
+                    // too, or other devices keep showing them under the deleted category.
+                    val touchedBarcodes = if (productCount > 0) db.productDao().findByCategory(category.name).map { it.barcode } else emptyList()
                     if (productCount > 0) db.productDao().renameCategoryInProducts(category.name, "")
                     db.categoryDao().deleteByName(category.name)
                     // NEW (Units/Categories master-list sync): propagate the delete.
                     SyncQueueHelper.enqueueDelete(db, "category", category.name, this@ItemsActivity)
+                    touchedBarcodes.forEach { barcode ->
+                        db.productDao().find(barcode)?.let { p -> SyncQueueHelper.enqueueProduct(db, p) }
+                    }
+                    if (touchedBarcodes.isNotEmpty()) SyncQueueHelper.trigger(this@ItemsActivity)
                     Toast.makeText(this@ItemsActivity, "Category deleted", Toast.LENGTH_SHORT).show()
                 }
             }

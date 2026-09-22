@@ -281,7 +281,16 @@ class DueRemindersActivity : AppCompatActivity() {
                 set(y, m, d, 0, 0, 0); set(Calendar.MILLISECOND, 0)
             }.timeInMillis
             lifecycleScope.launch {
-                PosDatabase.get(this@DueRemindersActivity).saleDao().setDueDate(sale.invoice, picked)
+                val db = PosDatabase.get(this@DueRemindersActivity)
+                db.saleDao().setDueDate(sale.invoice, picked)
+                // FIX (due date never syncs to other devices — same class of bug already
+                // fixed for markReturned() etc. elsewhere): setDueDate() is a raw SQL UPDATE
+                // that sets dirty=1 on the row, but nothing scans for dirty rows on its own —
+                // only an explicit enqueue*() call pushes a change. Without this, a due date
+                // picked here stayed local-only forever.
+                db.saleDao().findSale(sale.invoice)?.let { updated ->
+                    SyncQueueHelper.enqueueSale(db, updated, this@DueRemindersActivity)
+                }
                 loadData()
             }
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
@@ -402,7 +411,13 @@ class DueRemindersActivity : AppCompatActivity() {
                 set(y, m, d, 0, 0, 0); set(Calendar.MILLISECOND, 0)
             }.timeInMillis
             lifecycleScope.launch {
-                PosDatabase.get(this@DueRemindersActivity).purchaseDao().setDueDate(purchase.billNo, picked)
+                val db = PosDatabase.get(this@DueRemindersActivity)
+                db.purchaseDao().setDueDate(purchase.billNo, picked)
+                // FIX (due date never syncs to other devices) — see the sale-side setDueDate
+                // call above for the full explanation.
+                db.purchaseDao().findPurchase(purchase.billNo)?.let { updated ->
+                    SyncQueueHelper.enqueuePurchase(db, updated, this@DueRemindersActivity)
+                }
                 loadData()
             }
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
