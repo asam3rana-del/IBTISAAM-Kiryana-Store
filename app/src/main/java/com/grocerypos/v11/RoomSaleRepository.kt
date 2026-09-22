@@ -134,8 +134,15 @@ class RoomSaleRepository(
                         SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty, "SALE_EDIT_REVERSAL", invoice)
                     }
                 }
+                // FIX (overpaid-bill balance gap): was `> 0`, so an original bill that
+                // had been OVERpaid (originalOutstanding negative — the excess had been
+                // credited to the customer as an advance, see the forward-adjustment
+                // below) never had that advance reversed on edit/delete, permanently
+                // stranding it in the customer's balance. Reversing on any nonzero
+                // outstanding (due OR advance) keeps this symmetric with the
+                // forward-adjustment change below.
                 val originalOutstanding = original.total - original.paid
-                if (original.customerId != null && originalOutstanding > 0) {
+                if (original.customerId != null && kotlin.math.abs(originalOutstanding) > 0.009) {
                     SyncQueueHelper.adjustCustomerBalance(db, original.customerId, -originalOutstanding)
                 }
                 // FIX (10/10 Priority #3 — edit without delete/re-add): line items
@@ -273,7 +280,14 @@ class RoomSaleRepository(
                 }
             }
 
-            if (customer != null && paid < total) {
+            // FIX (overpaid-bill → party balance gap): was `paid < total`, so an
+            // overpaid bill (paid > total) never touched the customer's balance at
+            // all — the extra amount just vanished instead of showing up as a
+            // credit/advance (a negative balance — see CustomerPayableTest's
+            // advancePaymentOnDaily_stillOffsetsTotal). Any nonzero difference now
+            // adjusts the balance: positive total-paid still records a due, negative
+            // total-paid now records the overpayment as an advance.
+            if (customer != null && kotlin.math.abs(total - paid) > 0.009) {
                 SyncQueueHelper.adjustCustomerBalance(db, customer!!.id, total - paid)
             }
 
@@ -357,8 +371,11 @@ class RoomSaleRepository(
                 val smallestQty = si.smallestQty(p)
                 SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty, "SALE_REVERSAL", invoice)
             }
+            // FIX (overpaid-bill balance gap): see saveSale()'s matching comment —
+            // deleting an overpaid bill must reverse its advance credit too, not
+            // just a due.
             val outstanding = sale.total - sale.paid
-            if (sale.customerId != null && outstanding > 0) {
+            if (sale.customerId != null && kotlin.math.abs(outstanding) > 0.009) {
                 SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -outstanding)
             }
             db.saleDao().deleteItems(invoice)

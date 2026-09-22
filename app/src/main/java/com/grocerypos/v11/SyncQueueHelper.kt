@@ -449,6 +449,26 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // FIX (audit — cross-device OPEN REGISTER race): CashRegisterActivity's
+    // insertIfAbsent() only makes the check-and-insert atomic on ONE device's local
+    // SQLite. Two devices opening the same day's register while both offline each
+    // pass that local check and separately queue an "upsert" — and SyncApi.push()'s
+    // generic upsert branch is last-write-wins by updatedAt, so whichever device's
+    // push lands second on Firestore silently overwrites the first one's opening
+    // balance with no conflict signal at all (the exact residual gap the DAO
+    // comment on insertIfAbsent() calls out as unresolved). OPEN specifically needs
+    // to be enqueued as "create_if_absent" instead of "upsert" — see its dedicated
+    // branch in SyncApi.push(), which only creates the Firestore doc if it does not
+    // already exist, so the SECOND device's create is dropped server-side instead
+    // of clobbering the first. That device's local row then gets corrected back to
+    // the real opening balance on its next pull() (see the cash_register loop in
+    // SyncApi.applyServerChanges, which is unconditional here — it only skips a
+    // date that still has a pending *local* push of its own).
+    suspend fun enqueueCashRegisterCreate(db: PosDatabase, r: CashRegister, context: Context? = null) {
+        enqueue(db, "cash_register", cashRegisterEntityId(r), "create_if_absent", cashRegisterJson(r))
+        context?.let { trigger(it) }
+    }
+
     // NEW (App Settings sync): silently does nothing for a non-whitelisted key — see
     // SYNCED_APP_SETTING_KEYS above. Call sites don't need their own if-check.
     suspend fun enqueueAppSetting(db: PosDatabase, s: AppSetting, context: Context? = null) {

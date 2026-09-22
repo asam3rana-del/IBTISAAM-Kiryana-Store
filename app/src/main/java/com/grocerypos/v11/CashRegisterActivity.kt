@@ -343,6 +343,14 @@ class CashRegisterActivity : AppCompatActivity() {
                     // row. insertIfAbsent() makes the check-and-insert a single atomic SQLite
                     // statement — it either inserts, or (if today's row already exists) does
                     // nothing and reports that via its return value, with no gap in between.
+                    // This covers a single device (e.g. a double-tap). It does NOT cover two
+                    // different devices each opening today's register while both still offline —
+                    // each passes this same local check independently. FIX (audit — cross-device
+                    // OPEN REGISTER race): that case is now closed server-side too, by queuing
+                    // this as "create_if_absent" (SyncQueueHelper.enqueueCashRegisterCreate)
+                    // instead of a plain upsert — see its comment and SyncApi.push()'s dedicated
+                    // branch for how the second device's create is dropped instead of clobbering
+                    // the first device's opening balance.
                     val newReg = CashRegister(date = todayKey(), openingCash = oc, openingBank = ob, closingCash = 0.0, closingBank = 0.0, closed = false)
                     val insertedRowId = db.cashRegisterDao().insertIfAbsent(newReg)
                     if (insertedRowId == -1L) {
@@ -350,7 +358,7 @@ class CashRegisterActivity : AppCompatActivity() {
                         refresh()
                         return@launch
                     }
-                    com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, newReg, this@CashRegisterActivity)
+                    com.grocerypos.v11.SyncQueueHelper.enqueueCashRegisterCreate(db, newReg, this@CashRegisterActivity)
                     Toast.makeText(this@CashRegisterActivity, Loc.t(this@CashRegisterActivity, "Register opened", "رجسٹر کھل گیا"), Toast.LENGTH_SHORT).show()
                     refresh()
                 }

@@ -1472,10 +1472,12 @@ interface ProductDao {
     // opening balance. onConflict=IGNORE makes the insert itself the atomic check: SQLite
     // either inserts the new row or, if `date` (the PK) already exists, skips it entirely and
     // returns -1 — one statement, no gap for a second caller to land in between. This is
-    // local-device atomicity only; it does not by itself resolve two different *devices*
-    // opening the register offline before either has synced — that's still settled by the
-    // existing updatedAt-newest-wins sync logic in SyncQueueHelper, same as every other
-    // synced entity.
+    // local-device atomicity only. Two different *devices* opening the register offline
+    // before either has synced is now handled too — CashRegisterActivity's OPEN button
+    // enqueues via SyncQueueHelper.enqueueCashRegisterCreate() ("create_if_absent"), which
+    // SyncApi.push() applies as a genuine server-side create-only transaction instead of the
+    // ordinary updatedAt-newest-wins upsert used for edits/closes — so a losing device's
+    // create is dropped rather than clobbering the winner's opening balance.
     @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insertIfAbsent(r:CashRegister):Long
     @Query("SELECT * FROM cash_register WHERE date=:date LIMIT 1") suspend fun find(date:String):CashRegister?
     // ADDED (audit): most recent CLOSED register before `date` (keys are yyyy-MM-dd, so string

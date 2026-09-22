@@ -206,6 +206,31 @@ object SyncApi {
                         null
                     }.await()
                 }
+                // FIX (audit — cross-device OPEN REGISTER race): see
+                // SyncQueueHelper.enqueueCashRegisterCreate's comment. This is the
+                // create-half of the fix — genuinely atomic on the server because it
+                // runs inside a transaction and only writes if the doc is absent (or
+                // tombstoned), instead of the generic branch below's last-write-wins
+                // merge. Whichever device's transaction commits first "wins" the
+                // day's opening balance; the loser's write is simply skipped — no
+                // exception, no retry — and that device's own local row self-heals on
+                // its next pull() once the guard in applyServerChanges() no longer
+                // sees a pending push for this date.
+                "create_if_absent" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val rawMap = gson.fromJson(entry.payloadJson, Map::class.java) as Map<String, Any?>
+                    val incomingUpdatedAt = (rawMap["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                    val map = rawMap + mapOf("branchId" to BranchConfigStore.current, "updatedAt" to incomingUpdatedAt)
+                    val docRef = db.collection(collection).document(entry.entityId)
+                    db.runTransaction { tx ->
+                        val snap = tx.get(docRef)
+                        val alreadyExists = snap.exists() && snap.get("_deleted") != true
+                        if (!alreadyExists) {
+                            tx.set(docRef, map, com.google.firebase.firestore.SetOptions.merge())
+                        }
+                        null
+                    }.await()
+                }
                 "increment_stock", "increment_balance" -> {
                     @Suppress("UNCHECKED_CAST")
                     val map = gson.fromJson(entry.payloadJson, Map::class.java) as Map<String, Any?>
@@ -1060,9 +1085,16 @@ object SyncApi {
         // "no deleteYear() exists" note above. Skipped while this device's own
         // open/edit/close/reopen for that date is still queued to push, so a pull
         // landing mid-edit can't revert what was just typed in on this device.
+        // FIX (cross-device OPEN REGISTER race): was pendingForEntityAnyRetry(...,
+        // "upsert") specifically, which stopped covering the OPEN action once it
+        // started queuing as "create_if_absent" instead (see
+        // SyncQueueHelper.enqueueCashRegisterCreate). pendingCountForEntity checks
+        // for ANY pending push regardless of operation, so this guard now holds for
+        // OPEN too, and still self-heals correctly once that create's push settles
+        // (won or lost against another device).
         for (row in changes.cashRegisters) {
             val date = row["date"] as? String ?: continue
-            if (db.syncQueueDao().pendingForEntityAnyRetry("cash_register", date, "upsert").isNotEmpty()) continue
+            if (db.syncQueueDao().pendingCountForEntity("cash_register", date) > 0) continue
             val openingCash = (row["openingCash"] as? Number)?.toDouble() ?: 0.0
             val closingCash = (row["closingCash"] as? Number)?.toDouble() ?: 0.0
             val openingBank = (row["openingBank"] as? Number)?.toDouble() ?: 0.0

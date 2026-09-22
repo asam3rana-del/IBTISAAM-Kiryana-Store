@@ -336,8 +336,11 @@ class RoomPurchaseRepository(
         val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
         db.withTransaction {
             reverseStockAndCostForItems(items)
+            // FIX (overpaid-bill balance gap): see savePurchase()'s matching comment —
+            // deleting an overpaid purchase must reverse its advance credit too, not
+            // just an amount owed to the supplier.
             val outstanding = purchase.total - purchase.paid
-            if (purchase.supplierId != null && outstanding > 0) {
+            if (purchase.supplierId != null && kotlin.math.abs(outstanding) > 0.009) {
                 SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -outstanding)
             }
             db.purchaseDao().deleteItems(billNo)
@@ -419,8 +422,12 @@ class RoomPurchaseRepository(
                     if (itemsToReverse.isNotEmpty()) {
                         reverseStockAndCostForItems(itemsToReverse)
                     }
+                    // FIX (overpaid-bill balance gap): was `> 0` — an original purchase
+                    // that had been OVERpaid (originalOutstanding negative, credited to
+                    // the supplier as an advance by the forward-adjustment fix below)
+                    // never had that advance reversed on edit, permanently stranding it.
                     val originalOutstanding = original.total - original.paid
-                    if (original.supplierId != null && originalOutstanding > 0) {
+                    if (original.supplierId != null && kotlin.math.abs(originalOutstanding) > 0.009) {
                         SyncQueueHelper.adjustSupplierBalance(db, original.supplierId, -originalOutstanding)
                     }
                     db.purchaseDao().deleteItems(billNo)
@@ -507,8 +514,16 @@ class RoomPurchaseRepository(
                         SyncQueueHelper.updateProductPrices(db, barcode, newSalePrice, newWholesalePrice)
                     }
                 }
+                // FIX (overpaid-bill → party balance gap): was `outstanding > 0`, so an
+                // overpaid purchase (amountPaid > grandTotal) never touched the
+                // supplier's balance — the excess just vanished instead of showing up
+                // as a credit/advance (a negative balance, mirroring
+                // CustomerPayableTest's advance case on the customer side). Any nonzero
+                // difference now adjusts the balance: positive still records an amount
+                // owed to the supplier, negative now records the overpayment as an
+                // advance from the supplier.
                 val outstanding = grandTotal - amountPaid
-                if (supplierId != null && outstanding > 0) {
+                if (supplierId != null && kotlin.math.abs(outstanding) > 0.009) {
                     SyncQueueHelper.adjustSupplierBalance(db, supplierId!!, outstanding)
                 }
                 // FIX (audit — editing a purchase that already had a bill-linked payment counted
