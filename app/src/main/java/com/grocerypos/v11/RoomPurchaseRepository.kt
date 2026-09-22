@@ -310,21 +310,22 @@ class RoomPurchaseRepository(
         }
     }
 
-    // FIX (edit-blocked-by-unrelated-stock-change bug): editing a purchase used to
-    // ALWAYS reverse every original line's stock/cost and then reapply the (possibly
-    // identical) new lines — even when the edit only changed something unrelated like
-    // Paid Amount and every item (barcode/qty/unit/rate) was left untouched. Since
-    // reverseStockAndCostForItems() safety-checks that the product still has enough
-    // stock to reverse, a later sale that ate into that item's stock would block the
-    // edit entirely ("... ka stock is purchase ke baad already kam ho chuka hai ..."),
-    // even though a no-op reverse-then-reapply of unchanged items never needed to
-    // touch stock/cost in the first place. This compares the edited lines against the
-    // original items (barcode/qty/unit/rate) so savePurchase can skip the stock/cost
-    // dance entirely when nothing item-related actually changed.
-    // FIX (regression guard): now delegates to StockTouchPolicy so this exact
-    // comparison is covered by a plain JVM unit test — see StockTouchPolicyTest.
-    private fun itemsUnchanged(lines: List<PurchaseLine>, originalItems: List<PurchaseItem>): Boolean =
-        com.grocerypos.v11.domain.StockTouchPolicy.purchaseItemsUnchanged(lines, originalItems)
+    // FIX (edit-blocked-by-unrelated-stock-change bug — whole bill): editing a purchase
+    // used to ALWAYS reverse every original line's stock/cost and then reapply the
+    // (possibly identical) new lines — even when the edit only changed something
+    // unrelated like Paid Amount and every item (barcode/qty/unit/rate) was left
+    // untouched. Since reverseStockAndCostForItems() safety-checks that the product
+    // still has enough stock to reverse, a later sale that ate into that item's stock
+    // would block the edit entirely ("... ka stock is purchase ke baad already kam ho
+    // chuka hai ..."), even though a no-op reverse-then-reapply of unchanged items
+    // never needed to touch stock/cost in the first place.
+    // FIX (edit-blocked-by-UNRELATED-LINE bug — one line, not the whole bill): the
+    // above only covered a fully-unchanged bill. Editing just ONE line still reversed
+    // and reapplied EVERY line, so an untouched line already drawn down by a later
+    // sale could block an edit to a completely different product. savePurchase() now
+    // calls StockTouchPolicy.purchaseChangedLines() directly instead of a single
+    // whole-bill boolean here — see its doc comment and StockTouchPolicyTest for the
+    // per-line matching this replaced this function with.
 
     // FIX (Phase 1 - Data Safety): stock/cost reversal + supplier balance reversal + all
     // row deletes now run as one atomic Room transaction (previously separate sequential
@@ -387,10 +388,21 @@ class RoomPurchaseRepository(
             val matchedSupplier = suppliers.find { it.name.equals(party, ignoreCase = true) }
             var supplierId = matchedSupplier?.id
             val billNo = editBillNo ?: genBillNo()
-            // See itemsUnchanged() comment above: when true, this edit didn't touch
-            // any item's barcode/qty/unit/rate (e.g. only Paid Amount changed), so the
-            // reverse-then-reapply below must be skipped entirely for stock/cost.
-            val skipStockTouch = original != null && itemsUnchanged(lines, originalItems)
+            // FIX (edit-blocked-by-unrelated-line bug): used to be a single whole-bill
+            // skipStockTouch boolean (itemsUnchanged()) — editing even one line made it
+            // reverse+reapply EVERY original line, so an untouched line already drawn
+            // down by a later sale could block an edit that never even touched that
+            // product. purchaseChangedLines() instead pairs off every line the user left
+            // alone (matched exactly, both sides skipped) and returns only what actually
+            // changed: itemsToReverse (leftover original lines — reverse these) and
+            // linesToApply (leftover edited lines — reapply stock/cost for these only).
+            // A fully-unchanged edit (e.g. only Paid Amount changed) naturally yields two
+            // empty lists, same as the old skipStockTouch=true short-circuit.
+            val (itemsToReverse, linesToApply) = if (original != null)
+                com.grocerypos.v11.domain.StockTouchPolicy.purchaseChangedLines(lines, originalItems)
+            else
+                emptyList<PurchaseItem>() to lines
+            val linesToApplySet = linesToApply.toHashSet()
             db.withTransaction {
                 if (supplierId == null && party.isNotEmpty()) {
                     val newSupplier = Supplier(name = party)
@@ -404,8 +416,8 @@ class RoomPurchaseRepository(
                     SyncQueueHelper.enqueueSupplier(db, newSupplier.copy(id = newId))
                 }
                 if (original != null) {
-                    if (!skipStockTouch) {
-                        reverseStockAndCostForItems(originalItems)
+                    if (itemsToReverse.isNotEmpty()) {
+                        reverseStockAndCostForItems(itemsToReverse)
                     }
                     val originalOutstanding = original.total - original.paid
                     if (original.supplierId != null && originalOutstanding > 0) {
@@ -451,12 +463,13 @@ class RoomPurchaseRepository(
                 lines.forEach { line ->
                     val barcode = line.barcode ?: return@forEach
                     val before = db.productDao().find(barcode) ?: return@forEach
-                    // See itemsUnchanged()/skipStockTouch comment above: nothing item-
-                    // related changed in this edit, so leave stock/cost exactly as-is
-                    // instead of reversing and reapplying a no-op — this is what lets an
-                    // edit that only changes e.g. Paid Amount go through even when a
-                    // later sale has since eaten into this item's stock.
-                    if (!skipStockTouch) {
+                    // See purchaseChangedLines() comment above: only lines that actually
+                    // changed (or are newly added) sit in linesToApplySet — a line the
+                    // user left alone keeps its stock/cost exactly as-is instead of being
+                    // reversed and reapplied as a no-op. This is what lets an edit to ONE
+                    // line go through even when a later sale has since eaten into some
+                    // OTHER, untouched line's stock.
+                    if (line in linesToApplySet) {
                         val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit)
                         // FIX (fraction control): reject a purchase line that would leave a
                         // fractional smallest-unit qty for a non-fractional item (Piece/Dabbi/
