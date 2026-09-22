@@ -1016,6 +1016,17 @@ object SyncApi {
             val note = row["note"] as? String ?: ""
             val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
             val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+            // FIX (duplicate PURCHASE/SALE row in Stock History): this row this device
+            // itself just wrote locally (moments before its own push completed) hasn't
+            // been stamped with serverId yet, so the findByServerId() check above can't
+            // recognize it as "already have this" — it used to fall through to a second
+            // INSERT here, showing e.g. one purchase as two identical +2160 Pcs rows.
+            // Claim the existing unclaimed local row instead of inserting a duplicate.
+            val unclaimed = stockMovementDao.findUnclaimedMatch(barcode, type, reference, qty, createdAt)
+            if (unclaimed != null) {
+                stockMovementDao.update(unclaimed.copy(serverId = serverId, updatedAt = updatedAt))
+                continue
+            }
             stockMovementDao.insert(
                 StockMovement(
                     barcode = barcode, type = type, qty = qty, unit = unit, cost = cost,

@@ -153,6 +153,16 @@ interface StockMovementDao {
     @Query("SELECT * FROM stock_movements") suspend fun allList(): List<StockMovement>
     @Query("SELECT * FROM stock_movements WHERE serverId=:serverId LIMIT 1")
     suspend fun findByServerId(serverId: String): StockMovement?
+
+    // FIX (duplicate movement on pull race): a movement written locally is inserted
+    // BEFORE it has a serverId (that's stamped moments later once the push succeeds).
+    // If a sync PULL lands in that window, findByServerId() above finds nothing (the
+    // local row still has serverId=null) and the pulled copy gets inserted as a
+    // second row — same barcode/type/reference/qty/createdAt, duplicated in Stock
+    // History. This finds that still-unclaimed local twin so the pull can attach the
+    // serverId to it instead of inserting a duplicate.
+    @Query("SELECT * FROM stock_movements WHERE serverId IS NULL AND barcode=:barcode AND type=:type AND reference=:reference AND qty=:qty AND createdAt=:createdAt LIMIT 1")
+    suspend fun findUnclaimedMatch(barcode: String, type: String, reference: String, qty: Double, createdAt: Long): StockMovement?
 }
 
 @Entity(tableName="products")
