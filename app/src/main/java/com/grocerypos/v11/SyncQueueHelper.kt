@@ -237,6 +237,40 @@ object SyncQueueHelper {
         logMovement(db, barcode, type, qty, reference, unitCost, note)
     }
 
+    // NEW (Stock Audit — "fix once, proper system going forward"): unlike
+    // increaseProductStock/decreaseProductStockForce above, this does NOT touch
+    // Product.stock at all — it only inserts a StockMovement (type
+    // "AUDIT_RECONCILE") so stock_movements' own sum catches up to whatever
+    // Product.stock currently is.
+    //
+    // Why not just overwrite Product.stock to match the ledger instead? Because
+    // the mismatch usually means some past write changed stock WITHOUT logging a
+    // movement (a pre-fix bug, a direct DB write, a sync race) — the ledger is
+    // the one that's incomplete, not necessarily the live stock number every
+    // cashier is currently selling against. Silently overwriting live, in-use
+    // stock from a possibly-incomplete historical sum is the riskier direction;
+    // adding one auditable "we don't know why, but here's the gap" entry that
+    // brings the ledger up to the live number is the safe, standard stock-take-
+    // style reconciliation, and it's what StockAuditActivity's Reconcile action
+    // calls. `qty` is the signed amount needed to close the gap, i.e.
+    // (Product.stock - ledger sum) at the moment the audit ran.
+    suspend fun recordAuditReconciliation(db: PosDatabase, barcode: String, qty: Double, note: String = "") {
+        if (qty == 0.0) return
+        val p = db.productDao().find(barcode)
+        val row = StockMovement(
+            barcode = barcode,
+            type = "AUDIT_RECONCILE",
+            qty = qty,
+            unit = p?.smallestUnitName() ?: "",
+            cost = p?.cost ?: 0.0,
+            reference = "",
+            note = note,
+            createdAt = System.currentTimeMillis()
+        )
+        val newId = db.stockMovementDao().insert(row)
+        enqueueStockMovement(db, row.copy(id = newId))
+    }
+
     // CHANGED (Stock/Cost History sync): this used to be a fire-and-forget insert —
     // the row lived only in this device's local DB, so Stock History and Cost
     // History never showed anything from a second device. Now grabs the

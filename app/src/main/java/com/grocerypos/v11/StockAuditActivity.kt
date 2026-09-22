@@ -70,6 +70,7 @@ class StockAuditActivity : AppCompatActivity() {
     private data class AuditRow(val product: Product, val ledgerStock: Double, val diff: Double)
 
     private lateinit var summaryText: TextView
+    private lateinit var fixAllButton: TextView
     private lateinit var searchField: EditText
     private lateinit var resultsBox: RecyclerView
     private var allMismatches: List<AuditRow> = emptyList()
@@ -94,9 +95,29 @@ class StockAuditActivity : AppCompatActivity() {
         summaryText = TextView(this).apply {
             textSize = 13f
             setTextColor(Color.parseColor(textGray))
-            setPadding(4, 0, 4, 14)
+            setPadding(4, 0, 4, 8)
         }
         root.addView(summaryText)
+
+        // NEW (Stock Audit — "fix once, proper system going forward"): closes
+        // every currently-listed mismatch in one tap by adding an
+        // AUDIT_RECONCILE ledger entry per product (see
+        // SyncQueueHelper.recordAuditReconciliation's comment) — current live
+        // stock is never changed, so this is safe to run even while the shop
+        // is actively selling.
+        fixAllButton = TextView(this).apply {
+            text = Loc.t(this@StockAuditActivity, "\u2699\uFE0F Sab mismatches fix karo", "\u2699\uFE0F تمام فرق درست کریں")
+            textSize = 13.5f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(0, 22, 0, 22)
+            background = strokedBg(teal, teal, 14)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { setMargins(0, 0, 0, 14) }
+            setOnClickListener { confirmFixAll() }
+        }
+        root.addView(fixAllButton)
 
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -161,7 +182,55 @@ class StockAuditActivity : AppCompatActivity() {
                 "⚠ ${allMismatches.size} of $totalChecked products ka stock apni history se match nahi karta.",
                 "⚠ ${allMismatches.size} از $totalChecked پروڈکٹس کا اسٹاک ان کی تاریخ سے میچ نہیں کرتا۔"
             )
+        fixAllButton.visibility = if (allMismatches.isEmpty()) View.GONE else View.VISIBLE
         renderRows(searchField.text?.toString().orEmpty())
+    }
+
+    // NEW (Stock Audit — "fix once, proper system going forward"): explains what
+    // the fix actually does (adds a history entry per product; never changes the
+    // stock number cashiers currently see) before touching anything, since this
+    // writes data for potentially hundreds of products at once.
+    private fun confirmFixAll() {
+        if (allMismatches.isEmpty()) return
+        android.app.AlertDialog.Builder(this)
+            .setTitle(Loc.t(this, "Sab mismatches fix karen?", "تمام فرق درست کریں؟"))
+            .setMessage(Loc.t(
+                this,
+                "${allMismatches.size} products ke liye history mein ek adjustment entry add hogi taake wo apne current stock se match ho jaye. Current stock (jo abhi bik raha hai) BILKUL NAHI badlega.",
+                "${allMismatches.size} پروڈکٹس کی تاریخ میں ایک ایڈجسٹمنٹ اندراج شامل ہوگا تاکہ وہ موجودہ اسٹاک سے میچ ہو جائے۔ موجودہ اسٹاک بالکل تبدیل نہیں ہوگا۔"
+            ))
+            .setPositiveButton(Loc.t(this, "Haan, fix karen", "جی ہاں")) { _, _ -> fixAll() }
+            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ"), null)
+            .show()
+    }
+
+    private fun fixAll() = lifecycleScope.launch {
+        val db = PosDatabase.get(this@StockAuditActivity)
+        val rows = allMismatches
+        fixAllButton.isEnabled = false
+        for (row in rows) {
+            com.grocerypos.v11.SyncQueueHelper.recordAuditReconciliation(
+                db, row.product.barcode, row.diff, "Stock Audit — bulk fix"
+            )
+        }
+        fixAllButton.isEnabled = true
+        Toast.makeText(this@StockAuditActivity,
+            Loc.t(this@StockAuditActivity, "${rows.size} products fix ho gaye", "${rows.size} پروڈکٹس درست ہو گئیں"),
+            Toast.LENGTH_SHORT).show()
+        loadAudit()
+    }
+
+    // Same reconciliation as fixAll(), for a single product — the tap target on
+    // each mismatch card.
+    private fun reconcileOne(row: AuditRow) = lifecycleScope.launch {
+        val db = PosDatabase.get(this@StockAuditActivity)
+        com.grocerypos.v11.SyncQueueHelper.recordAuditReconciliation(
+            db, row.product.barcode, row.diff, "Stock Audit — single fix"
+        )
+        Toast.makeText(this@StockAuditActivity,
+            Loc.t(this@StockAuditActivity, "\"${row.product.name}\" fix ho gaya", "\"${row.product.name}\" درست ہو گیا"),
+            Toast.LENGTH_SHORT).show()
+        loadAudit()
     }
 
     private fun renderRows(query: String) {
@@ -245,6 +314,31 @@ class StockAuditActivity : AppCompatActivity() {
             "$sign${p.copy(stock = row.diff).formatStockBreakdown()}",
             red
         )
+
+        card.addView(spacer(10))
+        card.addView(TextView(this).apply {
+            text = Loc.t(this@StockAuditActivity, "\u2713 Isko fix karo", "\u2713 اسے درست کریں")
+            textSize = 12.5f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor(teal))
+            gravity = Gravity.CENTER
+            setPadding(0, 12, 0, 12)
+            background = strokedBg(teal, "#FFFFFF", 10)
+            setOnClickListener {
+                // Stop this tap from also bubbling to the card's own
+                // click-through-to-history listener above.
+                android.app.AlertDialog.Builder(this@StockAuditActivity)
+                    .setTitle(Loc.t(this@StockAuditActivity, "\"${p.name}\" fix karen?", "\"${p.name}\" درست کریں؟"))
+                    .setMessage(Loc.t(
+                        this@StockAuditActivity,
+                        "History mein ek adjustment entry add hogi taake ye apne current stock se match ho jaye. Current stock bilkul nahi badlega.",
+                        "تاریخ میں ایک ایڈجسٹمنٹ اندراج شامل ہوگا تاکہ یہ موجودہ اسٹاک سے میچ ہو جائے۔ موجودہ اسٹاک بالکل تبدیل نہیں ہوگا۔"
+                    ))
+                    .setPositiveButton(Loc.t(this@StockAuditActivity, "Haan, fix karen", "جی ہاں")) { _, _ -> reconcileOne(row) }
+                    .setNegativeButton(Loc.t(this@StockAuditActivity, "Cancel", "منسوخ"), null)
+                    .show()
+            }
+        })
         return card
     }
 }
