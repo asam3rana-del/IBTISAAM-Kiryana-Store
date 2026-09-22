@@ -159,6 +159,15 @@ class ReportsActivity : AppCompatActivity() {
             startActivity(i)
         })
 
+        // NEW (Stock Audit report): finds every product whose `stock` disagrees
+        // with the sum of its own stock_movements ledger — the automatic version
+        // of the by-hand انڈے investigation, run across every product at once.
+        root.addView(khataRow(
+            title = Loc.t(this, "Stock Audit", "اسٹاک آڈٹ"),
+            subtitle = Loc.t(this, "Find products where stock doesn't match its own history", "وہ پروڈکٹس جن کا اسٹاک اپنی تاریخ سے میچ نہیں کرتا"),
+            accentHex = red
+        ) { startActivity(android.content.Intent(this@ReportsActivity, StockAuditActivity::class.java)) })
+
         // NEW: Stock Adjustment (log damage/loss or a manual correction) plus the four
         // Inventory Insights tabs (Reorder Suggestions, Damage/Loss Report, Profit
         // Margin per Item, Fast/Slow Movers) and Due Date Reminders.

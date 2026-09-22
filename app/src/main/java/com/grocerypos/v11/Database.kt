@@ -163,7 +163,19 @@ interface StockMovementDao {
     // serverId to it instead of inserting a duplicate.
     @Query("SELECT * FROM stock_movements WHERE serverId IS NULL AND barcode=:barcode AND type=:type AND reference=:reference AND qty=:qty AND createdAt=:createdAt LIMIT 1")
     suspend fun findUnclaimedMatch(barcode: String, type: String, reference: String, qty: Double, createdAt: Long): StockMovement?
+
+    // NEW (Stock Audit report): sum of every movement's signed qty per product —
+    // the "what the ledger says stock should be" number. StockAuditActivity
+    // compares this against Product.stock for every product to surface any
+    // product whose real stock has drifted away from its own history (sync
+    // races, a bypassed direct write, a pre-fix unit-ladder edit, etc.) without
+    // the user needing to already suspect a specific item.
+    @Query("SELECT barcode, SUM(qty) as total FROM stock_movements GROUP BY barcode")
+    suspend fun sumByBarcode(): List<BarcodeStockSum>
 }
+
+// NEW (Stock Audit report): plain Room @Query result row — see sumByBarcode() above.
+data class BarcodeStockSum(val barcode: String, val total: Double)
 
 @Entity(tableName="products")
 data class Product(
