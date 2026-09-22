@@ -1553,8 +1553,11 @@ class PartyTransactionActivity : AppCompatActivity() {
                             // FIX (audit): only the OUTSTANDING part of the bill was ever on the
                             // customer's balance (total - paid). Subtracting the last item's full
                             // amount also removed the paid part => phantom credit.
+                            // FIX (overpaid-bill → party balance gap): was `outstanding > 0.009`,
+                            // so deleting the last item of an overpaid sale (outstanding negative —
+                            // credited as an advance) never reversed that advance.
                             val outstanding = sale.total - sale.paid
-                            if (outstanding > 0.009) SyncQueueHelper.adjustCustomerBalance(db, custId, -outstanding)
+                            if (kotlin.math.abs(outstanding) > 0.009) SyncQueueHelper.adjustCustomerBalance(db, custId, -outstanding)
                             db.customerDao().find(custId)?.let { c -> SyncQueueHelper.enqueueCustomer(db, c) }
                         }
                         // FIX (#9 — cash transaction consistency): the whole sale is
@@ -1797,8 +1800,11 @@ class PartyTransactionActivity : AppCompatActivity() {
                         db.purchaseDao().deletePurchase(purchase.billNo)
                         purchase.supplierId?.let { supId ->
                             // FIX (audit): only total - paid was ever on the supplier's balance.
+                            // FIX (overpaid-bill → party balance gap): was `outstanding > 0.009`,
+                            // so deleting the last item of an overpaid purchase (outstanding
+                            // negative — credited as an advance) never reversed that advance.
                             val outstanding = purchase.total - purchase.paid
-                            if (outstanding > 0.009) SyncQueueHelper.adjustSupplierBalance(db, supId, -outstanding)
+                            if (kotlin.math.abs(outstanding) > 0.009) SyncQueueHelper.adjustSupplierBalance(db, supId, -outstanding)
                             db.supplierDao().find(supId)?.let { s -> SyncQueueHelper.enqueueSupplier(db, s) }
                         }
                         // FIX (#9 — cash transaction consistency): the whole purchase is

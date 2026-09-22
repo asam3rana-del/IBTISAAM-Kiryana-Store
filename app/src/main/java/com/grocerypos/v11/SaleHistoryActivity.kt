@@ -517,8 +517,12 @@ class SaleHistoryActivity : ThemedActivity() {
                     val returnId = db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = si.barcode, qty = si.qty, amount = si.amount))
                     SyncQueueHelper.enqueueReturn(db, ReturnLine(id = returnId, reference = invoice, type = "sale", barcode = si.barcode, qty = si.qty, amount = si.amount))
                 }
-                if (sale.customerId != null && sale.paid < sale.total) {
-                    SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
+                // FIX (overpaid-bill → party balance gap): was `paid < total`, so returning an
+                // overpaid sale (paid > total, credited to the customer as an advance) never
+                // reversed that advance, permanently stranding it.
+                val returnOutstanding = sale.total - sale.paid
+                if (sale.customerId != null && kotlin.math.abs(returnOutstanding) > 0.009) {
+                    SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -returnOutstanding)
                 }
                 // FIX (sale return had no visible effect in Cash Book/Day Book): used to
                 // delete the sale's cash_transactions row outright, which erased the
@@ -572,8 +576,10 @@ class SaleHistoryActivity : ThemedActivity() {
                 }
 
                 // Reverse any outstanding balance this sale added to the customer.
+                // FIX (overpaid-bill → party balance gap): was `outstanding > 0`, so deleting an
+                // overpaid sale (outstanding negative — credited as an advance) never reversed it.
                 val outstanding = sale.total - sale.paid
-                if (sale.customerId != null && outstanding > 0) {
+                if (sale.customerId != null && kotlin.math.abs(outstanding) > 0.009) {
                     SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -outstanding)
                 }
 

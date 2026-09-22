@@ -308,7 +308,13 @@ class HistoryActivity : AppCompatActivity() {
                     val returnId = db.returnDao().insert(ReturnLine(reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
                     SyncQueueHelper.enqueueReturn(db, ReturnLine(id = returnId, reference = invoice, type = "sale", barcode = it.barcode, qty = it.qty.toDouble(), amount = it.amount))
                 }
-                if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
+                // FIX (overpaid-bill → party balance gap): was `paid < total`, so returning an
+                // overpaid sale (paid > total, the excess credited to the customer as an advance —
+                // see RoomSaleRepository.saveSale()'s matching comment) never reversed that
+                // advance, permanently stranding it. Reversing on any nonzero outstanding (due OR
+                // advance) keeps this symmetric with the repository-layer fix.
+                val returnOutstanding = sale.total - sale.paid
+                if (sale.customerId != null && kotlin.math.abs(returnOutstanding) > 0.009) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -returnOutstanding)
                 // FIX (sale return had no visible effect in Cash Book/Day Book — mirrors
                 // SaleHistoryActivity.returnSale()'s matching fix): records a dated
                 // reversal instead of deleting the original cash row outright.
@@ -345,7 +351,10 @@ class HistoryActivity : AppCompatActivity() {
                     val smallestQty = it.smallestQty(p)
                     SyncQueueHelper.increaseProductStock(db, it.barcode, smallestQty, "SALE_REVERSAL", invoice)
                 }
-                if (sale.customerId != null && sale.paid < sale.total) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -(sale.total - sale.paid))
+                // FIX (overpaid-bill → party balance gap): same reasoning as returnSale() above —
+                // was `paid < total`, so deleting an overpaid sale never reversed its advance.
+                val deleteOutstanding = sale.total - sale.paid
+                if (sale.customerId != null && kotlin.math.abs(deleteOutstanding) > 0.009) SyncQueueHelper.adjustCustomerBalance(db, sale.customerId, -deleteOutstanding)
                 SyncQueueHelper.deleteCashTransactionsByReference(db, invoice); db.saleDao().deleteItems(invoice); db.saleDao().deleteSale(invoice)
                 // FIX (audit): bill-linked payments would otherwise live on as orphan payments.
                 SyncQueueHelper.voidLinkedPayments(db, invoice, null, "")
@@ -622,7 +631,10 @@ class HistoryActivity : AppCompatActivity() {
                     if (remainingItemCount == 0) {
                         // Every line on the bill ended up fully returned — same end state
                         // as the old whole-bill returnPurchase().
-                        if (purchase.supplierId != null && oldOutstanding > 0) {
+                        // FIX (overpaid-bill → party balance gap): was `> 0`, so fully returning
+                        // an overpaid purchase (oldOutstanding negative — the excess credited to
+                        // the supplier as an advance) never reversed that advance.
+                        if (purchase.supplierId != null && kotlin.math.abs(oldOutstanding) > 0.009) {
                             SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -oldOutstanding)
                         }
                         // FIX (purchase return had no visible effect in Cash Book/Day

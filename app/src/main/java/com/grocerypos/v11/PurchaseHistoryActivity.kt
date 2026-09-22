@@ -736,7 +736,10 @@ class PurchaseHistoryActivity : ThemedActivity() {
                 if (remainingItemCount == 0) {
                     // Every line on the bill ended up fully returned — same end state as
                     // the old whole-bill returnPurchase().
-                    if (purchase.supplierId != null && oldOutstanding > 0) {
+                    // FIX (overpaid-bill → party balance gap): was `> 0`, so fully returning
+                    // an overpaid purchase (oldOutstanding negative — the excess credited to
+                    // the supplier as an advance) never reversed that advance.
+                    if (purchase.supplierId != null && kotlin.math.abs(oldOutstanding) > 0.009) {
                         SyncQueueHelper.adjustSupplierBalance(db, purchase.supplierId, -oldOutstanding)
                     }
                     // FIX (purchase return had no visible effect in Cash Book/Day Book):
