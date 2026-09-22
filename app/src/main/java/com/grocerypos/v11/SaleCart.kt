@@ -63,6 +63,22 @@ internal fun SaleActivity.defaultUnitIndexFor(product: Product): Int {
     return autoDefaultUnitIndexFor(product)
 }
 
+// NEW (Quick Sale-specific default unit): same shape as defaultUnitIndexFor()
+// above, but reads the separate quickSaleDefaultUnitIndex override instead —
+// lets a product default to a different tier in Quick Sale than in the normal
+// Sale screen (e.g. shopkeeper picks the smallest unit for Quick Sale since
+// that's what gets used there most often, while Sale keeps defaulting per the
+// Auto/defaultUnitIndex rule). Falls back to the same Auto guess when unset.
+internal fun SaleActivity.quickSaleDefaultUnitIndexFor(product: Product): Int {
+    val hasSecondary = product.secondaryUnit.isNotEmpty()
+    val hasTertiary = hasSecondary && product.tertiaryUnit.isNotEmpty() && product.tertiaryUnitQty > 0
+    val tierCount = if (hasTertiary) 3 else if (hasSecondary) 2 else 1
+
+    if (product.quickSaleDefaultUnitIndex in 0 until tierCount) return product.quickSaleDefaultUnitIndex
+
+    return autoDefaultUnitIndexFor(product)
+}
+
 internal fun SaleActivity.onItemPicked(name: String) {
     val product = products.find { it.name.equals(name, ignoreCase = true) } ?: return
     selectedProduct = product

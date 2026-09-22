@@ -280,11 +280,13 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
                 qsSelectedProduct = match
                 qsLastMainPrice = 0.0
                 val qsUnits = qsUnitsFor(match)
-                // FIX (unit auto-selection): same rule as normal Add Item flow —
-                // see defaultUnitIndexFor(). 1-tier defaults to the only unit,
-                // 2-tier defaults by category (Beverages -> 1st, others -> 2nd),
-                // and 3-tier always defaults to the 2nd (secondary) unit.
-                val qsDefaultIndex = defaultUnitIndexFor(match)
+                // FIX (unit auto-selection): uses the Quick Sale-specific default
+                // (quickSaleDefaultUnitIndexFor()) instead of normal Sale's — lets a
+                // product default to a different unit here than in Add Item, since
+                // the smaller unit tends to get used more in Quick Sale. Falls back
+                // to the same Auto guess (1-tier -> only unit, 2-tier by category,
+                // 3-tier -> 2nd/secondary unit) when no override is set.
+                val qsDefaultIndex = quickSaleDefaultUnitIndexFor(match)
                 qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnits)
                 qsUnitSpinner.setSelection(qsDefaultIndex)
                 if (qsQty.text.toString().isBlank()) qsQty.setText("1")
@@ -312,8 +314,8 @@ internal fun SaleActivity.showQuickSaleDialog(topNames: List<String>) {
         qsLastMainPrice = 0.0
         if (p != null) {
             val qsUnits = qsUnitsFor(p)
-            // FIX (unit auto-selection): same rule as above — see defaultUnitIndexFor().
-            val qsDefaultIndex = defaultUnitIndexFor(p)
+            // FIX (unit auto-selection): same rule as above — see quickSaleDefaultUnitIndexFor().
+            val qsDefaultIndex = quickSaleDefaultUnitIndexFor(p)
             qsUnitSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qsUnits)
             qsUnitSpinner.setSelection(qsDefaultIndex)
             qsQty.setText(if (qsQty.text.toString().isBlank()) "1" else qsQty.text.toString())

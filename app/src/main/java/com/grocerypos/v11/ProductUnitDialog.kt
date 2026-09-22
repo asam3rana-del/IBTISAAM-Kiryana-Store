@@ -33,6 +33,11 @@ import com.grocerypos.v11.*
 import com.grocerypos.v11.ui.components.*
 import com.grocerypos.v11.util.Loc
 
+// Accent for the Quick Sale-specific default-unit card below — kept distinct
+// from `purple` (normal Sale's default-unit card) so the two chip rows read
+// as clearly separate settings at a glance.
+private const val quickSaleAccent = "#EC4899"
+
 internal fun ProductActivity.badgedSectionLabel(iconRes: Int, label: String, accentHex: String) = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
     gravity = Gravity.CENTER_VERTICAL
@@ -261,6 +266,73 @@ internal fun ProductActivity.openUnitDialog() {
     }
     refreshDefaultUnitChips()
 
+    // Default unit for Quick Sale — separate override from the Sale-screen one
+    // above. The smallest unit tends to get used more often in Quick Sale, so a
+    // shopkeeper may want a different tier pinned there than in normal Sale for
+    // the same product. See SaleCart.kt's quickSaleDefaultUnitIndexFor().
+    val quickSaleDefaultUnitCard = premiumUnitCard()
+    quickSaleDefaultUnitCard.addView(
+        badgedSectionLabel(
+            R.drawable.ic_check,
+            Loc.t(this, "Default Unit for Quick Sale", "فوری سیل کے لیے ڈیفالٹ یونٹ"),
+            quickSaleAccent
+        )
+    )
+    quickSaleDefaultUnitCard.addView(
+        TextView(this).apply {
+            text = Loc.t(
+                this@openUnitDialog,
+                "Can be different from the Sale screen default above — useful since the smaller unit is usually what's sold in Quick Sale.",
+                "اوپر سیل اسکرین کے ڈیفالٹ سے مختلف ہو سکتا ہے — چونکہ فوری سیل میں عام طور پر چھوٹا یونٹ زیادہ استعمال ہوتا ہے"
+            )
+            textSize = 11.5f
+            setTextColor(Color.parseColor(textMuted))
+            setPadding(0, 0, 0, 12)
+        }
+    )
+    val quickSaleDefaultUnitChipRow = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+    }
+    quickSaleDefaultUnitCard.addView(quickSaleDefaultUnitChipRow)
+    body.addView(quickSaleDefaultUnitCard)
+    body.addView(spacer(6))
+
+    var chosenQuickSaleDefaultUnitIndex = selectedQuickSaleDefaultUnitIndex
+
+    fun refreshQuickSaleDefaultUnitChips() {
+        val tierNames = mutableListOf(primaryField.text.toString().trim())
+        val s = secondaryField.text.toString().trim()
+        val t = tertiaryField.text.toString().trim()
+        if (s.isNotBlank()) tierNames.add(s)
+        if (s.isNotBlank() && t.isNotBlank()) tierNames.add(t)
+
+        if (chosenQuickSaleDefaultUnitIndex !in 0 until tierNames.size) chosenQuickSaleDefaultUnitIndex = -1
+
+        quickSaleDefaultUnitChipRow.removeAllViews()
+        val options = listOf(-1 to Loc.t(this@openUnitDialog, "Auto", "آٹو")) +
+            tierNames.mapIndexed { index, unitLabel -> index to unitLabel }
+        options.forEachIndexed { i, (indexValue, label) ->
+            val isSelected = indexValue == chosenQuickSaleDefaultUnitIndex
+            quickSaleDefaultUnitChipRow.addView(TextView(this@openUnitDialog).apply {
+                text = label
+                textSize = 12.5f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(20, 12, 20, 12)
+                setTextColor(if (isSelected) Color.WHITE else Color.parseColor(quickSaleAccent))
+                background = if (isSelected) gradientBg(quickSaleAccent, quickSaleAccent, cornerTop = 30, cornerBottom = 30)
+                    else strokedBg(quickSaleAccent, cardWhite, 30)
+                layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
+                    setMargins(if (i == 0) 0 else 8, 0, 0, 0)
+                }
+                setOnClickListener {
+                    chosenQuickSaleDefaultUnitIndex = indexValue
+                    refreshQuickSaleDefaultUnitChips()
+                }
+            })
+        }
+    }
+    refreshQuickSaleDefaultUnitChips()
+
     content.addView(
         scroll,
         LinearLayout.LayoutParams(-1, 0, 1f)
@@ -383,6 +455,8 @@ internal fun ProductActivity.openUnitDialog() {
 
         val finalTierCount = if (t != "None") 3 else if (s != "None") 2 else 1
         selectedDefaultUnitIndex = if (chosenDefaultUnitIndex in 0 until finalTierCount) chosenDefaultUnitIndex else -1
+        selectedQuickSaleDefaultUnitIndex =
+            if (chosenQuickSaleDefaultUnitIndex in 0 until finalTierCount) chosenQuickSaleDefaultUnitIndex else -1
 
         ensureUnitSaved(p)
         if (s != "None") ensureUnitSaved(s)
@@ -430,9 +504,9 @@ internal fun ProductActivity.openUnitDialog() {
         dialog.dismiss()
     }
 
-    primaryField.addTextChangedListener(simpleWatcher { autoSecondary(); refreshDefaultUnitChips() })
-    secondaryField.addTextChangedListener(simpleWatcher { autoSecondary(); autoTertiary(); refreshDefaultUnitChips() })
-    tertiaryField.addTextChangedListener(simpleWatcher { autoTertiary(); refreshDefaultUnitChips() })
+    primaryField.addTextChangedListener(simpleWatcher { autoSecondary(); refreshDefaultUnitChips(); refreshQuickSaleDefaultUnitChips() })
+    secondaryField.addTextChangedListener(simpleWatcher { autoSecondary(); autoTertiary(); refreshDefaultUnitChips(); refreshQuickSaleDefaultUnitChips() })
+    tertiaryField.addTextChangedListener(simpleWatcher { autoTertiary(); refreshDefaultUnitChips(); refreshQuickSaleDefaultUnitChips() })
 
     primaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(primaryField) }
     secondaryField.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus -> if (hasFocus) safeShowDropDown(secondaryField) }

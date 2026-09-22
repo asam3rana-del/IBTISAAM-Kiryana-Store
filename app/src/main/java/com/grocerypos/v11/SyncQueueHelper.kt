@@ -665,6 +665,7 @@ object SyncQueueHelper {
             "tertiaryUnit" to p.tertiaryUnit,
             "tertiaryUnitQty" to p.tertiaryUnitQty,
             "defaultUnitIndex" to p.defaultUnitIndex,
+            "quickSaleDefaultUnitIndex" to p.quickSaleDefaultUnitIndex,
             "searchTag" to p.searchTag,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current

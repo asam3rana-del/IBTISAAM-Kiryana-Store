@@ -209,6 +209,17 @@ data class Product(
     // automatic guess. Added so the Beverages-only special case doesn't have to
     // be hand-edited in code for every product/category — see SaleCart.kt.
     val defaultUnitIndex:Int=-1,
+    // NEW (Quick Sale-specific default unit — MIGRATION_44_45): same idea as
+    // defaultUnitIndex above, but for the Quick Sale dialog only. Kept as its
+    // own column (not a reuse of defaultUnitIndex) because the smallest unit
+    // is picked far more often in Quick Sale than in the normal Sale screen,
+    // so a shopkeeper may want e.g. "pcs" as normal Sale's default but
+    // "piece"/smallest-tier as Quick Sale's default for the same product.
+    // -1 means "Auto" — falls back to the same automatic 1/2/3-tier +
+    // Beverages-category guess as defaultUnitIndex (autoDefaultUnitIndexFor()
+    // in SaleCart.kt). See ProductUnitDialog.kt's second chip row and
+    // SaleCart.kt's quickSaleDefaultUnitIndexFor().
+    val quickSaleDefaultUnitIndex:Int=-1,
     val updatedAt:Long=0L,
     val dirty:Boolean=true,
     // NEW (English search alias): lets a product whose `name` is saved in Urdu
@@ -919,6 +930,10 @@ interface ProductDao {
     suspend fun productsNeedingDefaultUnitReview(): List<Product>
     @Query("UPDATE products SET defaultUnitIndex=:index, dirty=1, updatedAt=:ts WHERE barcode=:code")
     suspend fun updateDefaultUnitIndex(code:String, index:Int, ts:Long)
+    // NEW (Quick Sale-specific default unit): same shape as updateDefaultUnitIndex()
+    // above, for the separate quickSaleDefaultUnitIndex column.
+    @Query("UPDATE products SET quickSaleDefaultUnitIndex=:index, dirty=1, updatedAt=:ts WHERE barcode=:code")
+    suspend fun updateQuickSaleDefaultUnitIndex(code:String, index:Int, ts:Long)
     // NEW (Bulk Missing Rates — replaces the old CSV "Rate List" export/review):
     // every product where Retail (salePrice) or Wholesale rate hasn't been
     // entered yet (still 0), the queue BulkMissingRatesActivity works through
@@ -2081,6 +2096,16 @@ val MIGRATION_43_44 = object : Migration(43, 44) {
     }
 }
 
+// NEW (Quick Sale-specific default unit): plain ADD COLUMN, same low-risk shape
+// as MIGRATION_40_41's defaultUnitIndex. Existing products get -1 (Auto), so
+// Quick Sale keeps picking exactly what it picks today until a shopkeeper opens
+// "Add Item Unit" and pins a Quick Sale default explicitly.
+val MIGRATION_44_45 = object : Migration(44, 45) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE products ADD COLUMN quickSaleDefaultUnitIndex INTEGER NOT NULL DEFAULT -1")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -2093,7 +2118,7 @@ val MIGRATION_43_44 = object : Migration(43, 44) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=44, exportSchema=true
+    version=45, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -2120,7 +2145,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

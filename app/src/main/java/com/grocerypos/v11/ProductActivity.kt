@@ -127,6 +127,12 @@ class ProductActivity : ThemedActivity() {
     // tier explicitly in the "Add Item Unit" dialog. See ProductUnitDialog.kt's
     // default-unit chip row and SaleCart.kt's defaultUnitIndexFor().
     internal var selectedDefaultUnitIndex = -1
+    // NEW (Quick Sale-specific default unit): same idea as selectedDefaultUnitIndex
+    // above, but for the separate quickSaleDefaultUnitIndex column — lets a product
+    // default to a different unit in the Quick Sale dialog than in normal Sale. See
+    // ProductUnitDialog.kt's second chip row and SaleCart.kt's
+    // quickSaleDefaultUnitIndexFor().
+    internal var selectedQuickSaleDefaultUnitIndex = -1
 
     internal var selectedOpeningStockUnit = "pcs"
     private var editingProduct: Product? = null
@@ -1350,6 +1356,7 @@ class ProductActivity : ThemedActivity() {
             if (product.tertiaryUnit.isBlank()) "None" else product.tertiaryUnit
         selectedTertiaryQty = product.tertiaryUnitQty
         selectedDefaultUnitIndex = product.defaultUnitIndex
+        selectedQuickSaleDefaultUnitIndex = product.quickSaleDefaultUnitIndex
 
         selectedOpeningStockUnit = selectedPrimaryUnit
 
@@ -1567,6 +1574,7 @@ class ProductActivity : ThemedActivity() {
             tertiaryUnitQty =
                 if (selectedTertiaryUnit == "None") 0.0 else selectedTertiaryQty,
             defaultUnitIndex = selectedDefaultUnitIndex,
+            quickSaleDefaultUnitIndex = selectedQuickSaleDefaultUnitIndex,
             reorderLevel = reorderLevel.text.toString().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0,
             searchTag = searchTagInput.text.toString().trim()
         )
@@ -1707,6 +1715,7 @@ class ProductActivity : ThemedActivity() {
         selectedTertiaryUnit = "None"
         selectedTertiaryQty = 0.0
         selectedDefaultUnitIndex = -1
+        selectedQuickSaleDefaultUnitIndex = -1
         selectedOpeningStockUnit = "pcs"
 
         selectUnitBtn.text =
