@@ -2,6 +2,7 @@ package com.grocerypos.v11
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import com.grocerypos.v11.ui.LoginActivity
@@ -44,8 +45,20 @@ import kotlinx.coroutines.launch
  * checked in MainActivity via the session username — is a separate flow this class doesn't touch.
  * Fully skipping THAT initial login screen for "none" would need a change inside LoginActivity's
  * own onCreate, which wasn't available to edit here.)
+ *
+ * FIX — process-kill bypass: `pendingReauth` used to live ONLY in this in-memory var. On a
+ * low-memory device Android can (and often does) kill the app's process entirely while it's in
+ * the background instead of just stopping it. When the user reopened the app, Android would spin
+ * up a brand-new process and restore the last-open screen directly — a fresh `AppLock` object
+ * with `pendingReauth = false`, so the fingerprint/password re-lock was silently skipped even
+ * though Settings had "Fingerprint Only"/"Both" turned on. `pendingReauth` is now mirrored into a
+ * SharedPreferences flag every time it's armed or consumed, and `register()` restores it from
+ * that flag on startup — so a fresh process that resumes from a background-kill still re-locks.
  */
 object AppLock {
+
+    private const val PREFS_NAME = "app_lock_state"
+    private const val KEY_PENDING_REAUTH = "pending_reauth"
 
     private var startedCount = 0
 
@@ -60,6 +73,12 @@ object AppLock {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun register(app: Application) {
+        // Restore any re-lock that was armed before the process got killed in the background
+        // (e.g. Android reclaiming memory) — this read is synchronous SharedPreferences, so it's
+        // safe to do before the DB-backed cachedLoginMethod load below finishes.
+        pendingReauth = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_PENDING_REAUTH, false)
+
         // Load the current setting once at startup so the cache is correct from the first
         // background/foreground cycle onward.
         scope.launch {
@@ -77,6 +96,7 @@ object AppLock {
                 // can't skip past it. LoginActivity itself is excluded so this doesn't loop.
                 if (pendingReauth && activity !is LoginActivity) {
                     pendingReauth = false
+                    persistPendingReauth(activity, false)
                     val intent = Intent(activity, LoginActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     }
@@ -101,6 +121,7 @@ object AppLock {
                     // pendingReauth — only "fingerprint"/"both" ever force a re-lock on resume.
                     if (cachedLoginMethod == "fingerprint" || cachedLoginMethod == "both") {
                         pendingReauth = true
+                        persistPendingReauth(activity, true)
                     }
                 }
             }
@@ -119,5 +140,18 @@ object AppLock {
      */
     fun updateCachedLoginMethod(method: String) {
         cachedLoginMethod = method
+    }
+
+    /**
+     * Mirrors `pendingReauth` into SharedPreferences so it survives the process being killed
+     * while backgrounded. Uses `applicationContext` off whatever Activity triggered the change,
+     * so it never leaks an Activity reference.
+     */
+    private fun persistPendingReauth(activity: Activity, value: Boolean) {
+        activity.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_PENDING_REAUTH, value)
+            .apply()
     }
 }

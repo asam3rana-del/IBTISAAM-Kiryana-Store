@@ -336,16 +336,19 @@ class CashRegisterActivity : AppCompatActivity() {
                 val ob = bankInput.text.toString().toDoubleOrNull() ?: 0.0
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@CashRegisterActivity)
-                    // FIX (audit): upsert() is REPLACE. If another device already opened (or even
-                    // closed) today's register and this screen was stale, tapping OPEN wiped
-                    // that register's closing figures and re-opened it. Re-check first.
-                    if (db.cashRegisterDao().find(todayKey()) != null) {
+                    // FIX (audit — race window): find()-then-upsert() used to be two separate
+                    // steps with a gap between them where a second OPEN (double-tap, or another
+                    // caller) could also pass the find()==null check and then REPLACE this one's
+                    // row. insertIfAbsent() makes the check-and-insert a single atomic SQLite
+                    // statement — it either inserts, or (if today's row already exists) does
+                    // nothing and reports that via its return value, with no gap in between.
+                    val newReg = CashRegister(date = todayKey(), openingCash = oc, openingBank = ob, closingCash = 0.0, closingBank = 0.0, closed = false)
+                    val insertedRowId = db.cashRegisterDao().insertIfAbsent(newReg)
+                    if (insertedRowId == -1L) {
                         Toast.makeText(this@CashRegisterActivity, Loc.t(this@CashRegisterActivity, "Today's register is already opened on another device", "آج کا رجسٹر کسی اور ڈیوائس پر پہلے ہی کھل چکا ہے"), Toast.LENGTH_LONG).show()
                         refresh()
                         return@launch
                     }
-                    val newReg = CashRegister(date = todayKey(), openingCash = oc, openingBank = ob, closingCash = 0.0, closingBank = 0.0, closed = false)
-                    db.cashRegisterDao().upsert(newReg)
                     com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, newReg, this@CashRegisterActivity)
                     Toast.makeText(this@CashRegisterActivity, Loc.t(this@CashRegisterActivity, "Register opened", "رجسٹر کھل گیا"), Toast.LENGTH_SHORT).show()
                     refresh()
@@ -516,29 +519,52 @@ class CashRegisterActivity : AppCompatActivity() {
             .show()
     }
 
+    // FIX (audit — stale expected values): recomputes today's expected closing cash/bank
+    // straight from cash_transactions right now, instead of trusting a figure that was
+    // computed back when the screen last rendered. Actual saved closingCash/closingBank
+    // (what the cashier physically counted) were never wrong — only the shortage/excess
+    // shown in the confirm dialog could go stale if another cash transaction (Cash In/Out,
+    // a sale, a payment) landed after render but before the close. Used both when building
+    // the dialog and again right before the save, so neither the message the user reads nor
+    // the number of any place that might rely on it is based on an old snapshot.
+    private suspend fun freshExpected(reg: CashRegister): Pair<Double, Double> {
+        val db = PosDatabase.get(this)
+        val date = try { dateKeyFmt.parse(reg.date) } catch (e: Exception) { null } ?: Date()
+        val start = startOfDay(date)
+        val end = start + 24 * 60 * 60 * 1000L
+        val cashIn = db.cashTransactionDao().totalBetween("IN", "cash", start, end)
+        val cashOut = db.cashTransactionDao().totalBetween("OUT", "cash", start, end)
+        val bankIn = db.cashTransactionDao().totalBetween("IN", "bank", start, end)
+        val bankOut = db.cashTransactionDao().totalBetween("OUT", "bank", start, end)
+        return (reg.openingCash + cashIn - cashOut) to (reg.openingBank + bankIn - bankOut)
+    }
+
     private fun confirmClose(reg: CashRegister, actualCash: Double, actualBank: Double, expectedCash: Double, expectedBank: Double) {
-        val diffCash = actualCash - expectedCash
-        val diffBank = actualBank - expectedBank
-        fun diffLabel(d: Double) = when {
-            Math.abs(d) < 0.01 -> Loc.t(this, "Exact match", "بالکل درست")
-            d > 0 -> Loc.t(this, "Excess", "زائد") + " Rs %.2f".format(d)
-            else -> Loc.t(this, "Shortage", "کمی") + " Rs %.2f".format(-d)
-        }
-        val msg = Loc.t(this, "Cash", "کیش") + ": " + diffLabel(diffCash) + "\n" + Loc.t(this, "Bank", "بینک") + ": " + diffLabel(diffBank)
-        AlertDialog.Builder(this)
-            .setTitle(Loc.t(this, "Confirm Close", "بند کرنے کی تصدیق کریں"))
-            .setMessage(msg)
-            .setNegativeButton(Loc.t(this, "Cancel", "منسوخ کریں"), null)
-            .setPositiveButton(Loc.t(this, "Confirm", "تصدیق کریں")) { _, _ ->
-                lifecycleScope.launch {
-                    val db = PosDatabase.get(this@CashRegisterActivity)
-                    val updated = reg.copy(closingCash = actualCash, closingBank = actualBank, closed = true)
-                    db.cashRegisterDao().upsert(updated)
-                    com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, updated, this@CashRegisterActivity)
-                    Toast.makeText(this@CashRegisterActivity, Loc.t(this@CashRegisterActivity, "Register closed", "رجسٹر بند ہو گیا"), Toast.LENGTH_SHORT).show()
-                    refresh()
-                }
+        lifecycleScope.launch {
+            val (freshCash, freshBank) = freshExpected(reg)
+            val diffCash = actualCash - freshCash
+            val diffBank = actualBank - freshBank
+            fun diffLabel(d: Double) = when {
+                Math.abs(d) < 0.01 -> Loc.t(this@CashRegisterActivity, "Exact match", "بالکل درست")
+                d > 0 -> Loc.t(this@CashRegisterActivity, "Excess", "زائد") + " Rs %.2f".format(d)
+                else -> Loc.t(this@CashRegisterActivity, "Shortage", "کمی") + " Rs %.2f".format(-d)
             }
-            .show()
+            val msg = Loc.t(this@CashRegisterActivity, "Cash", "کیش") + ": " + diffLabel(diffCash) + "\n" + Loc.t(this@CashRegisterActivity, "Bank", "بینک") + ": " + diffLabel(diffBank)
+            AlertDialog.Builder(this@CashRegisterActivity)
+                .setTitle(Loc.t(this@CashRegisterActivity, "Confirm Close", "بند کرنے کی تصدیق کریں"))
+                .setMessage(msg)
+                .setNegativeButton(Loc.t(this@CashRegisterActivity, "Cancel", "منسوخ کریں"), null)
+                .setPositiveButton(Loc.t(this@CashRegisterActivity, "Confirm", "تصدیق کریں")) { _, _ ->
+                    lifecycleScope.launch {
+                        val db = PosDatabase.get(this@CashRegisterActivity)
+                        val updated = reg.copy(closingCash = actualCash, closingBank = actualBank, closed = true)
+                        db.cashRegisterDao().upsert(updated)
+                        com.grocerypos.v11.SyncQueueHelper.enqueueCashRegister(db, updated, this@CashRegisterActivity)
+                        Toast.makeText(this@CashRegisterActivity, Loc.t(this@CashRegisterActivity, "Register closed", "رجسٹر بند ہو گیا"), Toast.LENGTH_SHORT).show()
+                        refresh()
+                    }
+                }
+                .show()
+        }
     }
 }

@@ -1465,6 +1465,18 @@ interface ProductDao {
 
 @Dao interface CashRegisterDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(r:CashRegister)
+    // FIX (audit — OPEN REGISTER race): CashRegisterActivity used to do find() then upsert()
+    // as two separate steps, leaving a window where a double-tap (or, in principle, two
+    // near-simultaneous OPEN attempts) could both pass the find()==null check before either
+    // had inserted, and the second upsert() (REPLACE) would silently wipe the first one's
+    // opening balance. onConflict=IGNORE makes the insert itself the atomic check: SQLite
+    // either inserts the new row or, if `date` (the PK) already exists, skips it entirely and
+    // returns -1 — one statement, no gap for a second caller to land in between. This is
+    // local-device atomicity only; it does not by itself resolve two different *devices*
+    // opening the register offline before either has synced — that's still settled by the
+    // existing updatedAt-newest-wins sync logic in SyncQueueHelper, same as every other
+    // synced entity.
+    @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insertIfAbsent(r:CashRegister):Long
     @Query("SELECT * FROM cash_register WHERE date=:date LIMIT 1") suspend fun find(date:String):CashRegister?
     // ADDED (audit): most recent CLOSED register before `date` (keys are yyyy-MM-dd, so string
     // order == date order). Used to carry the opening balance forward even when the shop
