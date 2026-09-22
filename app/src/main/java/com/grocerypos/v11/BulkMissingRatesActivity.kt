@@ -18,6 +18,7 @@ import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
+import com.grocerypos.v11.util.parseMoneyOrWarn
 import com.grocerypos.v11.fromPrimaryUnitRate
 import com.grocerypos.v11.toPrimaryUnitRate
 import com.grocerypos.v11.ui.components.*
@@ -490,6 +491,8 @@ class BulkMissingRatesActivity : ThemedActivity() {
     // be fixed here too) then advances to the next product in the queue.
     private fun saveCurrentAndAdvance() {
         val current = queue.firstOrNull() ?: return
+        val retailTyped = retailField.parseMoneyOrWarn(this, "Retail Price", "خوردہ قیمت") ?: return
+        val wholesaleTyped = wholesaleField.parseMoneyOrWarn(this, "Wholesale Price", "ہول سیل قیمت") ?: return
         saveNextBtn.isEnabled = false
         lifecycleScope.launch {
             try {
@@ -497,8 +500,6 @@ class BulkMissingRatesActivity : ThemedActivity() {
                 // to the PRIMARY unit before saving — salePrice/wholesalePrice
                 // are always stored per primary unit (same basis productDao's
                 // missing-rate query and every other screen read them against).
-                val retailTyped = retailField.text.toString().toDoubleOrNull() ?: 0.0
-                val wholesaleTyped = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0
                 val retail = if (retailTyped > 0) current.toPrimaryUnitRate(retailTyped, retailChosenUnit) else 0.0
                 val wholesale = if (wholesaleTyped > 0) current.toPrimaryUnitRate(wholesaleTyped, wholesaleChosenUnit) else 0.0
                 val db = PosDatabase.get(this@BulkMissingRatesActivity)

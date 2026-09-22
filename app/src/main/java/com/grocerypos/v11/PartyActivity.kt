@@ -25,6 +25,7 @@ import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.data.DuplicatePaymentGroup
 import com.grocerypos.v11.util.Loc
+import com.grocerypos.v11.util.parseMoneyOrWarn
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -800,11 +801,11 @@ class PartyActivity : AppCompatActivity() {
     private fun saveParty() {
         val name = nameField.text.toString()
         val phone = phoneField.text.toString()
-        val limit = creditLimitField.text.toString().toDoubleOrNull() ?: 0.0
-        val opening = openingBalanceField.text.toString().toDoubleOrNull() ?: 0.0
+        val limit = creditLimitField.parseMoneyOrWarn(this, "Credit Limit", "کریڈٹ حد") ?: return
+        val opening = openingBalanceField.parseMoneyOrWarn(this, "Opening Balance", "افتتاحی بیلنس") ?: return
         // NEW (Stuck Balance): the box is hidden for cashiers / suppliers, but read it
         // defensively anyway — a hidden field is always empty so this is 0.0 there.
-        val stuck = if (canEditStuck) stuckBalanceField.text.toString().toDoubleOrNull() ?: 0.0 else 0.0
+        val stuck = if (canEditStuck) stuckBalanceField.parseMoneyOrWarn(this, "Stuck Balance", "پھنسا ہوا بیلنس") ?: return else 0.0
 
         // ---- IMPROVEMENT PACK (Party 10/10): warn on an exact-name collision before
         // creating a second party with the same name — the #1 cause of a shop
@@ -1011,7 +1012,9 @@ class PartyActivity : AppCompatActivity() {
                     creditLimit = limitEdit.text.toString().toDoubleOrNull() ?: c.creditLimit,
                     openingBalance = openingEdit.text.toString().toDoubleOrNull() ?: c.openingBalance,
                     // null (cashier: field not shown) keeps the stored stuck amount untouched.
-                    stuckBalance = stuckEdit?.let { it.text.toString().toDoubleOrNull() ?: 0.0 }
+                    stuckBalance = stuckEdit?.let {
+                        it.parseMoneyOrWarn(this, "Stuck Balance", "پھنسا ہوا بیلنس") ?: return@setPositiveButton
+                    }
                 )
                 d.dismiss()
             }

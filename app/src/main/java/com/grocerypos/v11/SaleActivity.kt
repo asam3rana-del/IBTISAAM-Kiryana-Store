@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import com.grocerypos.v11.R
 import com.grocerypos.v11.util.keepContentAboveKeyboard
+import com.grocerypos.v11.util.parseMoneyOrWarn
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -1416,11 +1417,13 @@ class SaleActivity : AppCompatActivity() {
                         "Phir bhi save karen?"
                     )
                     .setPositiveButton(com.grocerypos.v11.util.Loc.t(this, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ ->
+                        val discountVal = discountInput.parseMoneyOrWarn(this, "Discount", "ڈسکاؤنٹ") ?: return@setPositiveButton
+                        val paidVal = paidInput.parseMoneyOrWarn(this, "Paid Amount", "ادا شدہ رقم") ?: return@setPositiveButton
                         proceedSaveSale(
                             enteredCustomer = customerName.text.toString().trim(),
                             saleTypeLabel = saleTypeSpinner.selectedItem?.toString() ?: "Retail",
-                            enteredDiscount = discountInput.text.toString().toDoubleOrNull() ?: 0.0,
-                            enteredPaid = paidInput.text.toString().toDoubleOrNull() ?: 0.0,
+                            enteredDiscount = discountVal,
+                            enteredPaid = paidVal,
                             paymentMethodLabel = paymentMethodSpinner.selectedItem?.toString() ?: "Cash",
                             overrideCreditLimit = true
                         )
@@ -1499,8 +1502,8 @@ class SaleActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 val phone = phoneField.text.toString().trim()
-                val creditLimit = creditLimitField.text.toString().toDoubleOrNull() ?: 0.0
-                val openingBalance = openingField.text.toString().toDoubleOrNull() ?: 0.0
+                val creditLimit = creditLimitField.parseMoneyOrWarn(this, "Credit Limit", "کریڈٹ حد") ?: return@setPositiveButton
+                val openingBalance = openingField.parseMoneyOrWarn(this, "Opening Balance", "افتتاحی بیلنس") ?: return@setPositiveButton
                 viewModel.addCustomer(name, phone, creditLimit, openingBalance)
             }
             .setNegativeButton("Cancel", null)
@@ -1556,8 +1559,8 @@ class SaleActivity : AppCompatActivity() {
         if (lines.isEmpty()) { Toast.makeText(this, "Kam az kam ek item add karen", Toast.LENGTH_SHORT).show(); return }
 
         val enteredCustomer = customerName.text.toString().trim()
-        val enteredDiscount = discountInput.text.toString().toDoubleOrNull() ?: 0.0
-        val enteredPaid = paidInput.text.toString().toDoubleOrNull() ?: 0.0
+        val enteredDiscount = discountInput.parseMoneyOrWarn(this, "Discount", "ڈسکاؤنٹ") ?: return
+        val enteredPaid = paidInput.parseMoneyOrWarn(this, "Paid Amount", "ادا شدہ رقم") ?: return
         val saleTypeLabel = saleTypeSpinner.selectedItem?.toString() ?: "Retail"
         val paymentMethodLabel = paymentMethodSpinner.selectedItem?.toString() ?: "Cash"
 
@@ -1801,7 +1804,8 @@ class SaleActivity : AppCompatActivity() {
                         val entries = (0 until rowsContainer.childCount).mapNotNull { i ->
                             val row = rowsContainer.getChildAt(i) as LinearLayout
                             val method = (row.getChildAt(0) as Spinner).selectedItem?.toString() ?: "Cash"
-                            val amt = (row.getChildAt(1) as EditText).text.toString().toDoubleOrNull() ?: 0.0
+                            val amtField = row.getChildAt(1) as EditText
+                            val amt = amtField.parseMoneyOrWarn(this, "Payment Amount", "ادائیگی کی رقم") ?: return@setOnClickListener
                             if (amt > 0.009) method to amt else null
                         }
                         if (entries.isEmpty()) {

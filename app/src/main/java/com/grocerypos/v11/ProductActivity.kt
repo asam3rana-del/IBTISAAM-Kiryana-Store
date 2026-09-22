@@ -36,6 +36,7 @@ import com.grocerypos.v11.toSmallestUnits
 import com.grocerypos.v11.fromSmallestUnits
 import com.grocerypos.v11.util.Loc
 import com.grocerypos.v11.util.ThemeManager
+import com.grocerypos.v11.util.parseMoneyOrWarn
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -1533,7 +1534,7 @@ class ProductActivity : ThemedActivity() {
                 resolvedOpeningStock = existing.openingStock
             }
         } else {
-            val openingQty = stock.text.toString().toDoubleOrNull() ?: 0.0
+            val openingQty = stock.parseMoneyOrWarn(this, "Opening Stock", "ابتدائی اسٹاک") ?: return
             resolvedStock = openingStockToSmallest(
                 openingQty,
                 selectedOpeningStockUnit
@@ -1555,13 +1556,17 @@ class ProductActivity : ThemedActivity() {
             }
         }
 
+        val costVal = cost.parseMoneyOrWarn(this, "Cost Price", "لاگت قیمت") ?: return
+        val saleVal = salePrice.parseMoneyOrWarn(this, "Sale Price", "فروخت قیمت") ?: return
+        val wholesaleVal = wholesalePrice.parseMoneyOrWarn(this, "Wholesale Price", "ہول سیل قیمت") ?: return
+
         val product = Product(
             barcode = barcode,
             name = productName,
             category = categoryValue,
-            cost = cost.text.toString().toDoubleOrNull() ?: 0.0,
-            salePrice = salePrice.text.toString().toDoubleOrNull() ?: 0.0,
-            wholesalePrice = wholesalePrice.text.toString().toDoubleOrNull() ?: 0.0,
+            cost = costVal,
+            salePrice = saleVal,
+            wholesalePrice = wholesaleVal,
             stock = resolvedStock,
             openingStock = resolvedOpeningStock,
             unit = selectedPrimaryUnit,

@@ -2,6 +2,7 @@ package com.grocerypos.v11.ui
 
 import com.grocerypos.v11.R
 import com.grocerypos.v11.util.keepContentAboveKeyboard
+import com.grocerypos.v11.util.parseMoneyOrWarn
 
 import android.app.DatePickerDialog
 import android.content.Context
@@ -1813,7 +1814,7 @@ class PurchaseActivity : ThemedActivity() {
                 return@setPositiveButton
             }
             val phone = phoneField.text.toString().trim()
-            val openingBalance = openingField.text.toString().toDoubleOrNull() ?: 0.0
+            val openingBalance = openingField.parseMoneyOrWarn(this, "Opening Balance", "افتتاحی بیلنس") ?: return@setPositiveButton
             safeLaunch("addSupplier") { viewModel.addSupplier(name, phone, openingBalance); partyName.setText(name) }
         }.setNegativeButton("Cancel", null).show()
     }
@@ -1985,7 +1986,10 @@ class PurchaseActivity : ThemedActivity() {
                 if (secondaryUnit != "None" && secondaryQty <= 0) { secQtyField.error = "Enter qty"; return@setOnClickListener }
                 if (tertiaryUnit != "None" && secondaryUnit == "None") { Toast.makeText(this@PurchaseActivity, "Select Secondary first", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
                 if (secondaryUnit == "None") { tertiaryUnit = "None"; tertiaryQty = 0.0 }
-                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = rate.text.toString().toDoubleOrNull() ?: 0.0, salePrice = retailField.text.toString().toDoubleOrNull() ?: 0.0, wholesalePrice = wholesaleField.text.toString().toDoubleOrNull() ?: 0.0, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty, searchTag = searchTagField.text.toString().trim(), defaultUnitIndex = chosenDefaultUnitIndex)
+                val costVal = rate.parseMoneyOrWarn(this@PurchaseActivity, "Cost Price", "لاگت قیمت") ?: return@setOnClickListener
+                val saleVal = retailField.parseMoneyOrWarn(this@PurchaseActivity, "Retail Rate", "خوردہ ریٹ") ?: return@setOnClickListener
+                val wholesaleVal = wholesaleField.parseMoneyOrWarn(this@PurchaseActivity, "Wholesale Rate", "ہول سیل ریٹ") ?: return@setOnClickListener
+                val newProduct = Product(barcode = "P" + System.currentTimeMillis(), name = pname, category = categorySpinnerDialog.selectedItem?.toString() ?: "General", cost = costVal, salePrice = saleVal, wholesalePrice = wholesaleVal, stock = 0.0, openingStock = 0.0, unit = primaryUnit, secondaryUnit = if (secondaryUnit == "None") "" else secondaryUnit, secondaryUnitQty = secondaryQty, tertiaryUnit = if (tertiaryUnit == "None") "" else tertiaryUnit, tertiaryUnitQty = tertiaryQty, searchTag = searchTagField.text.toString().trim(), defaultUnitIndex = chosenDefaultUnitIndex)
                 safeLaunch("saveNewProduct") { viewModel.addProduct(newProduct); Toast.makeText(this@PurchaseActivity, "Product added", Toast.LENGTH_SHORT).show(); itemName.setText(newProduct.name); applyPickedProduct(newProduct); dialog.dismiss() }
             }
         })
@@ -2005,30 +2009,38 @@ class PurchaseActivity : ThemedActivity() {
         if (lines.isEmpty()) { Toast.makeText(this, "Add at least one item", Toast.LENGTH_SHORT).show(); return }
         val subtotal = lines.sumOf { it.amount }
         val grandTotal = Math.round(subtotal).toDouble().coerceAtLeast(0.0)
-        val paidText = paidInput.text.toString().trim()
-        val isPaidEmpty = paidText.isEmpty() || paidText.toDoubleOrNull() == 0.0
+        // FIX (silent-0.0 audit): a non-empty, unparseable Paid Amount used to fall
+        // through the isPaidEmpty check below (isPaidEmpty only trips on a truly
+        // empty box or a value that parses to exactly 0.0 — an unparseable string
+        // is neither), then got silently re-parsed to 0.0 further down in
+        // proceedSave(). So a typo here used to skip the "save as credit?" warning
+        // entirely, then save with amountPaid=0 with no warning of any kind. Now
+        // parsed once, up front, and threaded through every call in this chain
+        // instead of each one re-reading paidInput.text.toString() itself.
+        val amountPaid = paidInput.parseMoneyOrWarn(this, "Paid Amount", "ادا شدہ رقم") ?: return
+        val isPaidEmpty = amountPaid == 0.0
         if (isPaidEmpty && grandTotal > 0) {
             android.app.AlertDialog.Builder(this)
                 .setTitle("Confirm Credit Purchase")
                 .setMessage("You have not entered Paid Amount.\nTotal: Rs %.0f\n\nThis bill will be saved as CREDIT (Udhaar).\nSupplier balance will increase.\n\nAre you sure?".format(grandTotal))
-                .setPositiveButton("Yes, Save as Credit") { _, _ -> checkInvoiceDuplicateThenProceed(party, grandTotal) }
+                .setPositiveButton("Yes, Save as Credit") { _, _ -> checkInvoiceDuplicateThenProceed(party, grandTotal, amountPaid) }
                 .setNegativeButton("Enter Payment") { dialog, _ -> dialog.dismiss(); if (isTabletWide) paidInput.requestFocus() else scrollArea.post { scrollArea.smoothScrollTo(0, paymentSection.top); paidInput.requestFocus() } }
                 .show()
             return
         }
-        checkInvoiceDuplicateThenProceed(party, grandTotal)
+        checkInvoiceDuplicateThenProceed(party, grandTotal, amountPaid)
     }
     // NEW ("10/10 Purchase screen" item #2): an EXACT duplicate check on the
     // supplier's own invoice number, run before the existing same-party+same-amount
     // heuristic below. Only fires when an invoice number was actually entered —
     // otherwise falls straight through to checkDuplicateAndProceed().
-    private fun checkInvoiceDuplicateThenProceed(party: String, grandTotal: Double) {
+    private fun checkInvoiceDuplicateThenProceed(party: String, grandTotal: Double, amountPaid: Double) {
         val invoiceNo = supplierInvoiceNoInput.text.toString().trim()
-        if (invoiceNo.isEmpty()) { checkDuplicateAndProceed(party, grandTotal); return }
+        if (invoiceNo.isEmpty()) { checkDuplicateAndProceed(party, grandTotal, amountPaid); return }
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
             val duplicate = db.purchaseDao().findDuplicateBySupplierInvoice(party, invoiceNo, editBillNo ?: "")
-            if (duplicate == null) { checkDuplicateAndProceed(party, grandTotal); return@launch }
+            if (duplicate == null) { checkDuplicateAndProceed(party, grandTotal, amountPaid); return@launch }
             android.app.AlertDialog.Builder(this@PurchaseActivity)
                 .setTitle(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Duplicate Invoice Number", "ڈپلیکیٹ انوائس نمبر"))
                 .setMessage(
@@ -2038,7 +2050,7 @@ class PurchaseActivity : ThemedActivity() {
                         "$party کا انوائس نمبر #$invoiceNo پہلے ہی بل نمبر #${duplicate.billNo} کے طور پر محفوظ ہے۔\n\nکیا پھر بھی محفوظ کریں؟"
                     )
                 )
-                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ -> checkDuplicateAndProceed(party, grandTotal) }
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ -> checkDuplicateAndProceed(party, grandTotal, amountPaid) }
                 .setNegativeButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Cancel", "منسوخ کریں"), null)
                 .show()
         }
@@ -2056,7 +2068,7 @@ class PurchaseActivity : ThemedActivity() {
     // happened — so this now compares each candidate's `createdAt` (which doubles
     // as the purchase's own recorded date) against this bill's `purchaseDateMillis`
     // by calendar day, with no time-window cutoff at all.
-    private fun checkDuplicateAndProceed(party: String, grandTotal: Double) {
+    private fun checkDuplicateAndProceed(party: String, grandTotal: Double, amountPaid: Double) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PurchaseActivity)
             val recent = db.purchaseDao().allPurchases()
@@ -2070,7 +2082,7 @@ class PurchaseActivity : ThemedActivity() {
                 dayFmt.format(Date(r.createdAt)) == targetDay
             }
             if (duplicate == null) {
-                proceedSave(party, grandTotal)
+                proceedSave(party, grandTotal, amountPaid)
                 return@launch
             }
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
@@ -2083,17 +2095,17 @@ class PurchaseActivity : ThemedActivity() {
                         "$party کی طرف سے Rs %.0f کی خریداری پہلے ہی ${fmt.format(Date(duplicate.createdAt))} کو محفوظ ہو چکی ہے (بل نمبر ${duplicate.billNo})۔\n\nکیا پھر بھی محفوظ کریں؟".format(grandTotal)
                     )
                 )
-                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ -> proceedSave(party, grandTotal) }
+                .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Save Anyway", "پھر بھی محفوظ کریں")) { _, _ -> proceedSave(party, grandTotal, amountPaid) }
                 .setNegativeButton(com.grocerypos.v11.util.Loc.t(this@PurchaseActivity, "Cancel", "منسوخ کریں"), null)
                 .show()
         }
     }
 
-    private fun proceedSave(party: String, grandTotal: Double) {
+    private fun proceedSave(party: String, grandTotal: Double, amountPaid: Double) {
         isSaving = true
         saveButton.isEnabled = false
         val discount = 0.0
-        val amountPaid = Math.round(paidInput.text.toString().toDoubleOrNull() ?: 0.0).toDouble().coerceIn(0.0, grandTotal)
+        val amountPaidClamped = amountPaid.coerceIn(0.0, grandTotal)
         // NEW (Split Payment): while a split is active, the combined method label
         // (e.g. "Cash + Bank") is derived from splitPayments instead of the single
         // spinner — mirrors SaleActivity's proceedSaveSale().
@@ -2109,7 +2121,7 @@ class PurchaseActivity : ThemedActivity() {
             editBillNo = editBillNo,
             party = party,
             grandTotal = grandTotal,
-            amountPaid = amountPaid,
+            amountPaid = amountPaidClamped,
             discount = discount,
             paymentMethod = paymentMethod,
             purchaseDateMillis = purchaseDateMillis,
@@ -2247,7 +2259,8 @@ class PurchaseActivity : ThemedActivity() {
                         val entries = (0 until rowsContainer.childCount).mapNotNull { i ->
                             val row = rowsContainer.getChildAt(i) as LinearLayout
                             val method = (row.getChildAt(0) as Spinner).selectedItem?.toString() ?: "Cash"
-                            val amt = (row.getChildAt(1) as EditText).text.toString().toDoubleOrNull() ?: 0.0
+                            val amtField = row.getChildAt(1) as EditText
+                            val amt = amtField.parseMoneyOrWarn(this, "Payment Amount", "ادائیگی کی رقم") ?: return@setOnClickListener
                             if (amt > 0.009) method to amt else null
                         }
                         if (entries.isEmpty()) {

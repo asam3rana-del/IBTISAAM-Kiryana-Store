@@ -33,6 +33,7 @@ import com.grocerypos.v11.ZakatPayment
 import com.grocerypos.v11.ZakatYear
 import com.grocerypos.v11.smallestUnitFactor
 import com.grocerypos.v11.util.Loc
+import com.grocerypos.v11.util.parseMoneyOrWarn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -412,7 +413,7 @@ class ZakatActivity : AppCompatActivity() {
                 .setTitle(Loc.t(this@ZakatActivity, "Confirm Zakat Year", "زکوٰۃ سال کی تصدیق کریں"))
                 .setView(scrollWrap)
                 .setPositiveButton(Loc.t(this@ZakatActivity, "Start", "شروع کریں")) { _, _ ->
-                    val assets = assetsInput.text.toString().toDoubleOrNull() ?: 0.0
+                    val assets = assetsInput.parseMoneyOrWarn(this@ZakatActivity, "Net Zakatable Assets", "خالص زکوٰۃ کے قابل اثاثے") ?: return@setPositiveButton
                     saveNewYear(start, end, assets, getCurrency(), getCalendarType())
                 }
                 .setNegativeButton(Loc.t(this@ZakatActivity, "Cancel", "منسوخ کریں"), null)

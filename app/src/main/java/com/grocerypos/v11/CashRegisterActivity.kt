@@ -13,6 +13,7 @@ import com.grocerypos.v11.CashRegister
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.util.Loc
+import com.grocerypos.v11.util.parseMoneyOrWarn
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -332,8 +333,8 @@ class CashRegisterActivity : AppCompatActivity() {
             background = roundedBg(green, 16)
             setPadding(0, 22, 0, 22)
             setOnClickListener {
-                val oc = cashInput.text.toString().toDoubleOrNull() ?: 0.0
-                val ob = bankInput.text.toString().toDoubleOrNull() ?: 0.0
+                val oc = cashInput.parseMoneyOrWarn(this@CashRegisterActivity, "Opening Cash", "ابتدائی کیش") ?: return@setOnClickListener
+                val ob = bankInput.parseMoneyOrWarn(this@CashRegisterActivity, "Opening Bank", "ابتدائی بینک") ?: return@setOnClickListener
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@CashRegisterActivity)
                     // FIX (audit — race window): find()-then-upsert() used to be two separate
