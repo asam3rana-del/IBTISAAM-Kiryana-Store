@@ -893,26 +893,32 @@ class PartyTransactionActivity : AppCompatActivity() {
             // ---- IMPROVEMENT PACK (Party Transactions 10/10): balance summary,
             // fetched alongside the transaction feed since both come from this
             // same load pass (onResume / after a payment or bill edit). ----
+            // PERMANENT FIX (balance drift — "paid supplier still shows You'll Get"):
+            // `running` used to be read straight from the stored customer.balance/
+            // supplier.balance field, which is only ever nudged +/- by every sale,
+            // purchase, payment, edit and delete (see SyncQueueHelper.adjustCustomer/
+            // SupplierBalance) — any one adjustment that ever fired without a perfectly
+            // matching real transaction (an orphaned/duplicate payment row, an
+            // interrupted sync, an old build's bug) left that stored number permanently
+            // wrong with nothing to ever correct it. `running` is now computed fresh,
+            // below, straight from this party's actual non-returned bills and
+            // standalone payments — the exact same definition PartyRepository.
+            // recalculateBalances()'s "Fix Balances" uses — so there is no stored
+            // number left to drift; it's recalculated from the real ledger on every
+            // load of this screen.
             val opening: Double
-            val running: Double
             val stuck: Double
             var creditLimit = 0.0
             if (isCustomer) {
                 val customer = db.customerDao().find(partyId)
                 opening = customer?.openingBalance ?: 0.0
-                running = customer?.balance ?: 0.0
                 stuck = customer?.stuckBalance ?: 0.0
                 creditLimit = customer?.creditLimit ?: 0.0
             } else {
                 val supplier = db.supplierDao().find(partyId)
                 opening = supplier?.openingBalance ?: 0.0
-                running = supplier?.balance ?: 0.0
                 stuck = 0.0
             }
-            // NEW (Stuck Balance): the headline "You'll Get" figure is the TOTAL (daily +
-            // stuck); the split card below explains it. stuck == 0.0 => identical to before.
-            updateBalanceCard(opening, opening + running + stuck)
-            updateStuckCard(opening + running, stuck)
 
             // NEW: standalone payments recorded via the Receive Payment/Make Payment button
             // — merged chronologically with the sale/purchase bills below so the full money
@@ -936,6 +942,10 @@ class PartyTransactionActivity : AppCompatActivity() {
             var totalAmount = 0.0
             var totalPaidOnBills = 0.0
             var overdueAmount = 0.0
+            // PERMANENT FIX (balance drift): outstanding summed ONLY from non-returned
+            // bills — a returned bill has nothing left owing, same rule recalculateBalances()
+            // uses. This plus paymentsSum below (computed further down) is `running`.
+            var outstandingActive = 0.0
             var lastActivityAt: Long? = null
             val now = System.currentTimeMillis()
 
@@ -943,6 +953,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 db.saleDao().salesByCustomer(partyId).forEach { s ->
                     totalAmount += s.total
                     totalPaidOnBills += s.paid
+                    if (s.status != "returned") outstandingActive += (s.total - s.paid)
                     if (s.status != "returned" && s.dueDate > 0L && s.dueDate < now && (s.total - s.paid) > 0.009) {
                         overdueAmount += (s.total - s.paid)
                     }
@@ -972,6 +983,7 @@ class PartyTransactionActivity : AppCompatActivity() {
                 db.purchaseDao().purchasesBySupplier(partyId).forEach { p ->
                     totalAmount += p.total
                     totalPaidOnBills += p.paid
+                    if (p.status != "returned") outstandingActive += (p.total - p.paid)
                     // NEW: Purchase.dueDate now exists (MIGRATION_42_43) — same overdue
                     // rule as the customer/Sale branch above.
                     if (p.status != "returned" && p.dueDate > 0L && p.dueDate < now && (p.total - p.paid) > 0.009) {
@@ -1004,6 +1016,16 @@ class PartyTransactionActivity : AppCompatActivity() {
             // (applyBillPaidDelta) — counting it again here inflated "Total Paid".
             val paymentsSum = payments.filter { it.billReference.isBlank() }.sumOf { it.amount }
             updateDashboardStats(totalAmount, totalPaidOnBills, paymentsSum, overdueAmount, creditLimit, lastActivityAt)
+
+            // PERMANENT FIX (balance drift — see the big comment near the top of this
+            // function): `running` = outstanding on this party's own active bills minus
+            // standalone payments made against them, computed fresh every load instead
+            // of read from the stored (and driftable) customer.balance/supplier.balance.
+            val running = outstandingActive - paymentsSum
+            // NEW (Stuck Balance): the headline "You'll Get" figure is the TOTAL (daily +
+            // stuck); the split card below explains it. stuck == 0.0 => identical to before.
+            updateBalanceCard(opening, opening + running + stuck)
+            updateStuckCard(opening + running, stuck)
 
             payments.forEach { pay ->
                 val dateText = fmt.format(Date(pay.createdAt))

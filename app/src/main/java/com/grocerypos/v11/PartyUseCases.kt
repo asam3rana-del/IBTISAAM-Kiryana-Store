@@ -35,6 +35,15 @@ class ObserveSuppliersUseCase(private val repository: PartyRepository) {
     operator fun invoke(): Flow<List<Supplier>> = repository.observeSuppliers()
 }
 
+/** PERMANENT FIX (balance drift): the Customers & Suppliers list's closing
+ * ("You'll Get/Give") figures come from here — PartyRepository's live,
+ * recomputed-from-the-ledger balances — instead of each Customer/Supplier's
+ * stored, driftable `.balance` field. See PartyRepository.liveCustomerBalances(). */
+class GetLiveBalancesUseCase(private val repository: PartyRepository) {
+    suspend operator fun invoke(): Pair<Map<Long, Double>, Map<Long, Double>> =
+        Pair(repository.liveCustomerBalances(), repository.liveSupplierBalances())
+}
+
 class SaveCustomerUseCase(private val repository: PartyRepository) {
     suspend operator fun invoke(
         name: String,

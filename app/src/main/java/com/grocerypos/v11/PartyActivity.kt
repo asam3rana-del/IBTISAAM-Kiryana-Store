@@ -111,6 +111,16 @@ class PartyActivity : AppCompatActivity() {
     private lateinit var contactPickerLauncher: ActivityResultLauncher<Void?>
     private lateinit var contactPermissionLauncher: ActivityResultLauncher<String>
 
+    // PERMANENT FIX (balance drift): the live balances (PartyUiState.customerBalances/
+    // supplierBalances) only auto-refresh when a customer/supplier ROW itself changes —
+    // not when a sale/purchase/payment does. Re-fetching them every time this screen
+    // becomes visible again (e.g. coming back here after making a payment on the Party
+    // Transaction screen) keeps what's shown from ever going stale.
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshBalances()
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         loadThemeColors()
@@ -458,9 +468,14 @@ class PartyActivity : AppCompatActivity() {
             query.isEmpty() || name.contains(query, ignoreCase = true) || phone.contains(query, ignoreCase = true)
 
         listContainer.removeAllViews()
+        // PERMANENT FIX (balance drift — "paid supplier still shows You'll Get"): every
+        // closing figure below reads from state.customerBalances/supplierBalances —
+        // PartyRepository's live, recomputed-from-the-ledger balances — instead of
+        // c.balance/s.balance (the stored field that can drift). See
+        // GetLiveBalancesUseCase / PartyRepository.liveCustomerBalances().
         if (state.showingCustomers) {
             val filtered = state.customers.filter {
-                matches(it.name, it.phone) && (!duesOnly || it.totalPayable() != 0.0)
+                matches(it.name, it.phone) && (!duesOnly || (it.openingBalance + (state.customerBalances[it.id] ?: 0.0) + it.stuckBalance) != 0.0)
             }
             if (filtered.isEmpty()) {
                 val msg = if (state.customers.isEmpty()) Loc.t(this, "No customers yet", "کوئی کسٹمر نہیں ہے")
@@ -469,7 +484,7 @@ class PartyActivity : AppCompatActivity() {
             }
             for (c in filtered) {
                 listContainer.addView(
-                    partyRow(c.name, c.phone, c.openingBalance, c.balance, blue, R.drawable.ic_person, isCustomer = true, stuck = c.stuckBalance,
+                    partyRow(c.name, c.phone, c.openingBalance, state.customerBalances[c.id] ?: 0.0, blue, R.drawable.ic_person, isCustomer = true, stuck = c.stuckBalance,
                         onClick = { openCustomerHistory(c) },
                         onEdit = { editCustomerDialog(c) },
                         onDelete = { confirmDeleteCustomer(c) },
@@ -479,7 +494,7 @@ class PartyActivity : AppCompatActivity() {
             }
         } else {
             val filtered = state.suppliers.filter {
-                matches(it.name, it.phone) && (!duesOnly || (it.openingBalance + it.balance) != 0.0)
+                matches(it.name, it.phone) && (!duesOnly || (it.openingBalance + (state.supplierBalances[it.id] ?: 0.0)) != 0.0)
             }
             if (filtered.isEmpty()) {
                 val msg = if (state.suppliers.isEmpty()) Loc.t(this, "No suppliers yet", "کوئی سپلائر نہیں ہے")
@@ -488,7 +503,7 @@ class PartyActivity : AppCompatActivity() {
             }
             for (s in filtered) {
                 listContainer.addView(
-                    partyRow(s.name, s.phone, s.openingBalance, s.balance, orange, R.drawable.ic_shopping_bag, isCustomer = false,
+                    partyRow(s.name, s.phone, s.openingBalance, state.supplierBalances[s.id] ?: 0.0, orange, R.drawable.ic_shopping_bag, isCustomer = false,
                         onClick = { openSupplierHistory(s) },
                         onEdit = { editSupplierDialog(s) },
                         onDelete = { confirmDeleteSupplier(s) },
@@ -1101,7 +1116,10 @@ class PartyActivity : AppCompatActivity() {
     private fun openCustomerHistory(c: Customer) {
         lifecycleScope.launch {
             val sales = viewModel.customerHistory(c)
-            val content = historyDialogContainer(c.name, blue, R.drawable.ic_person, c.openingBalance, c.balance, c.stuckBalance)
+            // PERMANENT FIX (balance drift): live balance, not c.balance — see the
+            // comment on render()'s list-building above.
+            val liveRunning = viewModel.uiState.value.customerBalances[c.id] ?: 0.0
+            val content = historyDialogContainer(c.name, blue, R.drawable.ic_person, c.openingBalance, liveRunning, c.stuckBalance)
             val body = content.getChildAt(1) as LinearLayout
 
             if (sales.isEmpty()) {
@@ -1129,7 +1147,10 @@ class PartyActivity : AppCompatActivity() {
     private fun openSupplierHistory(s: Supplier) {
         lifecycleScope.launch {
             val purchases = viewModel.supplierHistory(s)
-            val content = historyDialogContainer(s.name, orange, R.drawable.ic_shopping_bag, s.openingBalance, s.balance)
+            // PERMANENT FIX (balance drift): live balance, not s.balance — see the
+            // comment on render()'s list-building above.
+            val liveRunning = viewModel.uiState.value.supplierBalances[s.id] ?: 0.0
+            val content = historyDialogContainer(s.name, orange, R.drawable.ic_shopping_bag, s.openingBalance, liveRunning)
             val body = content.getChildAt(1) as LinearLayout
 
             if (purchases.isEmpty()) {

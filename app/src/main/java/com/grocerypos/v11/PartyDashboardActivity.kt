@@ -19,7 +19,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
-import com.grocerypos.v11.totalPayable
+import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.Product
 import com.grocerypos.v11.R
@@ -844,12 +844,23 @@ class PartyDashboardActivity : AppCompatActivity() {
                 db.purchaseDao().lastActivityBySupplier().forEach { supplierLastAt[it.partyId] = maxOf(supplierLastAt[it.partyId] ?: 0L, it.lastAt) }
                 db.paymentDao().lastActivityByPartyType("supplier").forEach { supplierLastAt[it.partyId] = maxOf(supplierLastAt[it.partyId] ?: 0L, it.lastAt) }
 
+                // PERMANENT FIX (balance drift — "paid supplier still shows You'll Get"):
+                // closing is computed from PartyRepository's live ledger balance (fresh
+                // from actual bills + standalone payments), not the stored, driftable
+                // customer.balance/supplier.balance field `.totalPayable()`/`s.balance`
+                // used to read. See PartyRepository.liveCustomerBalances() comment.
+                val partyRepo = PartyRepository(db, applicationContext)
+                val liveCustomerBal = partyRepo.liveCustomerBalances()
+                val liveSupplierBal = partyRepo.liveSupplierBalances()
+
                 val items = mutableListOf<PartyItem>()
                 for (c in customers) {
-                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = c.totalPayable(), isCustomer = true, dueStatus = dueByCustomer[c.id], lastActivityAt = customerLastAt[c.id], stuck = c.stuckBalance))
+                    val closing = c.openingBalance + (liveCustomerBal[c.id] ?: 0.0) + c.stuckBalance
+                    items.add(PartyItem(id = c.id, name = c.name, phone = c.phone, closing = closing, isCustomer = true, dueStatus = dueByCustomer[c.id], lastActivityAt = customerLastAt[c.id], stuck = c.stuckBalance))
                 }
                 for (s in suppliers) {
-                    items.add(PartyItem(id = s.id, name = s.name, phone = s.phone, closing = s.openingBalance + s.balance, isCustomer = false, lastActivityAt = supplierLastAt[s.id]))
+                    val closing = s.openingBalance + (liveSupplierBal[s.id] ?: 0.0)
+                    items.add(PartyItem(id = s.id, name = s.name, phone = s.phone, closing = closing, isCustomer = false, lastActivityAt = supplierLastAt[s.id]))
                 }
                 // CHANGE (Khatabook-style party list — screenshot reference): sort by
                 // most recent activity first (matches the reference screenshot's order

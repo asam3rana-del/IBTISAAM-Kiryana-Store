@@ -11,6 +11,7 @@ import com.grocerypos.v11.domain.DeleteCustomerUseCase
 import com.grocerypos.v11.domain.DeleteSupplierUseCase
 import com.grocerypos.v11.domain.FindDuplicatePaymentsUseCase
 import com.grocerypos.v11.domain.FindOrphanedPaymentsUseCase
+import com.grocerypos.v11.domain.GetLiveBalancesUseCase
 import com.grocerypos.v11.domain.GetCustomerHistoryUseCase
 import com.grocerypos.v11.domain.GetSupplierHistoryUseCase
 import com.grocerypos.v11.domain.MergeDuplicatePartiesUseCase
@@ -34,7 +35,14 @@ import kotlinx.coroutines.launch
 data class PartyUiState(
     val showingCustomers: Boolean = true,
     val customers: List<Customer> = emptyList(),
-    val suppliers: List<Supplier> = emptyList()
+    val suppliers: List<Supplier> = emptyList(),
+    // PERMANENT FIX (balance drift — "paid supplier still shows You'll Get"): the
+    // party list's closing ("You'll Get/Give") figures must come from these —
+    // PartyRepository's live, recomputed-from-the-ledger balances — never from
+    // customer.balance/supplier.balance directly. See GetLiveBalancesUseCase /
+    // PartyRepository.liveCustomerBalances() for why the stored field can drift.
+    val customerBalances: Map<Long, Double> = emptyMap(),
+    val supplierBalances: Map<Long, Double> = emptyMap()
 )
 
 /** One-shot outcomes (toast text, clearing the Add form) that shouldn't re-fire
@@ -78,6 +86,7 @@ sealed class PartyEvent {
 class PartyViewModel(
     private val observeCustomers: ObserveCustomersUseCase,
     private val observeSuppliers: ObserveSuppliersUseCase,
+    private val getLiveBalances: GetLiveBalancesUseCase,
     private val saveCustomer: SaveCustomerUseCase,
     private val saveSupplier: SaveSupplierUseCase,
     private val updateCustomer: UpdateCustomerUseCase,
@@ -104,12 +113,27 @@ class PartyViewModel(
         viewModelScope.launch {
             observeCustomers().collect { list ->
                 _uiState.value = _uiState.value.copy(customers = list)
+                refreshBalances()
             }
         }
         viewModelScope.launch {
             observeSuppliers().collect { list ->
                 _uiState.value = _uiState.value.copy(suppliers = list)
+                refreshBalances()
             }
+        }
+    }
+
+    // PERMANENT FIX (balance drift): the customer/supplier Flow above only re-emits
+    // when a customer/supplier ROW itself changes (name, opening balance, etc.) — not
+    // when a sale/purchase/payment changes, which is what the live balance actually
+    // depends on. So this is also called explicitly (PartyActivity.onResume) any time
+    // this screen becomes visible again — e.g. coming back from a payment made on the
+    // Party Transaction screen — to pick up the latest ledger-computed figures.
+    fun refreshBalances() {
+        viewModelScope.launch {
+            val (customerBal, supplierBal) = getLiveBalances()
+            _uiState.value = _uiState.value.copy(customerBalances = customerBal, supplierBalances = supplierBal)
         }
     }
 
@@ -174,6 +198,7 @@ class PartyViewModel(
         viewModelScope.launch {
             val result = recalculateBalancesUseCase()
             _events.emit(PartyEvent.BalancesRecalculated(result.customersFixed, result.suppliersFixed))
+            refreshBalances()
         }
     }
 
@@ -183,6 +208,7 @@ class PartyViewModel(
         viewModelScope.launch {
             val result = mergeDuplicatePartiesUseCase()
             _events.emit(PartyEvent.DuplicatesMerged(result.customersMerged, result.suppliersMerged))
+            refreshBalances()
         }
     }
 
@@ -210,6 +236,7 @@ class PartyViewModel(
                     result.recalc.suppliersFixed
                 )
             )
+            refreshBalances()
         }
     }
 
@@ -237,6 +264,7 @@ class PartyViewModel(
                     result.recalc.suppliersFixed
                 )
             )
+            refreshBalances()
         }
     }
 }

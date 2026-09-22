@@ -18,7 +18,7 @@ import com.grocerypos.v11.Customer
 import com.grocerypos.v11.PosDatabase
 import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
-import com.grocerypos.v11.totalPayable
+import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -164,21 +164,30 @@ class PartyReportsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyReportsActivity)
             val rows = mutableListOf<View>()
+            // PERMANENT FIX (balance drift — "paid supplier still shows You'll Get"):
+            // closing read from PartyRepository's live ledger balance, not the stored,
+            // driftable .balance field / totalPayable(). See
+            // PartyRepository.liveCustomerBalances() for why.
+            val partyRepo = PartyRepository(db, applicationContext)
             if (showingCustomers) {
                 val customers = db.customerDao().all().first()
+                val liveBal = partyRepo.liveCustomerBalances()
                 if (customers.isEmpty()) rows.add(emptyText(Loc.t(this@PartyReportsActivity, "No customers yet", "کوئی کسٹمر نہیں ہے")))
                 customers.forEach { c ->
                     // NEW (Stuck Balance): the list figure is the TOTAL payable (daily + stuck);
                     // for a customer with no stuck amount this is the same as before.
-                    rows.add(partyRow(c.name, c.totalPayable(), isCustomer = true) {
+                    val closing = c.openingBalance + (liveBal[c.id] ?: 0.0) + c.stuckBalance
+                    rows.add(partyRow(c.name, closing, isCustomer = true) {
                         showReportMenu(true, c.id, c.name, c.openingBalance, c.stuckBalance)
                     })
                 }
             } else {
                 val suppliers = db.supplierDao().all().first()
+                val liveBal = partyRepo.liveSupplierBalances()
                 if (suppliers.isEmpty()) rows.add(emptyText(Loc.t(this@PartyReportsActivity, "No suppliers yet", "کوئی سپلائر نہیں ہے")))
                 suppliers.forEach { s ->
-                    rows.add(partyRow(s.name, s.openingBalance + s.balance, isCustomer = false) {
+                    val closing = s.openingBalance + (liveBal[s.id] ?: 0.0)
+                    rows.add(partyRow(s.name, closing, isCustomer = false) {
                         showReportMenu(false, s.id, s.name, s.openingBalance)
                     })
                 }

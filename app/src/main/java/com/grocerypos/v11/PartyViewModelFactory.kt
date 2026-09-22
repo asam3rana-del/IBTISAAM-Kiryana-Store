@@ -11,6 +11,7 @@ import com.grocerypos.v11.domain.DeleteCustomerUseCase
 import com.grocerypos.v11.domain.DeleteSupplierUseCase
 import com.grocerypos.v11.domain.FindDuplicatePaymentsUseCase
 import com.grocerypos.v11.domain.FindOrphanedPaymentsUseCase
+import com.grocerypos.v11.domain.GetLiveBalancesUseCase
 import com.grocerypos.v11.domain.GetCustomerHistoryUseCase
 import com.grocerypos.v11.domain.GetSupplierHistoryUseCase
 import com.grocerypos.v11.domain.MergeDuplicatePartiesUseCase
@@ -37,6 +38,7 @@ class PartyViewModelFactory(context: Context) : ViewModelProvider.Factory {
         return PartyViewModel(
             observeCustomers = ObserveCustomersUseCase(repository),
             observeSuppliers = ObserveSuppliersUseCase(repository),
+            getLiveBalances = GetLiveBalancesUseCase(repository),
             saveCustomer = SaveCustomerUseCase(repository),
             saveSupplier = SaveSupplierUseCase(repository),
             updateCustomer = UpdateCustomerUseCase(repository),

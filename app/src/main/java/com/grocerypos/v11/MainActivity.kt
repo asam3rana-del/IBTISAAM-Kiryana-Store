@@ -16,6 +16,7 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.sync.SyncWorker
+import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.ui.LoginActivity
 import com.grocerypos.v11.ui.SettingsActivity
 import com.grocerypos.v11.ui.ProductActivity
@@ -757,8 +758,15 @@ class MainActivity : ThemedActivity() {
             combine(db.customerDao().all(), db.supplierDao().all()) { customers, suppliers ->
                 Pair(customers, suppliers)
             }.collectLatest { (customers, suppliers) ->
-                val customerClosings = customers.map { it.totalPayable() } // NEW (Stuck Balance): total = daily + stuck
-                val supplierClosings = suppliers.map { it.openingBalance + it.balance }
+                // PERMANENT FIX (balance drift — "paid supplier still shows You'll Get"):
+                // closings computed from PartyRepository's live ledger balances, not the
+                // stored, driftable .balance field / totalPayable(). See
+                // PartyRepository.liveCustomerBalances() for why.
+                val partyRepo = PartyRepository(db, applicationContext)
+                val liveCustomerBal = partyRepo.liveCustomerBalances()
+                val liveSupplierBal = partyRepo.liveSupplierBalances()
+                val customerClosings = customers.map { it.openingBalance + (liveCustomerBal[it.id] ?: 0.0) + it.stuckBalance }
+                val supplierClosings = suppliers.map { it.openingBalance + (liveSupplierBal[it.id] ?: 0.0) }
 
                 val getFromCustomers = customerClosings.filter { it > 0 }.sumOf { it }
                 val giveFromCustomers = customerClosings.filter { it < 0 }.sumOf { -it }

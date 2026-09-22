@@ -105,29 +105,85 @@ class PartyRepository(
     // [dryRun] = true (ADDED, audit): only COUNT the parties whose stored balance has drifted from
     // their bills/payments, without writing or queuing anything — used by the Balance Sheet's
     // data-check line.
+    // PERMANENT FIX (balance drift — "paid supplier still shows You'll Get"): the
+    // stored `customer.balance`/`supplier.balance` fields are only ever nudged by
+    // SyncQueueHelper.adjustCustomerBalance/adjustSupplierBalance — they are NOT the
+    // source of truth, the actual bills + standalone payments are. Any place that
+    // ever fired one of those adjust calls without a perfectly matching real
+    // transaction (an orphaned/duplicate payment row, an interrupted sync, an old
+    // build's bug) leaves the stored field permanently wrong, with nothing to ever
+    // correct it again on its own — that's exactly the "fully paid supplier still
+    // shows You'll Get" bug.
+    //
+    // trueCustomerBalance()/trueSupplierBalance() below are the single, canonical
+    // definition of "what this party actually owes/is owed", computed FRESH from
+    // their real bills + payments every time — never from the stored field. Every
+    // screen that shows a party's closing balance (Party Dashboard, Parties list,
+    // Party Transaction screen, Home summary) should call one of these (or the
+    // liveCustomerBalances()/liveSupplierBalances() batch versions) instead of
+    // reading `.balance` directly, so what's on screen can never drift: there is no
+    // stored number to go stale, it's recomputed from the ledger on every load.
+    //
+    // The stored `.balance` field itself is kept (adjustCustomerBalance/
+    // adjustSupplierBalance still update it) purely because the Firestore
+    // increment_balance sync path depends on it for conflict-safe multi-device
+    // merging — recalculateBalances() below still uses it to detect and correct
+    // drift for that stored copy, which keeps sync-merge math and any older code
+    // path that still reads `.balance` consistent too. But no on-screen balance
+    // should depend on that stored copy being right anymore.
+    private suspend fun trueCustomerBalance(customerId: Long): Double {
+        val sales = db.saleDao().salesByCustomer(customerId).filter { it.status != "returned" }
+        // FIX (Fix Balances double-counting cash bills — mirrors the supplier/
+        // purchase side below, kept symmetric in case a sale-side payment row
+        // is ever added the way purchases already have one): if a payment
+        // row's `reference` ever matches one of this customer's own invoice
+        // numbers, it means that amount is already reflected in `sale.paid`
+        // (and therefore in `sales.sumOf{total-paid}`) — subtracting it again
+        // via the payments sum would double-count it. Only genuinely
+        // standalone payments — the "Receive/Make Payment" ones, whose
+        // reference is a unique timestamp, never a real invoice number —
+        // should reduce the balance here.
+        val saleInvoices = sales.map { it.invoice }.toHashSet()
+        // FIX (audit — "Fix Balances" corrupted parties that had a bill-linked payment): a
+        // payment linked to a bill (billReference) is already inside that bill's `paid`
+        // (applyBillPaidDelta), so it must not be subtracted a second time here.
+        val payments = db.paymentDao().listByParty("customer", customerId)
+            .filter { it.reference !in saleInvoices && !(it.billReference.isNotBlank() && it.billReference in saleInvoices) }
+        return sales.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
+    }
+
+    private suspend fun trueSupplierBalance(supplierId: Long): Double {
+        val purchases = db.purchaseDao().purchasesBySupplier(supplierId).filter { it.status != "returned" }
+        // FIX (Fix Balances double-counting cash bills): same reasoning as the
+        // customer/sale side above — RoomPurchaseRepository.savePurchase()
+        // inserts a "Purchase payment" row for whatever was paid at purchase
+        // time (reference == that purchase's billNo), on top of already
+        // setting `purchase.paid`. Exclude those bill-embedded rows so only
+        // standalone payments (unique timestamped reference, never a real
+        // billNo) get subtracted here.
+        val billNos = purchases.map { it.billNo }.toHashSet()
+        // FIX (audit): same as the customer side — skip bill-linked payments.
+        val payments = db.paymentDao().listByParty("supplier", supplierId)
+            .filter { it.reference !in billNos && !(it.billReference.isNotBlank() && it.billReference in billNos) }
+        return purchases.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
+    }
+
+    /** Every customer's live "running" balance (excludes openingBalance/stuckBalance —
+     * add those in at the call site, same as `.balance` used to be combined). Computed
+     * fresh from bills+payments, never from the stored field — see the big comment above. */
+    suspend fun liveCustomerBalances(): Map<Long, Double> =
+        db.customerDao().allList().associate { it.id to trueCustomerBalance(it.id) }
+
+    /** Every supplier's live "running" balance — see [liveCustomerBalances]. */
+    suspend fun liveSupplierBalances(): Map<Long, Double> =
+        db.supplierDao().allList().associate { it.id to trueSupplierBalance(it.id) }
+
     suspend fun recalculateBalances(dryRun: Boolean = false): RecalcResult {
         var customersFixed = 0
         var suppliersFixed = 0
         val customers = db.customerDao().allList()
         for (c in customers) {
-            val sales = db.saleDao().salesByCustomer(c.id).filter { it.status != "returned" }
-            // FIX (Fix Balances double-counting cash bills — mirrors the supplier/
-            // purchase side below, kept symmetric in case a sale-side payment row
-            // is ever added the way purchases already have one): if a payment
-            // row's `reference` ever matches one of this customer's own invoice
-            // numbers, it means that amount is already reflected in `sale.paid`
-            // (and therefore in `sales.sumOf{total-paid}`) — subtracting it again
-            // via the payments sum would double-count it. Only genuinely
-            // standalone payments — the "Receive/Make Payment" ones, whose
-            // reference is a unique timestamp, never a real invoice number —
-            // should reduce the balance here.
-            val saleInvoices = sales.map { it.invoice }.toHashSet()
-            // FIX (audit — "Fix Balances" corrupted parties that had a bill-linked payment): a
-            // payment linked to a bill (billReference) is already inside that bill's `paid`
-            // (applyBillPaidDelta), so it must not be subtracted a second time here.
-            val payments = db.paymentDao().listByParty("customer", c.id)
-                .filter { it.reference !in saleInvoices && !(it.billReference.isNotBlank() && it.billReference in saleInvoices) }
-            val trueBalance = sales.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
+            val trueBalance = trueCustomerBalance(c.id)
             val delta = trueBalance - c.balance
             if (Math.abs(delta) > 0.009) {
                 if (!dryRun) SyncQueueHelper.adjustCustomerBalance(db, c.id, delta)
@@ -136,19 +192,7 @@ class PartyRepository(
         }
         val suppliers = db.supplierDao().allList()
         for (s in suppliers) {
-            val purchases = db.purchaseDao().purchasesBySupplier(s.id).filter { it.status != "returned" }
-            // FIX (Fix Balances double-counting cash bills): same reasoning as the
-            // customer/sale side above — RoomPurchaseRepository.savePurchase()
-            // inserts a "Purchase payment" row for whatever was paid at purchase
-            // time (reference == that purchase's billNo), on top of already
-            // setting `purchase.paid`. Exclude those bill-embedded rows so only
-            // standalone payments (unique timestamped reference, never a real
-            // billNo) get subtracted here.
-            val billNos = purchases.map { it.billNo }.toHashSet()
-            // FIX (audit): same as the customer side — skip bill-linked payments.
-            val payments = db.paymentDao().listByParty("supplier", s.id)
-                .filter { it.reference !in billNos && !(it.billReference.isNotBlank() && it.billReference in billNos) }
-            val trueBalance = purchases.sumOf { it.total - it.paid } - payments.sumOf { it.amount }
+            val trueBalance = trueSupplierBalance(s.id)
             val delta = trueBalance - s.balance
             if (Math.abs(delta) > 0.009) {
                 if (!dryRun) SyncQueueHelper.adjustSupplierBalance(db, s.id, delta)
