@@ -100,14 +100,10 @@ class RoomSaleRepository(
     // needed its stock touched at all — exactly what RoomPurchaseRepository's
     // itemsUnchanged()/skipStockTouch already guards against for purchases; this is
     // the same fix, mirrored here for sales.
-    private fun itemsUnchanged(lines: List<SaleLine>, originalItems: List<SaleItem>): Boolean {
-        if (lines.size != originalItems.size) return false
-        fun key(barcode: String, qty: Double, unit: String, rate: Double) =
-            "$barcode|${"%.6f".format(qty)}|$unit|${"%.6f".format(rate)}"
-        val lineKeys = lines.map { key(it.barcode, it.qty, it.unit, it.unitPrice) }.sorted()
-        val itemKeys = originalItems.map { key(it.barcode, it.qty, it.unit, it.unitPrice) }.sorted()
-        return lineKeys == itemKeys
-    }
+    // FIX (regression guard): now delegates to StockTouchPolicy so this exact
+    // comparison is covered by a plain JVM unit test — see StockTouchPolicyTest.
+    private fun itemsUnchanged(lines: List<SaleLine>, originalItems: List<SaleItem>): Boolean =
+        com.grocerypos.v11.domain.StockTouchPolicy.saleItemsUnchanged(lines, originalItems)
 
     override suspend fun saveSale(
         invoice: String,
