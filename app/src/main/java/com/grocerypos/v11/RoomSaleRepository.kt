@@ -91,6 +91,24 @@ class RoomSaleRepository(
      * stock, the sale row, and the customer balance out of sync with each
      * other).
      */
+    // FIX (false "Stock badal gaya hai" on unrelated sale edit): editing an existing
+    // sale used to ALWAYS reverse every original line's stock and re-validate against
+    // CURRENT stock — even when the edit only touched something unrelated (customer
+    // name, date, payment method) and every item/qty/unit/rate was left untouched.
+    // Since other sales/purchases keep moving the same product's stock in the
+    // meantime, that reverse+re-check could fail for a bill that never actually
+    // needed its stock touched at all — exactly what RoomPurchaseRepository's
+    // itemsUnchanged()/skipStockTouch already guards against for purchases; this is
+    // the same fix, mirrored here for sales.
+    private fun itemsUnchanged(lines: List<SaleLine>, originalItems: List<SaleItem>): Boolean {
+        if (lines.size != originalItems.size) return false
+        fun key(barcode: String, qty: Double, unit: String, rate: Double) =
+            "$barcode|${"%.6f".format(qty)}|$unit|${"%.6f".format(rate)}"
+        val lineKeys = lines.map { key(it.barcode, it.qty, it.unit, it.unitPrice) }.sorted()
+        val itemKeys = originalItems.map { key(it.barcode, it.qty, it.unit, it.unitPrice) }.sorted()
+        return lineKeys == itemKeys
+    }
+
     override suspend fun saveSale(
         invoice: String,
         enteredCustomerName: String,
@@ -109,13 +127,16 @@ class RoomSaleRepository(
     ): SaleSaveResult {
         var customer = existingCustomer
         val stockWarnings = mutableListOf<String>()
+        val skipStockTouch = original != null && itemsUnchanged(lines, originalItems)
 
         db.withTransaction {
             if (original != null) {
-                originalItems.forEach { si ->
-                    val p = db.productDao().find(si.barcode)
-                    val smallestQty = si.smallestQty(p)
-                    SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty, "SALE_EDIT_REVERSAL", invoice)
+                if (!skipStockTouch) {
+                    originalItems.forEach { si ->
+                        val p = db.productDao().find(si.barcode)
+                        val smallestQty = si.smallestQty(p)
+                        SyncQueueHelper.increaseProductStock(db, si.barcode, smallestQty, "SALE_EDIT_REVERSAL", invoice)
+                    }
                 }
                 val originalOutstanding = original.total - original.paid
                 if (original.customerId != null && originalOutstanding > 0) {
@@ -144,11 +165,13 @@ class RoomSaleRepository(
             for ((barcode, group) in lines.groupBy { it.barcode }) {
                 val current = db.productDao().find(barcode)
                     ?: throw StockUnavailableException("Stock badal gaya hai — item nahi mila. Bill dobara check karen.")
-                val neededSmallest = group.sumOf { current.toSmallestUnits(it.qty, it.unit) }
-                if (current.stock < neededSmallest) {
-                    throw StockUnavailableException(
-                        "Stock badal gaya hai — \"${current.name}\" mein sirf ${formatQty(current.stock.toDouble())} ${current.smallestUnitName()} available hai. Bill dobara check karen."
-                    )
+                if (!skipStockTouch) {
+                    val neededSmallest = group.sumOf { current.toSmallestUnits(it.qty, it.unit) }
+                    if (current.stock < neededSmallest) {
+                        throw StockUnavailableException(
+                            "Stock badal gaya hai — \"${current.name}\" mein sirf ${formatQty(current.stock.toDouble())} ${current.smallestUnitName()} available hai. Bill dobara check karen."
+                        )
+                    }
                 }
                 productsByBarcode[barcode] = current
             }
@@ -245,10 +268,12 @@ class RoomSaleRepository(
             for (line in lines) {
                 val product = productsByBarcode[line.barcode] ?: db.productDao().find(line.barcode)
                 if (product == null) continue
-                val smallestQty = product.toSmallestUnits(line.qty, line.unit)
-                val rowsAffected = SyncQueueHelper.decreaseProductStock(db, line.barcode, smallestQty, "SALE", invoice)
-                if (rowsAffected == 0) {
-                    stockWarnings.add("Warning: \"${line.itemName}\" ka stock update nahi ho saka — check karen.")
+                if (!skipStockTouch) {
+                    val smallestQty = product.toSmallestUnits(line.qty, line.unit)
+                    val rowsAffected = SyncQueueHelper.decreaseProductStock(db, line.barcode, smallestQty, "SALE", invoice)
+                    if (rowsAffected == 0) {
+                        stockWarnings.add("Warning: \"${line.itemName}\" ka stock update nahi ho saka — check karen.")
+                    }
                 }
             }
 
