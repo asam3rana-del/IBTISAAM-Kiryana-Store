@@ -259,6 +259,10 @@ class StockMovementActivity : AppCompatActivity() {
         "PURCHASE_EDIT" -> Loc.t(this, "PURCHASE EDIT", "خریداری میں ترمیم") to teal
         "PURCHASE_REVERSAL" -> Loc.t(this, "PURCHASE REVERSED", "خریداری واپس") to amber
         "PURCHASE_ITEM_DELETE" -> Loc.t(this, "PURCHASE ITEM DELETED", "خریداری آئٹم حذف") to red
+        // FIX (found during Stock Audit review): HistoryActivity/PurchaseHistoryActivity
+        // have both written this type (purchase-return-to-supplier) since that feature
+        // shipped, but it fell through to the plain fallback below same as STOCK_TAKE.
+        "PURCHASE_RETURN" -> Loc.t(this, "PURCHASE RETURNED", "خریداری واپس") to red
         "SALE" -> Loc.t(this, "SALE", "سیل") to primary
         "SALE_EDIT" -> Loc.t(this, "SALE EDIT", "سیل میں ترمیم") to primary
         "SALE_EDIT_REVERSAL" -> Loc.t(this, "SALE EDIT (OLD REVERSED)", "سیل ترمیم (پرانا واپس)") to amber
@@ -268,6 +272,15 @@ class StockMovementActivity : AppCompatActivity() {
         // NEW: written by StockAdjustmentActivity via SyncQueueHelper.
         "DAMAGE" -> Loc.t(this, "DAMAGE / LOSS", "نقصان") to red
         "ADJUSTMENT" -> Loc.t(this, "ADJUSTMENT", "ایڈجسٹمنٹ") to amber
+        // FIX (found during Stock Audit review): StockTakingActivity has written
+        // this type since Stock Taking shipped, but it fell through to the plain
+        // `type to textGray` fallback below instead of getting a proper label
+        // like every other type here — Stock History showed the raw string
+        // "STOCK_TAKE" for every physical-count variance line.
+        "STOCK_TAKE" -> Loc.t(this, "STOCK TAKE", "اسٹاک گنتی") to purple
+        // NEW (Stock Audit — recordAuditReconciliation): see StockAuditActivity's
+        // Reconcile action / SyncQueueHelper.recordAuditReconciliation's comment.
+        "AUDIT_RECONCILE" -> Loc.t(this, "AUDIT FIX", "آڈٹ درستگی") to teal
         else -> type to textGray
     }
 
