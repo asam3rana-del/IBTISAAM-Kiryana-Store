@@ -63,7 +63,7 @@ object PrinterHelper {
      * lines whenever any Urdu text appeared anywhere in the receipt).
      */
     sealed class ReceiptLine {
-        data class Center(val text: String) : ReceiptLine()
+        data class Center(val text: String, val bold: Boolean = false) : ReceiptLine()
         data class Left(val text: String) : ReceiptLine()
         /** Label/value pair rendered as two columns, each right/left-aligned by measured width.
          *  [bold] renders both sides in bold — used to make the TOTAL line stand out. */
@@ -185,6 +185,26 @@ object PrinterHelper {
             val name: String,
             val weights: List<Float> = listOf(1.15f, 0.85f, 0.7f, 2.3f),
             val bold: Boolean = false
+        ) : ReceiptLine()
+
+        /**
+         * One item row laid out EXACTLY like the on-screen Bill Preview card's item
+         * table ("print bhi aesa hi aye" — the print should match the preview card
+         * pixel-for-pixel in structure): four columns — ITEM (name, bold,
+         * RTL-aware, ellipsized), AMOUNT (bold, centered), QTY (plain, centered,
+         * already carries its unit e.g. "4 Shell"), RATE (plain, right-aligned) —
+         * using the SAME column proportions as the printed "ITEM / AMOUNT / QTY /
+         * RATE" Row4 header above it (default weights 2:1:1:1, matching the
+         * on-screen card's LinearLayout weights), unlike the older [ItemRow]/
+         * [GateRow] layouts which use different column counts/orders for other
+         * receipt styles.
+         */
+        data class PreviewItemRow(
+            val name: String,
+            val amount: String,
+            val qty: String,
+            val rate: String,
+            val weights: List<Float> = listOf(2f, 1f, 1f, 1f)
         ) : ReceiptLine()
     }
 
@@ -780,6 +800,9 @@ object PrinterHelper {
             when (line) {
                 is ReceiptLine.Center, is ReceiptLine.Left -> {
                     val text = if (line is ReceiptLine.Center) line.text else (line as ReceiptLine.Left).text
+                    val centerBold = line is ReceiptLine.Center && line.bold
+                    val oldBoldMeasure = paint.isFakeBoldText
+                    paint.isFakeBoldText = centerBold
                     val dir = if (containsArabicScript(text)) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR
                     // FIX ("Shop name center ma nhi araha" — Urdu/RTL text wasn't
                     // visually centering even though ALIGN_CENTER was requested):
@@ -811,6 +834,7 @@ object PrinterHelper {
                         blocks.add(Block(line, layout, h))
                         totalHeight += h
                     }
+                    paint.isFakeBoldText = oldBoldMeasure
                 }
                 is ReceiptLine.TwoCol -> {
                     val fm = paint.fontMetrics
@@ -879,6 +903,15 @@ object PrinterHelper {
                     blocks.add(Block(line, null, h))
                     totalHeight += h
                 }
+                is ReceiptLine.PreviewItemRow -> {
+                    val isUrduName = containsArabicScript(line.name)
+                    paint.textSize = tableFontSize * (if (isUrduName) ARABIC_ITEM_FONT_BOOST else 1f)
+                    val fm = paint.fontMetrics
+                    paint.textSize = fontSizePx
+                    val h = (fm.bottom - fm.top).toInt() + tableRowPaddingV
+                    blocks.add(Block(line, null, h))
+                    totalHeight += h
+                }
 
             }
         }
@@ -891,6 +924,8 @@ object PrinterHelper {
         for (block in blocks) {
             when (val line = block.line) {
                 is ReceiptLine.Center, is ReceiptLine.Left -> {
+                    val oldBoldDraw = paint.isFakeBoldText
+                    paint.isFakeBoldText = line is ReceiptLine.Center && line.bold
                     if (block.layout != null) {
                         canvas.save()
                         canvas.translate(margin.toFloat(), y)
@@ -907,6 +942,7 @@ object PrinterHelper {
                         canvas.drawText(text, PRINTER_DOTS_WIDTH / 2f, baseline, paint)
                         paint.textAlign = oldAlign
                     }
+                    paint.isFakeBoldText = oldBoldDraw
                     y += block.height
                 }
                 is ReceiptLine.TwoCol -> {
@@ -1223,6 +1259,58 @@ object PrinterHelper {
                     val fitName = ellipsizeByWidth(paint, line.name, nameColWidth)
                     paint.textAlign = Paint.Align.RIGHT
                     canvas.drawText(fitName, colX[4] - tableCellPaddingH, nameBaseline, paint)
+
+                    paint.isFakeBoldText = oldBold
+                    paint.textSize = fontSizePx
+                    paint.textAlign = Paint.Align.LEFT
+                    y += block.height
+                }
+                is ReceiptLine.PreviewItemRow -> {
+                    // Matches the on-screen Bill Preview card's item row exactly:
+                    // ITEM (name, bold, RTL-aware, ellipsized, left-aligned column) /
+                    // AMOUNT (bold, centered) / QTY (plain, centered) / RATE (plain,
+                    // right-aligned) — same 2:1:1:1 column split as the preview
+                    // card's LinearLayout weights and the printed header above it.
+                    val tableLeft = margin.toFloat()
+                    val tableRight = (PRINTER_DOTS_WIDTH - margin).toFloat()
+                    val tableWidth = tableRight - tableLeft
+                    val totalWeight = line.weights.sum().coerceAtLeast(0.01f)
+                    val colX = FloatArray(5)
+                    colX[0] = tableLeft
+                    for (i in 0..3) {
+                        val w = if (i < line.weights.size) line.weights[i] else 0f
+                        colX[i + 1] = colX[i] + (w / totalWeight) * tableWidth
+                    }
+
+                    val oldBold = paint.isFakeBoldText
+
+                    // ---- item name: col0, bold, RTL-aware, ellipsized to fit ----
+                    val nameIsUrdu = containsArabicScript(line.name)
+                    val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 1f)
+                    paint.textSize = nameSize
+                    paint.isFakeBoldText = true
+                    val nameFm = paint.fontMetrics
+                    val nameBaseline = y + tableRowPaddingV / 2 - nameFm.top
+                    val nameColWidth = (colX[1] - colX[0] - tableCellPaddingH * 2).coerceAtLeast(1f)
+                    val fitName = ellipsizeByWidth(paint, line.name, nameColWidth)
+                    paint.textAlign = if (nameIsUrdu) Paint.Align.RIGHT else Paint.Align.LEFT
+                    val nameX = if (nameIsUrdu) colX[1] - tableCellPaddingH else colX[0] + tableCellPaddingH
+                    canvas.drawText(fitName, nameX, nameBaseline, paint)
+
+                    // ---- amount / qty / rate: cols 1-3, plain baseline shared ----
+                    paint.textSize = tableFontSize
+                    val fm = paint.fontMetrics
+                    val baseline = y + tableRowPaddingV / 2 - fm.top
+
+                    paint.isFakeBoldText = true
+                    paint.textAlign = Paint.Align.CENTER
+                    canvas.drawText(line.amount, (colX[1] + colX[2]) / 2f, baseline, paint)
+
+                    paint.isFakeBoldText = false
+                    canvas.drawText(line.qty, (colX[2] + colX[3]) / 2f, baseline, paint)
+
+                    paint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText(line.rate, colX[4] - tableCellPaddingH, baseline, paint)
 
                     paint.isFakeBoldText = oldBold
                     paint.textSize = fontSizePx
