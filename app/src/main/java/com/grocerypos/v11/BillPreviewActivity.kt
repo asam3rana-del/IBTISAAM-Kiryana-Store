@@ -632,6 +632,11 @@ class BillPreviewActivity : ThemedActivity() {
                 else -> PrinterHelper.PrinterType.BLUETOOTH
             }
 
+            // Per-device print-head width (Settings > Printer > PRINT WIDTH); safe 384 default.
+            val dotsWidth = PrinterHelper.normalizeDotsWidth(
+                db.appSettingDao().get("printer_dots")?.value?.toIntOrNull()
+            )
+
             // Same date format the on-screen card uses (fmt in onCreate above).
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             val receiptLines = mutableListOf<PrinterHelper.ReceiptLine>()
@@ -720,7 +725,8 @@ class BillPreviewActivity : ThemedActivity() {
                     this@BillPreviewActivity,
                     printerType,
                     mac,
-                    receiptLines
+                    receiptLines,
+                    dotsWidth = dotsWidth
                 )
             }
             Toast.makeText(

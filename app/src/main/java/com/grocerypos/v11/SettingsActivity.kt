@@ -544,6 +544,8 @@ class SettingsActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 0, 0) }
         })
         printerCard.addView(printerBtnRow)
+        printerCard.addView(spacer(8))
+        printerCard.addView(secondaryButton("PRINT WIDTH (garbled print? try 384)", navy) { onPrintWidthClicked() })
         container.addView(printerCard)
 
         // ---- Security (Login Method) ----
@@ -986,17 +988,53 @@ class SettingsActivity : AppCompatActivity() {
                 return@launch
             }
             val shopName = db.appSettingDao().get("shop_name")?.value ?: "My Shop"
-            val ok = PrinterHelper.testPrint(
-                this@SettingsActivity,
-                PrinterHelper.PrinterType.BLUETOOTH,
-                mac,
-                shopName
-            )
+            val dots = PrinterHelper.normalizeDotsWidth(db.appSettingDao().get("printer_dots")?.value?.toIntOrNull())
+            // Goes through the same raster pipeline real bills use (the old plain-text
+            // test could pass even when bill printing was broken), and off the UI thread.
+            val ok = withContext(Dispatchers.IO) {
+                PrinterHelper.testPrintRaster(
+                    this@SettingsActivity,
+                    PrinterHelper.PrinterType.BLUETOOTH,
+                    mac,
+                    shopName,
+                    dots
+                )
+            }
             Toast.makeText(
                 this@SettingsActivity,
-                if (ok) "Test print bhej diya" else "Print fail ho gaya. Printer on hai aur range mein hai check karein.",
+                if (ok) "Test print bhej diya ($dots dots)" else "Print fail ho gaya. Printer on hai aur range mein hai check karein.",
                 Toast.LENGTH_LONG
             ).show()
+        }
+    }
+
+    /** Lets the owner pick the printer head width. 384 = standard 58mm; 576 = 80mm. */
+    private fun onPrintWidthClicked() {
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SettingsActivity)
+            val current = PrinterHelper.normalizeDotsWidth(db.appSettingDao().get("printer_dots")?.value?.toIntOrNull())
+            val options = intArrayOf(384, 448, 512, 576)
+            val labels = arrayOf(
+                "384 dots — standard 58mm (recommended)",
+                "448 dots",
+                "512 dots",
+                "576 dots — 80mm printer"
+            )
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle("Print Width")
+                .setSingleChoiceItems(labels, options.indexOf(current).coerceAtLeast(0)) { dialog, which ->
+                    lifecycleScope.launch {
+                        db.appSettingDao().set(AppSetting("printer_dots", options[which].toString()))
+                        Toast.makeText(
+                            this@SettingsActivity,
+                            "Print width ${options[which]} dots save ho gayi. TEST PRINT karke check karein.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    dialog.dismiss()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 

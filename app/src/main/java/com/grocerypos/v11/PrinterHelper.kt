@@ -255,19 +255,28 @@ object PrinterHelper {
     // nicks the last printed line with this value, raise it back to 2.
     private val FEED_AND_CUT = byteArrayOf(0x0A, 0x1D, 0x56, 0x01)
 
-    // Thermal paper width in dots for 58mm printers (most are 384 dots @ 203dpi).
+    // Thermal print-head width in dots. A standard 58mm printer's head is 384 dots
+    // (48 bytes per raster row @ 203dpi); 80mm printers are 576.
     //
-    // FIX (blank strip on the right side of the paper): widening the Amount column's
-    // weight alone didn't close the gap — confirmed this isn't a column-sizing issue,
-    // it's the bitmap itself being narrower than this printer's actual print head.
-    // Raised 384 -> 480 (a common width for higher-density 58mm printers and some
-    // 80mm units) so the rendered receipt uses more of the physical paper.
-    //
-    // HOW TO TUNE FURTHER: reprint and check the right edge. If there's still a
-    // blank strip, raise this again (try 512, then 576). If instead text starts
-    // getting cut off or wrapping onto a second physical line, drop back down
-    // (try 420, then 400) until it prints cleanly with no leftover blank margin.
-    private const val PRINTER_DOTS_WIDTH = 480
+    // FIX (receipt prints as random Chinese/CJK symbols + ";;;;" rows — "print thk kro
+    // is tarah a raha ha"): this was hard-coded to 480 (60 bytes/row), a value picked
+    // earlier only to shrink the blank strip on the right edge. On a printer whose
+    // head is 384 dots, a GS v 0 raster command declaring 60 bytes/row is wider than
+    // the printer can accept — the firmware rejects the command and then prints the
+    // raw image bytes as if they were TEXT (in its Chinese GBK code page, which is
+    // exactly the CJK-looking garbage in the photo). The default is now the safe 384,
+    // and the width is a per-device setting (Settings > Printer > PRINT WIDTH,
+    // stored as app_setting "printer_dots") so a wider printer can be tuned up
+    // without a rebuild.
+    const val DEFAULT_DOTS_WIDTH = 384
+    private const val MIN_DOTS_WIDTH = 256
+    private const val MAX_DOTS_WIDTH = 576
+
+    /** Clamps to a sane range and rounds down to a multiple of 8 (raster rows are whole bytes). */
+    fun normalizeDotsWidth(requested: Int?): Int {
+        val w = (requested ?: DEFAULT_DOTS_WIDTH).coerceIn(MIN_DOTS_WIDTH, MAX_DOTS_WIDTH)
+        return w - (w % 8)
+    }
 
     // FIX (print reliability): a whole multi-item receipt was previously rendered as
     // ONE raster image and sent to the printer in a single GS v 0 command. Long bills
@@ -331,6 +340,8 @@ object PrinterHelper {
     private const val MIN_INTER_CHUNK_DELAY_MS = 150L
     private const val MS_PER_STRIP_ROW = 8f
     private const val SETTLE_DELAY_MS = 100L
+    private const val BT_WRITE_PIECE_BYTES = 256
+    private const val BT_WRITE_PIECE_GAP_MS = 12L
 
     /** How long to pause after sending a strip of [stripHeightPx] dots, before sending
      *  the next one — scaled to strip height with a safe minimum floor. See FIX 2 above. */
@@ -423,8 +434,20 @@ object PrinterHelper {
             Thread.sleep(SETTLE_DELAY_MS)
 
             for ((chunk, stripHeight) in chunks) {
-                out.write(chunk)
-                out.flush()
+                // FIX (garbage after a few lines): a whole strip used to be pushed in a
+                // single write(). Cheap Bluetooth SPP printers have no flow control and a
+                // small receive buffer — if it overflows, bytes are silently dropped in
+                // the MIDDLE of a raster command, the printer loses its place, and
+                // everything after that is printed as text garbage. Feeding each strip in
+                // small pieces with a tiny gap keeps the buffer from ever overflowing.
+                var offset = 0
+                while (offset < chunk.size) {
+                    val len = minOf(BT_WRITE_PIECE_BYTES, chunk.size - offset)
+                    out.write(chunk, offset, len)
+                    out.flush()
+                    offset += len
+                    if (offset < chunk.size) Thread.sleep(BT_WRITE_PIECE_GAP_MS)
+                }
                 Thread.sleep(interChunkDelayFor(stripHeight))
             }
 
@@ -604,6 +627,31 @@ object PrinterHelper {
         return printText(context, type, address, sb.toString())
     }
 
+    /**
+     * Test print through the SAME raster pipeline real bills use (the older [testPrint]
+     * sends plain text, so it can succeed even when raster printing is broken — it
+     * can't tell you whether a receipt will actually print correctly).
+     */
+    fun testPrintRaster(
+        context: Context, type: PrinterType, address: String,
+        shopName: String = "IBTISAAM Kiryana Store",
+        dotsWidth: Int = DEFAULT_DOTS_WIDTH
+    ): Boolean {
+        val w = normalizeDotsWidth(dotsWidth)
+        val lines = listOf(
+            ReceiptLine.Center(shopName, bold = true),
+            ReceiptLine.Divider,
+            ReceiptLine.Center("TEST PRINT"),
+            ReceiptLine.TwoCol("Print width", "$w dots"),
+            ReceiptLine.TwoCol("Total", "Rs 1,234.00", bold = true),
+            ReceiptLine.Divider,
+            ReceiptLine.Center("سیون اپ 1.5 ٹیسٹ"),
+            ReceiptLine.Center("Agar ye theek chhapa to printer OK hai"),
+            ReceiptLine.Divider
+        )
+        return printReceiptLines(context, type, address, lines, dotsWidth = w)
+    }
+
     // ================= URDU PRINTING (rendered as image) =================
 
     /**
@@ -753,7 +801,8 @@ object PrinterHelper {
      *  - [ReceiptLine.Row3] / [ReceiptLine.ItemRow] draw the borderless,
      *    preview-matching item list layout (see their docs above).
      */
-    private fun renderReceiptLines(lines: List<ReceiptLine>, fontSizePx: Float, typeface: Typeface): Bitmap {
+    private fun renderReceiptLines(lines: List<ReceiptLine>, fontSizePx: Float, typeface: Typeface, dotsWidth: Int): Bitmap {
+        val PRINTER_DOTS_WIDTH = dotsWidth
         val margin = 6
         val paint = TextPaint().apply {
             isAntiAlias = true
@@ -1407,10 +1456,11 @@ object PrinterHelper {
         // trimmed 30 -> 26. Combined with the tighter row padding and the smaller
         // Arabic boost above, this shortens the printed receipt noticeably while
         // staying easily readable on 58mm paper.
-        fontSizePx: Float = 26f
+        fontSizePx: Float = 26f,
+        dotsWidth: Int = DEFAULT_DOTS_WIDTH
     ): Boolean {
         val resolvedTypeface = typeface ?: resolveUrduTypeface(context)
-        val bitmap = renderReceiptLines(lines, fontSizePx, resolvedTypeface)
+        val bitmap = renderReceiptLines(lines, fontSizePx, resolvedTypeface, normalizeDotsWidth(dotsWidth))
         val chunks = bitmapToEscPosRasterChunks(bitmap)
         return sendChunks(context, type, address, chunks)
     }
@@ -1429,13 +1479,14 @@ object PrinterHelper {
         type: PrinterType,
         address: String,
         text: String,
-        typeface: Typeface? = null
+        typeface: Typeface? = null,
+        dotsWidth: Int = DEFAULT_DOTS_WIDTH
     ): Boolean {
         val resolvedTypeface = typeface ?: resolveUrduTypeface(context)
         val lines: List<ReceiptLine> = text.split("\n").map { raw ->
             if (raw.isBlank()) ReceiptLine.Blank() else ReceiptLine.Left(raw)
         }
-        val bitmap = renderReceiptLines(lines, 30f, resolvedTypeface)
+        val bitmap = renderReceiptLines(lines, 30f, resolvedTypeface, normalizeDotsWidth(dotsWidth))
         val chunks = bitmapToEscPosRasterChunks(bitmap)
         return sendChunks(context, type, address, chunks)
     }
