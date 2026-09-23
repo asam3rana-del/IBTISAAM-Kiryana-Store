@@ -26,6 +26,8 @@ import com.grocerypos.v11.R
 import com.grocerypos.v11.data.PartyRepository
 import com.grocerypos.v11.util.PrinterHelper
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -704,12 +706,23 @@ class BillPreviewActivity : ThemedActivity() {
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
             receiptLines.add(PrinterHelper.ReceiptLine.Center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }))
 
-            val ok = PrinterHelper.printReceiptLines(
-                this@BillPreviewActivity,
-                printerType,
-                mac,
-                receiptLines
-            )
+            // FIX ("print button kaam nahi kar raha, bari late... print bej dia
+            // lekin print nahi aata"): the Bluetooth connect/write/Thread.sleep
+            // pacing loop in PrinterHelper was running on the Main/UI thread (this
+            // whole lifecycleScope.launch block defaults to Dispatchers.Main), which
+            // was tolerable at the old faster chunk timing but became long enough
+            // with the slower/safer anti-garble timing to stall the UI thread badly
+            // enough that the transmission silently failed partway through even
+            // though printReceiptLines still returned true. Moved to Dispatchers.IO
+            // so the print job runs off the UI thread.
+            val ok = withContext(Dispatchers.IO) {
+                PrinterHelper.printReceiptLines(
+                    this@BillPreviewActivity,
+                    printerType,
+                    mac,
+                    receiptLines
+                )
+            }
             Toast.makeText(
                 this@BillPreviewActivity,
                 if (ok) "Print bhej diya" else "Print fail ho gaya. Printer check karein.",
