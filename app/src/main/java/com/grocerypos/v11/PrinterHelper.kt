@@ -317,10 +317,20 @@ object PrinterHelper {
     // (TableRow) was replaced for the item list with borderless Row3/ItemRow lines
     // (see below), which also has the side benefit of fewer draw operations per
     // item (no grid strokes), so this doesn't fight the anti-overlap pacing above.
-    private const val MAX_STRIP_HEIGHT_PX = 64
-    private const val MIN_INTER_CHUNK_DELAY_MS = 90L
-    private const val MS_PER_STRIP_ROW = 5f
-    private const val SETTLE_DELAY_MS = 60L
+    // FIX 4 ("ye print aya ha" — a SHORT bill, only 1-4 items, still printed as
+    // corrupted CJK/symbol garbage starting just 2-3 lines in, right after the shop
+    // header, even on this printer after a full power-cycle restart): garbling on a
+    // short receipt rules out the earlier "tall bitmap overruns the buffer" cause —
+    // there just isn't enough data here for that. This is the printer choking on the
+    // faster strip/timing values below (64px / 90ms floor / 5ms-per-row), which were
+    // raised for print speed at the cost of the anti-overlap margin from FIX 2. Per
+    // this file's own SPEED TUNING note ("smaller strips are always the safer
+    // fallback"), reverted below the original safe values (48px/100ms/6ms) to a more
+    // conservative setting, since this printer garbles even on short bills.
+    private const val MAX_STRIP_HEIGHT_PX = 32
+    private const val MIN_INTER_CHUNK_DELAY_MS = 150L
+    private const val MS_PER_STRIP_ROW = 8f
+    private const val SETTLE_DELAY_MS = 100L
 
     /** How long to pause after sending a strip of [stripHeightPx] dots, before sending
      *  the next one — scaled to strip height with a safe minimum floor. See FIX 2 above. */
