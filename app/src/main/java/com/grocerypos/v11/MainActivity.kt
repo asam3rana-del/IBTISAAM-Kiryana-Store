@@ -956,7 +956,9 @@ class MainActivity : ThemedActivity() {
                     }
                     if (passwordOk) {
                         if (!PasswordHasher.isHashed(user.passwordHash)) {
-                            PosDatabase.get(this@MainActivity).userDao().upsert(user.copy(passwordHash = PasswordHasher.hash(typed)))
+                            val migrated = user.copy(passwordHash = PasswordHasher.hash(typed))
+                            PosDatabase.get(this@MainActivity).userDao().upsert(migrated)
+                            SyncQueueHelper.enqueueUser(PosDatabase.get(this@MainActivity), migrated, this@MainActivity)
                         }
                         completeQuickSwitch(user)
                     } else {

@@ -27,6 +27,9 @@ import com.grocerypos.v11.ReturnLine
 import com.grocerypos.v11.StockMovement
 import com.grocerypos.v11.AppSetting
 import com.grocerypos.v11.CashRegister
+import com.grocerypos.v11.ShellCustomer
+import com.grocerypos.v11.ShellTransaction
+import com.grocerypos.v11.ShopEmptyShellLog
 import com.grocerypos.v11.util.Loc
 
 /**
@@ -165,6 +168,9 @@ object SyncApi {
                 "stock_movement" -> "stock_movements"
                 "app_setting" -> "app_settings"
                 "cash_register" -> "cash_register"
+                "shell_customer" -> "shell_customers"
+                "shell_transaction" -> "shell_transactions"
+                "shop_empty_shell_log" -> "shop_empty_shell_log"
                 else -> return false
             }
 
@@ -344,6 +350,10 @@ object SyncApi {
         val stockMovements: List<Map<String, Any?>> = emptyList(),
         val appSettings: List<Map<String, Any?>> = emptyList(),
         val cashRegisters: List<Map<String, Any?>> = emptyList(),
+        // NEW (Shell Ledger sync)
+        val shellCustomers: List<Map<String, Any?>> = emptyList(),
+        val shellTransactions: List<Map<String, Any?>> = emptyList(),
+        val shopEmptyShellLogs: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
 
@@ -377,12 +387,16 @@ object SyncApi {
         val stockMovementsSnap = query("stock_movements").get(Source.SERVER).await()
         val appSettingsSnap = query("app_settings").get(Source.SERVER).await()
         val cashRegisterSnap = query("cash_register").get(Source.SERVER).await()
+        val shellCustomersSnap = query("shell_customers").get(Source.SERVER).await()
+        val shellTransactionsSnap = query("shell_transactions").get(Source.SERVER).await()
+        val shopEmptyShellLogSnap = query("shop_empty_shell_log").get(Source.SERVER).await()
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
             salesSnap, purchasesSnap, paymentsSnap, expensesSnap, cashTxSnap,
             unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap, returnsSnap,
-            stockMovementsSnap, appSettingsSnap, cashRegisterSnap
+            stockMovementsSnap, appSettingsSnap, cashRegisterSnap,
+            shellCustomersSnap, shellTransactionsSnap, shopEmptyShellLogSnap
         )
         var maxUpdatedAt = since
         for (snap in allSnaps) {
@@ -410,6 +424,9 @@ object SyncApi {
             stockMovements = stockMovementsSnap.documents.map { it.data ?: emptyMap() },
             appSettings = appSettingsSnap.documents.map { it.data ?: emptyMap() },
             cashRegisters = cashRegisterSnap.documents.map { it.data ?: emptyMap() },
+            shellCustomers = shellCustomersSnap.documents.map { it.data ?: emptyMap() },
+            shellTransactions = shellTransactionsSnap.documents.map { it.data ?: emptyMap() },
+            shopEmptyShellLogs = shopEmptyShellLogSnap.documents.map { it.data ?: emptyMap() },
             serverTime = maxUpdatedAt
         )
     }
@@ -433,6 +450,7 @@ object SyncApi {
         val stockMovementDao = db.stockMovementDao()
         val appSettingDao = db.appSettingDao()
         val cashRegisterDao = db.cashRegisterDao()
+        val shellDao = db.shellDao()
 
         // Local deltas that are still queued must be layered on top of the latest
         // server snapshot. Without this, a pull could temporarily erase an offline
@@ -1059,6 +1077,75 @@ object SyncApi {
                 StockMovement(
                     barcode = barcode, type = type, qty = qty, unit = unit, cost = cost,
                     reference = reference, note = note, createdAt = createdAt,
+                    serverId = serverId, updatedAt = updatedAt, dirty = false
+                )
+            )
+        }
+
+        // NEW (Shell Ledger sync): create-or-update by serverId, last-write-wins on
+        // pull — same shape as the zakatYears loop above (a plain whole-row snapshot,
+        // no increment_* delta semantics like Customer.balance needs).
+        for (row in changes.shellCustomers) {
+            val serverId = row["serverId"] as? String ?: continue
+            val name = row["name"] as? String ?: continue
+            val phone = row["phone"] as? String ?: ""
+            val shellsOwed = (row["shellsOwed"] as? Number)?.toInt() ?: 0
+            val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+
+            val existing = shellDao.findCustomerByServerId(serverId)
+            if (existing != null) {
+                shellDao.updateCustomer(
+                    existing.copy(
+                        name = name, phone = phone, shellsOwed = shellsOwed,
+                        updatedAt = updatedAt, dirty = false
+                    )
+                )
+            } else {
+                shellDao.insertCustomer(
+                    ShellCustomer(
+                        name = name, phone = phone, shellsOwed = shellsOwed,
+                        createdAt = createdAt, serverId = serverId, updatedAt = updatedAt, dirty = false
+                    )
+                )
+            }
+        }
+
+        // NEW (Shell Ledger sync): append-only ledger, same insert-if-not-already-
+        // pulled idempotency as the returns/stockMovements loops above. Links back to
+        // the local customerId by looking up the customer's own serverId (customerId
+        // itself is a per-device local autoincrement — see shellTransactionJson).
+        for (row in changes.shellTransactions) {
+            val serverId = row["serverId"] as? String ?: continue
+            if (shellDao.findTransactionByServerId(serverId) != null) continue
+            val customerServerId = row["customerServerId"] as? String ?: continue
+            val localCustomer = shellDao.findCustomerByServerId(customerServerId) ?: continue
+            val type = row["type"] as? String ?: continue
+            val qty = (row["qty"] as? Number)?.toInt() ?: continue
+            val note = row["note"] as? String ?: ""
+            val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+            shellDao.insertTransaction(
+                ShellTransaction(
+                    customerId = localCustomer.id, type = type, qty = qty, note = note,
+                    createdAt = createdAt, serverId = serverId, updatedAt = updatedAt, dirty = false
+                )
+            )
+        }
+
+        // NEW (Shell Ledger sync): same insert-if-not-already-pulled idempotency —
+        // the shop's own empty-shell count log has no cross-table link to resolve.
+        for (row in changes.shopEmptyShellLogs) {
+            val serverId = row["serverId"] as? String ?: continue
+            if (shellDao.findShopLogByServerId(serverId) != null) continue
+            val delta = (row["delta"] as? Number)?.toInt() ?: continue
+            val reason = row["reason"] as? String ?: continue
+            val note = row["note"] as? String ?: ""
+            val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+            shellDao.insertShopLog(
+                ShopEmptyShellLog(
+                    delta = delta, reason = reason, note = note, createdAt = createdAt,
                     serverId = serverId, updatedAt = updatedAt, dirty = false
                 )
             )

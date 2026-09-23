@@ -1258,6 +1258,7 @@ class SettingsActivity : AppCompatActivity() {
 
             if (finalUsername != currentUsername) {
                 db.userDao().delete(currentUsername)
+                SyncQueueHelper.enqueueDelete(db, "user", SyncQueueHelper.userEntityId(user), this@SettingsActivity)
                 getSharedPreferences("session", MODE_PRIVATE).edit()
                     .putString("username", finalUsername).apply()
                 currentUsernameField.setText(finalUsername)

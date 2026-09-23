@@ -58,7 +58,9 @@ class RoomPurchaseRepository(
         (listOf("General") + db.categoryDao().all().first().map { it.name }).distinct()
 
     override suspend fun addUnit(name: String) {
-        db.unitDao().insert(UnitType(name))
+        val newUnit = UnitType(name)
+        db.unitDao().insert(newUnit)
+        SyncQueueHelper.enqueueUnit(db, newUnit)
     }
 
     // NEW (Purchase screen inline "Add New Category"): same master-table insert
@@ -66,7 +68,9 @@ class RoomPurchaseRepository(
     // Purchase screen's "Add New Product" dialog so the shop owner doesn't have
     // to leave Purchase to create a category first.
     override suspend fun addCategory(name: String) {
-        db.categoryDao().insert(Category(name))
+        val newCategory = Category(name)
+        db.categoryDao().insert(newCategory)
+        SyncQueueHelper.enqueueCategory(db, newCategory)
     }
 
     // NEW (Purchase screen inline unit translate): lets the shop owner rename an

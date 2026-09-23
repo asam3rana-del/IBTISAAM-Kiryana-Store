@@ -504,7 +504,9 @@ class BillPreviewActivity : ThemedActivity() {
                         val db = PosDatabase.get(this@BillPreviewActivity)
                         val customer = db.customerDao().find(saveToCustomerId)
                         if (customer != null) {
-                            db.customerDao().update(customer.copy(phone = phone))
+                            val updated = customer.copy(phone = phone)
+                            db.customerDao().update(updated)
+                            SyncQueueHelper.enqueueCustomer(db, updated, this@BillPreviewActivity)
                         }
                         shareBitmapToWhatsApp(phone)
                     }

@@ -95,6 +95,17 @@ object SyncQueueHelper {
     fun unitEntityId(u: UnitType) = u.name
     fun categoryEntityId(c: Category) = c.name
 
+    // NEW (Shell Ledger sync): same serverId-preferred-else-device-tag shape as
+    // paymentEntityId/expenseEntityId above — a shell_customers/shell_transactions/
+    // shop_empty_shell_log row's id is a local autoincrement, so two devices'
+    // "first shell customer" would otherwise collide.
+    fun shellCustomerEntityId(c: ShellCustomer) =
+        c.serverId?.takeIf { it.isNotBlank() } ?: "shell_customer:${DeviceTag.current}-${c.id}"
+    fun shellTransactionEntityId(t: ShellTransaction) =
+        t.serverId?.takeIf { it.isNotBlank() } ?: "shell_transaction:${DeviceTag.current}-${t.id}"
+    fun shopEmptyShellLogEntityId(l: ShopEmptyShellLog) =
+        l.serverId?.takeIf { it.isNotBlank() } ?: "shop_empty_shell_log:${DeviceTag.current}-${l.id}"
+
     suspend fun enqueue(db: PosDatabase, entityType: String, entityId: String, operation: String, payloadJson: String) {
         db.syncQueueDao().enqueue(
             SyncQueueEntry(
@@ -483,6 +494,35 @@ object SyncQueueHelper {
         context?.let { trigger(it) }
     }
 
+    // FIX (Shell Ledger sync): ShellLedgerActivity used to call db.shellDao().insertCustomer/
+    // updateCustomer/insertTransaction/insertShopLog directly, so shellsOwed balances and
+    // the shop's own empty-shell count never left this device — see the FIX comment above
+    // the ShellCustomer entity. Same serverId-stamping shape as enqueueReturn/
+    // enqueueStockMovement above (append-only-ish ledgers with a local-autoincrement id).
+    suspend fun enqueueShellCustomer(db: PosDatabase, c: ShellCustomer, context: Context? = null) {
+        val id = shellCustomerEntityId(c)
+        val stamped = if (c.serverId != id) c.copy(serverId = id) else c
+        if (stamped !== c) db.shellDao().updateCustomer(stamped)
+        enqueue(db, "shell_customer", id, "upsert", shellCustomerJson(stamped))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueShellTransaction(db: PosDatabase, t: ShellTransaction, context: Context? = null) {
+        val id = shellTransactionEntityId(t)
+        val stamped = if (t.serverId != id) t.copy(serverId = id) else t
+        if (stamped !== t) db.shellDao().updateTransaction(stamped)
+        enqueue(db, "shell_transaction", id, "upsert", shellTransactionJson(db, stamped))
+        context?.let { trigger(it) }
+    }
+
+    suspend fun enqueueShopEmptyShellLog(db: PosDatabase, l: ShopEmptyShellLog, context: Context? = null) {
+        val id = shopEmptyShellLogEntityId(l)
+        val stamped = if (l.serverId != id) l.copy(serverId = id) else l
+        if (stamped !== l) db.shellDao().updateShopLog(stamped)
+        enqueue(db, "shop_empty_shell_log", id, "upsert", shopEmptyShellLogJson(stamped))
+        context?.let { trigger(it) }
+    }
+
     // FIX (duplicate-payment-on-sync bug): every call site that used to do
     // `db.paymentDao().deleteByReference(ref)` / `db.cashTransactionDao().deleteByReference(ref)`
     // directly (purchase/sale edit, bill delete, returns, "edit billed item") removed the
@@ -758,6 +798,55 @@ object SyncQueueHelper {
             "qty" to r.qty,
             "amount" to r.amount,
             "createdAt" to r.createdAt,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    // NEW (Shell Ledger sync): full snapshot — shellsOwed is always written back via a
+    // whole-row updateCustomer() call (never an increment_* delta), so a plain upsert is
+    // correct here, same as zakatYearJson below.
+    fun shellCustomerJson(c: ShellCustomer): String {
+        val map = mapOf(
+            "serverId" to shellCustomerEntityId(c),
+            "name" to c.name,
+            "phone" to c.phone,
+            "shellsOwed" to c.shellsOwed,
+            "createdAt" to c.createdAt,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    // NOTE: suspend + takes db (like saleJson above) because customerId is a LOCAL
+    // autoincrement id, meaningless on another device — the transaction must be linked
+    // by the shell customer's own serverId instead, so the other device can match it
+    // back to the right shell_customers row (mirrors how saleJson resolves customerId
+    // the same way).
+    suspend fun shellTransactionJson(db: PosDatabase, t: ShellTransaction): String {
+        val customerServerId = db.shellDao().getCustomer(t.customerId)?.let { shellCustomerEntityId(it) }
+        val map = mapOf(
+            "serverId" to shellTransactionEntityId(t),
+            "customerServerId" to customerServerId,
+            "type" to t.type,
+            "qty" to t.qty,
+            "note" to t.note,
+            "createdAt" to t.createdAt,
+            "updatedAt" to System.currentTimeMillis(),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    fun shopEmptyShellLogJson(l: ShopEmptyShellLog): String {
+        val map = mapOf(
+            "serverId" to shopEmptyShellLogEntityId(l),
+            "delta" to l.delta,
+            "reason" to l.reason,
+            "note" to l.note,
+            "createdAt" to l.createdAt,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )

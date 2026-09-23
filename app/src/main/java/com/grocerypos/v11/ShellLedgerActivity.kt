@@ -397,22 +397,31 @@ class ShellLedgerActivity : AppCompatActivity() {
         val customerId: Long
         if (customer == null) {
             val newOwed = if (isIssue) qty else 0
-            customerId = dao.insertCustomer(ShellCustomer(name = name, phone = phone, shellsOwed = newOwed))
+            val newCustomer = ShellCustomer(name = name, phone = phone, shellsOwed = newOwed)
+            customerId = dao.insertCustomer(newCustomer)
+            dao.getCustomer(customerId)?.let { SyncQueueHelper.enqueueShellCustomer(db, it) }
         } else {
             customerId = customer.id
             val newOwed = if (isIssue) customer.shellsOwed + qty else (customer.shellsOwed - qty).coerceAtLeast(0)
-            dao.updateCustomer(customer.copy(shellsOwed = newOwed, updatedAt = System.currentTimeMillis(), dirty = true))
+            val updated = customer.copy(shellsOwed = newOwed, updatedAt = System.currentTimeMillis(), dirty = true)
+            dao.updateCustomer(updated)
+            SyncQueueHelper.enqueueShellCustomer(db, updated)
         }
-        dao.insertTransaction(ShellTransaction(
+        val newTxnId = dao.insertTransaction(ShellTransaction(
             customerId = customerId,
             type = if (isIssue) "ISSUE" else "RETURN",
             qty = qty,
             note = note
         ))
+        dao.historyForCustomer(customerId).find { it.id == newTxnId }?.let {
+            SyncQueueHelper.enqueueShellTransaction(db, it)
+        }
         if (!isIssue) {
             // Customer handed back an empty shell — it lands in the shop's own stock.
-            dao.insertShopLog(ShopEmptyShellLog(delta = qty, reason = "CUSTOMER_RETURN", note = if (note.isNotEmpty()) "$name - $note" else name))
+            val newLogId = dao.insertShopLog(ShopEmptyShellLog(delta = qty, reason = "CUSTOMER_RETURN", note = if (note.isNotEmpty()) "$name - $note" else name))
+            dao.shopLogHistory().find { it.id == newLogId }?.let { SyncQueueHelper.enqueueShopEmptyShellLog(db, it) }
         }
+        SyncQueueHelper.trigger(this@ShellLedgerActivity)
         Toast.makeText(this@ShellLedgerActivity, Loc.t(this@ShellLedgerActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
         refresh()
     }
@@ -501,7 +510,9 @@ class ShellLedgerActivity : AppCompatActivity() {
             Toast.makeText(this@ShellLedgerActivity, Loc.t(this@ShellLedgerActivity, "Not enough shop stock to remove that much", "اتنی مقدار نکالنے کے لیے اسٹاک کافی نہیں"), Toast.LENGTH_LONG).show()
             return@launch
         }
-        db.shellDao().insertShopLog(ShopEmptyShellLog(delta = delta, reason = reasonCode, note = note))
+        val newLogId = db.shellDao().insertShopLog(ShopEmptyShellLog(delta = delta, reason = reasonCode, note = note))
+        db.shellDao().shopLogHistory().find { it.id == newLogId }?.let { SyncQueueHelper.enqueueShopEmptyShellLog(db, it) }
+        SyncQueueHelper.trigger(this@ShellLedgerActivity)
         Toast.makeText(this@ShellLedgerActivity, Loc.t(this@ShellLedgerActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
         refresh()
     }

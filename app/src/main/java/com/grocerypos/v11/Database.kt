@@ -807,9 +807,11 @@ data class ZakatMonthPlan(
 // handing back an empty shell in exchange — shellsOwed is the running count of shells
 // they still owe the shop. This is a standalone ledger (not tied to the Customer table)
 // since a shell-taking "customer" here is often just a name/phone jotted down, not a
-// full party record. serverId/updatedAt/dirty follow the same shape as ZakatYear above
-// for future-proofing, but — like Zakat — this is NOT currently pushed through
-// SyncQueueHelper; treat it as local-only until a matching server-side endpoint exists.
+// full party record. serverId/updatedAt/dirty follow the same shape as ZakatYear above.
+// FIX (Shell Ledger sync): this WAS local-only ("treat as local-only until a matching
+// server-side endpoint exists") — now wired through SyncQueueHelper.enqueueShellCustomer/
+// enqueueShellTransaction/enqueueShopEmptyShellLog (see ShellLedgerActivity call sites)
+// and SyncApi's shell_customers/shell_transactions/shop_empty_shell_log collections.
 @Entity(tableName="shell_customers")
 data class ShellCustomer(
     @PrimaryKey(autoGenerate=true) val id:Long=0,
@@ -851,7 +853,13 @@ data class ShopEmptyShellLog(
     val delta:Int,
     val reason:String, // MANUAL_ADD, MANUAL_REMOVE, CUSTOMER_RETURN, SENT_FOR_REFILL
     val note:String="",
-    val createdAt:Long=System.currentTimeMillis()
+    val createdAt:Long=System.currentTimeMillis(),
+    // NEW (Shell Ledger sync — MIGRATION_45_46): added so this table can finally push/
+    // pull through SyncQueueHelper/SyncApi, same shape as ShellCustomer/ShellTransaction
+    // above (which already had these three columns from day one but were never wired up).
+    val serverId:String?=null,
+    val updatedAt:Long=0L,
+    val dirty:Boolean=true
 )
 
 @Entity(tableName="held_bills")
@@ -1284,13 +1292,20 @@ interface ProductDao {
     @Query("SELECT * FROM shell_customers WHERE name=:name COLLATE NOCASE LIMIT 1") suspend fun findByName(name:String):ShellCustomer?
     @Query("SELECT * FROM shell_customers ORDER BY shellsOwed DESC, name COLLATE NOCASE ASC") suspend fun allCustomers():List<ShellCustomer>
     @Query("SELECT COALESCE(SUM(shellsOwed),0) FROM shell_customers") suspend fun totalOwedByCustomers():Int
+    // NEW (Shell Ledger sync): pull-apply idempotency lookup, same pattern as every
+    // other synced entity (CustomerDao.findByServerId/ZakatDao.findYearByServerId/etc).
+    @Query("SELECT * FROM shell_customers WHERE serverId=:serverId LIMIT 1") suspend fun findCustomerByServerId(serverId:String):ShellCustomer?
 
     @Insert suspend fun insertTransaction(t:ShellTransaction):Long
+    @Update suspend fun updateTransaction(t:ShellTransaction)
     @Query("SELECT * FROM shell_transactions WHERE customerId=:customerId ORDER BY createdAt DESC") suspend fun historyForCustomer(customerId:Long):List<ShellTransaction>
+    @Query("SELECT * FROM shell_transactions WHERE serverId=:serverId LIMIT 1") suspend fun findTransactionByServerId(serverId:String):ShellTransaction?
 
     @Insert suspend fun insertShopLog(l:ShopEmptyShellLog):Long
+    @Update suspend fun updateShopLog(l:ShopEmptyShellLog)
     @Query("SELECT COALESCE(SUM(delta),0) FROM shop_empty_shell_log") suspend fun shopStockTotal():Int
     @Query("SELECT * FROM shop_empty_shell_log ORDER BY createdAt DESC LIMIT 100") suspend fun shopLogHistory():List<ShopEmptyShellLog>
+    @Query("SELECT * FROM shop_empty_shell_log WHERE serverId=:serverId LIMIT 1") suspend fun findShopLogByServerId(serverId:String):ShopEmptyShellLog?
 }
 
 @Dao interface PaymentDao {
@@ -2120,6 +2135,19 @@ val MIGRATION_44_45 = object : Migration(44, 45) {
     }
 }
 
+// NEW (Shell Ledger sync): shop_empty_shell_log was missing the serverId/updatedAt/
+// dirty trio that shell_customers/shell_transactions already had — added now so all
+// three Shell Ledger tables can push/pull through SyncQueueHelper/SyncApi (see the
+// FIX comment above ShellCustomer). Every existing row gets dirty=1 so it gets
+// picked up and pushed on the very next sync, same as any other newly-synced table.
+val MIGRATION_45_46 = object : Migration(45, 46) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE shop_empty_shell_log ADD COLUMN serverId TEXT")
+        database.execSQL("ALTER TABLE shop_empty_shell_log ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE shop_empty_shell_log ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -2132,7 +2160,7 @@ val MIGRATION_44_45 = object : Migration(44, 45) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=45, exportSchema=true
+    version=46, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -2159,7 +2187,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

@@ -1,5 +1,6 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.SyncQueueHelper
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -320,6 +321,7 @@ class LoginActivity : ThemedActivity() {
                     active = true
                 )
                 db.userDao().upsert(newAdmin)
+                SyncQueueHelper.enqueueUser(db, newAdmin, this@LoginActivity)
                 db.appSettingDao().set(AppSetting("admin_seeded", "1"))
                 db.appSettingDao().set(AppSetting("last_username", newAdmin.username))
 
@@ -533,7 +535,9 @@ class LoginActivity : ThemedActivity() {
                 }
                 if (user != null && passwordOk) {
                     if (!PasswordHasher.isHashed(user.passwordHash)) {
-                        db.userDao().upsert(user.copy(passwordHash = PasswordHasher.hash(typedPassword)))
+                        val migrated = user.copy(passwordHash = PasswordHasher.hash(typedPassword))
+                        db.userDao().upsert(migrated)
+                        SyncQueueHelper.enqueueUser(db, migrated, this@LoginActivity)
                     }
                     loggedInUser = user
                     db.appSettingDao().set(AppSetting("last_username", user.username))
@@ -619,6 +623,7 @@ class LoginActivity : ThemedActivity() {
                 lifecycleScope.launch {
                     val linked = user.copy(phone = phone)
                     db.userDao().upsert(linked)
+                    SyncQueueHelper.enqueueUser(db, linked, this@LoginActivity)
                     loggedInUser = linked
                     db.appSettingDao().set(AppSetting("last_username", linked.username))
                     Toast.makeText(this@LoginActivity, "Phone account se link ho gaya.", Toast.LENGTH_LONG).show()

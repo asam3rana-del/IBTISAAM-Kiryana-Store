@@ -664,7 +664,10 @@ class ItemsActivity : ThemedActivity() {
             .setPositiveButton("Add") { _, _ ->
                 val v = input.text.toString().trim()
                 if (v.isNotEmpty()) lifecycleScope.launch {
-                    PosDatabase.get(this@ItemsActivity).categoryDao().insert(Category(v))
+                    val db = PosDatabase.get(this@ItemsActivity)
+                    val newCategory = Category(v)
+                    db.categoryDao().insert(newCategory)
+                    SyncQueueHelper.enqueueCategory(db, newCategory, this@ItemsActivity)
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -916,7 +919,9 @@ class ItemsActivity : ThemedActivity() {
             .setMessage("Delete \"${p.name}\"? This cannot be undone.")
             .setPositiveButton("Delete") { _, _ ->
                 lifecycleScope.launch {
-                    PosDatabase.get(this@ItemsActivity).productDao().delete(p)
+                    val db = PosDatabase.get(this@ItemsActivity)
+                    db.productDao().delete(p)
+                    SyncQueueHelper.enqueueDelete(db, "product", p.barcode, this@ItemsActivity)
                     Toast.makeText(this@ItemsActivity, "Product deleted", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -981,7 +986,10 @@ class ItemsActivity : ThemedActivity() {
             .setPositiveButton("Add") { _, _ ->
                 val v = input.text.toString().trim()
                 if (v.isNotEmpty()) lifecycleScope.launch {
-                    PosDatabase.get(this@ItemsActivity).unitDao().insert(UnitType(v))
+                    val db = PosDatabase.get(this@ItemsActivity)
+                    val newUnit = UnitType(v)
+                    db.unitDao().insert(newUnit)
+                    SyncQueueHelper.enqueueUnit(db, newUnit, this@ItemsActivity)
                 }
             }
             .setNegativeButton("Cancel", null)

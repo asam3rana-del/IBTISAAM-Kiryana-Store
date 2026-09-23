@@ -248,7 +248,9 @@ class UserManagementActivity : AppCompatActivity() {
             }
             if (me != null && passwordOk) {
                 if (!PasswordHasher.isHashed(me.passwordHash)) {
-                    PosDatabase.get(this@UserManagementActivity).userDao().upsert(me.copy(passwordHash = PasswordHasher.hash(typed)))
+                    val migrated = me.copy(passwordHash = PasswordHasher.hash(typed))
+                    PosDatabase.get(this@UserManagementActivity).userDao().upsert(migrated)
+                    SyncQueueHelper.enqueueUser(PosDatabase.get(this@UserManagementActivity), migrated, this@UserManagementActivity)
                 }
                 buildManagementUi(myUsername)
             } else {
