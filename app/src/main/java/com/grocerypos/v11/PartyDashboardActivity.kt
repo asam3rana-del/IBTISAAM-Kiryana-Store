@@ -1094,10 +1094,15 @@ class PartyDashboardActivity : AppCompatActivity() {
         if (activeTab != Tab.TRANSACTIONS) return
         listContainer.removeAllViews()
         val q = txQuery.trim().lowercase()
+        // FIX (English search alias): match the same convention as
+        // Product.matchesQuery() — split into words, require every word to
+        // appear somewhere across party name + item names (name+searchTag)
+        // combined, so English tag words match alongside the Urdu name.
+        val terms = q.split(Regex("\\s+")).filter { it.isNotBlank() }
         val filtered = txCache.filter { row ->
-            q.isEmpty() ||
-            row.partyName.lowercase().contains(q) ||
-            txItemNamesByRef[row.reference].orEmpty().any { it.contains(q) }
+            if (terms.isEmpty()) return@filter true
+            val haystack = (row.partyName + " " + txItemNamesByRef[row.reference].orEmpty().joinToString(" ")).lowercase()
+            terms.all { haystack.contains(it) }
         }
 
         if (filtered.isEmpty()) {
@@ -1233,8 +1238,12 @@ class PartyDashboardActivity : AppCompatActivity() {
     private fun renderItemRows() {
         if (activeTab != Tab.ITEMS) return
         listContainer.removeAllViews()
-        val q = itemQuery.trim().lowercase()
-        val filtered = itemCache.filter { it.product.lowercase().contains(q) }
+        val q = itemQuery.trim()
+        // FIX (English search alias not matching here): every other item-search
+        // screen goes through Product.matchesQuery() (name + searchTag); this one
+        // was checking the raw Urdu `product` name only. Route through the same
+        // entity (full Product row, already cached in ItemAgg) instead.
+        val filtered = itemCache.filter { it.entity.matchesQuery(q) }
 
         if (filtered.isEmpty()) {
             listContainer.addView(placeholderCard(Loc.t(this, "No items found", "\u06A9\u0648\u0626\u06CC \u0622\u0626\u0679\u0645 \u0646\u06C1\u06CC\u06BA \u0645\u0644\u0627")))

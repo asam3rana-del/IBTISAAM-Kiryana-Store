@@ -1108,7 +1108,11 @@ interface ProductDao {
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned') GROUP BY product ORDER BY totalQty DESC LIMIT 5") suspend fun topProducts(start:Long,end:Long):List<TopProduct>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC") suspend fun allSales():List<SaleWithCustomer>
     // NEW (Dashboard Transactions tab item-name search): one row per sale line item.
-    @Query("SELECT invoice as reference, product FROM sale_items") suspend fun allItemNamesForSales():List<TxItemName>
+    // FIX (English search not matching here — every other product search screen
+    // goes through Product.matchesQuery(), i.e. name + searchTag; this one only
+    // had the Urdu `product` snapshot): now also appends the live product's
+    // searchTag (looked up by barcode), so typing the English alias matches too.
+    @Query("SELECT invoice as reference, (si.product || ' ' || COALESCE((SELECT searchTag FROM products WHERE products.barcode=si.barcode),'')) as product FROM sale_items si") suspend fun allItemNamesForSales():List<TxItemName>
     // NEW (bill-wise profit in Sale History): profit per invoice, for the same
     // window as allSales() above (matched by invoice at the call site). Returned
     // sales are excluded (no profit to show once a bill is reversed).
@@ -1368,7 +1372,9 @@ interface ProductDao {
     // item. itemName is the self-contained snapshot (see PurchaseItem.itemName);
     // pre-migration rows where that's blank fall back to a live products lookup by
     // barcode, same fallback RoomPurchaseRepository already uses elsewhere.
-    @Query("SELECT billNo as reference, CASE WHEN pi.itemName != '' THEN pi.itemName ELSE COALESCE((SELECT name FROM products WHERE products.barcode=pi.barcode),'') END as product FROM purchase_items pi") suspend fun allItemNamesForPurchases():List<TxItemName>
+    // FIX (English search not matching): also appends the live product's
+    // searchTag (see matching FIX on allItemNamesForSales above).
+    @Query("SELECT billNo as reference, (CASE WHEN pi.itemName != '' THEN pi.itemName ELSE COALESCE((SELECT name FROM products WHERE products.barcode=pi.barcode),'') END || ' ' || COALESCE((SELECT searchTag FROM products WHERE products.barcode=pi.barcode),'')) as product FROM purchase_items pi") suspend fun allItemNamesForPurchases():List<TxItemName>
     @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC") suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
     // ADDED (Parties tab — last transaction date, see SaleDao.lastActivityByCustomer
     // for the matching customer-side query and rationale).
