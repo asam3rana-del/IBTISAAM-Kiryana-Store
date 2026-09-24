@@ -669,7 +669,9 @@ class BillPreviewActivity : ThemedActivity() {
 
             // ---- Item table: ITEM / AMOUNT / QTY / RATE — same header labels,
             // order and column weights as the on-screen table. ----
-            val previewWeights = listOf(2f, 1f, 1f, 1f)
+            // Wider QTY column ("0.5 Quarter") + slightly narrower ITEM, for the larger table font.
+            // Logical order: name / amount / qty / rate.
+            val previewWeights = listOf(1.7f, 1f, 1.3f, 1f)
             // Mirrored (Urdu-bill style): visually AMOUNT | RATE | QTY | ITEM.
             receiptLines.add(
                 PrinterHelper.ReceiptLine.PreviewItemRow(
@@ -712,6 +714,11 @@ class BillPreviewActivity : ThemedActivity() {
                 val prevBalance = netBalance - (total - paid)
                 receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Prev Balance", "Rs %.2f".format(prevBalance), tight = true))
                 receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Net Balance", "Rs %.2f".format(netBalance), bold = true, tight = true))
+            } else if (balanceDue > 0.009) {
+                // Walk-in / no linked party: there is no ledger, so the previous balance is
+                // Rs 0 and the net balance is just this bill's own due amount.
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Prev Balance", "Rs %.2f".format(0.0), tight = true))
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Net Balance", "Rs %.2f".format(balanceDue), bold = true, tight = true))
             }
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
             receiptLines.add(PrinterHelper.ReceiptLine.Center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }))

@@ -869,6 +869,11 @@ object PrinterHelper {
         // height, so Latin-only rows can safely lose ~0.5x font size of pitch; rows that
         // contain Urdu/Arabic script (tall Nastaliq ascenders/descenders) lose less so
         // they never touch the next row.)
+        // NEW ("English/number wali lines ka space jam kro"): rows with NO Urdu/Arabic text use a
+        // compact fixed line box instead of the font's own (very tall, Nastaliq-sized) box.
+        // Latin glyphs only need ~1.0x font size above the baseline and ~0.25x below it.
+        val compactLatinHeight = (fontSizePx * 1.45f).toInt()
+        val compactLatinAscent = fontSizePx * 1.02f
         fun tightSpacingExtraFor(text: String): Int =
             -(fontSizePx * (if (containsArabicScript(text)) 0.20f else 0.50f)).toInt()
         val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
@@ -878,7 +883,8 @@ object PrinterHelper {
         // FIX ("is ka size chota kro" — item table too big): trimmed 0.78 -> 0.72.
         // Combined with the ItemRow-specific 0.92x factors above, the effective size
         // for item name/rate/qty/amount cells is now noticeably smaller than before.
-        val tableFontSize = fontSizePx * 0.72f
+        // FIX ("item table ma font Thora bara kro aur clear kro"): 0.72 -> 0.88 of the base size.
+        val tableFontSize = fontSizePx * 0.88f
         // FIX (cramped print — text touching between columns/lines): both of these
         // were too tight (8 / 5), which combined with the qty-column overflow bug
         // made everything look crammed together with no visible gaps. Bumped up for
@@ -922,7 +928,8 @@ object PrinterHelper {
                     // (so long Center text, like a long footer line, still wraps).
                     if (line is ReceiptLine.Center && paint.measureText(text) <= contentWidth) {
                         val fm = paint.fontMetrics
-                        val h = (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtraFor(text) else lineSpacingExtra)
+                        val h = if (!containsArabicScript(text)) compactLatinHeight
+                                else (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtraFor(text) else lineSpacingExtra)
                         blocks.add(Block(line, null, h))
                         totalHeight += h
                     } else {
@@ -941,7 +948,8 @@ object PrinterHelper {
                 }
                 is ReceiptLine.TwoCol -> {
                     val fm = paint.fontMetrics
-                    val h = (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtraFor(line.left + line.right) else lineSpacingExtra)
+                    val h = if (!containsArabicScript(line.left + line.right)) compactLatinHeight
+                            else (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtraFor(line.left + line.right) else lineSpacingExtra)
                     blocks.add(Block(line, null, h))
                     totalHeight += h
                 }
@@ -1039,7 +1047,7 @@ object PrinterHelper {
                         // the measurement pass above.
                         val text = (line as ReceiptLine.Center).text
                         val fm = paint.fontMetrics
-                        val baseline = y - fm.top
+                        val baseline = if (!containsArabicScript(text)) y + compactLatinAscent else y - fm.top
                         val oldAlign = paint.textAlign
                         paint.textAlign = Paint.Align.CENTER
                         canvas.drawText(text, PRINTER_DOTS_WIDTH / 2f, baseline, paint)
@@ -1061,7 +1069,7 @@ object PrinterHelper {
                     // side-swapping is needed. Fixed sides here match that, and stop the
                     // overlap.
                     val fm = paint.fontMetrics
-                    val baseline = y - fm.top
+                    val baseline = if (!containsArabicScript(line.left + line.right)) y + compactLatinAscent else y - fm.top
 
                     val oldBold = paint.isFakeBoldText
                     paint.isFakeBoldText = line.bold
@@ -1410,7 +1418,7 @@ object PrinterHelper {
                         val baselineM = y + tableRowPaddingV / 2 - fmM.top
                         paint.textAlign = Paint.Align.CENTER
                         canvas.drawText(line.amount, (px[0] + px[1]) / 2f, baselineM, paint)
-                        paint.isFakeBoldText = false
+                        // rate / qty stay bold too (clearer on thermal paper)
                         canvas.drawText(line.rate, (px[1] + px[2]) / 2f, baselineM, paint)
                         canvas.drawText(line.qty, (px[2] + px[3]) / 2f, baselineM, paint)
                     } else {
