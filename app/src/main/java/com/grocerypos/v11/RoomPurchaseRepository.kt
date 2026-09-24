@@ -405,11 +405,13 @@ class RoomPurchaseRepository(
             // linesToApply (leftover edited lines — reapply stock/cost for these only).
             // A fully-unchanged edit (e.g. only Paid Amount changed) naturally yields two
             // empty lists, same as the old skipStockTouch=true short-circuit.
-            val (itemsToReverse, linesToApply) = if (original != null)
-                com.grocerypos.v11.domain.StockTouchPolicy.purchaseChangedLines(lines, originalItems)
-            else
-                emptyList<PurchaseItem>() to lines
-            val linesToApplySet = linesToApply.toHashSet()
+            // Index-based (purchaseEditDiff) instead of the old `line in hashSet` lookup —
+            // see StockTouchPolicy.purchaseEditDiff()'s comment for the duplicate-line bug.
+            val diff = if (original != null)
+                com.grocerypos.v11.domain.StockTouchPolicy.purchaseEditDiff(lines, originalItems)
+            else null
+            val itemsToReverse = diff?.itemsToReverse ?: emptyList()
+            fun lineNeedsStock(index: Int): Boolean = diff == null || index in diff.changedLineIndices
             db.withTransaction {
                 if (supplierId == null && party.isNotEmpty()) {
                     val newSupplier = Supplier(name = party)
@@ -448,15 +450,20 @@ class RoomPurchaseRepository(
                     supplierInvoiceNo = supplierInvoiceNo
                 )
                 db.purchaseDao().purchase(purchaseRecord)
-                val purchaseItems = lines.map { line ->
+                val purchaseItems = lines.mapIndexed { index, line ->
                     val lineProduct = line.barcode?.let { db.productDao().find(it) }
+                    // An untouched line keeps the conversionFactor frozen at its original
+                    // purchase time — re-stamping it with the CURRENT unit ladder would make a
+                    // later delete/edit/return reverse a different quantity than was added.
+                    val unchangedOriginal = diff?.unchangedOriginalByIndex?.get(index)
                     PurchaseItem(
                         billNo = billNo, barcode = line.barcode ?: "", qty = line.qty,
                         unitCost = line.rate, amount = line.amount, unit = line.unit,
                         // FIX (historical unit conversion bug): freeze this line's
                         // smallest-units-per-`unit` factor at purchase time — see
                         // Database.kt's PurchaseItem.smallestQty()/conversionFactor comment.
-                        conversionFactor = lineProduct?.smallestPerUnitOf(line.unit) ?: 0.0,
+                        conversionFactor = unchangedOriginal?.conversionFactor
+                            ?: lineProduct?.smallestPerUnitOf(line.unit) ?: 0.0,
                         // FIX (item name / retail-wholesale rate "gayab" after sync):
                         // snapshot this line's own name + entered rates on the row
                         // itself instead of relying on a live products-table lookup
@@ -471,16 +478,16 @@ class RoomPurchaseRepository(
                     db, "purchase", SyncQueueHelper.purchaseEntityId(purchaseRecord), if (original != null) "update" else "create",
                     SyncQueueHelper.purchaseJson(db, purchaseRecord)
                 )
-                lines.forEach { line ->
-                    val barcode = line.barcode ?: return@forEach
-                    val before = db.productDao().find(barcode) ?: return@forEach
+                lines.forEachIndexed { index, line ->
+                    val barcode = line.barcode ?: return@forEachIndexed
+                    val before = db.productDao().find(barcode) ?: return@forEachIndexed
                     // See purchaseChangedLines() comment above: only lines that actually
-                    // changed (or are newly added) sit in linesToApplySet — a line the
+                    // changed (or are newly added) are flagged by lineNeedsStock() — a line the
                     // user left alone keeps its stock/cost exactly as-is instead of being
                     // reversed and reapplied as a no-op. This is what lets an edit to ONE
                     // line go through even when a later sale has since eaten into some
                     // OTHER, untouched line's stock.
-                    if (line in linesToApplySet) {
+                    if (lineNeedsStock(index)) {
                         val purchasedSmallest = before.toSmallestUnits(line.qty, line.unit)
                         // FIX (fraction control): reject a purchase line that would leave a
                         // fractional smallest-unit qty for a non-fractional item (Piece/Dabbi/
@@ -512,7 +519,15 @@ class RoomPurchaseRepository(
                     // retail (salePrice) / wholesale rate right here at purchase time —
                     // 0.0 on either field means "leave that rate unchanged" (see
                     // PurchaseLine.retailRate/wholesaleRate).
-                    if (line.retailRate > 0.0 || line.wholesaleRate > 0.0) {
+                    // FIX (purchase edit reset sale prices): an untouched line whose retail/
+                    // wholesale entries are also unchanged must not push its OLD purchase-time
+                    // rates back onto the product — that silently overwrote any newer price set
+                    // on the Product screen every time an unrelated field (Paid, date) was edited.
+                    val origForRates = diff?.unchangedOriginalByIndex?.get(index)
+                    val ratesUntouched = origForRates != null &&
+                        origForRates.retailRate == line.retailRate &&
+                        origForRates.wholesaleRate == line.wholesaleRate
+                    if ((line.retailRate > 0.0 || line.wholesaleRate > 0.0) && !ratesUntouched) {
                         val newSalePrice = if (line.retailRate > 0.0) line.retailRate else before.salePrice
                         val newWholesalePrice = if (line.wholesaleRate > 0.0) line.wholesaleRate else before.wholesalePrice
                         SyncQueueHelper.updateProductPrices(db, barcode, newSalePrice, newWholesalePrice)

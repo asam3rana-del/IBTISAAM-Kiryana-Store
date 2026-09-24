@@ -1653,8 +1653,14 @@ class PartyTransactionActivity : AppCompatActivity() {
                     // applySaleItemEdit() above — reverse the OLD portion using the
                     // factor frozen at purchase time, apply the NEW portion using the
                     // CURRENT product config, and only touch stock with the net delta.
+                    // FIX (rate-only edit changed stock): see applySaleItemEdit() — with the
+                    // qty unchanged, the "new" quantity IS the old one, so stock cannot move
+                    // (frozen vs current unit config used to fake a delta after a ladder
+                    // change). The cost below is still recomputed for the new rate.
+                    val qtyChanged = kotlin.math.abs(newQty - oldQty) > 1e-9
                     val oldSmallest = item.smallestQty(product)
-                    val newSmallest = product?.toSmallestUnits(newQty, item.unit.ifBlank { product.unit }) ?: newQty
+                    val newSmallest = if (!qtyChanged) oldSmallest
+                        else product?.toSmallestUnits(newQty, item.unit.ifBlank { product.unit }) ?: newQty
                     val netSmallestDelta = newSmallest - oldSmallest
                     val newAmount = newQty * newRate
 
@@ -1710,7 +1716,8 @@ class PartyTransactionActivity : AppCompatActivity() {
 
                     val updatedItem = item.copy(
                         qty = newQty, unitCost = newRate, amount = newAmount,
-                        conversionFactor = product?.smallestPerUnitOf(item.unit) ?: item.conversionFactor
+                        conversionFactor = if (qtyChanged) (product?.smallestPerUnitOf(item.unit) ?: item.conversionFactor)
+                            else item.conversionFactor
                     )
                     db.purchaseDao().updateItemRow(updatedItem)
 

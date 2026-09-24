@@ -127,4 +127,37 @@ object StockTouchPolicy {
         }
         return remainingOriginal to linesNeedingReapply
     }
+
+    /** Purchase twin of [SaleEditDiff]: index-based result of [purchaseEditDiff]. */
+    class PurchaseEditDiff(
+        val itemsToReverse: List<PurchaseItem>,
+        val changedLineIndices: Set<Int>,
+        val unchangedOriginalByIndex: Map<Int, PurchaseItem>
+    )
+
+    // FIX (purchase edit — same bug family as saleEditDiff): purchaseChangedLines() above
+    // returns the leftover LINES as values, and RoomPurchaseRepository looked them up with
+    // `line in hashSet` — data-class EQUALITY. With two identical lines on a bill (e.g. the
+    // user adds a second "Sugar 10 Kg @ 200" next to an existing one) the leftover new line
+    // equals the untouched one, so BOTH matched the set and the untouched line's stock/cost
+    // got applied a second time (stock inflated). Matching by index removes that ambiguity,
+    // and also hands back the untouched line's original row so its frozen conversionFactor
+    // (and its retail/wholesale snapshot) can be carried over instead of re-stamped.
+    fun purchaseEditDiff(lines: List<PurchaseLine>, originalItems: List<PurchaseItem>): PurchaseEditDiff {
+        val remainingOriginal = originalItems.toMutableList()
+        val changed = mutableSetOf<Int>()
+        val unchanged = mutableMapOf<Int, PurchaseItem>()
+        lines.forEachIndexed { index, line ->
+            val lineKey = key(line.barcode ?: "", line.qty, line.unit, line.rate)
+            val matchIndex = remainingOriginal.indexOfFirst {
+                key(it.barcode, it.qty, it.unit, it.unitCost) == lineKey
+            }
+            if (matchIndex >= 0) {
+                unchanged[index] = remainingOriginal.removeAt(matchIndex)
+            } else {
+                changed.add(index)
+            }
+        }
+        return PurchaseEditDiff(remainingOriginal, changed, unchanged)
+    }
 }
