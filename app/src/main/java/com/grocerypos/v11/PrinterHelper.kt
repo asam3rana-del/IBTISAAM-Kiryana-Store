@@ -385,6 +385,39 @@ object PrinterHelper {
         return adapter.bondedDevices?.toList() ?: emptyList()
     }
 
+    // FIX ("printer on hai, range mein hai, phir bhi 'print fail ho gaya'"):
+    // Android's normal createRfcommSocketToServiceRecord() connect asks the
+    // remote device's SDP server which RFCOMM channel its SPP service lives
+    // on, then connects to that. Plenty of cheap/clone 58mm Bluetooth
+    // printers don't answer SDP queries properly (or answer with a channel
+    // that doesn't match reality), so that connect() throws even though the
+    // printer is on, paired, and in range — it's a connection-negotiation
+    // failure, not a "printer not reachable" problem. The well-known
+    // workaround (used by most ESC/POS printer libraries) is to fall back to
+    // an "insecure" RFCOMM socket opened directly on channel 1 via reflection
+    // (createRfcommSocket is hidden API, so it's not in the public
+    // BluetoothDevice interface) — this skips the SDP lookup entirely and is
+    // what most of these printers actually expect. We try the normal/secure
+    // path first (works fine on printers with proper SDP), and only fall
+    // back to the reflection path if that throws.
+    @SuppressLint("MissingPermission")
+    private fun openBluetoothSocket(device: BluetoothDevice): BluetoothSocket {
+        return try {
+            val socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+            socket.connect()
+            socket
+        } catch (e: Exception) {
+            val fallback = try {
+                val method = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                method.invoke(device, 1) as BluetoothSocket
+            } catch (reflectEx: Exception) {
+                throw e // reflection itself failed — surface the original error
+            }
+            fallback.connect()
+            fallback
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private fun sendBluetoothBytes(context: Context, macAddress: String, payload: ByteArray): Boolean {
         if (!hasBluetoothPermission(context)) return false
@@ -393,8 +426,7 @@ object PrinterHelper {
         return try {
             val device = adapter.getRemoteDevice(macAddress)
             adapter.cancelDiscovery()
-            socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            socket.connect()
+            socket = openBluetoothSocket(device)
             val out: OutputStream = socket.outputStream
             out.write(payload)
             out.flush()
@@ -423,8 +455,7 @@ object PrinterHelper {
         return try {
             val device = adapter.getRemoteDevice(macAddress)
             adapter.cancelDiscovery()
-            socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            socket.connect()
+            socket = openBluetoothSocket(device)
             val out: OutputStream = socket.outputStream
 
             out.write(ESC_INIT)
