@@ -1200,9 +1200,13 @@ object SyncQueueHelper {
                 db.paymentDao().listByParty("customer", c.id).filter { it.reference !in saleInvoices }.sumOf { it.amount }
             if (kotlin.math.abs(correct - c.balance) > 0.01) {
                 fixes.add(PartyBalanceFix(c.name, c.balance, correct))
-                val updated = c.copy(balance = correct, dirty = true)
-                db.customerDao().update(updated)
-                enqueueCustomer(db, updated)
+                // FIX (2-device wrong balance): this used to write `correct` straight into
+                // the local row and enqueue an "upsert" — but customerJson() deliberately
+                // EXCLUDES balance, so the correction never reached Firestore, and the next
+                // pull() then overwrote the corrected local value with the server's old
+                // one. Send it as an increment_balance delta instead (same path as
+                // PartyRepository.recalculateBalances), so every device converges.
+                adjustCustomerBalance(db, c.id, correct - c.balance)
             }
         }
         for (s in db.supplierDao().allList()) {
@@ -1212,9 +1216,8 @@ object SyncQueueHelper {
                 db.paymentDao().listByParty("supplier", s.id).filter { it.reference !in billNos }.sumOf { it.amount }
             if (kotlin.math.abs(correct - s.balance) > 0.01) {
                 fixes.add(PartyBalanceFix(s.name, s.balance, correct))
-                val updated = s.copy(balance = correct, dirty = true)
-                db.supplierDao().update(updated)
-                enqueueSupplier(db, updated)
+                // FIX (2-device wrong balance): see the customer loop above.
+                adjustSupplierBalance(db, s.id, correct - s.balance)
             }
         }
         context?.let { trigger(it) }
