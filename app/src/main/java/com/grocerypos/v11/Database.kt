@@ -18,6 +18,11 @@ data class TopProduct(val product:String,val totalQty:Double)
 data class PurchaseWithSupplier(val billNo:String,val supplierName:String,val total:Double,val createdAt:Long,val status:String)
 data class SupplierPurchaseTotal(val supplierName:String,val total:Double)
 data class SaleWithCustomer(val invoice:String,val customerName:String,val total:Double,val paymentMethod:String,val createdAt:Long,val status:String)
+// NEW (Dashboard Transactions tab — search by item name, not just party name):
+// one row per line item, reference is the sale's invoice or purchase's billNo,
+// so PartyDashboardActivity can group these into a reference -> [item names] map
+// and match the search query against them alongside partyName.
+data class TxItemName(val reference:String, val product:String)
 // NEW (bill-wise profit in Sale History): per-invoice profit, same Gross Profit
 // formula as profitBetween/dailyProfit above (sale.total, which is already
 // discount-adjusted, minus that invoice's own COGS from sale_items.cost).
@@ -1102,6 +1107,8 @@ interface ProductDao {
     @Query("SELECT strftime('%Y-%m-%d', createdAt/1000, 'unixepoch', 'localtime') as day, COALESCE(SUM(total),0) as total FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned' GROUP BY day ORDER BY day") suspend fun dailySales(start:Long,end:Long):List<DailySales>
     @Query("SELECT product, SUM(qty) as totalQty FROM sale_items WHERE invoice IN (SELECT invoice FROM sales WHERE createdAt BETWEEN :start AND :end AND status!='returned') GROUP BY product ORDER BY totalQty DESC LIMIT 5") suspend fun topProducts(start:Long,end:Long):List<TopProduct>
     @Query("SELECT invoice, COALESCE((SELECT name FROM customers WHERE customers.id=sales.customerId),'Walk-in') as customerName, total, paymentMethod, createdAt, status FROM sales ORDER BY createdAt DESC") suspend fun allSales():List<SaleWithCustomer>
+    // NEW (Dashboard Transactions tab item-name search): one row per sale line item.
+    @Query("SELECT invoice as reference, product FROM sale_items") suspend fun allItemNamesForSales():List<TxItemName>
     // NEW (bill-wise profit in Sale History): profit per invoice, for the same
     // window as allSales() above (matched by invoice at the call site). Returned
     // sales are excluded (no profit to show once a bill is reversed).
@@ -1357,6 +1364,11 @@ interface ProductDao {
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases") suspend fun total():Double
     @Query("SELECT COALESCE(SUM(total),0) FROM purchases WHERE createdAt BETWEEN :start AND :end AND status!='returned'") suspend fun totalBetween(start:Long,end:Long):Double
     @Query("SELECT billNo, COALESCE((SELECT name FROM suppliers WHERE suppliers.id=purchases.supplierId),'Cash Purchase') as supplierName, total, createdAt, status FROM purchases ORDER BY createdAt DESC") suspend fun allPurchases():List<PurchaseWithSupplier>
+    // NEW (Dashboard Transactions tab item-name search): one row per purchase line
+    // item. itemName is the self-contained snapshot (see PurchaseItem.itemName);
+    // pre-migration rows where that's blank fall back to a live products lookup by
+    // barcode, same fallback RoomPurchaseRepository already uses elsewhere.
+    @Query("SELECT billNo as reference, CASE WHEN pi.itemName != '' THEN pi.itemName ELSE COALESCE((SELECT name FROM products WHERE products.barcode=pi.barcode),'') END as product FROM purchase_items pi") suspend fun allItemNamesForPurchases():List<TxItemName>
     @Query("SELECT * FROM purchases WHERE supplierId=:supplierId ORDER BY createdAt DESC") suspend fun purchasesBySupplier(supplierId:Long):List<Purchase>
     // ADDED (Parties tab — last transaction date, see SaleDao.lastActivityByCustomer
     // for the matching customer-side query and rationale).

@@ -146,6 +146,10 @@ class PartyDashboardActivity : AppCompatActivity() {
     // ---- Transactions tab cache + search query (so typing doesn't re-hit the DB) ----
     private var txCache: List<TxRow> = emptyList()
     private var txQuery: String = ""
+    // NEW (search transactions by item name too, not just party name): reference
+    // (invoice/billNo) -> lowercase item names on that bill, built once alongside
+    // txCache in renderTransactionsList(), used by renderTxRows()'s filter below.
+    private var txItemNamesByRef: Map<String, List<String>> = emptyMap()
 
     // ---- Items tab cache + search query ----
     private var itemCache: List<ItemAgg> = emptyList()
@@ -580,7 +584,7 @@ class PartyDashboardActivity : AppCompatActivity() {
         when (activeTab) {
             Tab.PARTIES -> searchRowContainer.addView(buildPartySearchRow())
             Tab.TRANSACTIONS -> searchRowContainer.addView(buildSearchOnlyRow(
-                hint = Loc.t(this, "Search transaction (party name)", "\u067E\u0627\u0631\u0679\u06CC \u06A9\u0627 \u0646\u0627\u0645 \u0633\u06D2 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA"),
+                hint = Loc.t(this, "Search transaction (party or item name)", "\u067E\u0627\u0631\u0679\u06CC \u06CC\u0627 \u0622\u0626\u0679\u0645 \u06A9\u0627 \u0646\u0627\u0645 \u0633\u06D2 \u062A\u0644\u0627\u0634 \u06A9\u0631\u06CC\u06BA"),
                 onQueryChanged = { txQuery = it; renderTxRows() }
             ))
             Tab.ITEMS -> searchRowContainer.addView(buildItemSearchRow())
@@ -1077,6 +1081,10 @@ class PartyDashboardActivity : AppCompatActivity() {
             purchases.forEach { merged.add(TxRow(it.billNo, it.supplierName, it.total, it.createdAt, false, it.status)) }
             txCache = merged.sortedByDescending { it.createdAt }.take(100)
 
+            // NEW: item names per reference, for the search-by-item-name filter below.
+            val itemNames = db.saleDao().allItemNamesForSales() + db.purchaseDao().allItemNamesForPurchases()
+            txItemNamesByRef = itemNames.groupBy({ it.reference }, { it.product.lowercase() })
+
             if (activeTab != Tab.TRANSACTIONS) return@launch
             renderTxRows()
         }
@@ -1086,7 +1094,11 @@ class PartyDashboardActivity : AppCompatActivity() {
         if (activeTab != Tab.TRANSACTIONS) return
         listContainer.removeAllViews()
         val q = txQuery.trim().lowercase()
-        val filtered = txCache.filter { it.partyName.lowercase().contains(q) }
+        val filtered = txCache.filter { row ->
+            q.isEmpty() ||
+            row.partyName.lowercase().contains(q) ||
+            txItemNamesByRef[row.reference].orEmpty().any { it.contains(q) }
+        }
 
         if (filtered.isEmpty()) {
             listContainer.addView(placeholderCard(Loc.t(this, "No transactions yet", "\u0627\u0628\u06BE\u06CC \u062A\u06A9 \u06A9\u0648\u0626\u06CC \u0644\u06CC\u0646 \u062F\u06CC\u0646 \u0646\u06C1\u06CC\u06BA \u06C1\u06D2")))
