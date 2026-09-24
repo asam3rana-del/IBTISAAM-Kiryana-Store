@@ -67,7 +67,7 @@ jobs:
           fi
 
       - name: Run lint
-        run: ${{ steps.gradle_cmd.outputs.cmd }} lintDebug
+        run: ${{ steps.gradle_cmd.outputs.cmd }} lintDebug --no-build-cache
 
       - name: Upload lint results
         if: always()
@@ -78,7 +78,7 @@ jobs:
           retention-days: 5
 
       - name: Run unit tests
-        run: ${{ steps.gradle_cmd.outputs.cmd }} testDebugUnitTest
+        run: ${{ steps.gradle_cmd.outputs.cmd }} testDebugUnitTest --no-build-cache
 
       - name: Upload test results
         if: always()
@@ -89,7 +89,7 @@ jobs:
           retention-days: 5
 
       - name: Build Debug APK
-        run: ${{ steps.gradle_cmd.outputs.cmd }} assembleDebug
+        run: ${{ steps.gradle_cmd.outputs.cmd }} assembleDebug --no-build-cache
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
