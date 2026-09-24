@@ -208,6 +208,35 @@ class StockTouchPolicyTest {
     )
 
     @Test
+    fun `purchaseEditDiff - adding a duplicate of an existing line applies only the new one`() {
+        // Original: Sugar x2. Edit adds a second identical line. Only index 1 is new —
+        // index 0 must NOT be re-applied (old equality-based lookup applied both).
+        val lines = listOf(purchaseLine(barcode = "B1"), purchaseLine(barcode = "B1"))
+        val items = listOf(purchaseItem(barcode = "B1"))
+        val d = StockTouchPolicy.purchaseEditDiff(lines, items)
+        assertTrue(d.itemsToReverse.isEmpty())
+        assertEquals(setOf(1), d.changedLineIndices)
+        assertEquals(setOf(0), d.unchangedOriginalByIndex.keys)
+    }
+
+    @Test
+    fun `purchaseEditDiff - editing one line leaves the untouched line alone`() {
+        val lines = listOf(purchaseLine(barcode = "B1", qty = 9.0), purchaseLine(barcode = "B2"))
+        val items = listOf(purchaseItem(barcode = "B1", qty = 2.0), purchaseItem(barcode = "B2"))
+        val d = StockTouchPolicy.purchaseEditDiff(lines, items)
+        assertEquals(listOf("B1"), d.itemsToReverse.map { it.barcode })
+        assertEquals(setOf(0), d.changedLineIndices)
+        assertEquals("B2", d.unchangedOriginalByIndex[1]?.barcode)
+    }
+
+    @Test
+    fun `purchaseEditDiff - fully unchanged bill touches nothing`() {
+        val d = StockTouchPolicy.purchaseEditDiff(listOf(purchaseLine()), listOf(purchaseItem()))
+        assertTrue(d.itemsToReverse.isEmpty())
+        assertTrue(d.changedLineIndices.isEmpty())
+    }
+
+    @Test
     fun `identical single purchase line is unchanged`() {
         assertTrue(StockTouchPolicy.purchaseItemsUnchanged(listOf(purchaseLine()), listOf(purchaseItem())))
     }
