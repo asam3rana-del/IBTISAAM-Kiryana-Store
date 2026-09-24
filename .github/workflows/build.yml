@@ -1,180 +1,99 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.kapt")
-    id("com.google.gms.google-services") // NEW: required for Firebase. Add the matching
-    // classpath in your project-level (root) build.gradle.kts / settings.gradle.kts:
-    //   plugins { id("com.google.gms.google-services") version "4.4.2" apply false }
-    // and place google-services.json inside this module's folder (next to this file).
-}
+name: Build APK
 
-android {
-    namespace = "com.grocerypos.v11"
-    compileSdk = 35
+on:
+  push:
+    branches: [ "main", "New-structure" ]
+  pull_request:
+    branches: [ "main", "New-structure" ]
+  workflow_dispatch:
 
-    defaultConfig {
-        applicationId = "com.grocerypos.v11"
-        minSdk = 24
-        targetSdk = 35
-        versionCode = 11
-        versionName = "11.0-syncfix"
-        // Needed to run app/src/androidTest (incl. MigrationTest) with
-        // ./gradlew connectedAndroidTest / from Android Studio's test runner.
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Branch identity is configured securely at runtime from Settings > Cloud Sync
-        // Setup. Do not bake a branch into the APK; the same APK can now be installed
-        // on every device/branch. Server-side Firestore rules remain the authority.
-    }
+# If a new push/PR update comes in while a run is still going, cancel the
+# older run for that same branch/PR instead of letting both finish.
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
-    buildFeatures {
-        buildConfig = true
-    }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    signingConfigs {
-        // FIX (install error — "something went wrong" — every fresh CI build was
-        // getting signed with a NEW random debug key, because GitHub Actions runners
-        // are ephemeral and Android Gradle Plugin auto-generates a throwaway debug
-        // keystore when none is configured. That meant every new APK's signature
-        // mismatched whatever was already installed on a device, and Android refused
-        // to install the update. Pointing at a debug.keystore committed in the repo
-        // root makes every build — CI or local Android Studio — sign with the SAME
-        // key, so updates install cleanly over an existing install every time. This
-        // is a standard *debug*-only keystore (password "android", the universal
-        // AOSP default), never used for the Play Store release build below, so it's
-        // safe to commit.
-        getByName("debug") {
-            storeFile = rootProject.file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-        // FIX (Phase 5 - Stability): added a release signing config — previously there
-        // was none, so a `release` build would come out unsigned (can't be installed
-        // as an update, or at all on some devices). Credentials are read from Gradle
-        // properties instead of being hardcoded, so this file stays safe to commit:
-        //   1) Create a real release keystore once:
-        //        keytool -genkey -v -keystore release.keystore -alias ibtisaam \
-        //          -keyalg RSA -keysize 2048 -validity 10000
-        //   2) Put these 4 lines in ~/.gradle/gradle.properties (NOT in this repo):
-        //        RELEASE_STORE_FILE=/full/path/to/release.keystore
-        //        RELEASE_STORE_PASSWORD=yourStorePassword
-        //        RELEASE_KEY_ALIAS=ibtisaam
-        //        RELEASE_KEY_PASSWORD=yourKeyPassword
-        //   3) Build a release APK/AAB as usual (./gradlew bundleRelease) — Gradle
-        //      fills these in automatically. If they're missing, the release build
-        //      simply fails with a clear "property not found" error instead of
-        //      silently shipping unsigned.
-        create("release") {
-            storeFile = file(project.findProperty("RELEASE_STORE_FILE") as? String ?: "release.keystore")
-            storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as? String ?: ""
-            keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as? String ?: ""
-            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as? String ?: ""
-        }
-    }
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    buildTypes {
-        getByName("debug") {
-            signingConfig = signingConfigs.getByName("debug")
-        }
-        getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
-            // PREPARED, NOT ACTIVE (Improvement Pack P12): proguard-rules.pro now has
-            // real keep rules (Gson generics, Firestore/gRPC TLS-provider dontwarns,
-            // WorkManager's reflective Worker instantiation, and the app's one
-            // Class.forName() call site — see that file's header for the full
-            // reasoning). isMinifyEnabled is deliberately left at its default (false)
-            // here — RELEASE_CHECKLIST.md still treats turning R8 on as a decision to
-            // make deliberately, not something to flip as a drive-by edit. When that
-            // decision is made: set `isMinifyEnabled = true` below, run
-            // `./gradlew assembleRelease`, and manually walk every screen on the
-            // resulting APK per proguard-rules.pro's own checklist before shipping it.
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-        }
-    }
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+      - name: Validate and decode debug keystore
+        run: |
+          if [ -z "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "::error::DEBUG_KEYSTORE_BASE64 secret is empty or not set. Refusing to create an empty/invalid keystore."
+            exit 1
+          fi
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
+          if [ ! -s debug.keystore ]; then
+            echo "::error::Decoded debug.keystore is empty — DEBUG_KEYSTORE_BASE64 secret is likely invalid base64."
+            exit 1
+          fi
+          # A real JKS/PKCS12 keystore is a zip-like binary; a bad secret usually
+          # decodes to plain/short garbage. Catch that case explicitly too.
+          if ! file debug.keystore | grep -qiE 'zip|java keystore|data'; then
+            echo "::error::Decoded debug.keystore does not look like a valid keystore file."
+            exit 1
+          fi
+          echo "debug.keystore decoded and looks valid ($(stat -c%s debug.keystore) bytes)"
 
-    kotlinOptions {
-        jvmTarget = "17"
-        // FIX ("cannot inherit from final PurchaseRepository" — ghost kapt
-        // error, only on interfaces with a Room-backed implementation):
-        // this module is on Kotlin 2.0.21, but kapt (used for the Room
-        // annotation processor) doesn't support language version 2.0+ yet —
-        // Gradle silently falls back to 1.9 ONLY for kapt's own stub-
-        // generation task (see the "Kapt currently doesn't support language
-        // version 2.0+. Falling back to 1.9." warning in the build log).
-        // That leaves main compilation on 2.0 while kapt's stubs are built
-        // against 1.9 metadata — a mismatch that can make kapt misread an
-        // interface's shape (e.g. emit "extends" + "final" for it instead of
-        // "implements"), which is exactly the RoomPurchaseRepository error.
-        // Pinning the whole module to 1.9 keeps main compilation and kapt's
-        // stub generation on the same language version so they never
-        // disagree. Safe to drop once kapt itself gains 2.0 support (or the
-        // project migrates from kapt to KSP for Room).
-        languageVersion = "1.9"
-        apiVersion = "1.9"
-    }
-}
+      - name: Verify project configuration
+        run: |
+          test -f app/google-services.json
+          grep -q 'com.google.gms.google-services' app/build.gradle.kts
+          echo "Firebase config present"
 
-dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
-    implementation("androidx.activity:activity-ktx:1.10.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    // Free, on-device OCR for the "Scan Bill" purchase feature — no API key, no
-    // internet required, no per-request cost.
-    implementation("com.google.mlkit:text-recognition:16.0.1")
-    // ML Kit Document Scanner — powers the "Scan Document" button in BillScanActivity.
-    // Auto-detects the bill's edges, corrects perspective/skew, and cleans up
-    // shadows/glare before OCR runs, which meaningfully improves item/qty/rate read
-    // accuracy over a plain camera photo. Also on-device, free, and brings its own
-    // built-in camera flow (no CAMERA permission needed).
-    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
-    // Needed for GoogleApiAvailability / ConnectionResult (the Play Services check
-    // before launching the Document Scanner).
-    implementation("com.google.android.gms:play-services-base:18.5.0")
-    implementation("androidx.camera:camera-core:1.4.1")
-    implementation("androidx.camera:camera-camera2:1.4.1")
-    implementation("androidx.camera:camera-lifecycle:1.4.1")
-    implementation("androidx.camera:camera-view:1.4.1")
-    implementation("androidx.biometric:biometric:1.1.0")
+      - name: Select Gradle command
+        id: gradle_cmd
+        run: |
+          if [ -x ./gradlew ]; then
+            echo "cmd=./gradlew" >> "$GITHUB_OUTPUT"
+            echo "Using project Gradle wrapper (./gradlew)"
+          else
+            echo "cmd=gradle" >> "$GITHUB_OUTPUT"
+            echo "::warning::gradlew not found in repo — falling back to the Gradle installed by setup-gradle. Run the 'Generate Gradle Wrapper' workflow to add it."
+          fi
 
-    // ===== Offline-first sync (SyncApi, SyncWorker, SyncRepository) — Firebase =====
-    // Retrofit + Gson removed: replaced by Firebase Firestore below.
-    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    // Phone OTP login (LoginActivity) — FirebaseAuth, PhoneAuthCredential,
-    // PhoneAuthOptions, PhoneAuthProvider all come from this artifact.
-    implementation("com.google.firebase:firebase-auth-ktx")
-    // Lets Firestore's Task<T> API be used with Kotlin coroutines (.await()).
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
-    // Gson stays — SyncApi still uses it to parse SyncQueueEntry.payloadJson.
-    implementation("com.google.code.gson:gson:2.11.0")
-    // WorkManager: powers SyncWorker (periodic + immediate background sync).
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+      - name: Run lint
+        run: ${{ steps.gradle_cmd.outputs.cmd }} lintDebug --no-build-cache
 
-    // ===== Unit testing (app/src/test — runs on the JVM, no device/emulator) =====
-    testImplementation("junit:junit:4.13.2")
+      - name: Upload lint results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-results
+          path: app/build/reports/lint-results-debug.html
+          retention-days: 5
 
-    // ===== Instrumented testing (app/src/androidTest — runs on a device/emulator) =====
-    // P3 (Improvement Pack): Room migration tests (MigrationTest.kt) need a real
-    // SQLite implementation to create/upgrade a database file, which the plain JVM
-    // unit-test sourceset above doesn't have — hence androidTest, not test.
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:rules:1.6.1")
-    // room-testing pulls in MigrationTestHelper + the SupportSQLiteOpenHelper APIs
-    // MigrationTest.kt uses to hand-build the oldest supported (v13) schema.
-    androidTestImplementation("androidx.room:room-testing:2.6.1")
-}
+      - name: Run unit tests
+        run: ${{ steps.gradle_cmd.outputs.cmd }} testDebugUnitTest --no-build-cache
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: app/build/reports/tests/testDebugUnitTest
+          retention-days: 5
+
+      - name: Build Debug APK
+        run: ${{ steps.gradle_cmd.outputs.cmd }} assembleDebug --no-build-cache
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
