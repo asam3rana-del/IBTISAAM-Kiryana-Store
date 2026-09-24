@@ -37,12 +37,19 @@ data class PurchaseLine(
     val wholesaleRate: Double = 0.0
 )
 
-/** Snapshot loaded for editing an existing purchase bill. */
+/** Snapshot loaded for editing an existing purchase bill.
+ *
+ * [payments]: the (method, amount) split-payment breakdown for this bill —
+ * populated by LoadPurchaseForEditUseCase (via a separate
+ * [PurchaseRepository.paymentsForBill] call) only when the bill actually had
+ * 2+ payment methods, so PurchaseActivity.loadForEdit() knows to re-open the
+ * Split Payment dialog. Empty for a normal single-method bill. */
 data class PurchaseEditData(
     val purchase: Purchase,
     val items: List<PurchaseItem>,
     val supplierName: String,
-    val lines: List<PurchaseLine>
+    val lines: List<PurchaseLine>,
+    val payments: List<Pair<String, Double>> = emptyList()
 )
 
 /** Result of [PurchaseRepository.savePurchase]. */
