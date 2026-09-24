@@ -643,26 +643,26 @@ class BillPreviewActivity : ThemedActivity() {
 
             // ---- Shop header: name (bold) + "address • 📞 phone" sub-line, same
             // as shopNameLine/shopSubLine on screen. ----
-            receiptLines.add(PrinterHelper.ReceiptLine.Center(shopName, bold = true))
+            receiptLines.add(PrinterHelper.ReceiptLine.Center(shopName, bold = true, tight = true))
             val subParts = listOfNotNull(
                 shopAddress.takeIf { it.isNotBlank() },
                 shopPhone.takeIf { it.isNotBlank() }?.let { "📞 $it" }
             )
             if (subParts.isNotEmpty()) {
-                receiptLines.add(PrinterHelper.ReceiptLine.Center(subParts.joinToString("  •  ")))
+                receiptLines.add(PrinterHelper.ReceiptLine.Center(subParts.joinToString("  •  "), tight = true))
             }
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
 
             // ---- Customer / Bill No / Cashier / Date / Payment Method — same
             // order and labels as the on-screen kv() rows. ----
-            if (partyName.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(partyLabel, partyName))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Bill No", reference))
+            if (partyName.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(partyLabel, partyName, tight = true))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Bill No", reference, tight = true))
             val cashierName = getSharedPreferences("session", MODE_PRIVATE).getString("username", null)
-            if (!cashierName.isNullOrBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Cashier", cashierName))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Date", fmt.format(Date(dateMillis))))
+            if (!cashierName.isNullOrBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Cashier", cashierName, tight = true))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Date", fmt.format(Date(dateMillis)), tight = true))
             if (paymentMethod.isNotBlank()) {
                 receiptLines.add(
-                    PrinterHelper.ReceiptLine.TwoCol("Payment Method", paymentMethod.replaceFirstChar { it.uppercase() })
+                    PrinterHelper.ReceiptLine.TwoCol("Payment Method", paymentMethod.replaceFirstChar { it.uppercase() }, tight = true)
                 )
             }
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
@@ -688,13 +688,13 @@ class BillPreviewActivity : ThemedActivity() {
 
             // ---- Totals: Subtotal / Discount / Total / Paid / Balance Due — same
             // as the on-screen card. ----
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Subtotal", "Rs %.2f".format(subtotal)))
-            if (discount > 0) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Discount", "- Rs %.2f".format(discount)))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Total", "Rs %.2f".format(total), bold = true))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Paid", "Rs %.2f".format(paid)))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Subtotal", "Rs %.2f".format(subtotal), tight = true))
+            if (discount > 0) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Discount", "- Rs %.2f".format(discount), tight = true))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Total", "Rs %.2f".format(total), bold = true, tight = true))
+            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Paid", "Rs %.2f".format(paid), tight = true))
             val balanceDue = total - paid
             if (balanceDue > 0.009) {
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Balance Due", "Rs %.2f".format(balanceDue)))
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Balance Due", "Rs %.2f".format(balanceDue), tight = true))
             }
 
             // Prev/Net balance come from the party's running ledger balance (already
@@ -705,8 +705,8 @@ class BillPreviewActivity : ThemedActivity() {
             if (pid != null) {
                 val netBalance = liveNetBalance(db, type == "sale", pid)
                 val prevBalance = netBalance - (total - paid)
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Prev Balance", "Rs %.2f".format(prevBalance)))
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Net Balance", "Rs %.2f".format(netBalance), bold = true))
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Prev Balance", "Rs %.2f".format(prevBalance), tight = true))
+                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Net Balance", "Rs %.2f".format(netBalance), bold = true, tight = true))
             }
             receiptLines.add(PrinterHelper.ReceiptLine.Divider)
             receiptLines.add(PrinterHelper.ReceiptLine.Center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }))

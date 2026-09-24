@@ -63,11 +63,12 @@ object PrinterHelper {
      * lines whenever any Urdu text appeared anywhere in the receipt).
      */
     sealed class ReceiptLine {
-        data class Center(val text: String, val bold: Boolean = false) : ReceiptLine()
+        /** [tight] = pack this line closer to its neighbours (used for the header block and the totals block). */
+        data class Center(val text: String, val bold: Boolean = false, val tight: Boolean = false) : ReceiptLine()
         data class Left(val text: String) : ReceiptLine()
         /** Label/value pair rendered as two columns, each right/left-aligned by measured width.
          *  [bold] renders both sides in bold — used to make the TOTAL line stand out. */
-        data class TwoCol(val left: String, val right: String, val bold: Boolean = false) : ReceiptLine()
+        data class TwoCol(val left: String, val right: String, val bold: Boolean = false, val tight: Boolean = false) : ReceiptLine()
         data class Blank(val heightPx: Int = 10) : ReceiptLine()
         object Divider : ReceiptLine()
 
@@ -858,6 +859,10 @@ object PrinterHelper {
         // compounds across the whole receipt (title, shop info, customer/bill
         // rows, totals) rather than a one-time trim.
         val lineSpacingExtra = (fontSizePx * 0.16f).toInt()
+        // FIX ("shop name se payment method tak / subtotal se net balance tak ek line space
+        // kam kro"): lines flagged `tight` use a NEGATIVE extra so the row pitch shrinks by
+        // a further ~0.08x font size on top of the normal 0.16x spacing being dropped.
+        val tightSpacingExtra = -(fontSizePx * 0.08f).toInt()
         val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
         // Table/row cells use a smaller font than the rest of the receipt so 3-4
         // columns (Item/Qty/Amount, or Item/Rate/Qty/Amount) fit comfortably on a
@@ -909,7 +914,7 @@ object PrinterHelper {
                     // (so long Center text, like a long footer line, still wraps).
                     if (line is ReceiptLine.Center && paint.measureText(text) <= contentWidth) {
                         val fm = paint.fontMetrics
-                        val h = (fm.bottom - fm.top).toInt() + lineSpacingExtra
+                        val h = (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtra else lineSpacingExtra)
                         blocks.add(Block(line, null, h))
                         totalHeight += h
                     } else {
@@ -928,7 +933,7 @@ object PrinterHelper {
                 }
                 is ReceiptLine.TwoCol -> {
                     val fm = paint.fontMetrics
-                    val h = (fm.bottom - fm.top).toInt() + lineSpacingExtra
+                    val h = (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtra else lineSpacingExtra)
                     blocks.add(Block(line, null, h))
                     totalHeight += h
                 }
