@@ -37,6 +37,51 @@ object StockTouchPolicy {
         return lineKeys == itemKeys
     }
 
+    /**
+     * Result of [saleEditDiff]: what an EDITED sale bill actually changed, line by line.
+     *
+     * @property itemsToReverse original bill rows that no longer appear as-is — only THESE
+     *   get their stock given back.
+     * @property changedLineIndices indices (into the edited `lines` list) of lines that are
+     *   new or modified — only THESE get stock deducted again (and stock-checked).
+     * @property unchangedOriginalByIndex for every line the user left completely alone, the
+     *   original [SaleItem] it matches — so its frozen `conversionFactor` can be carried over.
+     */
+    class SaleEditDiff(
+        val itemsToReverse: List<SaleItem>,
+        val changedLineIndices: Set<Int>,
+        val unchangedOriginalByIndex: Map<Int, SaleItem>
+    )
+
+    // FIX (sale edit silently changes stock of an UNTOUCHED item): saleItemsUnchanged() above
+    // is whole-bill — editing even ONE line (or just adding a new one) made
+    // RoomSaleRepository reverse the stock of EVERY original line using its FROZEN
+    // conversionFactor and then deduct EVERY line again using the product's CURRENT unit
+    // ladder. Whenever those two disagreed for an untouched line (unit ladder edited since the
+    // sale, unit renamed, old row with no factor...) that line's stock drifted on every edit —
+    // "edit karte waqat koi na koi item ka stock kam ho jata hai". Same root cause and same
+    // cure as purchaseChangedLines() below: pair off every line the user left exactly as it
+    // was (multiset match on barcode|qty|unit|rate) and skip it on BOTH sides; only leftovers
+    // are reversed / reapplied. Index-based (not equality-based) so two identical lines on one
+    // bill are handled correctly.
+    fun saleEditDiff(lines: List<SaleLine>, originalItems: List<SaleItem>): SaleEditDiff {
+        val remainingOriginal = originalItems.toMutableList()
+        val changed = mutableSetOf<Int>()
+        val unchanged = mutableMapOf<Int, SaleItem>()
+        lines.forEachIndexed { index, line ->
+            val lineKey = key(line.barcode, line.qty, line.unit, line.unitPrice)
+            val matchIndex = remainingOriginal.indexOfFirst {
+                key(it.barcode, it.qty, it.unit, it.unitPrice) == lineKey
+            }
+            if (matchIndex >= 0) {
+                unchanged[index] = remainingOriginal.removeAt(matchIndex)
+            } else {
+                changed.add(index)
+            }
+        }
+        return SaleEditDiff(remainingOriginal, changed, unchanged)
+    }
+
     /** Same comparison as [saleItemsUnchanged], for the Purchase screen. A
      * null [PurchaseLine.barcode] is treated as "" — matching how
      * RoomPurchaseRepository.savePurchase already persists it (`line.barcode

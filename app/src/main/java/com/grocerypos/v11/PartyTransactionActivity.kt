@@ -1445,9 +1445,16 @@ class PartyTransactionActivity : AppCompatActivity() {
                     // applied to stock; the two are computed separately instead of a
                     // simple qty delta so a factor change between old and new can't
                     // silently corrupt the result either way.
+                    // FIX (rate-only edit changed stock): the old and new smallest-unit
+                    // quantities come from two different unit configs (frozen vs current),
+                    // so even an edit that only changed the RATE could yield a non-zero
+                    // "delta" (whenever the product's unit ladder was edited after this
+                    // sale) and silently add/remove stock. If the qty itself is unchanged
+                    // there is nothing to reconcile — leave stock and the frozen factor alone.
+                    val qtyChanged = kotlin.math.abs(newQty - oldQty) > 1e-9
                     val oldSmallest = item.smallestQty(product)
                     val newSmallest = product?.toSmallestUnits(newQty, item.unit.ifBlank { product.unit }) ?: newQty
-                    val netSmallestDelta = newSmallest - oldSmallest
+                    val netSmallestDelta = if (qtyChanged) newSmallest - oldSmallest else 0.0
 
                     // Stock: a sale decreases stock, so selling MORE (net positive) must
                     // decrease stock further; selling LESS gives stock back.
@@ -1469,7 +1476,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                         qty = newQty, unitPrice = newRate, amount = newAmount, cost = newCost,
                         // Re-stamp with the CURRENT factor — this line now reflects "now", same
                         // reasoning as newSmallest above.
-                        conversionFactor = product?.smallestPerUnitOf(item.unit) ?: item.conversionFactor
+                        conversionFactor = if (qtyChanged) (product?.smallestPerUnitOf(item.unit) ?: item.conversionFactor)
+                            else item.conversionFactor
                     )
                     db.saleDao().updateItemRow(updatedItem)
 
