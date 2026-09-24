@@ -253,7 +253,8 @@ class HistoryActivity : AppCompatActivity() {
             val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
             val content = detailContainer(R.drawable.ic_receipt, primary, purpleBg, Loc.t(this@HistoryActivity, "Sale", "سیل"), invoice)
-            val body = content.getChildAt(1) as LinearLayout
+            // body now lives one level deeper, inside the ScrollView detailContainer() wraps it in.
+            val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
             if (sale.status == "returned") body.addView(returnedBanner())
             body.addView(kv(Loc.t(this@HistoryActivity, "Total", "کل"), "Rs %.2f".format(sale.total)))
             body.addView(kv(Loc.t(this@HistoryActivity, "Paid", "ادا شدہ"), "Rs %.2f".format(sale.paid)))
@@ -374,7 +375,8 @@ class HistoryActivity : AppCompatActivity() {
             val purchase = db.purchaseDao().findPurchase(billNo) ?: return@launch
             val items = db.purchaseDao().itemsForBill(billNo)
             val content = detailContainer(R.drawable.ic_cart, gold, amberBg, Loc.t(this@HistoryActivity, "Purchase", "خریداری"), billNo)
-            val body = content.getChildAt(1) as LinearLayout
+            // body now lives one level deeper, inside the ScrollView detailContainer() wraps it in.
+            val body = (content.getChildAt(1) as ScrollView).getChildAt(0) as LinearLayout
             if (purchase.status == "returned") body.addView(returnedBanner())
             body.addView(kv(Loc.t(this@HistoryActivity, "Total", "کل"), "Rs %.2f".format(purchase.total)))
             body.addView(kv(Loc.t(this@HistoryActivity, "Paid", "ادا شدہ"), "Rs %.2f".format(purchase.paid)))
@@ -829,12 +831,11 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     // ================= Detail dialog shell =================
-    // Keeps the same 3-child shape callers rely on: index 0 = header, index 1 = body
-    // (plain LinearLayout — callers do body.addView(...) directly), index 2 = footer
-    // (horizontal LinearLayout for the action buttons).
+    // 3-child shape: index 0 = header, index 1 = a ScrollView wrapping body (get the
+    // actual body LinearLayout via (getChildAt(1) as ScrollView).getChildAt(0), then
+    // body.addView(...) as before), index 2 = footer (horizontal LinearLayout for the
+    // action buttons).
     private fun detailContainer(iconRes: Int, accentHex: String, tintHex: String, kind: String, reference: String): LinearLayout {
-        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -865,7 +866,6 @@ class HistoryActivity : AppCompatActivity() {
             setPadding(0, 2, 0, 0)
         })
         header.addView(headerCol)
-        outer.addView(header)
 
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -873,16 +873,43 @@ class HistoryActivity : AppCompatActivity() {
             background = strokedBg(border, cardBg, 16)
             applyElevation(this, 1f)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(20, 0, 20, 16) }
         }
-        outer.addView(body)
+
+        // FIX (long sale/purchase bills cut off, not scrollable): body used to be added
+        // straight into outer with WRAP_CONTENT height, so a bill with many item rows
+        // just grew the AlertDialog past the screen — there was no ScrollView anywhere
+        // in this tree, so the extra items were simply unreachable. Same class of bug
+        // already fixed for the return-items dialog (see openReturnPurchaseDialog).
+        // Now body sits inside a ScrollView that flexes/scrolls, and outer's total
+        // height is hard-capped below so the header and footer buttons always stay
+        // on screen no matter how many items a bill has.
+        val bodyScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                .apply { setMargins(20, 0, 20, 16) }
+            addView(body)
+        }
 
         val footer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(20, 0, 20, 20)
         }
-        outer.addView(footer)
-        return outer
+
+        val maxDialogHeightPx = (resources.displayMetrics.heightPixels * 0.82).toInt()
+        val cappedOuter = object : LinearLayout(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val mode = View.MeasureSpec.getMode(heightMeasureSpec)
+                val size = View.MeasureSpec.getSize(heightMeasureSpec)
+                val cappedSize = if (mode == View.MeasureSpec.UNSPECIFIED) maxDialogHeightPx else size.coerceAtMost(maxDialogHeightPx)
+                val newMode = if (mode == View.MeasureSpec.UNSPECIFIED) View.MeasureSpec.AT_MOST else mode
+                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(cappedSize, newMode))
+            }
+        }.apply {
+            orientation = LinearLayout.VERTICAL
+            addView(header)
+            addView(bodyScroll)
+            addView(footer)
+        }
+        return cappedOuter
     }
 
     private fun returnedBanner() = LinearLayout(this).apply {

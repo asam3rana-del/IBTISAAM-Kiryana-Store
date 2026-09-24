@@ -1558,7 +1558,7 @@ object PrinterHelper {
     /** Default items-per-slip before [printReceiptLinesPaged] tears a long bill into
      *  multiple physical slips. Chosen so a slip stays a comfortable one-hand length
      *  on 58mm paper; raise/lower per shop preference. */
-    const val DEFAULT_MAX_ITEMS_PER_PAGE = 12
+    const val DEFAULT_MAX_ITEMS_PER_PAGE = 18
 
     /**
      * Prints a long, multi-item receipt as MULTIPLE physical slips (each its own
