@@ -26,6 +26,7 @@ import com.grocerypos.v11.R
 import com.grocerypos.v11.SyncQueueHelper
 import com.grocerypos.v11.Supplier
 import com.grocerypos.v11.formatStockBreakdown
+import com.grocerypos.v11.matchesQuery
 import com.grocerypos.v11.util.Loc
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
