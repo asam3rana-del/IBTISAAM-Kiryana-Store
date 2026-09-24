@@ -205,7 +205,10 @@ object PrinterHelper {
             val amount: String,
             val qty: String,
             val rate: String,
-            val weights: List<Float> = listOf(2f, 1f, 1f, 1f)
+            val weights: List<Float> = listOf(2f, 1f, 1f, 1f),
+            /** Urdu-bill style: ITEM sits at the RIGHT edge and the columns run right-to-left
+             *  (visually AMOUNT | RATE | QTY | ITEM). Weights stay in logical order name/amount/qty/rate. */
+            val mirrored: Boolean = false
         ) : ReceiptLine()
     }
 
@@ -862,7 +865,12 @@ object PrinterHelper {
         // FIX ("shop name se payment method tak / subtotal se net balance tak ek line space
         // kam kro"): lines flagged `tight` use a NEGATIVE extra so the row pitch shrinks by
         // a further ~0.08x font size on top of the normal 0.16x spacing being dropped.
-        val tightSpacingExtra = -(fontSizePx * 0.08f).toInt()
+        // (v2: 0.08x was only ~2px — invisible on paper. This font's line box is ~2x the glyph
+        // height, so Latin-only rows can safely lose ~0.5x font size of pitch; rows that
+        // contain Urdu/Arabic script (tall Nastaliq ascenders/descenders) lose less so
+        // they never touch the next row.)
+        fun tightSpacingExtraFor(text: String): Int =
+            -(fontSizePx * (if (containsArabicScript(text)) 0.20f else 0.50f)).toInt()
         val contentWidth = PRINTER_DOTS_WIDTH - margin * 2
         // Table/row cells use a smaller font than the rest of the receipt so 3-4
         // columns (Item/Qty/Amount, or Item/Rate/Qty/Amount) fit comfortably on a
@@ -914,7 +922,7 @@ object PrinterHelper {
                     // (so long Center text, like a long footer line, still wraps).
                     if (line is ReceiptLine.Center && paint.measureText(text) <= contentWidth) {
                         val fm = paint.fontMetrics
-                        val h = (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtra else lineSpacingExtra)
+                        val h = (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtraFor(text) else lineSpacingExtra)
                         blocks.add(Block(line, null, h))
                         totalHeight += h
                     } else {
@@ -933,7 +941,7 @@ object PrinterHelper {
                 }
                 is ReceiptLine.TwoCol -> {
                     val fm = paint.fontMetrics
-                    val h = (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtra else lineSpacingExtra)
+                    val h = (fm.bottom - fm.top).toInt() + (if (line.tight) tightSpacingExtraFor(line.left + line.right) else lineSpacingExtra)
                     blocks.add(Block(line, null, h))
                     totalHeight += h
                 }
@@ -1379,6 +1387,34 @@ object PrinterHelper {
 
                     val oldBold = paint.isFakeBoldText
 
+                    if (line.mirrored) {
+                        // FIX ("item name right side pa nhi aya"): mirrored layout — item name
+                        // pinned to the RIGHT edge; visually AMOUNT | RATE | QTY | ITEM.
+                        val wts = FloatArray(4) { i -> if (i < line.weights.size) line.weights[i] else 0f }
+                        val order = intArrayOf(1, 3, 2, 0) // physical left->right = amount, rate, qty, name
+                        val px = FloatArray(5)
+                        px[0] = tableLeft
+                        for (k in 0..3) px[k + 1] = px[k] + (wts[order[k]] / totalWeight) * tableWidth
+
+                        val nameIsUrduM = containsArabicScript(line.name)
+                        paint.textSize = tableFontSize * (if (nameIsUrduM) ARABIC_ITEM_FONT_BOOST else 1f)
+                        paint.isFakeBoldText = true
+                        val nameFmM = paint.fontMetrics
+                        val nameBaselineM = y + tableRowPaddingV / 2 - nameFmM.top
+                        val nameW = (px[4] - px[3] - tableCellPaddingH * 2).coerceAtLeast(1f)
+                        paint.textAlign = Paint.Align.RIGHT
+                        canvas.drawText(ellipsizeByWidth(paint, line.name, nameW), px[4] - tableCellPaddingH, nameBaselineM, paint)
+
+                        paint.textSize = tableFontSize
+                        val fmM = paint.fontMetrics
+                        val baselineM = y + tableRowPaddingV / 2 - fmM.top
+                        paint.textAlign = Paint.Align.CENTER
+                        canvas.drawText(line.amount, (px[0] + px[1]) / 2f, baselineM, paint)
+                        paint.isFakeBoldText = false
+                        canvas.drawText(line.rate, (px[1] + px[2]) / 2f, baselineM, paint)
+                        canvas.drawText(line.qty, (px[2] + px[3]) / 2f, baselineM, paint)
+                    } else {
+
                     // ---- item name: col0, bold, RTL-aware, ellipsized to fit ----
                     val nameIsUrdu = containsArabicScript(line.name)
                     val nameSize = tableFontSize * (if (nameIsUrdu) ARABIC_ITEM_FONT_BOOST else 1f)
@@ -1406,6 +1442,7 @@ object PrinterHelper {
 
                     paint.textAlign = Paint.Align.RIGHT
                     canvas.drawText(line.rate, colX[4] - tableCellPaddingH, baseline, paint)
+                    }
 
                     paint.isFakeBoldText = oldBold
                     paint.textSize = fontSizePx

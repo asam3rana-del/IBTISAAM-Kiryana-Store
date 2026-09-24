@@ -670,8 +670,12 @@ class BillPreviewActivity : ThemedActivity() {
             // ---- Item table: ITEM / AMOUNT / QTY / RATE — same header labels,
             // order and column weights as the on-screen table. ----
             val previewWeights = listOf(2f, 1f, 1f, 1f)
+            // Mirrored (Urdu-bill style): visually AMOUNT | RATE | QTY | ITEM.
             receiptLines.add(
-                PrinterHelper.ReceiptLine.Row4("ITEM", "AMOUNT", "QTY", "RATE", previewWeights, bold = true)
+                PrinterHelper.ReceiptLine.PreviewItemRow(
+                    name = "ITEM", amount = "AMOUNT", qty = "QTY", rate = "RATE",
+                    weights = previewWeights, mirrored = true
+                )
             )
             for (line in lines) {
                 receiptLines.add(
@@ -680,7 +684,8 @@ class BillPreviewActivity : ThemedActivity() {
                         amount = "%.2f".format(line.amount),
                         qty = "${line.qty} ${line.unit}",
                         rate = "%.2f".format(line.rate),
-                        weights = previewWeights
+                        weights = previewWeights,
+                        mirrored = true
                     )
                 )
             }
