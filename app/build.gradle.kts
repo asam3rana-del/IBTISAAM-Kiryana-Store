@@ -99,6 +99,23 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        // FIX ("cannot inherit from final PurchaseRepository" — ghost kapt
+        // error, only on interfaces with a Room-backed implementation):
+        // this module is on Kotlin 2.0.21, but kapt (used for the Room
+        // annotation processor) doesn't support language version 2.0+ yet —
+        // Gradle silently falls back to 1.9 ONLY for kapt's own stub-
+        // generation task (see the "Kapt currently doesn't support language
+        // version 2.0+. Falling back to 1.9." warning in the build log).
+        // That leaves main compilation on 2.0 while kapt's stubs are built
+        // against 1.9 metadata — a mismatch that can make kapt misread an
+        // interface's shape (e.g. emit "extends" + "final" for it instead of
+        // "implements"), which is exactly the RoomPurchaseRepository error.
+        // Pinning the whole module to 1.9 keeps main compilation and kapt's
+        // stub generation on the same language version so they never
+        // disagree. Safe to drop once kapt itself gains 2.0 support (or the
+        // project migrates from kapt to KSP for Room).
+        languageVersion = "1.9"
+        apiVersion = "1.9"
     }
 }
 
