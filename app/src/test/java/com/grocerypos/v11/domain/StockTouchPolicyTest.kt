@@ -3,6 +3,7 @@ package com.grocerypos.v11.domain
 import com.grocerypos.v11.PurchaseItem
 import com.grocerypos.v11.SaleItem
 import com.grocerypos.v11.data.PurchaseLine
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -114,6 +115,61 @@ class StockTouchPolicyTest {
         val lines = listOf(saleLine(qty = 2.0000001, unitPrice = 50.0000004))
         val items = listOf(saleItem(qty = 2.0, unitPrice = 50.0))
         assertTrue(StockTouchPolicy.saleItemsUnchanged(lines, items))
+    }
+
+    // ---------------------------------------------------------------------
+    // Sale side — saleEditDiff() (per-line, not whole-bill)
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun `saleEditDiff - fully unchanged bill touches nothing`() {
+        val d = StockTouchPolicy.saleEditDiff(
+            listOf(saleLine(barcode = "B1"), saleLine(barcode = "B2")),
+            listOf(saleItem(barcode = "B2"), saleItem(barcode = "B1"))
+        )
+        assertTrue(d.itemsToReverse.isEmpty())
+        assertTrue(d.changedLineIndices.isEmpty())
+        assertEquals(setOf(0, 1), d.unchangedOriginalByIndex.keys)
+    }
+
+    @Test
+    fun `saleEditDiff - editing one line leaves the other line's stock alone`() {
+        // B1 qty 2 -> 5 (changed); B2 untouched.
+        val lines = listOf(saleLine(barcode = "B1", qty = 5.0), saleLine(barcode = "B2"))
+        val items = listOf(saleItem(barcode = "B1", qty = 2.0), saleItem(barcode = "B2"))
+        val d = StockTouchPolicy.saleEditDiff(lines, items)
+        assertEquals(listOf("B1"), d.itemsToReverse.map { it.barcode })
+        assertEquals(setOf(0), d.changedLineIndices)
+        assertEquals("B2", d.unchangedOriginalByIndex[1]?.barcode)
+    }
+
+    @Test
+    fun `saleEditDiff - adding a new line reverses nothing and applies only the new line`() {
+        val lines = listOf(saleLine(barcode = "B1"), saleLine(barcode = "B9"))
+        val items = listOf(saleItem(barcode = "B1"))
+        val d = StockTouchPolicy.saleEditDiff(lines, items)
+        assertTrue(d.itemsToReverse.isEmpty())
+        assertEquals(setOf(1), d.changedLineIndices)
+    }
+
+    @Test
+    fun `saleEditDiff - removing a line only reverses the removed line`() {
+        val lines = listOf(saleLine(barcode = "B1"))
+        val items = listOf(saleItem(barcode = "B1"), saleItem(barcode = "B2"))
+        val d = StockTouchPolicy.saleEditDiff(lines, items)
+        assertEquals(listOf("B2"), d.itemsToReverse.map { it.barcode })
+        assertTrue(d.changedLineIndices.isEmpty())
+    }
+
+    @Test
+    fun `saleEditDiff - two identical lines with one edited only changes one of them`() {
+        // Original bill: B1 x2 twice. Edit turns the second one into qty 4.
+        val lines = listOf(saleLine(barcode = "B1", qty = 2.0), saleLine(barcode = "B1", qty = 4.0))
+        val items = listOf(saleItem(barcode = "B1", qty = 2.0), saleItem(barcode = "B1", qty = 2.0))
+        val d = StockTouchPolicy.saleEditDiff(lines, items)
+        assertEquals(1, d.itemsToReverse.size)
+        assertEquals(setOf(1), d.changedLineIndices)
+        assertEquals(setOf(0), d.unchangedOriginalByIndex.keys)
     }
 
     // ---------------------------------------------------------------------
