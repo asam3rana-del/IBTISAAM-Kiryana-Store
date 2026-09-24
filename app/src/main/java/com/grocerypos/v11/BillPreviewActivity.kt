@@ -639,48 +639,62 @@ class BillPreviewActivity : ThemedActivity() {
 
             // Same date format the on-screen card uses (fmt in onCreate above).
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-            val receiptLines = mutableListOf<PrinterHelper.ReceiptLine>()
+
+            // FIX ("bill lamba ho tu split kaise ho ga, total kaise ho ga" — a long
+            // multi-item bill needs to tear off as multiple slips instead of one
+            // giant unbroken roll): the receipt is now built as three SEPARATE lists
+            // — header, item rows, footer/totals — instead of one flat list, so
+            // PrinterHelper.printReceiptLinesPaged can repeat the header on every
+            // slip, paginate only the item rows, and print Subtotal/Total/Paid/
+            // Balance ONLY on the final slip (a running partial total on earlier
+            // slips would be misleading). Short bills print exactly as before —
+            // pagination only kicks in past DEFAULT_MAX_ITEMS_PER_PAGE rows.
+            val headerLines = mutableListOf<PrinterHelper.ReceiptLine>()
+            val itemLines = mutableListOf<PrinterHelper.ReceiptLine>()
+            val footerLines = mutableListOf<PrinterHelper.ReceiptLine>()
 
             // ---- Shop header: name (bold) + "address • 📞 phone" sub-line, same
             // as shopNameLine/shopSubLine on screen. ----
-            receiptLines.add(PrinterHelper.ReceiptLine.Center(shopName, bold = true, tight = true))
+            headerLines.add(PrinterHelper.ReceiptLine.Center(shopName, bold = true, tight = true))
             val subParts = listOfNotNull(
                 shopAddress.takeIf { it.isNotBlank() },
                 shopPhone.takeIf { it.isNotBlank() }?.let { "📞 $it" }
             )
             if (subParts.isNotEmpty()) {
-                receiptLines.add(PrinterHelper.ReceiptLine.Center(subParts.joinToString("  •  "), tight = true))
+                headerLines.add(PrinterHelper.ReceiptLine.Center(subParts.joinToString("  •  "), tight = true))
             }
-            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
+            headerLines.add(PrinterHelper.ReceiptLine.Divider)
 
             // ---- Customer / Bill No / Cashier / Date / Payment Method — same
             // order and labels as the on-screen kv() rows. ----
-            if (partyName.isNotBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol(partyLabel, partyName, tight = true))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Bill No", reference, tight = true))
+            if (partyName.isNotBlank()) headerLines.add(PrinterHelper.ReceiptLine.TwoCol(partyLabel, partyName, tight = true))
+            headerLines.add(PrinterHelper.ReceiptLine.TwoCol("Bill No", reference, tight = true))
             val cashierName = getSharedPreferences("session", MODE_PRIVATE).getString("username", null)
-            if (!cashierName.isNullOrBlank()) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Cashier", cashierName, tight = true))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Date", fmt.format(Date(dateMillis)), tight = true))
+            if (!cashierName.isNullOrBlank()) headerLines.add(PrinterHelper.ReceiptLine.TwoCol("Cashier", cashierName, tight = true))
+            headerLines.add(PrinterHelper.ReceiptLine.TwoCol("Date", fmt.format(Date(dateMillis)), tight = true))
             if (paymentMethod.isNotBlank()) {
-                receiptLines.add(
+                headerLines.add(
                     PrinterHelper.ReceiptLine.TwoCol("Payment Method", paymentMethod.replaceFirstChar { it.uppercase() }, tight = true)
                 )
             }
-            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
+            headerLines.add(PrinterHelper.ReceiptLine.Divider)
 
             // ---- Item table: ITEM / AMOUNT / QTY / RATE — same header labels,
-            // order and column weights as the on-screen table. ----
+            // order and column weights as the on-screen table. itemLines[0] is the
+            // table header row itself; printReceiptLinesPaged repeats it on every
+            // slip and paginates only the rows after it. ----
             // Wider QTY column ("0.5 Quarter") + slightly narrower ITEM, for the larger table font.
             // Logical order: name / amount / qty / rate.
             val previewWeights = listOf(1.7f, 1f, 1.3f, 1f)
             // Mirrored (Urdu-bill style): visually AMOUNT | RATE | QTY | ITEM.
-            receiptLines.add(
+            itemLines.add(
                 PrinterHelper.ReceiptLine.PreviewItemRow(
                     name = "ITEM", amount = "AMOUNT", qty = "QTY", rate = "RATE",
                     weights = previewWeights, mirrored = true
                 )
             )
             for (line in lines) {
-                receiptLines.add(
+                itemLines.add(
                     PrinterHelper.ReceiptLine.PreviewItemRow(
                         name = line.name,
                         amount = "%.2f".format(line.amount),
@@ -691,17 +705,17 @@ class BillPreviewActivity : ThemedActivity() {
                     )
                 )
             }
-            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
+            footerLines.add(PrinterHelper.ReceiptLine.Divider)
 
             // ---- Totals: Subtotal / Discount / Total / Paid / Balance Due — same
-            // as the on-screen card. ----
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Subtotal", "Rs %.2f".format(subtotal), tight = true))
-            if (discount > 0) receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Discount", "- Rs %.2f".format(discount), tight = true))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Total", "Rs %.2f".format(total), bold = true, tight = true))
-            receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Paid", "Rs %.2f".format(paid), tight = true))
+            // as the on-screen card. Printed only on the LAST slip. ----
+            footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Subtotal", "Rs %.2f".format(subtotal), tight = true))
+            if (discount > 0) footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Discount", "- Rs %.2f".format(discount), tight = true))
+            footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Total", "Rs %.2f".format(total), bold = true, tight = true))
+            footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Paid", "Rs %.2f".format(paid), tight = true))
             val balanceDue = total - paid
             if (balanceDue > 0.009) {
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Balance Due", "Rs %.2f".format(balanceDue), tight = true))
+                footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Balance Due", "Rs %.2f".format(balanceDue), tight = true))
             }
 
             // Prev/Net balance come from the party's running ledger balance (already
@@ -712,16 +726,16 @@ class BillPreviewActivity : ThemedActivity() {
             if (pid != null) {
                 val netBalance = liveNetBalance(db, type == "sale", pid)
                 val prevBalance = netBalance - (total - paid)
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Prev Balance", "Rs %.2f".format(prevBalance), tight = true))
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Net Balance", "Rs %.2f".format(netBalance), bold = true, tight = true))
+                footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Prev Balance", "Rs %.2f".format(prevBalance), tight = true))
+                footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Net Balance", "Rs %.2f".format(netBalance), bold = true, tight = true))
             } else if (balanceDue > 0.009) {
                 // Walk-in / no linked party: there is no ledger, so the previous balance is
                 // Rs 0 and the net balance is just this bill's own due amount.
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Prev Balance", "Rs %.2f".format(0.0), tight = true))
-                receiptLines.add(PrinterHelper.ReceiptLine.TwoCol("Net Balance", "Rs %.2f".format(balanceDue), bold = true, tight = true))
+                footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Prev Balance", "Rs %.2f".format(0.0), tight = true))
+                footerLines.add(PrinterHelper.ReceiptLine.TwoCol("Net Balance", "Rs %.2f".format(balanceDue), bold = true, tight = true))
             }
-            receiptLines.add(PrinterHelper.ReceiptLine.Divider)
-            receiptLines.add(PrinterHelper.ReceiptLine.Center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }))
+            footerLines.add(PrinterHelper.ReceiptLine.Divider)
+            footerLines.add(PrinterHelper.ReceiptLine.Center(receiptFooter.ifBlank { "Shukriya! Dobara tashreef layein." }))
 
             // FIX ("print button kaam nahi kar raha, bari late... print bej dia
             // lekin print nahi aata"): the Bluetooth connect/write/Thread.sleep
@@ -733,11 +747,13 @@ class BillPreviewActivity : ThemedActivity() {
             // though printReceiptLines still returned true. Moved to Dispatchers.IO
             // so the print job runs off the UI thread.
             val ok = withContext(Dispatchers.IO) {
-                PrinterHelper.printReceiptLines(
+                PrinterHelper.printReceiptLinesPaged(
                     this@BillPreviewActivity,
                     printerType,
                     mac,
-                    receiptLines,
+                    headerLines,
+                    itemLines,
+                    footerLines,
                     dotsWidth = dotsWidth
                 )
             }

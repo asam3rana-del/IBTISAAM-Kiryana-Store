@@ -340,12 +340,21 @@ object PrinterHelper {
     // this file's own SPEED TUNING note ("smaller strips are always the safer
     // fallback"), reverted below the original safe values (48px/100ms/6ms) to a more
     // conservative setting, since this printer garbles even on short bills.
-    private const val MAX_STRIP_HEIGHT_PX = 32
-    private const val MIN_INTER_CHUNK_DELAY_MS = 150L
-    private const val MS_PER_STRIP_ROW = 8f
-    private const val SETTLE_DELAY_MS = 100L
-    private const val BT_WRITE_PIECE_BYTES = 256
-    private const val BT_WRITE_PIECE_GAP_MS = 12L
+    // FIX 5 ("print half k bad phr kharab ho gia" — a long, multi-item bill still
+    // turned to CJK/symbol garbage partway through, on a printer where FIX 4's
+    // values (32px / 150ms floor / 8ms-per-row / 256B pieces / 12ms gap) were not
+    // enough margin): every "print reliability" knob in this block only has one
+    // safe direction to move — smaller/slower — so all five are tightened together
+    // one more notch. This trades a bit of total print time for buffer safety; if
+    // garbling STILL happens after this on a given unit, halve MAX_STRIP_HEIGHT_PX
+    // again (e.g. 24 -> 16) and/or raise BT_WRITE_PIECE_GAP_MS before touching
+    // anything else — those two are the most effective per past rounds.
+    private const val MAX_STRIP_HEIGHT_PX = 24
+    private const val MIN_INTER_CHUNK_DELAY_MS = 200L
+    private const val MS_PER_STRIP_ROW = 10f
+    private const val SETTLE_DELAY_MS = 150L
+    private const val BT_WRITE_PIECE_BYTES = 128
+    private const val BT_WRITE_PIECE_GAP_MS = 20L
 
     /** How long to pause after sending a strip of [stripHeightPx] dots, before sending
      *  the next one — scaled to strip height with a safe minimum floor. See FIX 2 above. */
@@ -1544,6 +1553,84 @@ object PrinterHelper {
         val bitmap = renderReceiptLines(lines, fontSizePx, resolvedTypeface, normalizeDotsWidth(dotsWidth))
         val chunks = bitmapToEscPosRasterChunks(bitmap)
         return sendChunks(context, type, address, chunks)
+    }
+
+    /** Default items-per-slip before [printReceiptLinesPaged] tears a long bill into
+     *  multiple physical slips. Chosen so a slip stays a comfortable one-hand length
+     *  on 58mm paper; raise/lower per shop preference. */
+    const val DEFAULT_MAX_ITEMS_PER_PAGE = 12
+
+    /**
+     * Prints a long, multi-item receipt as MULTIPLE physical slips (each its own
+     * feed + cut) instead of one unbroken roll, answering "bill lamba ho tu split
+     * kaise ho ga":
+     *  - [headerLines] (shop name, customer/bill/date, the ITEM|AMOUNT|QTY|RATE
+     *    table header row is passed separately as the first element of
+     *    [itemLines]) is repeated at the top of every slip so each piece is
+     *    independently identifiable.
+     *  - [itemLines] MUST have the table header row first, followed by the actual
+     *    item rows. Only the item rows are paginated, [maxItemsPerPage] per slip.
+     *  - [footerLines] (Subtotal/Discount/Total/Paid/Balance Due/Prev+Net
+     *    Balance/footer note) is printed ONLY on the LAST slip — printing a
+     *    running partial total on every slip would be misleading, so instead
+     *    every non-final slip ends with a clear "Continued on next slip" line and
+     *    every slip after the first opens with a "Page X of Y (continued)" line.
+     *  - If the bill fits in one page, this behaves exactly like a single
+     *    [printReceiptLines] call — no behavior change for normal-length bills.
+     *
+     * Returns true only if every slip printed successfully.
+     */
+    fun printReceiptLinesPaged(
+        context: Context,
+        type: PrinterType,
+        address: String,
+        headerLines: List<ReceiptLine>,
+        itemLines: List<ReceiptLine>,
+        footerLines: List<ReceiptLine>,
+        typeface: Typeface? = null,
+        fontSizePx: Float = 26f,
+        dotsWidth: Int = DEFAULT_DOTS_WIDTH,
+        maxItemsPerPage: Int = DEFAULT_MAX_ITEMS_PER_PAGE
+    ): Boolean {
+        val tableHeaderRow = itemLines.firstOrNull()
+        val itemRows = if (tableHeaderRow != null) itemLines.drop(1) else emptyList()
+
+        if (itemRows.size <= maxItemsPerPage) {
+            // Fits on one slip — identical behavior to the non-paged call.
+            val all = headerLines + itemLines + footerLines
+            return printReceiptLines(context, type, address, all, typeface, fontSizePx, dotsWidth)
+        }
+
+        val pages = itemRows.chunked(maxItemsPerPage)
+        val totalPages = pages.size
+        val resolvedTypeface = typeface ?: resolveUrduTypeface(context)
+        var allOk = true
+
+        pages.forEachIndexed { index, pageRows ->
+            val pageNum = index + 1
+            val pageLines = mutableListOf<ReceiptLine>()
+            pageLines.addAll(headerLines)
+            if (pageNum > 1) {
+                pageLines.add(ReceiptLine.Center("-- Page $pageNum of $totalPages (continued) --", tight = true))
+            }
+            tableHeaderRow?.let { pageLines.add(it) }
+            pageLines.addAll(pageRows)
+            if (pageNum < totalPages) {
+                pageLines.add(ReceiptLine.Divider)
+                pageLines.add(ReceiptLine.Center("-- Continued on next slip --", bold = true, tight = true))
+            } else {
+                pageLines.addAll(footerLines)
+            }
+
+            val bitmap = renderReceiptLines(pageLines, fontSizePx, resolvedTypeface, normalizeDotsWidth(dotsWidth))
+            val chunks = bitmapToEscPosRasterChunks(bitmap)
+            if (!sendChunks(context, type, address, chunks)) allOk = false
+
+            // Let the cutter/feed fully settle before the next slip's ESC_INIT —
+            // same reasoning as the pre-strip settle delay in sendBluetoothChunks.
+            if (pageNum < totalPages) Thread.sleep(SETTLE_DELAY_MS)
+        }
+        return allOk
     }
 
     /**
