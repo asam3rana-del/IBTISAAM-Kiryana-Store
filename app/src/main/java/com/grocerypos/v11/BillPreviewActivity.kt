@@ -746,14 +746,21 @@ class BillPreviewActivity : ThemedActivity() {
             // enough that the transmission silently failed partway through even
             // though printReceiptLines still returned true. Moved to Dispatchers.IO
             // so the print job runs off the UI thread.
+            // FIX ("split ka koi faida nahi howa, page lamba hi print howa, bs
+            // header wagera extra add howe ha"): this printer's cutter is manual
+            // (hath se phaarna parta hai), not motorized, so the GS V cut command
+            // printReceiptLinesPaged sends between slips is silently ignored —
+            // there is no physical break in the roll. The paged call still adds a
+            // repeated header, repeated table header, and "Page X of Y / Continued"
+            // lines for every slip, so on this printer it only made the single
+            // continuous strip longer with no actual splitting benefit. Reverted to
+            // one flat print: header + items + footer, no pagination.
             val ok = withContext(Dispatchers.IO) {
-                PrinterHelper.printReceiptLinesPaged(
+                PrinterHelper.printReceiptLines(
                     this@BillPreviewActivity,
                     printerType,
                     mac,
-                    headerLines,
-                    itemLines,
-                    footerLines,
+                    headerLines + itemLines + footerLines,
                     dotsWidth = dotsWidth
                 )
             }
