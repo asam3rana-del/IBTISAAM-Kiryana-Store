@@ -521,44 +521,47 @@ class BillPreviewActivity : ThemedActivity() {
             .show()
     }
 
+    // FIX (WhatsApp direct-chat): the old "jid" extra on ACTION_SEND was an
+    // undocumented trick that newer WhatsApp builds ignore — it just falls back to
+    // WhatsApp's normal contact/share picker, so the user still has to pick the
+    // number by hand every time even though one was already entered/saved. There is
+    // no officially supported way to attach an image AND jump straight to a chosen
+    // number in one shot (Meta blocks that for abuse/privacy reasons), so this is a
+    // two-step flow instead: (1) save the receipt to the gallery and (2) open the
+    // chat for that exact number directly via wa.me (this part is official and
+    // reliable) with the caption pre-filled. The user only has to tap the 📎 attach
+    // button once and pick the (already-saved, easy to find) receipt image — no more
+    // picking a contact.
     private fun shareBitmapToWhatsApp(rawPhone: String) {
         val bitmap = viewToBitmap(receiptCardRef)
-        val uri = try {
-            bitmapToShareUri(bitmap)
+        val digits = cleanPhoneToDigits(rawPhone)
+        val caption = "Invoice: $referenceNo\nTotal: Rs %.2f\nShukriya!".format(totalAmount)
+
+        val savedToGallery = try {
+            saveBitmapToGallery(bitmap)
+            true
         } catch (e: Exception) {
-            Toast.makeText(this, "Image banane mein masla hua", Toast.LENGTH_SHORT).show()
-            return
+            false
         }
 
-        val caption = "Invoice: $referenceNo\nTotal: Rs %.2f\nShukriya!".format(totalAmount)
-        val jid = cleanPhoneToJid(rawPhone)
-
-        // FIX (share reliability): a content:// URI passed only via EXTRA_STREAM,
-        // without a matching ClipData, does not reliably get its read permission
-        // grant honoured by the receiving app on many Android versions/OEMs — WhatsApp
-        // would silently fail to load the image (blank/broken attachment) even though
-        // startActivity() itself never threw. Setting ClipData explicitly fixes that.
-        val clip = ClipData.newUri(contentResolver, "receipt", uri)
-
-        // Try direct chat with that number first (undocumented but widely working on
-        // regular WhatsApp; some OEM/WhatsApp builds ignore the "jid" extra and just
-        // open the normal contact/share picker instead — that's an acceptable fallback,
-        // not a crash, so we still consider this the "success" path).
-        val directIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "image/png"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_TEXT, caption)
-            putExtra("jid", jid)
+        val waIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = Uri.parse("https://wa.me/$digits?text=${Uri.encode(caption)}")
             setPackage("com.whatsapp")
-            clipData = clip
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
         try {
-            startActivity(directIntent)
+            startActivity(waIntent)
+            val msg = if (savedToGallery)
+                "Chat khul gaya. Neeche 📎 se Gallery mein receipt image select kar lein."
+            else
+                "Chat khul gaya, lekin image save nahi ho saki — dobara try karein."
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
-            // Fallback: generic share sheet (WhatsApp not installed, or direct-jid trick failed)
+            // WhatsApp not installed (or wa.me couldn't be opened) — fall back to the
+            // generic share sheet so the bill can still be sent some other way.
             try {
+                val uri = bitmapToShareUri(bitmap)
+                val clip = ClipData.newUri(contentResolver, "receipt", uri)
                 val fallback = Intent(Intent.ACTION_SEND).apply {
                     type = "image/png"
                     putExtra(Intent.EXTRA_STREAM, uri)
@@ -573,14 +576,34 @@ class BillPreviewActivity : ThemedActivity() {
         }
     }
 
-    /** Cleans an entered number into a WhatsApp jid ("<countrycode><number>@s.whatsapp.net").
+    /** Cleans an entered number into bare digits with a country code, e.g. "923001234567".
      *  Assumes Pakistan (92) if no country code was entered — adjust the default
      *  country code below if this shop is in a different country. */
-    private fun cleanPhoneToJid(raw: String): String {
+    private fun cleanPhoneToDigits(raw: String): String {
         var digits = raw.replace(Regex("[^0-9]"), "")
         if (digits.startsWith("0")) digits = "92" + digits.substring(1)
         else if (!digits.startsWith("92") && digits.length <= 10) digits = "92$digits"
-        return "$digits@s.whatsapp.net"
+        return digits
+    }
+
+    /** Saves the receipt bitmap into the device's Pictures/IBTISAAM gallery folder so
+     *  it's easy to find from WhatsApp's own attach picker (📎 → Gallery). */
+    private fun saveBitmapToGallery(bitmap: Bitmap): Uri {
+        val filename = "Receipt_${referenceNo}_${System.currentTimeMillis()}.png"
+        val resolver = contentResolver
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, filename)
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/IBTISAAM")
+            }
+        }
+        val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("MediaStore insert failed")
+        resolver.openOutputStream(uri)?.use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        } ?: throw IllegalStateException("Could not open output stream")
+        return uri
     }
 
     private fun viewToBitmap(view: View): Bitmap {
