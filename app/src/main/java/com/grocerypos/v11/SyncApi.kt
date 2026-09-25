@@ -859,7 +859,28 @@ object SyncApi {
             }
             val reference = row["reference"] as? String ?: continue
             val partyType = row["partyType"] as? String ?: ""
-            val partyId = (row["partyId"] as? Number)?.toLong()
+            val rawPartyId = (row["partyId"] as? Number)?.toLong()
+            val partyServerId = (row["partyServerId"] as? String)?.takeIf { it.isNotBlank() }
+            // FIX (CRITICAL cross-device sync bug — "phantom payments attached to
+            // the wrong party"): `rawPartyId` above is the ORIGINATING device's own
+            // local Room id for its party — NOT globally unique, so blindly storing
+            // it here (the old behavior) attaches this payment to whatever
+            // Customer/Supplier happens to have that same numeric id on THIS
+            // device, which is very often a completely different, unrelated party.
+            // See Payment.partyServerId's doc comment in Database.kt. Resolve the
+            // correct local id via the portable partyServerId whenever the pushing
+            // device supplied one (every payment enqueued after this fix does, via
+            // SyncQueueHelper.enqueuePayment's backfill). Falls back to the old
+            // raw-id behavior only for pre-fix legacy documents that have no
+            // partyServerId at all — same known-imperfect behavior as before, not
+            // a regression.
+            val partyId: Long? = if (partyServerId != null) {
+                when (partyType) {
+                    "customer" -> custDao.findByServerId(partyServerId)?.id
+                    "supplier" -> suppDao.findByServerId(partyServerId)?.id
+                    else -> null
+                }
+            } else rawPartyId
             val amount = (row["amount"] as? Number)?.toDouble() ?: 0.0
             val method = row["method"] as? String ?: ""
             val note = row["note"] as? String ?: ""
@@ -870,7 +891,7 @@ object SyncApi {
             if (existing != null) {
                 paymentDao.update(
                     existing.copy(
-                        reference = reference, partyType = partyType, partyId = partyId,
+                        reference = reference, partyType = partyType, partyId = partyId, partyServerId = partyServerId,
                         amount = amount, method = method, note = note, billReference = billReference, createdAt = createdAt,
                         updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )
@@ -878,7 +899,7 @@ object SyncApi {
             } else {
                 paymentDao.insert(
                     Payment(
-                        reference = reference, partyType = partyType, partyId = partyId,
+                        reference = reference, partyType = partyType, partyId = partyId, partyServerId = partyServerId,
                         amount = amount, method = method, note = note, billReference = billReference, createdAt = createdAt,
                         serverId = serverId, updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )

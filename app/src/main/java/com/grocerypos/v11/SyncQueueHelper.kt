@@ -367,7 +367,26 @@ object SyncQueueHelper {
 
     suspend fun enqueuePayment(db: PosDatabase, payment: Payment, context: Context? = null) {
         val id = paymentEntityId(payment)
-        val stamped = if (payment.serverId != id) payment.copy(serverId = id) else payment
+        var stamped = if (payment.serverId != id) payment.copy(serverId = id) else payment
+        // NEW (CRITICAL cross-device sync fix — see Payment.partyServerId's doc
+        // comment in Database.kt): backfill the party's stable serverId from this
+        // device's own local Customer/Supplier row BEFORE pushing, for any payment
+        // that doesn't have one yet (either just-created, or a pre-fix legacy row
+        // being re-enqueued). This device's own partyId IS correct for its own
+        // party right now — that's exactly the value other devices must not trust
+        // (see the field comment for why) — so this is the one place it's safe to
+        // resolve it into a portable serverId.
+        if (stamped.partyServerId.isNullOrBlank()) {
+            val pid = stamped.partyId
+            val resolvedServerId = if (pid != null) {
+                when (stamped.partyType) {
+                    "customer" -> db.customerDao().find(pid)?.serverId
+                    "supplier" -> db.supplierDao().find(pid)?.serverId
+                    else -> null
+                }
+            } else null
+            if (resolvedServerId != null) stamped = stamped.copy(partyServerId = resolvedServerId)
+        }
         if (stamped !== payment) db.paymentDao().update(stamped)
         enqueue(db, "payment", id, "upsert", paymentJson(stamped))
         context?.let { trigger(it) }
@@ -1009,6 +1028,11 @@ object SyncQueueHelper {
             "reference" to payment.reference,
             "partyType" to payment.partyType,
             "partyId" to payment.partyId,
+            // NEW (CRITICAL cross-device sync fix): see Payment.partyServerId's doc
+            // comment in Database.kt. The receiving device's pull loop now resolves
+            // the correct LOCAL party via this stable id instead of trusting the
+            // device-local `partyId` above.
+            "partyServerId" to payment.partyServerId,
             "amount" to payment.amount,
             "method" to payment.method,
             "note" to payment.note,

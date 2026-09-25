@@ -619,7 +619,28 @@ data class Payment(
     val createdAt:Long=System.currentTimeMillis(),
     val serverId:String?=null,
     val updatedAt:Long=0L,
-    val dirty:Boolean=true
+    val dirty:Boolean=true,
+    // NEW (CRITICAL cross-device sync fix — "phantom payments attached to the
+    // wrong party"): `partyId` above is this DEVICE's own local Room autoGenerate
+    // primary key for the Customer/Supplier it points at — it is NOT globally
+    // unique. Two different devices independently assign their own local ids
+    // (1, 2, 3...) to their own parties, so "partyId=25" means a completely
+    // different real-world party on each device. Until this field existed,
+    // push/pull sent that raw local id as-is (see SyncQueueHelper's payment push
+    // map and SyncApi's payments pull loop), so a payment pulled from another
+    // device got silently re-attached to WHATEVER party happens to have that same
+    // numeric id locally — producing large, unrelated "phantom" payments on a
+    // party that never actually received them (see the September 2026 "Abdullah
+    // Egg" investigation for the real-world symptom this caused). This new field
+    // is the Customer/Supplier's own stable `serverId` (same identifier already
+    // used for Sale.customerServerId/Purchase.supplierServerId), which IS the
+    // same value on every device. Pull now resolves the correct LOCAL id by
+    // looking this up via CustomerDao/SupplierDao.findByServerId() instead of
+    // trusting the raw partyId. Null only for payments created before this fix
+    // (SyncQueueHelper.enqueuePayment backfills it from partyId+partyType on
+    // this, the originating, device before pushing) — for those legacy rows pull
+    // still falls back to the old (unreliable) raw-partyId behavior.
+    @ColumnInfo(defaultValue="") val partyServerId:String?=null
 )
 
 @Entity(tableName="purchases", indices=[Index(value=["purchaseUid"], unique=true)])
@@ -2166,6 +2187,18 @@ val MIGRATION_45_46 = object : Migration(45, 46) {
     }
 }
 
+// NEW (CRITICAL cross-device sync fix): Payment.partyServerId — see the field's own
+// doc comment in the Payment entity above for the full "phantom payment" bug this
+// closes. Plain ADD COLUMN, default '' (treated as "not yet backfilled" the same
+// way other serverId-ish columns in this app use blank/null interchangeably) —
+// every existing payment keeps syncing exactly as before (old raw-partyId
+// behavior) until SyncQueueHelper.enqueuePayment backfills it on its next push.
+val MIGRATION_46_47 = object : Migration(46, 47) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE payments ADD COLUMN partyServerId TEXT")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
@@ -2178,7 +2211,7 @@ val MIGRATION_45_46 = object : Migration(45, 46) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=46, exportSchema=true
+    version=47, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -2205,7 +2238,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path
