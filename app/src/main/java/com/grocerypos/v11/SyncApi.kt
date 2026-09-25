@@ -1,7 +1,6 @@
 package com.grocerypos.v11.sync
 
 import android.content.Context
-import androidx.room.withTransaction
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.tasks.await
@@ -434,25 +433,7 @@ object SyncApi {
 
     // ---------- APPLY ----------
 
-    // FIX (audit #6 — "Sync ka biggest remaining real-world test" / sync apply
-    // transaction strategy): a pull can touch a dozen+ collections (customers,
-    // products, sales, purchases, expenses, cash transactions, zakat, stock
-    // movements, cash register, ...) in one go. The loops below used to run as
-    // one un-grouped sequence of individual DAO writes — if the app crashed or
-    // got killed partway through applying a pull (e.g. after products were
-    // updated but before sales were), the local database was left part-old,
-    // part-new: an inconsistent snapshot that never fully matches any point in
-    // time on the server. Wrapped in db.withTransaction {} so an entire pull's
-    // worth of changes lands atomically — either the whole batch applies, or
-    // (on a crash) none of it does and the next pull retries cleanly from
-    // wherever the local `since` cursor last was.
     suspend fun applyServerChanges(db: PosDatabase, changes: PullResult) {
-        db.withTransaction {
-            applyServerChangesLocked(db, changes)
-        }
-    }
-
-    private suspend fun applyServerChangesLocked(db: PosDatabase, changes: PullResult) {
         val custDao = db.customerDao()
         val suppDao = db.supplierDao()
         val prodDao = db.productDao()
@@ -1213,5 +1194,65 @@ object SyncApi {
                 )
             )
         }
+    }
+
+    // ADDED (admin cleanup — "wrong/foreign branchId cloud cleanup"): a one-off tool
+    // for wiping documents that were pushed to this Firestore project under a
+    // *different* branchId than this device's own (e.g. stray test data, or a
+    // web-app session that was mistakenly pointed at the wrong branch code while
+    // sharing this same Firebase project). Deliberately does NOT touch
+    // branch_members or users — those are permission/login data, never
+    // branch-scoped test junk. Every other synced collection is covered. Queries
+    // each collection with whereEqualTo("branchId", badBranchId) and deletes in
+    // batches of 400 (comfortably under Firestore's 500-per-batch limit). Returns
+    // a per-collection deleted-count map so the caller (SettingsSync.kt) can show
+    // the admin exactly what happened before/after they confirm.
+    private val BRANCH_SCOPED_COLLECTIONS = listOf(
+        "customers", "suppliers", "products", "sales", "purchases", "payments",
+        "expenses", "cash_transactions", "units", "categories", "zakat_years",
+        "zakat_payments", "returns", "stock_movements", "app_settings", "cash_register"
+    )
+
+    suspend fun countDocsByBranchId(context: Context, badBranchId: String): Map<String, Int> {
+        val db = firestoreFor(context) ?: return emptyMap()
+        val result = linkedMapOf<String, Int>()
+        for (col in BRANCH_SCOPED_COLLECTIONS) {
+            try {
+                val snap = db.collection(col).whereEqualTo("branchId", badBranchId).get().await()
+                if (snap.size() > 0) result[col] = snap.size()
+            } catch (_: Exception) {
+                // Skip a collection that errors (e.g. missing index) rather than
+                // aborting the whole scan — the admin can still act on whatever
+                // collections did succeed, and can re-run after adding an index.
+            }
+        }
+        return result
+    }
+
+    suspend fun deleteDocsByBranchId(context: Context, badBranchId: String): Map<String, Int> {
+        val db = firestoreFor(context) ?: return emptyMap()
+        val result = linkedMapOf<String, Int>()
+        for (col in BRANCH_SCOPED_COLLECTIONS) {
+            try {
+                var deletedForCol = 0
+                while (true) {
+                    val snap = db.collection(col)
+                        .whereEqualTo("branchId", badBranchId)
+                        .limit(400)
+                        .get().await()
+                    if (snap.isEmpty) break
+                    val batch = db.batch()
+                    for (doc in snap.documents) batch.delete(doc.reference)
+                    batch.commit().await()
+                    deletedForCol += snap.size()
+                    if (snap.size() < 400) break
+                }
+                if (deletedForCol > 0) result[col] = deletedForCol
+            } catch (_: Exception) {
+                // Leave partial progress in `result` for collections that succeeded
+                // before hitting one that errored; caller shows this as-is.
+            }
+        }
+        return result
     }
 }

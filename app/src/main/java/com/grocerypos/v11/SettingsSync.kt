@@ -159,7 +159,8 @@ internal fun SettingsActivity.showSyncNowLongPressMenu() {
         "Resync from a date/time (pull)",
         "Force full push — resend ALL local data (push)",
         "Fix back-dated Purchase/Sale cash entries",
-        "Recalculate party balances (Customers/Suppliers)"
+        "Recalculate party balances (Customers/Suppliers)",
+        "Delete cloud data with a wrong Branch ID (admin cleanup)"
     )
     android.app.AlertDialog.Builder(this)
         .setTitle("Sync Now — more options")
@@ -169,8 +170,72 @@ internal fun SettingsActivity.showSyncNowLongPressMenu() {
                 1 -> resyncAllLocalDataClicked()
                 2 -> fixBackdatedCashTransactionDatesClicked()
                 3 -> recalculatePartyBalancesClicked()
+                4 -> showDeleteByWrongBranchIdDialog()
             }
         }
+        .show()
+}
+
+/** ADDED (admin cleanup): lets an admin type in a stray/foreign branchId value
+ *  (spotted via Firebase Console — see SyncApi.BRANCH_SCOPED_COLLECTIONS) and wipe
+ *  every document across the synced collections that carries it, WITHOUT touching
+ *  this device's own branch data. Two-step: first scans and shows a per-collection
+ *  count for the admin to review, then only deletes after they explicitly confirm
+ *  on that exact count. Never touches branch_members or users. */
+internal fun SettingsActivity.showDeleteByWrongBranchIdDialog() {
+    val input = EditText(this).apply {
+        hint = "e.g. dusri-branch"
+        setPadding(40, 30, 40, 30)
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Delete cloud data by Branch ID")
+        .setMessage(
+            "Ye sirf us Branch ID ka data delete karega jo aap yahan likhenge — is " +
+            "device ki apni branch ko haath nahi lagaya jayega. branch_members aur " +
+            "users collections bhi touch nahi hongi. Pehle sirf SCAN hoga (kuch " +
+            "delete nahi), aap count dekh kar confirm karenge tab hi delete hoga.\n\n" +
+            "Wo galat Branch ID yahan likhein:"
+        )
+        .setView(input)
+        .setPositiveButton("Scan") { _, _ ->
+            val badId = input.text.toString().trim()
+            if (badId.isEmpty()) {
+                Toast.makeText(this, "Branch ID likhna zaroori hai.", Toast.LENGTH_SHORT).show()
+                return@setPositiveButton
+            }
+            if (badId == BranchConfigStore.current) {
+                Toast.makeText(this, "Ye to is device ki apni Branch ID hai — cancel kar diya.", Toast.LENGTH_LONG).show()
+                return@setPositiveButton
+            }
+            Toast.makeText(this, "Scanning…", Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                val counts = SyncApi.countDocsByBranchId(this@showDeleteByWrongBranchIdDialog, badId)
+                if (counts.isEmpty()) {
+                    Toast.makeText(this@showDeleteByWrongBranchIdDialog, "\"$badId\" ka koi document nahi mila.", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val summary = counts.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                val total = counts.values.sum()
+                android.app.AlertDialog.Builder(this@showDeleteByWrongBranchIdDialog)
+                    .setTitle("$total document(s) milay — delete karein?")
+                    .setMessage("Branch ID \"$badId\":\n\n$summary\n\nYe permanent hai, wapas nahi aa sakta. Continue?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        Toast.makeText(this@showDeleteByWrongBranchIdDialog, "Deleting…", Toast.LENGTH_SHORT).show()
+                        lifecycleScope.launch {
+                            val deleted = SyncApi.deleteDocsByBranchId(this@showDeleteByWrongBranchIdDialog, badId)
+                            val deletedSummary = deleted.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                            android.app.AlertDialog.Builder(this@showDeleteByWrongBranchIdDialog)
+                                .setTitle("${deleted.values.sum()} document(s) delete ho gaye")
+                                .setMessage(deletedSummary.ifEmpty { "Kuch delete nahi hua." })
+                                .setPositiveButton("OK", null)
+                                .show()
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
+        .setNegativeButton("Cancel", null)
         .show()
 }
 
