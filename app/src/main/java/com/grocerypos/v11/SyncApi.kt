@@ -1,6 +1,7 @@
 package com.grocerypos.v11.sync
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.tasks.await
@@ -433,7 +434,25 @@ object SyncApi {
 
     // ---------- APPLY ----------
 
+    // FIX (audit #6 — "Sync ka biggest remaining real-world test" / sync apply
+    // transaction strategy): a pull can touch a dozen+ collections (customers,
+    // products, sales, purchases, expenses, cash transactions, zakat, stock
+    // movements, cash register, ...) in one go. The loops below used to run as
+    // one un-grouped sequence of individual DAO writes — if the app crashed or
+    // got killed partway through applying a pull (e.g. after products were
+    // updated but before sales were), the local database was left part-old,
+    // part-new: an inconsistent snapshot that never fully matches any point in
+    // time on the server. Wrapped in db.withTransaction {} so an entire pull's
+    // worth of changes lands atomically — either the whole batch applies, or
+    // (on a crash) none of it does and the next pull retries cleanly from
+    // wherever the local `since` cursor last was.
     suspend fun applyServerChanges(db: PosDatabase, changes: PullResult) {
+        db.withTransaction {
+            applyServerChangesLocked(db, changes)
+        }
+    }
+
+    private suspend fun applyServerChangesLocked(db: PosDatabase, changes: PullResult) {
         val custDao = db.customerDao()
         val suppDao = db.supplierDao()
         val prodDao = db.productDao()

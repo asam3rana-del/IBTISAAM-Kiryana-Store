@@ -14,13 +14,11 @@ import com.grocerypos.v11.DeviceTag
 import com.grocerypos.v11.PosDatabase
 import java.io.File
 import java.io.FileInputStream
-import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
-import javax.crypto.CipherOutputStream
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.PBEKeySpec
@@ -53,16 +51,26 @@ object BackupHelper {
     private const val THROTTLE_PREFS = "backup_throttle_prefs"
     private const val KEY_LAST_BACKUP_AT = "last_backup_at_millis"
 
-    // ---- Encryption (AES-256, PBKDF2-derived key) ----
-    // Every encrypted backup file starts with this 8-byte tag so needsPassword()
-    // can tell an encrypted .ibbackup apart from an old plain .db backup without
-    // needing the password first. Followed by a random salt, then a random IV,
-    // then the AES-CBC ciphertext of the raw database bytes.
+    // ---- Encryption ----
+    // FIX (audit #2 — "backup encryption authenticated nahi hai"): new backups are
+    // now written with BackupCrypto (AES-256-GCM — an authenticated cipher with a
+    // built-in integrity tag), not the old AES-CBC below. CBC has no auth tag, so a
+    // tampered/corrupted CBC file would silently "decrypt" into garbage instead of
+    // failing loudly; GCM's decryptFile throws instead. The old MAGIC/deriveKey/
+    // decryptFileLegacyCbc trio is kept ONLY so backups already made before this fix
+    // (old .ibbackup files starting with "IBAKV001") can still be restored — no
+    // shop's existing backups become unreadable. Every backup made from now on uses
+    // BackupCrypto's "IBB1" GCM format instead (see backupNow() below).
     private val MAGIC = "IBAKV001".toByteArray(Charsets.US_ASCII)
     private const val SALT_LEN = 16
     private const val IV_LEN = 16
     private const val PBKDF2_ITERATIONS = 100_000
     private const val KEY_LEN_BITS = 256
+
+    // First 16 bytes of every valid SQLite database file (the format's own magic
+    // header, null terminator included) — used by restoreSafely() to confirm a
+    // decrypted/copied temp file is really a database before it touches the live one.
+    private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
 
     private fun deriveKey(password: String, salt: ByteArray): SecretKeySpec {
         val spec = PBEKeySpec(password.toCharArray(), salt, PBKDF2_ITERATIONS, KEY_LEN_BITS)
@@ -70,10 +78,14 @@ object BackupHelper {
         return SecretKeySpec(keyBytes, "AES")
     }
 
-    /** True if [file] is one of our encrypted (.ibbackup) files, false for an old
-     * plain .db backup (or anything else) — checked by magic header only, so this
-     * never needs the password. */
+    /** True if [file] is encrypted (either the new GCM format or an old CBC one),
+     * false for a plain .db backup (or anything else) — checked by magic header
+     * only, so this never needs the password. */
     fun needsPassword(file: File): Boolean {
+        return isLegacyEncryptedBackup(file) || BackupCrypto.isEncryptedBackup(file)
+    }
+
+    private fun isLegacyEncryptedBackup(file: File): Boolean {
         return try {
             file.inputStream().use { input ->
                 val header = ByteArray(MAGIC.size)
@@ -84,24 +96,9 @@ object BackupHelper {
         }
     }
 
-    private fun encryptFile(source: File, dest: File, password: String) {
-        val salt = ByteArray(SALT_LEN).also { SecureRandom().nextBytes(it) }
-        val iv = ByteArray(IV_LEN).also { SecureRandom().nextBytes(it) }
-        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
-            init(Cipher.ENCRYPT_MODE, deriveKey(password, salt), IvParameterSpec(iv))
-        }
-        dest.outputStream().use { rawOut ->
-            rawOut.write(MAGIC)
-            rawOut.write(salt)
-            rawOut.write(iv)
-            CipherOutputStream(rawOut, cipher).use { cOut ->
-                source.inputStream().use { it.copyTo(cOut) }
-            }
-        }
-    }
-
-    /** Assumes [source] has already been confirmed via [needsPassword]. */
-    private fun decryptFile(source: File, dest: File, password: String) {
+    /** Decrypts an old, pre-GCM-fix (.ibbackup, "IBAKV001") backup. Assumes
+     * [source] has already been confirmed via [isLegacyEncryptedBackup]. */
+    private fun decryptFileLegacyCbc(source: File, dest: File, password: String) {
         source.inputStream().use { rawIn ->
             val header = ByteArray(MAGIC.size)
             rawIn.read(header)
@@ -115,6 +112,85 @@ object BackupHelper {
             CipherInputStream(rawIn, cipher).use { cIn ->
                 dest.outputStream().use { cIn.copyTo(it) }
             }
+        }
+    }
+
+    /** Checks the file starts with SQLite's own magic header — i.e. it's actually
+     * a database, not a half-decrypted mess from a wrong password or a truncated/
+     * corrupted backup. Used by restoreSafely() before anything touches the live DB. */
+    private fun isValidSqliteDb(file: File): Boolean {
+        return try {
+            if (file.length() < SQLITE_HEADER.size) return false
+            file.inputStream().use { input ->
+                val header = ByteArray(SQLITE_HEADER.size)
+                input.read(header) == SQLITE_HEADER.size && header.contentEquals(SQLITE_HEADER)
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Decrypts/copies [backupFile] into a fresh temp file next to the live database,
+     * validates it's really a SQLite database, and ONLY THEN atomically replaces the
+     * live database with it. Assumes [PosDatabase.closeInstance] has already been
+     * called by the caller. On any failure — wrong password, corrupted/tampered
+     * backup, not actually a database — the live database is left completely
+     * untouched and this returns false with [lastError] set.
+     *
+     * FIX (audit #3 — "wrong backup password restore dangerous hai"): the old
+     * restore()/restoreFromUri() decrypted or copied straight into the live
+     * dbFile's own FileOutputStream. In Kotlin/Java, opening a FileOutputStream on
+     * an existing file truncates it to 0 bytes immediately — before a single byte
+     * of the backup had been verified. So a wrong password or a corrupted backup
+     * destroyed the live database on its way to failing, instead of leaving it
+     * alone. Now every restore path goes through this one function: temp file ->
+     * decrypt/copy -> validate SQLite header -> atomic replace.
+     */
+    private fun restoreSafely(context: Context, backupFile: File, pass: String?): Boolean {
+        val dbFile = context.getDatabasePath(DB_NAME)
+        val tempFile = File(dbFile.parentFile, "$DB_NAME.restore_tmp")
+        return try {
+            when {
+                BackupCrypto.isEncryptedBackup(backupFile) -> {
+                    if (pass.isNullOrEmpty()) {
+                        lastError = "Password chahiye"
+                        return false
+                    }
+                    BackupCrypto.decryptFile(backupFile, tempFile, pass)
+                }
+                isLegacyEncryptedBackup(backupFile) -> {
+                    if (pass.isNullOrEmpty()) {
+                        lastError = "Password chahiye"
+                        return false
+                    }
+                    decryptFileLegacyCbc(backupFile, tempFile, pass)
+                }
+                else -> backupFile.copyTo(tempFile, overwrite = true)
+            }
+
+            if (!isValidSqliteDb(tempFile)) {
+                lastError = "Backup file corrupt hai ya password ghalat hai"
+                tempFile.delete()
+                return false
+            }
+
+            // Same folder as dbFile => same filesystem => this rename is atomic,
+            // not a byte-by-byte overwrite of the live file.
+            if (!tempFile.renameTo(dbFile)) {
+                // Rare fallback (e.g. cross-filesystem edge case): copy then clean up.
+                tempFile.copyTo(dbFile, overwrite = true)
+                tempFile.delete()
+            }
+
+            File(dbFile.path + "-wal").delete()
+            File(dbFile.path + "-shm").delete()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            lastError = e.message ?: e.toString()
+            tempFile.delete()
+            false
         }
     }
 
@@ -155,9 +231,10 @@ object BackupHelper {
             val fileName = "IBTISAAM_${DeviceTag.current}_backup_$stamp.ibbackup"
             val password = BackupPasswordStore.getOrCreate(context)
 
-            // 1) App-specific copy (used by Restore and Share) — encrypted
+            // 1) App-specific copy (used by Restore and Share) — encrypted with
+            // AES-256-GCM (authenticated) via BackupCrypto, not the old CBC scheme.
             val destFile = File(backupFolder(context), fileName)
-            encryptFile(dbFile, destFile, password)
+            BackupCrypto.encryptFile(dbFile, destFile, password)
 
             // 2) Public Downloads copy (for the user to see/share manually) — also
             // encrypted (copying the raw dbFile here would leak an unencrypted
@@ -286,22 +363,8 @@ object BackupHelper {
      * .ibbackup backups); it's ignored for old plain .db backups.
      */
     fun restore(context: Context, backupFile: File, pass: String? = null): Boolean {
-        return try {
-            PosDatabase.closeInstance()
-            val dbFile = context.getDatabasePath(DB_NAME)
-            if (needsPassword(backupFile)) {
-                if (pass.isNullOrEmpty()) return false
-                decryptFile(backupFile, dbFile, pass)
-            } else {
-                backupFile.copyTo(dbFile, overwrite = true)
-            }
-            File(dbFile.path + "-wal").delete()
-            File(dbFile.path + "-shm").delete()
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
+        PosDatabase.closeInstance()
+        return restoreSafely(context, backupFile, pass)
     }
 
     /**
@@ -319,31 +382,25 @@ object BackupHelper {
      * .db files).
      */
     fun restoreFromUri(context: Context, uri: Uri, pass: String? = null): Boolean {
-        val tempFile = File(context.cacheDir, "restore_temp_$DB_NAME")
+        // Just the picked-content -> local-file copy step; restoreSafely() below
+        // does its own separate temp file for the decrypt/validate/replace part.
+        val pickedFile = File(context.cacheDir, "restore_picked_$DB_NAME")
         return try {
-            PosDatabase.closeInstance()
-            val dbFile = context.getDatabasePath(DB_NAME)
-
-            val input = context.contentResolver.openInputStream(uri) ?: return false
+            val input = context.contentResolver.openInputStream(uri) ?: run {
+                lastError = "Backup file khul nahi saki"
+                return false
+            }
             input.use { streamIn ->
-                tempFile.outputStream().use { streamOut -> streamIn.copyTo(streamOut) }
+                pickedFile.outputStream().use { streamOut -> streamIn.copyTo(streamOut) }
             }
-
-            if (needsPassword(tempFile)) {
-                if (pass.isNullOrEmpty()) return false
-                decryptFile(tempFile, dbFile, pass)
-            } else {
-                tempFile.copyTo(dbFile, overwrite = true)
-            }
-
-            File(dbFile.path + "-wal").delete()
-            File(dbFile.path + "-shm").delete()
-            true
+            PosDatabase.closeInstance()
+            restoreSafely(context, pickedFile, pass)
         } catch (e: Exception) {
             e.printStackTrace()
+            lastError = e.message ?: e.toString()
             false
         } finally {
-            tempFile.delete()
+            pickedFile.delete()
         }
     }
 }

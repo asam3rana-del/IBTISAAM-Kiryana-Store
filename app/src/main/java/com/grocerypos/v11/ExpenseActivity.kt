@@ -9,6 +9,7 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
 import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
@@ -325,34 +326,45 @@ class ExpenseActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ExpenseActivity)
-            val expense = Expense(category = category, description = fullDescription, amount = amt, method = method)
-            val newId = db.expenseDao().insert(expense)
-            val savedExpense = expense.copy(id = newId)
-            // FIX (audit — every new expense showed up TWICE after the next sync): this used
-            // to call the raw enqueue(), which never stamps the local row's serverId. The
-            // pull that follows a push returns this device's own document too, and with no
-            // serverId on the local row findByServerId() found nothing, so the pull inserted
-            // a second copy. enqueueExpense() stamps serverId first, so the pull just updates.
-            SyncQueueHelper.enqueueExpense(db, savedExpense)
 
-            // FIX (Bug 2 — Expenses never touch Cash Register / Cash Activity /
-            // Balance Sheet's "Cash in Hand"): mirrors RoomPurchaseRepository.savePurchase()
-            // and PartyTransactionActivity's manual-payment flow — every cash movement
-            // needs a matching CashTransaction(type="OUT") or Balance Sheet's all-time
-            // "IN(cash) - OUT(cash)" formula never sees this money leave the drawer.
-            // `reference` ties it back to this expense so an edit/delete (below) can
-            // find and remove the matching drawer entry too, instead of leaving a
-            // stale OUT behind forever.
-            val cashTx = CashTransaction(
-                type = "OUT", method = method, amount = amt,
-                reason = "Expense" + (if (category.isNotEmpty()) ": $category" else ""),
-                // FIX (audit): reference used the bare LOCAL id ("expense:7"). Two devices
-                // both have an expense #7, so deleting one device's expense also deleted the
-                // OTHER device's cash-out entry (same reference). Now device-unique.
-                reference = SyncQueueHelper.expenseEntityId(savedExpense), createdAt = savedExpense.createdAt
-            )
-            val cashTxId = db.cashTransactionDao().insert(cashTx)
-            SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
+            // FIX (audit #4 — "Expense save/delete fully atomic nahi", matches
+            // CashActivity's identical Cash-Out-as-Expense flow): expense insert,
+            // its linked CashTransaction insert, and both sync-queue enqueues used
+            // to run as 4 separate un-grouped DB writes. If the app crashed/got
+            // killed partway through, the expense could be saved with its cash-out
+            // missing (or vice-versa) — Cash in Hand and the expense list would
+            // permanently disagree. Wrapped in one db.withTransaction {} so all four
+            // either land together or, on a crash, none of them do.
+            db.withTransaction {
+                val expense = Expense(category = category, description = fullDescription, amount = amt, method = method)
+                val newId = db.expenseDao().insert(expense)
+                val savedExpense = expense.copy(id = newId)
+                // FIX (audit — every new expense showed up TWICE after the next sync): this used
+                // to call the raw enqueue(), which never stamps the local row's serverId. The
+                // pull that follows a push returns this device's own document too, and with no
+                // serverId on the local row findByServerId() found nothing, so the pull inserted
+                // a second copy. enqueueExpense() stamps serverId first, so the pull just updates.
+                SyncQueueHelper.enqueueExpense(db, savedExpense)
+
+                // FIX (Bug 2 — Expenses never touch Cash Register / Cash Activity /
+                // Balance Sheet's "Cash in Hand"): mirrors RoomPurchaseRepository.savePurchase()
+                // and PartyTransactionActivity's manual-payment flow — every cash movement
+                // needs a matching CashTransaction(type="OUT") or Balance Sheet's all-time
+                // "IN(cash) - OUT(cash)" formula never sees this money leave the drawer.
+                // `reference` ties it back to this expense so an edit/delete (below) can
+                // find and remove the matching drawer entry too, instead of leaving a
+                // stale OUT behind forever.
+                val cashTx = CashTransaction(
+                    type = "OUT", method = method, amount = amt,
+                    reason = "Expense" + (if (category.isNotEmpty()) ": $category" else ""),
+                    // FIX (audit): reference used the bare LOCAL id ("expense:7"). Two devices
+                    // both have an expense #7, so deleting one device's expense also deleted the
+                    // OTHER device's cash-out entry (same reference). Now device-unique.
+                    reference = SyncQueueHelper.expenseEntityId(savedExpense), createdAt = savedExpense.createdAt
+                )
+                val cashTxId = db.cashTransactionDao().insert(cashTx)
+                SyncQueueHelper.enqueueCashTransaction(db, cashTx.copy(id = cashTxId))
+            }
 
             SyncQueueHelper.trigger(this@ExpenseActivity)
             Toast.makeText(this@ExpenseActivity, Loc.t(this@ExpenseActivity, "Saved", "محفوظ ہو گیا"), Toast.LENGTH_SHORT).show()
@@ -458,23 +470,31 @@ class ExpenseActivity : AppCompatActivity() {
             .setPositiveButton(Loc.t(this, "Delete", "حذف کریں")) { _, _ ->
                 lifecycleScope.launch {
                     val db = PosDatabase.get(this@ExpenseActivity)
-                    db.expenseDao().delete(e)
-                    // A delete must also reach Firestore; otherwise another device
-                    // would keep showing the removed expense after the next sync.
-                    SyncQueueHelper.enqueueDelete(
-                        db,
-                        "expense",
-                        SyncQueueHelper.expenseEntityId(e),
-                        this@ExpenseActivity
-                    )
-                    // FIX (Bug 2 — Cash in Hand): without this, deleting an expense
-                    // left its CashTransaction(type="OUT") behind, permanently
-                    // understating Cash in Hand by that amount forever after.
-                    SyncQueueHelper.deleteCashTransactionsByReference(db, SyncQueueHelper.expenseEntityId(e))
-                    // Legacy rows (saved before this fix) used "expense:<localId>". That old
-                    // format is only safe to touch for an expense created on THIS device.
-                    val madeHere = e.serverId == null || e.serverId.startsWith("expense:${com.grocerypos.v11.DeviceTag.current}-")
-                    if (madeHere) SyncQueueHelper.deleteCashTransactionsByReference(db, "expense:${e.id}")
+                    // FIX (audit #4, delete side): expense deletion, its sync-queue
+                    // delete-enqueue, and the matching CashTransaction cleanup used to
+                    // be 3-4 separate un-grouped DB writes — a crash mid-delete could
+                    // remove the expense but leave its CashTransaction(type="OUT")
+                    // behind (permanently understating Cash in Hand), or the reverse.
+                    // Grouped into one db.withTransaction {} so they all happen or none do.
+                    db.withTransaction {
+                        db.expenseDao().delete(e)
+                        // A delete must also reach Firestore; otherwise another device
+                        // would keep showing the removed expense after the next sync.
+                        SyncQueueHelper.enqueueDelete(
+                            db,
+                            "expense",
+                            SyncQueueHelper.expenseEntityId(e),
+                            this@ExpenseActivity
+                        )
+                        // FIX (Bug 2 — Cash in Hand): without this, deleting an expense
+                        // left its CashTransaction(type="OUT") behind, permanently
+                        // understating Cash in Hand by that amount forever after.
+                        SyncQueueHelper.deleteCashTransactionsByReference(db, SyncQueueHelper.expenseEntityId(e))
+                        // Legacy rows (saved before this fix) used "expense:<localId>". That old
+                        // format is only safe to touch for an expense created on THIS device.
+                        val madeHere = e.serverId == null || e.serverId.startsWith("expense:${com.grocerypos.v11.DeviceTag.current}-")
+                        if (madeHere) SyncQueueHelper.deleteCashTransactionsByReference(db, "expense:${e.id}")
+                    }
                     loadTotals()
                 }
             }

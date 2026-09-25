@@ -23,6 +23,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
 import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.Expense
 import com.grocerypos.v11.PosDatabase
@@ -672,36 +673,47 @@ class ZakatActivity : AppCompatActivity() {
     private fun savePayment(year: ZakatYear, amount: Double, method: String, note: String, category: String, paymentDate: Long) {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ZakatActivity)
-            val newPayment = ZakatPayment(zakatYearId = year.id, amount = amount, method = method, note = note, category = category, paymentDate = paymentDate)
-            val paymentId = db.zakatDao().insertPayment(newPayment)
-            // Also logged as a normal expense (category "Zakat") so it shows up in the
-            // existing Expense reports/P&L alongside everything else — same as every
-            // other outgoing payment in this app.
-            val desc = Loc.t(this@ZakatActivity, "Zakat payment", "زکوٰۃ کی ادائیگی") + " (${fmt.format(Date(year.startDate))} \u2014 ${fmt.format(Date(year.endDate))})" + if (note.isNotEmpty()) " | $note" else ""
-            // FIX (audit): the expense used to ignore which drawer the Zakat was paid from
-            // (always the default "cash") and no cash-book entry was made, so Cash in Hand /
-            // Bank Balance / Cash Register never went down while profit did.
-            val zakatMethod = method.lowercase()
-            val zakatExpense = Expense(category = "Zakat", description = desc, amount = amount, method = zakatMethod, createdAt = paymentDate)
-            val expenseId = db.expenseDao().insert(zakatExpense)
-            val savedExpense = zakatExpense.copy(id = expenseId)
-            // FIX (audit): raw enqueue() left serverId unstamped => duplicate expense after
-            // the next pull. See ExpenseActivity.saveExpense().
-            SyncQueueHelper.enqueueExpense(db, savedExpense)
-            val zakatCashTx = CashTransaction(
-                type = "OUT", method = zakatMethod, amount = amount,
-                reason = "Expense: Zakat",
-                reference = SyncQueueHelper.expenseEntityId(savedExpense),
-                createdAt = paymentDate
-            )
-            val zakatCashTxId = db.cashTransactionDao().insert(zakatCashTx)
-            SyncQueueHelper.enqueueCashTransaction(db, zakatCashTx.copy(id = zakatCashTxId))
-            val stampedYear = SyncQueueHelper.enqueueZakatYear(db, year, this@ZakatActivity)
-            SyncQueueHelper.enqueueZakatPayment(
-                db, newPayment.copy(id = paymentId),
-                stampedYear.serverId ?: SyncQueueHelper.zakatYearEntityId(stampedYear),
-                this@ZakatActivity
-            )
+
+            // FIX (audit #5 — "Zakat payment bhi same atomicity issue"): ZakatPayment
+            // insert, the mirrored Expense + CashTransaction inserts, and all three
+            // sync-queue enqueues used to be 6+ separate un-grouped DB writes. A crash
+            // partway through could save the Zakat payment without its expense/cash-out
+            // (or the reverse), silently desyncing Cash in Hand, P&L, and the Zakat
+            // year's paid total from each other. Wrapped in one db.withTransaction {},
+            // same fix as ExpenseActivity.saveExpense()/CashActivity's Cash-Out flow.
+            db.withTransaction {
+                val newPayment = ZakatPayment(zakatYearId = year.id, amount = amount, method = method, note = note, category = category, paymentDate = paymentDate)
+                val paymentId = db.zakatDao().insertPayment(newPayment)
+                // Also logged as a normal expense (category "Zakat") so it shows up in the
+                // existing Expense reports/P&L alongside everything else — same as every
+                // other outgoing payment in this app.
+                val desc = Loc.t(this@ZakatActivity, "Zakat payment", "زکوٰۃ کی ادائیگی") + " (${fmt.format(Date(year.startDate))} \u2014 ${fmt.format(Date(year.endDate))})" + if (note.isNotEmpty()) " | $note" else ""
+                // FIX (audit): the expense used to ignore which drawer the Zakat was paid from
+                // (always the default "cash") and no cash-book entry was made, so Cash in Hand /
+                // Bank Balance / Cash Register never went down while profit did.
+                val zakatMethod = method.lowercase()
+                val zakatExpense = Expense(category = "Zakat", description = desc, amount = amount, method = zakatMethod, createdAt = paymentDate)
+                val expenseId = db.expenseDao().insert(zakatExpense)
+                val savedExpense = zakatExpense.copy(id = expenseId)
+                // FIX (audit): raw enqueue() left serverId unstamped => duplicate expense after
+                // the next pull. See ExpenseActivity.saveExpense().
+                SyncQueueHelper.enqueueExpense(db, savedExpense)
+                val zakatCashTx = CashTransaction(
+                    type = "OUT", method = zakatMethod, amount = amount,
+                    reason = "Expense: Zakat",
+                    reference = SyncQueueHelper.expenseEntityId(savedExpense),
+                    createdAt = paymentDate
+                )
+                val zakatCashTxId = db.cashTransactionDao().insert(zakatCashTx)
+                SyncQueueHelper.enqueueCashTransaction(db, zakatCashTx.copy(id = zakatCashTxId))
+                val stampedYear = SyncQueueHelper.enqueueZakatYear(db, year, this@ZakatActivity)
+                SyncQueueHelper.enqueueZakatPayment(
+                    db, newPayment.copy(id = paymentId),
+                    stampedYear.serverId ?: SyncQueueHelper.zakatYearEntityId(stampedYear),
+                    this@ZakatActivity
+                )
+            }
+
             SyncQueueHelper.trigger(this@ZakatActivity)
             Toast.makeText(this@ZakatActivity, Loc.t(this@ZakatActivity, "Payment saved", "ادائیگی محفوظ ہو گئی"), Toast.LENGTH_SHORT).show()
             loadScreen()
