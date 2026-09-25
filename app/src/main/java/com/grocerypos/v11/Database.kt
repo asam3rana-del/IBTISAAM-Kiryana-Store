@@ -2195,7 +2195,26 @@ val MIGRATION_45_46 = object : Migration(45, 46) {
 // behavior) until SyncQueueHelper.enqueuePayment backfills it on its next push.
 val MIGRATION_46_47 = object : Migration(46, 47) {
     override fun migrate(database: SupportSQLiteDatabase) {
-        database.execSQL("ALTER TABLE payments ADD COLUMN partyServerId TEXT")
+        database.execSQL("ALTER TABLE payments ADD COLUMN partyServerId TEXT DEFAULT ''")
+    }
+}
+
+// FIX (crash on open — "Migration didn't properly handle: payments"): the original
+// MIGRATION_46_47 above added partyServerId with no SQL DEFAULT, but the Payment
+// entity's @ColumnInfo(defaultValue="") expects the column's default to be ''.
+// That mismatch made Room's post-migration schema check fail and crash every time
+// the app opened. MIGRATION_46_47 has now been fixed for anyone jumping straight
+// from 46, but any device that already reached version 47 before this fix is
+// still carrying the bad column definition (SQLite can't ALTER a column's default
+// in place), so this migration recreates `payments` with the correct default,
+// same table-recreate pattern as MIGRATION_23_24/24_25. Existing rows are
+// unaffected — this only fixes the column's default for future inserts.
+val MIGRATION_47_48 = object : Migration(47, 48) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("CREATE TABLE payments_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference TEXT NOT NULL, partyType TEXT NOT NULL, partyId INTEGER, amount REAL NOT NULL, method TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', billReference TEXT NOT NULL DEFAULT '', createdAt INTEGER NOT NULL, serverId TEXT, updatedAt INTEGER NOT NULL DEFAULT 0, dirty INTEGER NOT NULL DEFAULT 1, partyServerId TEXT DEFAULT '')")
+        database.execSQL("INSERT INTO payments_new (id, reference, partyType, partyId, amount, method, note, billReference, createdAt, serverId, updatedAt, dirty, partyServerId) SELECT id, reference, partyType, partyId, amount, method, note, billReference, createdAt, serverId, updatedAt, dirty, partyServerId FROM payments")
+        database.execSQL("DROP TABLE payments")
+        database.execSQL("ALTER TABLE payments_new RENAME TO payments")
     }
 }
 
@@ -2211,7 +2230,7 @@ val MIGRATION_46_47 = object : Migration(46, 47) {
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=47, exportSchema=true
+    version=48, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -2238,7 +2257,7 @@ abstract class PosDatabase:RoomDatabase(){
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path
