@@ -1080,7 +1080,12 @@ class PartyDashboardActivity : AppCompatActivity() {
             val merged = mutableListOf<TxRow>()
             sales.forEach { merged.add(TxRow(it.invoice, it.customerName, it.total, it.createdAt, true, it.status)) }
             purchases.forEach { merged.add(TxRow(it.billNo, it.supplierName, it.total, it.createdAt, false, it.status)) }
-            txCache = merged.sortedByDescending { it.createdAt }.take(100)
+            // FIX ("August ki purchases nahi mil rahin"): was capped to the newest 100
+            // sales+purchases combined across the whole shop — once more than 100
+            // transactions happened after an older bill, that bill silently dropped off
+            // this list with no way to reach it (search only filters txCache, it doesn't
+            // re-query). No cap now; the search box narrows a long list down.
+            txCache = merged.sortedByDescending { it.createdAt }
 
             // NEW: item names per reference, for the search-by-item-name filter below.
             val itemNames = db.saleDao().allItemNamesForSales() + db.purchaseDao().allItemNamesForPurchases()
