@@ -132,7 +132,8 @@ class PartyRepository(
     // path that still reads `.balance` consistent too. But no on-screen balance
     // should depend on that stored copy being right anymore.
     private suspend fun trueCustomerBalance(customerId: Long): Double {
-        val sales = db.saleDao().salesByCustomer(customerId).filter { it.status != "returned" }
+        val allSales = db.saleDao().salesByCustomer(customerId)
+        val sales = allSales.filter { it.status != "returned" }
         // FIX (Fix Balances double-counting cash bills — mirrors the supplier/
         // purchase side below, kept symmetric in case a sale-side payment row
         // is ever added the way purchases already have one): if a payment
@@ -143,7 +144,18 @@ class PartyRepository(
         // standalone payments — the "Receive/Make Payment" ones, whose
         // reference is a unique timestamp, never a real invoice number —
         // should reduce the balance here.
-        val saleInvoices = sales.map { it.invoice }.toHashSet()
+        // FIX (returned/deleted bill still "owns" its payment — balance flips to
+        // an unexplained "You'll Get/Give"): this set used to come from `sales`
+        // (already filtered to non-returned), so a RETURNED sale's invoice fell
+        // out of it. Its bill-linked payment (billReference == that invoice) then
+        // failed the "already inside sale.paid" check below and got subtracted a
+        // SECOND time, on top of `sale.paid` already covering it — the exact bug
+        // PartyTransactionActivity.loadTransactions()'s own "You'll Get/Give" card
+        // never had, because it only checks `billReference.isBlank()` with no
+        // existence/status requirement. Now built from the UNFILTERED list so a
+        // returned (or since-deleted-then-recreated-with-the-same-invoice) sale's
+        // invoice still counts as "known", matching that already-correct logic.
+        val saleInvoices = allSales.map { it.invoice }.toHashSet()
         // FIX (audit — "Fix Balances" corrupted parties that had a bill-linked payment): a
         // payment linked to a bill (billReference) is already inside that bill's `paid`
         // (applyBillPaidDelta), so it must not be subtracted a second time here.
@@ -153,7 +165,8 @@ class PartyRepository(
     }
 
     private suspend fun trueSupplierBalance(supplierId: Long): Double {
-        val purchases = db.purchaseDao().purchasesBySupplier(supplierId).filter { it.status != "returned" }
+        val allPurchases = db.purchaseDao().purchasesBySupplier(supplierId)
+        val purchases = allPurchases.filter { it.status != "returned" }
         // FIX (Fix Balances double-counting cash bills): same reasoning as the
         // customer/sale side above — RoomPurchaseRepository.savePurchase()
         // inserts a "Purchase payment" row for whatever was paid at purchase
@@ -161,7 +174,13 @@ class PartyRepository(
         // setting `purchase.paid`. Exclude those bill-embedded rows so only
         // standalone payments (unique timestamped reference, never a real
         // billNo) get subtracted here.
-        val billNos = purchases.map { it.billNo }.toHashSet()
+        // FIX (returned/deleted bill still "owns" its payment — see the matching
+        // comment on the customer side above): built from the UNFILTERED purchase
+        // list now, so a returned purchase's billNo still "counts" for this check
+        // instead of silently dropping out and causing its bill-linked payment to
+        // get subtracted a second time (balance swings into an unexplained
+        // "You'll Get" exactly equal to that payment's amount).
+        val billNos = allPurchases.map { it.billNo }.toHashSet()
         // FIX (audit): same as the customer side — skip bill-linked payments.
         val payments = db.paymentDao().listByParty("supplier", supplierId)
             .filter { it.reference !in billNos && !(it.billReference.isNotBlank() && it.billReference in billNos) }
