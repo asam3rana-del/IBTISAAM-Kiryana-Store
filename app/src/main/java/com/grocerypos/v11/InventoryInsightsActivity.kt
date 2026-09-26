@@ -283,11 +283,92 @@ class InventoryInsightsActivity : AppCompatActivity() {
                 subtitle = Loc.t(this, "Cost: ", "لاگت: ") + "Rs %.2f".format(p.cost) + "   " + Loc.t(this, "Sale: ", "سیل: ") + "Rs %.2f".format(p.salePrice),
                 rightTop = "%.1f%%".format(margin),
                 rightTopColor = color,
-                rightBottom = Loc.t(this, "margin", "منافع")
+                rightBottom = Loc.t(this, "margin", "منافع"),
+                onClick = { showItemHistoryDialog(p) }
             ))
         }
     }
     private fun marginPercent(p: Product): Double = if (p.salePrice > 0.0) ((p.salePrice - p.cost) / p.salePrice) * 100.0 else 0.0
+
+    // ADDED (Margin tab drill-down): every sale and purchase ever recorded for this
+    // one item, newest first, so a bad margin number can be traced to the exact
+    // transaction that caused it (a purchase entered at the wrong cost, a sale given
+    // an under-priced rate, etc.) instead of only seeing the current cost/sale average.
+    private data class ItemHistRow(val isSale: Boolean, val party: String, val qty: Double, val unit: String, val rate: Double, val createdAt: Long)
+
+    private fun showItemHistoryDialog(p: Product) = lifecycleScope.launch {
+        val db = PosDatabase.get(this@InventoryInsightsActivity)
+        val sales = db.saleDao().saleRecordsForItem(p.barcode)
+            .map { ItemHistRow(true, it.customerName, it.qty, it.unit, it.unitPrice, it.createdAt) }
+        val purchases = db.purchaseDao().purchaseRecordsForItem(p.barcode)
+            .map { ItemHistRow(false, it.supplierName, it.qty, it.unit, it.unitCost, it.createdAt) }
+        val merged = (sales + purchases).sortedByDescending { it.createdAt }
+
+        val content = LinearLayout(this@InventoryInsightsActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 24, 28, 8)
+        }
+        content.addView(TextView(this@InventoryInsightsActivity).apply {
+            text = p.name; textSize = 16f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(textDark))
+        })
+        content.addView(TextView(this@InventoryInsightsActivity).apply {
+            text = Loc.t(this@InventoryInsightsActivity, "Cost: ", "لاگت: ") + "Rs %.2f".format(p.cost) + "   " +
+                Loc.t(this@InventoryInsightsActivity, "Sale: ", "سیل: ") + "Rs %.2f".format(p.salePrice) + "   •   " +
+                "%.1f%%".format(marginPercent(p)) + " " + Loc.t(this@InventoryInsightsActivity, "margin", "منافع")
+            textSize = 12.5f; setTextColor(Color.parseColor(textGray)); setPadding(0, 4, 0, 18)
+        })
+
+        if (merged.isEmpty()) {
+            content.addView(smallNote(Loc.t(
+                this@InventoryInsightsActivity,
+                "Is item ki koi sale/purchase history nahi mili.",
+                "اس آئٹم کی کوئی سیل/خریداری کی تاریخ نہیں ملی۔"
+            )))
+        } else {
+            merged.forEach { r ->
+                content.addView(LinearLayout(this@InventoryInsightsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, 12, 0, 12)
+                    val col = LinearLayout(this@InventoryInsightsActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+                    col.addView(TextView(this@InventoryInsightsActivity).apply {
+                        text = (if (r.isSale) Loc.t(this@InventoryInsightsActivity, "Sale", "سیل") else Loc.t(this@InventoryInsightsActivity, "Purchase", "خریداری")) + " • " + r.party
+                        textSize = 13f; setTypeface(typeface, Typeface.BOLD)
+                        setTextColor(Color.parseColor(if (r.isSale) teal else primary))
+                    })
+                    col.addView(TextView(this@InventoryInsightsActivity).apply {
+                        text = java.text.SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()).format(java.util.Date(r.createdAt))
+                        textSize = 11f; setTextColor(Color.parseColor(textGray)); setPadding(0, 2, 0, 0)
+                    })
+                    addView(col)
+                    addView(LinearLayout(this@InventoryInsightsActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.END
+                        addView(TextView(this@InventoryInsightsActivity).apply {
+                            text = "%.0f %s".format(r.qty, r.unit); textSize = 12.5f; setTextColor(Color.parseColor(textGray))
+                        })
+                        addView(TextView(this@InventoryInsightsActivity).apply {
+                            text = "Rs %.2f".format(r.rate); textSize = 13f; setTypeface(typeface, Typeface.BOLD)
+                            setTextColor(Color.parseColor(if (r.isSale) teal else primary))
+                        })
+                    })
+                })
+                content.addView(View(this@InventoryInsightsActivity).apply {
+                    setBackgroundColor(Color.parseColor(border))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+                })
+            }
+        }
+
+        val scroll = ScrollView(this@InventoryInsightsActivity).apply { addView(content) }
+        android.app.AlertDialog.Builder(this@InventoryInsightsActivity)
+            .setView(scroll)
+            .setPositiveButton(Loc.t(this@InventoryInsightsActivity, "Band karen", "بند کریں"), null)
+            .show()
+    }
 
     // ---------------- Fast / Slow Movers ----------------
     private suspend fun loadMovers(db: PosDatabase) {
@@ -342,7 +423,10 @@ class InventoryInsightsActivity : AppCompatActivity() {
         setPadding(4, 6, 4, 10)
     }
 
-    private fun rowCard(title: String, subtitle: String, rightTop: String, rightTopColor: String, rightBottom: String): LinearLayout {
+    // ADDED (Margin tab drill-down): onClick lets a report row open the item's own
+    // transaction history so the person can see WHICH sale/purchase is behind a bad
+    // margin number, instead of only seeing the aggregate cost/sale price.
+    private fun rowCard(title: String, subtitle: String, rightTop: String, rightTopColor: String, rightBottom: String, onClick: (() -> Unit)? = null): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -350,6 +434,14 @@ class InventoryInsightsActivity : AppCompatActivity() {
             background = strokedBg(border, cardBg, 18)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 10) }
             applyElevation(this, 2f)
+            if (onClick != null) {
+                isClickable = true
+                isFocusable = true
+                val outValue = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
+                foreground = androidx.core.content.ContextCompat.getDrawable(this@InventoryInsightsActivity, outValue.resourceId)
+                setOnClickListener { onClick() }
+            }
         }
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         col.addView(TextView(this).apply { text = title; textSize = 14f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(textDark)) })
