@@ -1208,7 +1208,8 @@ object SyncQueueHelper {
             // adjustCustomerBalance() at return time. Mirrors PartyRepository.
             // recalculateBalances() (the other, already-correct "Recalculate"
             // entry point under Party Reports), which this now matches.
-            val sales = db.saleDao().salesByCustomer(c.id).filter { it.status != "returned" }
+            val allSales = db.saleDao().salesByCustomer(c.id)
+            val sales = allSales.filter { it.status != "returned" }
             // FIX (double-counted supplier-side "Purchase payment" bug, same class,
             // ported here): `billReference.isEmpty()` does NOT exclude the payment
             // row RoomPurchaseRepository.savePurchase() inserts at purchase time
@@ -1219,9 +1220,23 @@ object SyncQueueHelper {
             // matching a real invoice/billNo (this customer/supplier's own) is the
             // correct check — see PartyRepository.recalculateBalances()'s matching
             // comment.
-            val saleInvoices = sales.map { it.invoice }.toHashSet()
+            // FIX (audit — this duplicate implementation was missing two things
+            // PartyRepository.recalculateBalances() already had): (1) built from the
+            // status-FILTERED `sales`, so a returned sale's invoice fell out of the
+            // set and any payment still linked to it got subtracted a second time —
+            // same bug class as the returned-bill fix elsewhere, now using the
+            // UNFILTERED `allSales` instead. (2) only checked `it.reference`, never
+            // `it.billReference` — so a genuine "Receive/Make Payment" made WITH a
+            // bill linked via the picker (reference = a unique manual timestamp,
+            // billReference = the invoice) was never recognized as bill-covered at
+            // all and got subtracted here on top of `sale.paid` already reflecting
+            // it, every single time, bill still existing or not. Now checks both,
+            // matching PartyRepository's filter exactly.
+            val saleInvoices = allSales.map { it.invoice }.toHashSet()
             val correct = sales.sumOf { it.total - it.paid } -
-                db.paymentDao().listByParty("customer", c.id).filter { it.reference !in saleInvoices }.sumOf { it.amount }
+                db.paymentDao().listByParty("customer", c.id)
+                    .filter { it.reference !in saleInvoices && !(it.billReference.isNotBlank() && it.billReference in saleInvoices) }
+                    .sumOf { it.amount }
             if (kotlin.math.abs(correct - c.balance) > 0.01) {
                 fixes.add(PartyBalanceFix(c.name, c.balance, correct))
                 // FIX (2-device wrong balance): this used to write `correct` straight into
@@ -1234,10 +1249,19 @@ object SyncQueueHelper {
             }
         }
         for (s in db.supplierDao().allList()) {
-            val purchases = db.purchaseDao().purchasesBySupplier(s.id).filter { it.status != "returned" }
-            val billNos = purchases.map { it.billNo }.toHashSet()
+            val allPurchases = db.purchaseDao().purchasesBySupplier(s.id)
+            val purchases = allPurchases.filter { it.status != "returned" }
+            // FIX (audit — same two gaps as the customer loop above): billNos now built
+            // from the UNFILTERED purchase list (a returned purchase still "counts" so
+            // its linked payment isn't subtracted twice), and the payment filter also
+            // checks `billReference`, not just `reference` — so a "Make Payment" made
+            // WITH a bill linked is correctly recognized as already covered by that
+            // bill's own `paid`, instead of always being treated as standalone.
+            val billNos = allPurchases.map { it.billNo }.toHashSet()
             val correct = purchases.sumOf { it.total - it.paid } -
-                db.paymentDao().listByParty("supplier", s.id).filter { it.reference !in billNos }.sumOf { it.amount }
+                db.paymentDao().listByParty("supplier", s.id)
+                    .filter { it.reference !in billNos && !(it.billReference.isNotBlank() && it.billReference in billNos) }
+                    .sumOf { it.amount }
             if (kotlin.math.abs(correct - s.balance) > 0.01) {
                 fixes.add(PartyBalanceFix(s.name, s.balance, correct))
                 // FIX (2-device wrong balance): see the customer loop above.
