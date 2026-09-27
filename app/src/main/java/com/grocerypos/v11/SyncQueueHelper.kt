@@ -117,8 +117,23 @@ object SyncQueueHelper {
         )
     }
 
+    // FIX (RESOURCE_EXHAUSTED retry storm): this is called after essentially every
+    // save in the app (56 call sites — a payment, a cash entry, a party edit, a
+    // purchase...). It used to call syncNowOnce(), which enqueues with
+    // ExistingWorkPolicy.REPLACE — so doing a second thing (e.g. recording a cash
+    // payment) while the sync from the FIRST thing was still mid-push cancelled it
+    // and restarted from the same head-of-queue rows. None of those cancelled
+    // attempts ever reached markSynced()/markFailed(), so a burst of ordinary,
+    // quick actions (or two devices saving around the same time) could re-push the
+    // same few rows over and over, burning the Firestore daily write quota and
+    // producing repeated "RESOURCE_EXHAUSTED" entries in Sync History for the same
+    // 2-3 rows. triggerNow() enqueues with KEEP instead — if a sync is already
+    // running, this is a no-op and lets it finish naturally; the next save's
+    // trigger() call (or the periodic worker) picks up whatever's still queued.
+    // Only the user's own explicit "Sync Now" tap in Settings should force a
+    // cancel-and-restart — that still goes straight to syncNowOnce() (REPLACE).
     fun trigger(context: Context) {
-        SyncWorker.syncNowOnce(context)
+        SyncWorker.triggerNow(context)
     }
 
     // NEW (10/10 Priority #10 — Complete Audit Trail): a single shared writer for
