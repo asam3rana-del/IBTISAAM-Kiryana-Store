@@ -276,23 +276,58 @@ object SyncApi {
                     // brand-new doc can be seeded with this device's own local record's
                     // identity fields in the SAME write as the increment, instead of
                     // being created balance/stock-only.
+                    //
+                    // FIX (audit — "Naam missing" suppliers/customers STILL appearing
+                    // after the seed-fields fix above): adjustCustomerBalance()/
+                    // adjustSupplierBalance() always compute entry.entityId FRESH as
+                    // "customer:/supplier:${DeviceTag.current}-${localId}" — completely
+                    // independent of whatever this row's own `serverId` column
+                    // currently holds (see SyncQueueHelper.adjustSupplierBalance's
+                    // comment). For a party whose serverId column is stale or was
+                    // never stamped (an old row from before enqueueSupplier() started
+                    // doing that, or one a "Recalculate Balances" pass touches without
+                    // ever having gone through Add/Edit Party), findByServerId(entry.
+                    // entityId) finds NOTHING even though this row is exactly the
+                    // record that entityId refers to — so seedFields came back empty
+                    // and the doc was created blank all over again, just like before
+                    // the first fix. Since entityId's tag+id suffix is deterministic
+                    // whenever it was generated on THIS device, parse the local id
+                    // straight out of it as a fallback whenever the serverId lookup
+                    // misses — this always resolves correctly regardless of whether
+                    // serverId ever caught up — and opportunistically re-stamp the
+                    // local row's serverId so this mismatch stops recurring for it.
+                    fun localIdFromOwnEntityId(prefix: String): Long? {
+                        val ownPrefix = "$prefix${com.grocerypos.v11.DeviceTag.current}-"
+                        if (!entry.entityId.startsWith(ownPrefix)) return null
+                        return entry.entityId.substring(ownPrefix.length).toLongOrNull()
+                    }
                     val seedFields: Map<String, Any?> = when (entry.entityType) {
-                        "customer" -> localDb.customerDao().findByServerId(entry.entityId)?.let { c ->
-                            mapOf(
-                                "name" to c.name,
-                                "phone" to c.phone,
-                                "creditLimit" to c.creditLimit,
-                                "openingBalance" to c.openingBalance,
-                                "stuckBalance" to c.stuckBalance
-                            )
-                        } ?: emptyMap()
-                        "supplier" -> localDb.supplierDao().findByServerId(entry.entityId)?.let { s ->
-                            mapOf(
-                                "name" to s.name,
-                                "phone" to s.phone,
-                                "openingBalance" to s.openingBalance
-                            )
-                        } ?: emptyMap()
+                        "customer" -> {
+                            val c = localDb.customerDao().findByServerId(entry.entityId)
+                                ?: localIdFromOwnEntityId("customer:")?.let { localDb.customerDao().find(it) }
+                                    ?.also { if (it.serverId != entry.entityId) localDb.customerDao().update(it.copy(serverId = entry.entityId)) }
+                            c?.let {
+                                mapOf(
+                                    "name" to it.name,
+                                    "phone" to it.phone,
+                                    "creditLimit" to it.creditLimit,
+                                    "openingBalance" to it.openingBalance,
+                                    "stuckBalance" to it.stuckBalance
+                                )
+                            } ?: emptyMap()
+                        }
+                        "supplier" -> {
+                            val s = localDb.supplierDao().findByServerId(entry.entityId)
+                                ?: localIdFromOwnEntityId("supplier:")?.let { localDb.supplierDao().find(it) }
+                                    ?.also { if (it.serverId != entry.entityId) localDb.supplierDao().update(it.copy(serverId = entry.entityId)) }
+                            s?.let {
+                                mapOf(
+                                    "name" to it.name,
+                                    "phone" to it.phone,
+                                    "openingBalance" to it.openingBalance
+                                )
+                            } ?: emptyMap()
+                        }
                         "product" -> localDb.productDao().find(entry.entityId)?.let { p ->
                             mapOf(
                                 "name" to p.name,
