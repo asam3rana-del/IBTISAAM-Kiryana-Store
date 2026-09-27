@@ -808,7 +808,28 @@ object SyncApi {
         @Suppress("UNCHECKED_CAST")
         for (row in changes.sales) {
             val invoice = row["invoice"] as? String ?: continue
+            // FIX (multi-device conflict — deleted sale silently ate a same-invoice
+            // local edit): this used to delete the local sale unconditionally, with no
+            // check for a local edit to this same invoice still waiting to push. If
+            // Device A edited this sale (new total/paid, still queued) around the same
+            // time Device B deleted it, this pull would silently wipe out Device A's
+            // edit with no record it ever happened. Now: a pending local edit blocks
+            // the delete (same protection updates already get below) and logs a
+            // "sync_conflict" audit entry instead (see Settings > Sync History), so
+            // an admin can see both sides and decide — rather than one device's
+            // change disappearing with no trace.
             if (row["_deleted"] == true) {
+                if (db.syncQueueDao().pendingCountForEntity("sale", "sale:$invoice") > 0) {
+                    val local = saleDao.findSale(invoice)
+                    if (local != null) {
+                        logAudit(
+                            db, "sync_conflict",
+                            reference = "sale:$invoice",
+                            details = "A delete for this sale arrived from another device while your unsynced edit (Rs %.2f, paid Rs %.2f) was still pending — kept your local copy instead of deleting it. Check this sale and delete it yourself if the delete was correct.".format(local.total, local.paid)
+                        )
+                    }
+                    continue
+                }
                 saleDao.deleteItems(invoice)
                 saleDao.deleteSale(invoice)
                 continue
@@ -818,7 +839,24 @@ object SyncApi {
             // SyncQueueDao.pendingCountForEntity's comment. Matches
             // SyncQueueHelper.saleEntityId()'s "sale:$invoice" format directly rather
             // than building a throwaway Sale just to call that function.
-            if (db.syncQueueDao().pendingCountForEntity("sale", "sale:$invoice") > 0) continue
+            if (db.syncQueueDao().pendingCountForEntity("sale", "sale:$invoice") > 0) {
+                // NEW (multi-device conflict visibility): log a conflict when the
+                // incoming (skipped) remote version actually disagrees with what this
+                // device has locally — a same-value pull isn't a real conflict, just a
+                // redundant echo. Matches the customer/supplier "sync_conflict" audit
+                // pattern above, so it shows in Settings > Sync History like those do.
+                val local = saleDao.findSale(invoice)
+                val remoteTotal = (row["total"] as? Number)?.toDouble() ?: 0.0
+                val remotePaid = (row["paid"] as? Number)?.toDouble() ?: 0.0
+                if (local != null && (kotlin.math.abs(local.total - remoteTotal) > 0.009 || kotlin.math.abs(local.paid - remotePaid) > 0.009)) {
+                    logAudit(
+                        db, "sync_conflict",
+                        reference = "sale:$invoice",
+                        details = "Your unsynced edit (Rs %.2f, paid Rs %.2f) is still pending — an update from another device (Rs %.2f, paid Rs %.2f) was NOT applied. Once your edit pushes, re-check this sale against the other device.".format(local.total, local.paid, remoteTotal, remotePaid)
+                    )
+                }
+                continue
+            }
             val customerServerId = row["customerServerId"] as? String
             val localCustomerId = customerServerId?.let { custDao.findByServerId(it)?.id }
             val sale = Sale(
@@ -872,7 +910,30 @@ object SyncApi {
         @Suppress("UNCHECKED_CAST")
         for (row in changes.purchases) {
             val billNo = row["billNo"] as? String ?: continue
+            // FIX (multi-device conflict — "edited to 89960 but 86500 came back"):
+            // this used to delete the local purchase unconditionally, with no check
+            // for a local edit to this same billNo still waiting to push. If Device A
+            // edited this purchase (e.g. 86500 -> 89960, still queued to push) around
+            // the same time Device B deleted it (or deleted an older copy of it), this
+            // pull would silently apply the delete over Device A's edit — or, on
+            // whichever device pulls next, the edit and the delete could each leave
+            // their own trace behind depending on pull order, which is exactly how the
+            // same bill ends up looking duplicated across devices. Now: a pending
+            // local edit blocks the delete and logs a "sync_conflict" audit entry
+            // instead (see Settings > Sync History), the same protection the update
+            // path below already has.
             if (row["_deleted"] == true) {
+                if (db.syncQueueDao().pendingCountForEntity("purchase", "purchase:$billNo") > 0) {
+                    val local = purchaseDao.findPurchase(billNo)
+                    if (local != null) {
+                        logAudit(
+                            db, "sync_conflict",
+                            reference = "purchase:$billNo",
+                            details = "A delete for this purchase arrived from another device while your unsynced edit (Rs %.2f, paid Rs %.2f) was still pending — kept your local copy instead of deleting it. Check this bill and delete it yourself if the delete was correct.".format(local.total, local.paid)
+                        )
+                    }
+                    continue
+                }
                 purchaseDao.deleteItems(billNo)
                 purchaseDao.deletePurchase(billNo)
                 continue
@@ -885,7 +946,22 @@ object SyncApi {
             // supplier's own balance (synced separately as a delta, see pendingDelta()
             // above) stays correct, which is exactly the mismatch this fixes. See
             // SyncQueueDao.pendingCountForEntity's comment.
-            if (db.syncQueueDao().pendingCountForEntity("purchase", "purchase:$billNo") > 0) continue
+            if (db.syncQueueDao().pendingCountForEntity("purchase", "purchase:$billNo") > 0) {
+                // NEW (multi-device conflict visibility — see the matching sale-loop
+                // comment above): log a conflict when the incoming (skipped) remote
+                // version actually disagrees with what this device has locally.
+                val local = purchaseDao.findPurchase(billNo)
+                val remoteTotal = (row["total"] as? Number)?.toDouble() ?: 0.0
+                val remotePaid = (row["paid"] as? Number)?.toDouble() ?: 0.0
+                if (local != null && (kotlin.math.abs(local.total - remoteTotal) > 0.009 || kotlin.math.abs(local.paid - remotePaid) > 0.009)) {
+                    logAudit(
+                        db, "sync_conflict",
+                        reference = "purchase:$billNo",
+                        details = "Your unsynced edit (Rs %.2f, paid Rs %.2f) is still pending — an update from another device (Rs %.2f, paid Rs %.2f) was NOT applied. Once your edit pushes, re-check this bill against the other device.".format(local.total, local.paid, remoteTotal, remotePaid)
+                    )
+                }
+                continue
+            }
             val supplierServerId = row["supplierServerId"] as? String
             val localSupplierId = supplierServerId?.let { suppDao.findByServerId(it)?.id }
             val purchase = Purchase(
