@@ -257,6 +257,66 @@ object SyncApi {
                     val nowTs = System.currentTimeMillis()
                     val updatedAtValue: Any = map["updatedAt"] ?: nowTs
                     val branchNow = BranchConfigStore.current
+
+                    // FIX (audit — ghost documents with a blank name/identity): an
+                    // increment can be the very FIRST push for a brand-new entity (a
+                    // customer's opening balance, a product's opening stock — see
+                    // enqueueCustomerOpeningBalance-style callers). Previously this
+                    // branch always wrote via SetOptions.mergeFields(fieldName,
+                    // "updatedAt", "branchId", "appliedOps") only, so when the target
+                    // document didn't exist yet, Firestore created it with ONLY those
+                    // fields — no name/phone/etc. — a bare doc with a real balance/stock
+                    // but a permanently blank identity. Nothing else ever heals this:
+                    // customerJson()/supplierJson()/productJson() deliberately exclude
+                    // the incremented field (see their comments), so a later full-
+                    // snapshot "upsert" push never touches it, and the webapp's own
+                    // return-reversal path only ever updates balance/updatedAt on an
+                    // EXISTING doc too. Fetched here (outside the transaction, since
+                    // Room DAO calls are suspend and the tx block below is not) so a
+                    // brand-new doc can be seeded with this device's own local record's
+                    // identity fields in the SAME write as the increment, instead of
+                    // being created balance/stock-only.
+                    val seedFields: Map<String, Any?> = when (entry.entityType) {
+                        "customer" -> localDb.customerDao().findByServerId(entry.entityId)?.let { c ->
+                            mapOf(
+                                "name" to c.name,
+                                "phone" to c.phone,
+                                "creditLimit" to c.creditLimit,
+                                "openingBalance" to c.openingBalance,
+                                "stuckBalance" to c.stuckBalance
+                            )
+                        } ?: emptyMap()
+                        "supplier" -> localDb.supplierDao().findByServerId(entry.entityId)?.let { s ->
+                            mapOf(
+                                "name" to s.name,
+                                "phone" to s.phone,
+                                "openingBalance" to s.openingBalance
+                            )
+                        } ?: emptyMap()
+                        "product" -> localDb.productDao().find(entry.entityId)?.let { p ->
+                            mapOf(
+                                "name" to p.name,
+                                "category" to p.category,
+                                "cost" to p.cost,
+                                "salePrice" to p.salePrice,
+                                "wholesalePrice" to p.wholesalePrice,
+                                "reorderLevel" to p.reorderLevel,
+                                "expiry" to p.expiry,
+                                "unit" to p.unit,
+                                "unitSize" to p.unitSize,
+                                "unitNote" to p.unitNote,
+                                "secondaryUnit" to p.secondaryUnit,
+                                "secondaryUnitQty" to p.secondaryUnitQty,
+                                "tertiaryUnit" to p.tertiaryUnit,
+                                "tertiaryUnitQty" to p.tertiaryUnitQty,
+                                "defaultUnitIndex" to p.defaultUnitIndex,
+                                "quickSaleDefaultUnitIndex" to p.quickSaleDefaultUnitIndex,
+                                "searchTag" to p.searchTag
+                            )
+                        } ?: emptyMap()
+                        else -> emptyMap()
+                    }
+
                     db.runTransaction { tx ->
                         val snap = tx.get(docRef)
                         @Suppress("UNCHECKED_CAST")
@@ -270,15 +330,37 @@ object SyncApi {
                             .takeLast(999)
                             .forEach { kept[it.key] = it.value }
                         kept[opId] = nowTs
+
+                        // A doc that doesn't exist yet, OR exists only as a tombstone
+                        // (_deleted=true) from an earlier delete, is "new" for our
+                        // purposes: either way this write is about to become the
+                        // entity's sole source of truth, so it must carry identity
+                        // fields, not just the increment.
+                        val isNew = !snap.exists() || snap.get("_deleted") == true
+
+                        val writeMap = LinkedHashMap<String, Any?>()
+                        writeMap[fieldName] = com.google.firebase.firestore.FieldValue.increment(delta)
+                        writeMap["updatedAt"] = updatedAtValue
+                        writeMap["branchId"] = branchNow
+                        writeMap["appliedOps"] = kept
+                        val mergeFieldNames = mutableListOf(fieldName, "updatedAt", "branchId", "appliedOps")
+                        if (isNew) {
+                            writeMap["serverId"] = entry.entityId
+                            mergeFieldNames.add("serverId")
+                            if (snap.get("_deleted") == true) {
+                                writeMap["_deleted"] = false
+                                mergeFieldNames.add("_deleted")
+                            }
+                            for ((k, v) in seedFields) {
+                                writeMap[k] = v
+                                mergeFieldNames.add(k)
+                            }
+                        }
+
                         tx.set(
                             docRef,
-                            mapOf(
-                                fieldName to com.google.firebase.firestore.FieldValue.increment(delta),
-                                "updatedAt" to updatedAtValue,
-                                "branchId" to branchNow,
-                                "appliedOps" to kept
-                            ),
-                            com.google.firebase.firestore.SetOptions.mergeFields(fieldName, "updatedAt", "branchId", "appliedOps")
+                            writeMap,
+                            com.google.firebase.firestore.SetOptions.mergeFields(mergeFieldNames)
                         )
                         null
                     }.await()
