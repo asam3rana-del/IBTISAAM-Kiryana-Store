@@ -72,6 +72,18 @@ class ItemSearchActivity : ThemedActivity() {
 
     private var products = listOf<Product>()
 
+    // Purchase/cost information (Compare Suppliers, Purchase Rate History, best
+    // purchase rate, profit margin) is only for Admin / Manager. Cashier never
+    // sees it and it is not even queried for them.
+    private val canSeeCost: Boolean
+        get() = (getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier")
+            .let { it == "admin" || it == "manager" }
+
+    // Where showItemHistory()/addCollapsibleRows() currently add their views:
+    // detailContainer normally, switched to the hidden cost container for the
+    // purchase-side sections.
+    private lateinit var target: LinearLayout
+
     // Extras passed in from Dashboard's live search result tap
     private var preselectProductBarcode: String? = null
     private var preselectProductName: String? = null
@@ -103,7 +115,7 @@ class ItemSearchActivity : ThemedActivity() {
             })
         })
         root.addView(TextView(this).apply {
-            text = "Search any item to see its sale & purchase rate history"
+            text = "Search any item to see its sale rates (Carton / Dozen / Pcs)"
             textSize = 12f
             setTextColor(Color.parseColor(textMuted))
             setPadding(4, 0, 4, 16)
@@ -203,26 +215,103 @@ class ItemSearchActivity : ThemedActivity() {
         }
         matches.forEach { product ->
             resultsContainer.addView(card().apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                orientation = LinearLayout.VERTICAL
                 setOnClickListener { showItemHistory(product) }
+                addView(LinearLayout(this@ItemSearchActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(TextView(this@ItemSearchActivity).apply {
+                        text = product.name
+                        textSize = 14.5f
+                        setTextColor(Color.parseColor(textDark))
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    })
+                    addView(TextView(this@ItemSearchActivity).apply {
+                        // Product.stock is a SMALLEST-unit count; formatStockBreakdown()
+                        // is the shared helper every other screen uses.
+                        text = "Stock: ${product.formatStockBreakdown()}"
+                        textSize = 11.5f
+                        setTextColor(Color.parseColor(textMuted))
+                    })
+                })
+                // Sale rate in every tier, right in the list — no need to open the item.
                 addView(TextView(this@ItemSearchActivity).apply {
-                    text = product.name
-                    textSize = 14.5f
-                    setTextColor(Color.parseColor(textDark))
+                    text = if (product.salePrice > 0) product.tierRateLine(product.salePrice) else "Sale rate set nahi"
+                    textSize = 12.5f
+                    setTextColor(Color.parseColor(if (product.salePrice > 0) teal else textMuted))
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setPadding(0, 6, 0, 0)
                 })
-                addView(TextView(this@ItemSearchActivity).apply {
-                    // ---- FIX: Product.stock is a SMALLEST-unit count, not a primary-unit
-                    // count, so it must never be paired with `product.unit` directly (was
-                    // showing e.g. "500 carton" when 500 was actually the dabbi count).
-                    // formatStockBreakdown() is the same helper Product/Purchase/Sale/
-                    // Dashboard/CategoriesUnits screens use, so this now always agrees.
-                    text = "Stock: ${product.formatStockBreakdown()}"
-                    textSize = 11.5f
-                    setTextColor(Color.parseColor(textMuted))
+            })
+        }
+    }
+
+    private fun fmtRate(v: Double): String =
+        if (v % 1.0 == 0.0) "%.0f".format(v) else "%.2f".format(v)
+
+    // "Ctn Rs 2880  •  Dzn Rs 720  •  Pcs Rs 60" — [primaryRate] is a PRIMARY-unit
+    // price (how salePrice / wholesalePrice are stored), converted through the same
+    // unit ladder the Sale screen uses. 1- or 2-tier products show only their tiers.
+    private fun Product.tierRateLine(primaryRate: Double): String =
+        unitLadder().asReversed().joinToString("  •  ") { tier ->
+            "${tier.unit} Rs ${fmtRate(fromPrimaryUnitRate(primaryRate, tier.unit))}"
+        }
+
+    // Big "Sale Rate" card shown first when an item is opened: every tier in a large
+    // font, and the (smaller) wholesale rate underneath if one is set.
+    private fun saleRateCard(product: Product): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(24, 20, 24, 20)
+        background = strokedBg(teal, cardWhite, 14)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(0, 0, 0, 14) }
+
+        addView(TextView(this@ItemSearchActivity).apply {
+            text = "SALE RATE"
+            textSize = 10.5f
+            setTextColor(Color.parseColor(teal))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, 8)
+        })
+        if (product.salePrice > 0) {
+            product.unitLadder().asReversed().forEach { tier ->
+                addView(LinearLayout(this@ItemSearchActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, 2, 0, 2)
+                    addView(TextView(this@ItemSearchActivity).apply {
+                        text = tier.unit
+                        textSize = 14f
+                        setTextColor(Color.parseColor(textMuted))
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    })
+                    addView(TextView(this@ItemSearchActivity).apply {
+                        text = "Rs ${fmtRate(product.fromPrimaryUnitRate(product.salePrice, tier.unit))}"
+                        textSize = 22f
+                        setTextColor(Color.parseColor(textDark))
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    })
                 })
+            }
+        } else {
+            addView(TextView(this@ItemSearchActivity).apply {
+                text = "Is item ka sale rate abhi set nahi hai"
+                textSize = 13f
+                setTextColor(Color.parseColor(textMuted))
+            })
+        }
+        if (product.wholesalePrice > 0) {
+            addView(View(this@ItemSearchActivity).apply {
+                setBackgroundColor(Color.parseColor(border))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply { setMargins(0, 10, 0, 10) }
+            })
+            addView(TextView(this@ItemSearchActivity).apply {
+                text = "Wholesale:  " + product.tierRateLine(product.wholesalePrice)
+                textSize = 12.5f
+                setTextColor(Color.parseColor(orange))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
         }
     }
@@ -232,11 +321,13 @@ class ItemSearchActivity : ThemedActivity() {
         detailTitle.text = product.name
         detailContainer.removeAllViews()
         resultsContainer.removeAllViews()
+        target = detailContainer
+        val showCostSections = canSeeCost
 
         lifecycleScope.launch {
             val db = PosDatabase.get(this@ItemSearchActivity)
             val saleRecords = db.saleDao().saleRecordsForItem(product.barcode)
-            val purchaseRecords = db.purchaseDao().purchaseRecordsForItem(product.barcode)
+            val purchaseRecords = if (showCostSections) db.purchaseDao().purchaseRecordsForItem(product.barcode) else emptyList()
             val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
             // ---- Build the per-supplier summaries ONCE up front (not inline inside
@@ -280,10 +371,10 @@ class ItemSearchActivity : ThemedActivity() {
             // cheapest" card at the very top, so a shopkeeper doesn't have to read
             // three separate lists just to get today's answer. Only shown when
             // there's at least a sale or a purchase to summarize. ----
-            if (saleRecords.isNotEmpty() || bestSupplier != null) {
-                detailContainer.addView(quickSummaryCard(product, saleRecords.firstOrNull(), bestSupplier))
-                detailContainer.addView(spacer(14))
-            }
+            // Big Sale Rate card first (all tiers + wholesale), then the summary.
+            detailContainer.addView(saleRateCard(product))
+            detailContainer.addView(quickSummaryCard(product, saleRecords.firstOrNull(), bestSupplier, showCostSections))
+            detailContainer.addView(spacer(14))
 
             // ---- Sale rate history (newest first, so latest sale rate is on top) ----
             detailContainer.addView(sectionHeader("Sale Rate History", teal))
@@ -315,14 +406,43 @@ class ItemSearchActivity : ThemedActivity() {
 
             detailContainer.addView(spacer(14))
 
+            // ---- Purchase-side sections: hidden until "Show cost" is tapped, and
+            // only exist at all for Admin / Manager. ----
+            if (!showCostSections) return@launch
+            val costContainer = LinearLayout(this@ItemSearchActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+            }
+            lateinit var costToggle: TextView
+            costToggle = TextView(this@ItemSearchActivity).apply {
+                text = "Show cost ▾"
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(Color.parseColor(orange))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = strokedBg(orange, cardWhite, 12)
+                setPadding(20, 16, 20, 16)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 0, 0, 12) }
+                setOnClickListener {
+                    val opening = costContainer.visibility == View.GONE
+                    costContainer.visibility = if (opening) View.VISIBLE else View.GONE
+                    costToggle.text = if (opening) "Hide cost ▴" else "Show cost ▾"
+                }
+            }
+            detailContainer.addView(costToggle)
+            detailContainer.addView(costContainer)
+            target = costContainer
+
             // ---- NEW: Compare Suppliers — groups the same purchase records by
             // supplier so the user can see, at a glance, who is currently cheapest
             // for this item (last rate) and who tends to be cheapest overall (avg
             // rate), without reading through the full chronological list above. ----
-            detailContainer.addView(sectionHeader("Compare Suppliers", navy))
-            detailContainer.addView(sectionSubtitle("Har supplier ka aakhri rate — sabse sasta upar, BEST RATE badge ke sath"))
+            target.addView(sectionHeader("Compare Suppliers", navy))
+            target.addView(sectionSubtitle("Har supplier ka aakhri rate — sabse sasta upar, BEST RATE badge ke sath"))
             if (supplierSummaries.isEmpty()) {
-                detailContainer.addView(emptyRow("No supplier data yet for this item"))
+                target.addView(emptyRow("No supplier data yet for this item"))
             } else {
                 val cheapestPrimaryRate = supplierSummaries.minOf { it.primaryLastRate }
                 // NEW: savings badge on the best-rate card — how much cheaper the
@@ -335,7 +455,7 @@ class ItemSearchActivity : ThemedActivity() {
                 val savingsVsNextPrimary = if (distinctPrimaryRates.size > 1) distinctPrimaryRates[1] - distinctPrimaryRates[0] else null
                 val now = System.currentTimeMillis()
                 supplierSummaries.forEach { s ->
-                    detailContainer.addView(
+                    target.addView(
                         supplierCompareRow(
                             summary = s,
                             isBest = s.primaryLastRate == cheapestPrimaryRate,
@@ -347,13 +467,13 @@ class ItemSearchActivity : ThemedActivity() {
                 }
             }
 
-            detailContainer.addView(spacer(14))
+            target.addView(spacer(14))
 
             // ---- Purchase rate history (newest first, so latest cost rate is on top) ----
-            detailContainer.addView(sectionHeader("Purchase Rate History", orange))
-            detailContainer.addView(sectionSubtitle("Jis rate par yeh item khareeda gaya, sabse naya pehle"))
+            target.addView(sectionHeader("Purchase Rate History", orange))
+            target.addView(sectionSubtitle("Jis rate par yeh item khareeda gaya, sabse naya pehle"))
             if (purchaseRecords.isEmpty()) {
-                detailContainer.addView(emptyRow("No purchases of this item yet"))
+                target.addView(emptyRow("No purchases of this item yet"))
             } else {
                 val purchaseRows = purchaseRecords.mapIndexed { index, r ->
                     rateRow(
@@ -389,7 +509,7 @@ class ItemSearchActivity : ThemedActivity() {
     // a second screen or a separate tap-through. Extra rows are pre-built and
     // just hidden/shown, so toggling is instant.
     private fun addCollapsibleRows(rows: List<View>, visibleCount: Int, colorHex: String) {
-        rows.take(visibleCount).forEach { detailContainer.addView(it) }
+        rows.take(visibleCount).forEach { target.addView(it) }
         val remaining = rows.size - visibleCount
         if (remaining <= 0) return
         val extra = LinearLayout(this).apply {
@@ -397,7 +517,7 @@ class ItemSearchActivity : ThemedActivity() {
             visibility = View.GONE
         }
         rows.drop(visibleCount).forEach { extra.addView(it) }
-        detailContainer.addView(extra)
+        target.addView(extra)
         lateinit var toggle: TextView
         toggle = TextView(this).apply {
             text = "Show $remaining more ▾"
@@ -411,7 +531,7 @@ class ItemSearchActivity : ThemedActivity() {
                 toggle.text = if (expanding) "Show less ▴" else "Show $remaining more ▾"
             }
         }
-        detailContainer.addView(toggle)
+        target.addView(toggle)
     }
 
     // NEW: the "am I making money, and who's cheapest" card — one glance instead
@@ -421,7 +541,7 @@ class ItemSearchActivity : ThemedActivity() {
     // since a sale rung up per-Pcs and a purchase rung up per-Ctn are not directly
     // comparable numbers otherwise). Any piece that's missing (no sales yet, or no
     // purchases yet) is simply left out rather than shown as a misleading zero.
-    private fun quickSummaryCard(product: Product, latestSale: ItemSaleRecord?, bestSupplier: SupplierSummary?): LinearLayout {
+    private fun quickSummaryCard(product: Product, latestSale: ItemSaleRecord?, bestSupplier: SupplierSummary?, showCost: Boolean): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 16, 20, 16)
@@ -467,14 +587,14 @@ class ItemSearchActivity : ThemedActivity() {
 
             if (latestSale != null) {
                 val saleUnit = latestSale.unit.ifBlank { product.unit }
-                statRow("Current Sale Rate", "Rs %.2f / %s".format(latestSale.unitPrice, saleUnit), teal)
+                statRow("Last Sold At", "Rs %.2f / %s".format(latestSale.unitPrice, saleUnit), teal)
             }
-            if (bestSupplier != null) {
+            if (showCost && bestSupplier != null) {
                 statRow("Best Purchase Rate", "Rs %.2f / %s  (${bestSupplier.supplier})".format(bestSupplier.lastRate, bestSupplier.lastUnit), orange)
             }
             // Margin only makes sense once we have BOTH a sale rate and a purchase
             // rate to compare — and only once they're put on the same unit basis.
-            if (latestSale != null && bestSupplier != null) {
+            if (showCost && latestSale != null && bestSupplier != null) {
                 val saleUnit = latestSale.unit.ifBlank { product.unit }
                 val costInSaleUnit = product.fromPrimaryUnitRate(bestSupplier.primaryLastRate, saleUnit)
                 if (costInSaleUnit > 0) {
