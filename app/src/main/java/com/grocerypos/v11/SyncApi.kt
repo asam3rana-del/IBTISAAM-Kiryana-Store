@@ -1106,10 +1106,32 @@ object SyncApi {
             val createdAt = (row["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
 
             val existing = paymentDao.findByServerId(serverId)
+            // FIX (payment vanishes from its party after a merge/sync): if the pushed
+            // partyServerId no longer resolves to any local party (e.g. it pointed at a
+            // duplicate that was merged away) but this device's own copy of the payment
+            // is still attached to a real, existing party, keep that attachment instead
+            // of overwriting it with null, and heal the stored partyServerId to match.
+            val keepLocalParty: Long? = if (existing != null && partyServerId != null && partyId == null) {
+                existing.partyId?.takeIf { pid ->
+                    when (partyType) {
+                        "customer" -> custDao.find(pid) != null
+                        "supplier" -> suppDao.find(pid) != null
+                        else -> false
+                    }
+                }
+            } else null
+            val healedPartyServerId: String? = if (keepLocalParty != null) {
+                when (partyType) {
+                    "customer" -> custDao.find(keepLocalParty)?.serverId
+                    "supplier" -> suppDao.find(keepLocalParty)?.serverId
+                    else -> null
+                } ?: partyServerId
+            } else partyServerId
+            val finalPartyId = keepLocalParty ?: partyId
             if (existing != null) {
                 paymentDao.update(
                     existing.copy(
-                        reference = reference, partyType = partyType, partyId = partyId, partyServerId = partyServerId,
+                        reference = reference, partyType = partyType, partyId = finalPartyId, partyServerId = healedPartyServerId,
                         amount = amount, method = method, note = note, billReference = billReference, createdAt = createdAt,
                         updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt, dirty = false
                     )

@@ -266,7 +266,14 @@ class PartyRepository(
                     SyncQueueHelper.enqueue(db, "sale", SyncQueueHelper.saleEntityId(updated), "update", SyncQueueHelper.saleJson(db, updated))
                 }
                 for (payment in db.paymentDao().listByParty("customer", dup.id)) {
-                    val updated = payment.copy(partyId = keeper.id, dirty = true, updatedAt = now)
+                    // FIX (merge orphaned payments after sync): also re-point the portable
+                    // partyServerId. It used to keep the deleted duplicate's serverId, so the
+                    // next pull resolved it to nothing and the payment fell off the keeper.
+                    val updated = payment.copy(
+                        partyId = keeper.id,
+                        partyServerId = keeper.serverId ?: SyncQueueHelper.customerEntityId(keeper),
+                        dirty = true, updatedAt = now
+                    )
                     db.paymentDao().update(updated)
                     SyncQueueHelper.enqueuePayment(db, updated)
                 }
@@ -299,7 +306,12 @@ class PartyRepository(
                     SyncQueueHelper.enqueue(db, "purchase", SyncQueueHelper.purchaseEntityId(updated), "update", SyncQueueHelper.purchaseJson(db, updated))
                 }
                 for (payment in db.paymentDao().listByParty("supplier", dup.id)) {
-                    val updated = payment.copy(partyId = keeper.id, dirty = true, updatedAt = now)
+                    // FIX (merge orphaned payments after sync): see the customer loop above.
+                    val updated = payment.copy(
+                        partyId = keeper.id,
+                        partyServerId = keeper.serverId ?: SyncQueueHelper.supplierEntityId(keeper),
+                        dirty = true, updatedAt = now
+                    )
                     db.paymentDao().update(updated)
                     SyncQueueHelper.enqueuePayment(db, updated)
                 }
