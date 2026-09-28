@@ -84,6 +84,22 @@ object SyncApi {
         (e as? com.google.firebase.firestore.FirebaseFirestoreException)?.code ==
             com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED
 
+    /** True if Firestore rejected the request because the project's free daily quota
+     *  (reads/writes) is used up — RESOURCE_EXHAUSTED. This is NOT a bad record: the
+     *  quota resets by itself every day (midnight Pacific Time), so a push that fails
+     *  for this reason must never count towards a row's 10-strike retry limit. */
+    fun isQuotaExceeded(e: Exception): Boolean {
+        val fe = e as? com.google.firebase.firestore.FirebaseFirestoreException
+        if (fe?.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED) return true
+        val m = (e.message ?: "") + " " + (e.cause?.message ?: "")
+        return m.contains("RESOURCE_EXHAUSTED", ignoreCase = true) || m.contains("quota", ignoreCase = true)
+    }
+
+    /** Set by the most recent push() call — lets SyncRepository tell "quota is
+     *  exhausted, stop and wait" apart from "this one row is broken". */
+    @Volatile var lastPushQuotaExceeded: Boolean = false
+    @Volatile var lastPushError: String? = null
+
     /** Human-readable explanation for isPermissionDenied() — this almost always
      *  means the Firestore project's Security Rules don't match what this app
      *  expects (see firestore.rules in the repo root), not a problem the user can
@@ -147,7 +163,12 @@ object SyncApi {
     // ---------- PUSH ----------
 
     suspend fun push(context: Context, entry: com.grocerypos.v11.SyncQueueEntry): Boolean {
-        val db = firestoreFor(context) ?: return false
+        lastPushQuotaExceeded = false
+        lastPushError = null
+        val db = firestoreFor(context) ?: run {
+            lastPushError = "not signed in / branch not configured"
+            return false
+        }
         val localDb = PosDatabase.get(context)
         return try {
             val collection = when (entry.entityType) {
@@ -428,7 +449,11 @@ object SyncApi {
             }
             true
         } catch (e: Exception) {
-            logAudit(
+            lastPushQuotaExceeded = isQuotaExceeded(e)
+            lastPushError = e.message ?: "unknown error"
+            // Quota errors are logged once by SyncRepository (it stops the whole loop),
+            // not once per queued row — that spam is what filled Sync History before.
+            if (!lastPushQuotaExceeded) logAudit(
                 localDb, "sync_push_failed",
                 reference = "${entry.entityType}:${entry.entityId}",
                 details = e.message ?: "unknown error"

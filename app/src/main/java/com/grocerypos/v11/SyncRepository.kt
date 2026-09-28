@@ -14,6 +14,7 @@ object SyncRepository {
 
     private const val PREFS_NAME = "sync_prefs"
     private const val KEY_LAST_SYNC = "last_sync_time"
+    private const val KEY_LAST_STUCK_RESET = "last_stuck_reset_time"
 
     // Held so background workers / other classes (e.g. App.onCreate) can trigger
     // sync-related work without needing to pass a Context around everywhere.
@@ -45,21 +46,49 @@ object SyncRepository {
         var pushedCount = 0
         var failedCount = 0
 
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        // FIX (sync stops after Firestore quota day): when the daily quota ran out,
+        // every push failed and each attempt added a strike; after 10 strikes a row
+        // became "stuck" and pending() never returned it again — so even after the
+        // quota reset the next morning, those rows (and every new edit queued behind
+        // them in the same run) never went out until someone opened Sync History and
+        // tapped Retry. Now stuck rows get a fresh chance automatically: at most once
+        // every 3 hours (a genuinely broken row costs one attempt per window, not one
+        // per cycle, so the original "stop hammering" protection still holds).
+        val now = System.currentTimeMillis()
+        val lastHeal = prefs.getLong(KEY_LAST_STUCK_RESET, 0L)
+        if (now - lastHeal > 3L * 60 * 60 * 1000) {
+            try { queueDao.resetAllStuck() } catch (e: Exception) { /* never block sync */ }
+            prefs.edit().putLong(KEY_LAST_STUCK_RESET, now).apply()
+        }
+
         // ---- 1. PUSH: drain the local queue up to Firestore ----
+        var quotaHit = false
         val pending = queueDao.pending(limit = 200)
         for (entry in pending) {
             val ok = SyncApi.push(context, entry)
             if (ok) {
                 queueDao.markSynced(entry.id)
                 pushedCount++
+            } else if (SyncApi.lastPushQuotaExceeded) {
+                // Quota is gone for the whole project — stop immediately. Don't add a
+                // strike to this row (it isn't broken) and don't burn more requests.
+                quotaHit = true
+                break
             } else {
-                queueDao.markFailed(entry.id, "push failed")
+                queueDao.markFailed(entry.id, SyncApi.lastPushError ?: "push failed")
                 failedCount++
             }
         }
+        if (quotaHit) {
+            return SyncResult(
+                pushedCount, failedCount, pulledOk = false,
+                error = "Firebase daily quota khatam ho gaya — data safe hai, quota reset hote hi khud sync ho jayega"
+            )
+        }
 
         // ---- 2. PULL: fetch anything new from Firestore ----
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val since = prefs.getLong(KEY_LAST_SYNC, 0L)
 
         val changes = try {
@@ -67,7 +96,11 @@ object SyncRepository {
         } catch (e: SyncApi.BranchNotConfiguredException) {
             return SyncResult(pushedCount, failedCount, pulledOk = false, error = e.message)
         } catch (e: Exception) {
-            val msg = if (SyncApi.isPermissionDenied(e)) SyncApi.permissionDeniedMessage(context) else e.message
+            val msg = when {
+                SyncApi.isPermissionDenied(e) -> SyncApi.permissionDeniedMessage(context)
+                SyncApi.isQuotaExceeded(e) -> "Firebase daily quota khatam ho gaya — quota reset hote hi khud sync ho jayega"
+                else -> e.message
+            }
             return SyncResult(pushedCount, failedCount, pulledOk = false, error = msg)
         }
 
