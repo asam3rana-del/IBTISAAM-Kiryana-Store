@@ -250,6 +250,7 @@ class PartyRepository(
     // keeper's balance is simply recomputed from its now-complete bill/payment
     // history, the same safe path used for ordinary balance drift.
     suspend fun mergeDuplicateParties(): MergeResult {
+        if (hasPendingSync()) return MergeResult(0, 0)
         var customersMerged = 0
         var suppliersMerged = 0
         val now = System.currentTimeMillis()
@@ -345,7 +346,15 @@ class PartyRepository(
     // one row finds exactly the stuck duplicates and nothing else. Within a group, the most
     // recently updated/created row is the one that reflects the bill's current state; every
     // other row in the group is the leftover this cleans up.
+    // SAFETY (multi-device): the cleanup/merge tools below decide what to delete from THIS
+    // device's local data only, then push the deletes to every device. If this device still
+    // has unsynced work (or hasn't pulled the other device's bills yet), that local view is
+    // incomplete and legitimate payments look like "orphans". So they refuse to run until
+    // the sync queue is empty — open Settings > Sync, let it finish on BOTH devices, retry.
+    private suspend fun hasPendingSync(): Boolean = db.syncQueueDao().pending(1).isNotEmpty()
+
     suspend fun findDuplicatePayments(): List<DuplicatePaymentGroup> {
+        if (hasPendingSync()) return emptyList()
         val customerNames = db.customerDao().allList().associate { it.id to it.name }
         val supplierNames = db.supplierDao().allList().associate { it.id to it.name }
         return db.paymentDao().allRaw()
@@ -378,6 +387,7 @@ class PartyRepository(
     // the same recalculateBalances() used elsewhere — since those duplicate rows are what was
     // inflating payments.sumOf{amount} and throwing the party's balance off in the first place.
     suspend fun cleanupDuplicatePayments(groups: List<DuplicatePaymentGroup>? = null): CleanupPaymentsResult {
+        if (hasPendingSync()) return CleanupPaymentsResult(0, RecalcResult(0, 0))
         val target = groups ?: findDuplicatePayments()
         var removed = 0
         for (group in target) {
@@ -411,7 +421,7 @@ class PartyRepository(
     // bill, and removes it the same sync-safe way as cleanupDuplicatePayments()
     // above, then recalculates.
     suspend fun findOrphanedPayments(): List<com.grocerypos.v11.Payment> =
-        db.paymentDao().allRaw().filter { p ->
+        if (hasPendingSync()) emptyList() else db.paymentDao().allRaw().filter { p ->
             !p.reference.startsWith("manual-") && when (p.partyType) {
                 "supplier" -> db.purchaseDao().findPurchase(p.reference) == null
                 "customer" -> db.saleDao().findSale(p.reference) == null
@@ -420,6 +430,7 @@ class PartyRepository(
         }
 
     suspend fun cleanupOrphanedPayments(payments: List<com.grocerypos.v11.Payment>? = null): CleanupPaymentsResult {
+        if (hasPendingSync()) return CleanupPaymentsResult(0, RecalcResult(0, 0))
         val target = payments ?: findOrphanedPayments()
         for (payment in target) SyncQueueHelper.deletePayment(db, payment)
         val recalc = if (target.isNotEmpty()) recalculateBalances() else RecalcResult(0, 0)

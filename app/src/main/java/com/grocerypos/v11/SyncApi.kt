@@ -883,7 +883,13 @@ object SyncApi {
                 continue
             }
             val customerServerId = row["customerServerId"] as? String
-            val localCustomerId = customerServerId?.let { custDao.findByServerId(it)?.id }
+            // FIX (purchases/sales vanish from party ledger after sync/merge): if the
+            // pushed customerServerId doesn't resolve on THIS device (party merged away,
+            // or not pulled yet), keep this device's own valid customer link instead of
+            // overwriting it with null — same protection payments already have below.
+            val resolvedCustomerId = customerServerId?.let { custDao.findByServerId(it)?.id }
+            val localCustomerId = resolvedCustomerId
+                ?: if (customerServerId != null) saleDao.findSale(invoice)?.customerId?.takeIf { custDao.find(it) != null } else null
             val sale = Sale(
                 invoice = invoice,
                 customerId = localCustomerId,
@@ -988,7 +994,12 @@ object SyncApi {
                 continue
             }
             val supplierServerId = row["supplierServerId"] as? String
-            val localSupplierId = supplierServerId?.let { suppDao.findByServerId(it)?.id }
+            // FIX (purchases vanish from supplier ledger after sync/merge): see the sale
+            // loop above — never overwrite a valid local supplier link with null just
+            // because the pushed supplierServerId doesn't resolve on this device.
+            val resolvedSupplierId = supplierServerId?.let { suppDao.findByServerId(it)?.id }
+            val localSupplierId = resolvedSupplierId
+                ?: if (supplierServerId != null) purchaseDao.findPurchase(billNo)?.supplierId?.takeIf { suppDao.find(it) != null } else null
             val purchase = Purchase(
                 billNo = billNo,
                 supplierId = localSupplierId,
