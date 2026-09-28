@@ -130,6 +130,15 @@ class ReportsActivity : AppCompatActivity() {
             accentHex = teal
         ) { startActivity(android.content.Intent(this@ReportsActivity, PaymentsReportActivity::class.java)) })
 
+        // NEW (user request — Total Sale/Total Purchase month & year wise): lists
+        // every month (or year) side by side instead of only showing one selected
+        // period's total, so e.g. this month can be compared against last month.
+        root.addView(khataRow(
+            title = Loc.t(this, "Sale vs Purchase — Month/Year", "سیل بمقابلہ خریداری — مہینہ/سال"),
+            subtitle = Loc.t(this, "Total sale & purchase, broken down by month or year", "کل سیل اور خریداری، مہینہ یا سال کے مطابق"),
+            accentHex = primary
+        ) { startActivity(android.content.Intent(this@ReportsActivity, MonthlySalesPurchaseActivity::class.java)) })
+
         root.addView(khataRow(
             title = Loc.t(this, "Stock Report", "اسٹاک رپورٹ"),
             subtitle = Loc.t(this, "Current inventory levels", "موجودہ انوینٹری کی سطح"),
