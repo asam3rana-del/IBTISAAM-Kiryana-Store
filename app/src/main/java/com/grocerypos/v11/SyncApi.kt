@@ -63,6 +63,10 @@ import com.grocerypos.v11.util.Loc
  */
 object SyncApi {
 
+    /** Pull har baar checkpoint se itna pichhe se shuru hota hai (late-push / thora clock farq ke docs na chhoote).
+     *  Apply idempotent hai, is liye dobara pull nuqsan nahi karta. */
+    const val PULL_OVERLAP_MS = 10L * 60 * 1000
+
     // ADDED (reconstructed — see note below): these were present in the live repo
     // (referenced by SyncRepository.kt's catch blocks) but got lost when an earlier
     // SyncApi.kt handoff in this chat overwrote the file without them. Re-added here
@@ -276,7 +280,10 @@ object SyncApi {
                     val opId = "${com.grocerypos.v11.DeviceTag.current}-${entry.id}-${entry.createdAt}"
                     val docRef = db.collection(collection).document(entry.entityId)
                     val nowTs = System.currentTimeMillis()
-                    val updatedAtValue: Any = map["updatedAt"] ?: nowTs
+                    // PULL FIX: increment ka updatedAt PUSH ke waqt ka ho (queue banne ke waqt ka nahi) —
+                    // warna doosra device jiska checkpoint us se aage nikal chuka ho ye balance/stock change
+                    // kabhi pull nahi karta.
+                    val updatedAtValue: Any = nowTs
                     val branchNow = BranchConfigStore.current
 
                     // FIX (audit — ghost documents with a blank name/identity): an
@@ -510,7 +517,7 @@ object SyncApi {
 
         fun query(collection: String) = db.collection(collection)
             .whereEqualTo("branchId", branchId)
-            .whereGreaterThan("updatedAt", since)
+            .whereGreaterThan("updatedAt", if (since > PULL_OVERLAP_MS) since - PULL_OVERLAP_MS else 0L)
 
         val customersSnap = query("customers").get(Source.SERVER).await()
         val suppliersSnap = query("suppliers").get(Source.SERVER).await()
@@ -630,7 +637,15 @@ object SyncApi {
             // though it's this device's own unconfirmed edit, not a real conflict from
             // another device. Skipping while that upsert is still pending leaves the
             // local edit intact; the very next successful push+pull resumes normally.
-            if (db.syncQueueDao().pendingForEntityAnyRetry("customer", serverId, "upsert").isNotEmpty()) continue
+            if (db.syncQueueDao().pendingForEntityAnyRetry("customer", serverId, "upsert").isNotEmpty()) {
+                // BALANCE FIX: pending naam/phone edit ki wajah se poora row skip NAHI hona chahiye — warna
+                // doosre device ka balance update hamesha ke liye kho jata hai (checkpoint aage barh jata hai,
+                // ye doc dobara pull nahi hota). Sirf balance apply karo; naam/phone/limit local hi rahein.
+                custDao.findByServerId(serverId)?.let {
+                    custDao.update(it.copy(balance = balance + localPendingBalance))
+                }
+                continue
+            }
 
             val existing = custDao.findByServerId(serverId)
             if (existing != null) {
@@ -677,7 +692,13 @@ object SyncApi {
             // guard so a supplier rename/edit still waiting to push (e.g. exactly the
             // "Cash Purchase" -> "M Deen & brother's" edit reported) can't be reverted
             // by a pull that lands first.
-            if (db.syncQueueDao().pendingForEntityAnyRetry("supplier", serverId, "upsert").isNotEmpty()) continue
+            if (db.syncQueueDao().pendingForEntityAnyRetry("supplier", serverId, "upsert").isNotEmpty()) {
+                // BALANCE FIX (customer jaisa): pending rename ho to bhi doosre device ka balance apply karo.
+                suppDao.findByServerId(serverId)?.let {
+                    suppDao.update(it.copy(balance = balance + localPendingBalance))
+                }
+                continue
+            }
 
             val existing = suppDao.findByServerId(serverId)
             if (existing != null) {
@@ -698,9 +719,9 @@ object SyncApi {
             } else {
                 suppDao.insert(
                     Supplier(
-                        name = name, phone = phone, balance = balance,
+                        name = name, phone = phone, balance = balance + localPendingBalance,
                         openingBalance = openingBalance, serverId = serverId,
-                        updatedAt = System.currentTimeMillis(), dirty = false
+                        updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
             }

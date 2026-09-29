@@ -91,6 +91,7 @@ object SyncRepository {
         // ---- 2. PULL: fetch anything new from Firestore ----
         val since = prefs.getLong(KEY_LAST_SYNC, 0L)
 
+        val pullStartedAt = System.currentTimeMillis()
         val changes = try {
             SyncApi.pull(context, since)
         } catch (e: SyncApi.BranchNotConfiguredException) {
@@ -110,7 +111,10 @@ object SyncRepository {
         // expense rows): removes the local twin created by the old "expense saved twice" bug.
         try { com.grocerypos.v11.SyncQueueHelper.mergeOwnDuplicateExpenses(db) } catch (e: Exception) { /* never block sync */ }
 
-        prefs.edit().putLong(KEY_LAST_SYNC, changes.serverTime).apply()
+        // CLOCK-SKEW FIX: kisi device ki clock aage ho to uska updatedAt checkpoint ko future mein le jata tha aur
+        // baqi devices ke docs skip hote the. Checkpoint kabhi is pull ke start se aage nahi.
+        val checkpoint = if (changes.serverTime < pullStartedAt) changes.serverTime else pullStartedAt
+        prefs.edit().putLong(KEY_LAST_SYNC, checkpoint).apply()
 
         // Housekeeping: drop synced queue rows older than 7 days so the table
         // doesn't grow forever.
