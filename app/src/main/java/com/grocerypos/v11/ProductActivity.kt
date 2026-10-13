@@ -99,6 +99,8 @@ class ProductActivity : ThemedActivity() {
     private lateinit var categoryField: AutoCompleteTextView
     private lateinit var cost: EditText
     private lateinit var wholesalePrice: EditText
+    // NEW (Shopkeeper rate, ported from Flutter): optional third, lowest-margin sale rate.
+    private lateinit var shopkeeperPrice: EditText
     private lateinit var salePrice: EditText
     private lateinit var stock: EditText
     private lateinit var stockUnitSpinner: Spinner
@@ -507,6 +509,18 @@ class ProductActivity : ThemedActivity() {
                 salePrice, R.drawable.ic_store,
                 Loc.t(this, "Retail Sale Rate", "پرچون فروخت کی قیمت"),
                 teal
+            )
+        )
+        ratesCard.addView(spacer(12))
+
+        // NEW (Shopkeeper rate): lowest-margin rate, optional. Empty = a Shopkeeper bill uses
+        // the Wholesale rate for this product.
+        shopkeeperPrice = rateField()
+        ratesCard.addView(
+            premiumLabeledField(
+                shopkeeperPrice, R.drawable.ic_store,
+                Loc.t(this, "Shopkeeper Rate (lowest margin, optional)", "دکاندار قیمت (کم ترین مارجن، اختیاری)"),
+                blue
             )
         )
         ratesCard.addView(spacer(12))
@@ -1376,6 +1390,7 @@ class ProductActivity : ThemedActivity() {
             if (product.wholesalePrice > 0) product.wholesalePrice.toString() else ""
         )
         salePrice.setText(if (product.salePrice > 0) product.salePrice.toString() else "")
+        shopkeeperPrice.setText(if (product.shopkeeperPrice > 0) product.shopkeeperPrice.toString() else "")
         reorderLevel.setText(if (product.reorderLevel > 0) trimNum(product.reorderLevel) else "")
 
         stock.setText(trimNum(product.stock))
@@ -1559,6 +1574,7 @@ class ProductActivity : ThemedActivity() {
         val costVal = cost.parseMoneyOrWarn(this, "Cost Price", "لاگت قیمت") ?: return
         val saleVal = salePrice.parseMoneyOrWarn(this, "Sale Price", "فروخت قیمت") ?: return
         val wholesaleVal = wholesalePrice.parseMoneyOrWarn(this, "Wholesale Price", "ہول سیل قیمت") ?: return
+        val shopkeeperVal = shopkeeperPrice.parseMoneyOrWarn(this, "Shopkeeper Price", "دکاندار قیمت") ?: return
 
         val product = Product(
             barcode = barcode,
@@ -1567,6 +1583,7 @@ class ProductActivity : ThemedActivity() {
             cost = costVal,
             salePrice = saleVal,
             wholesalePrice = wholesaleVal,
+            shopkeeperPrice = shopkeeperVal,
             stock = resolvedStock,
             openingStock = resolvedOpeningStock,
             unit = selectedPrimaryUnit,
@@ -1705,6 +1722,7 @@ class ProductActivity : ThemedActivity() {
         searchTagInput.text.clear()
         cost.text.clear()
         wholesalePrice.text.clear()
+        shopkeeperPrice.text.clear()
         salePrice.text.clear()
         stock.text.clear()
         reorderLevel.text.clear()

@@ -56,7 +56,7 @@ internal fun SaleActivity.decodeHold(payload: String) {
     val header = parts[0].split("\u0001")
     if (header.size >= 4) {
         customerName.setText(header[0])
-        val saleTypeIndex = if (header[1] == "Wholesale") 1 else 0
+        val saleTypeIndex = RateType.spinnerIndex(header[1])
         saleTypeSpinner.setSelection(saleTypeIndex)
         discountInput.setText(header[3])
     }

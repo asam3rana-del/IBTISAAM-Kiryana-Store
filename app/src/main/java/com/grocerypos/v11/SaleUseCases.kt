@@ -4,6 +4,7 @@ import com.grocerypos.v11.Customer
 import com.grocerypos.v11.DeviceTag
 import com.grocerypos.v11.HeldBill
 import com.grocerypos.v11.Product
+import com.grocerypos.v11.RateType
 import com.grocerypos.v11.Sale
 import com.grocerypos.v11.SaleItem
 import com.grocerypos.v11.data.DuplicateInvoiceException
@@ -257,7 +258,7 @@ class SaveSaleUseCase(private val repository: SaleRepository) {
                 )
             }
         }
-        val saleType = if (saleTypeLabel == "Wholesale") "wholesale" else "retail"
+        val saleType = RateType.fromLabel(saleTypeLabel)
         val invoice = editInvoice ?: run {
             // FIX (Improvement Pack P2): was mmYY + timestamp-tail alone — two devices
             // saving a sale in the same millisecond (or with any clock skew between

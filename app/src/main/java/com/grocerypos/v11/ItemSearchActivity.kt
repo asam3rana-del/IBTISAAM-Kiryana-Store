@@ -314,6 +314,20 @@ class ItemSearchActivity : ThemedActivity() {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
         }
+        // NEW (Shopkeeper rate, ported from Flutter): third, lowest-margin rate. When it is not
+        // set a Shopkeeper-type bill uses the wholesale rate, so say that instead of showing 0.
+        addView(TextView(this@ItemSearchActivity).apply {
+            text = if (product.shopkeeperPrice > 0) "Shopkeeper:  " + product.tierRateLine(product.shopkeeperPrice)
+                   else "Shopkeeper:  not set (wholesale rate is used)"
+            textSize = 12.5f
+            setPadding(0, 6, 0, 0)
+            if (product.shopkeeperPrice > 0) {
+                setTextColor(Color.parseColor(teal))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            } else {
+                setTextColor(Color.parseColor(textMuted))
+            }
+        })
     }
 
     private fun showItemHistory(product: Product) {

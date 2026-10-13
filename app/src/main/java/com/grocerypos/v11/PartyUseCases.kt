@@ -99,7 +99,10 @@ class UpdateCustomerUseCase(private val repository: PartyRepository) {
         // NEW (Stuck Balance): null = "caller doesn't touch it" (e.g. a non-admin edit
         // where the field isn't even shown) — keeps the existing stuck amount instead of
         // silently zeroing it. A real value (including 0.0 to clear it) overwrites.
-        stuckBalance: Double? = null
+        stuckBalance: Double? = null,
+        // NEW (Customer rate type): null = caller doesn't touch it (cashier edit) — keeps the
+        // stored one. "" = follow the bill's Sale Type; "retail"/"wholesale"/"shopkeeper" = fixed.
+        rateType: String? = null
     ): SavePartyResult {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return SavePartyResult.NameRequired
@@ -109,7 +112,8 @@ class UpdateCustomerUseCase(private val repository: PartyRepository) {
                 phone = phone.trim(),
                 creditLimit = creditLimit,
                 openingBalance = openingBalance,
-                stuckBalance = stuckBalance ?: existing.stuckBalance
+                stuckBalance = stuckBalance ?: existing.stuckBalance,
+                rateType = rateType ?: existing.rateType
             )
         )
         return SavePartyResult.Success

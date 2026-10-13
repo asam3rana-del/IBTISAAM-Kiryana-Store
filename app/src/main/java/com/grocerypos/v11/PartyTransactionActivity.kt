@@ -557,7 +557,7 @@ class PartyTransactionActivity : AppCompatActivity() {
     // adjusting the party's general balance. ----
     private fun showPaymentDialog(existing: Payment? = null) {
         lifecycleScope.launch {
-            val billOptions = loadBillOptionsForParty()
+            val billOptions = loadBillOptionsForParty(alsoInclude = existing?.billReference)
             val padding = (24 * resources.displayMetrics.density).toInt()
             val col = LinearLayout(this@PartyTransactionActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
 
@@ -693,20 +693,26 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     /** Recent (unreturned) bills for this party, newest first, for the payment
      * dialog's optional "Link to a bill" picker. */
-    private suspend fun loadBillOptionsForParty(): List<BillOption> {
+    // FIX (ported from the Flutter audit): only the newest 50 bills are listed, so editing a payment
+    // that is linked to an OLDER bill used to find no match, leave the picker on "General" and, on Save,
+    // silently UNLINK the payment (that bill's `paid` then dropped wrongly). [alsoInclude] (the payment's
+    // current billReference) is therefore always added to the list, even when it is older than 50.
+    private suspend fun loadBillOptionsForParty(alsoInclude: String? = null): List<BillOption> {
         val db = PosDatabase.get(this)
         return if (isCustomer) {
-            db.saleDao().salesByCustomer(partyId)
-                .filter { it.status != "returned" }
-                .sortedByDescending { it.createdAt }
-                .take(50)
-                .map { BillOption("${it.invoice} \u2022 Rs %.2f".format(it.total), it.invoice) }
+            val all = db.saleDao().salesByCustomer(partyId).filter { it.status != "returned" }.sortedByDescending { it.createdAt }
+            val picked = all.take(50).toMutableList()
+            if (!alsoInclude.isNullOrEmpty() && picked.none { it.invoice == alsoInclude }) {
+                all.firstOrNull { it.invoice == alsoInclude }?.let { picked.add(it) }
+            }
+            picked.map { BillOption("${it.invoice} \u2022 Rs %.2f".format(it.total), it.invoice) }
         } else {
-            db.purchaseDao().purchasesBySupplier(partyId)
-                .filter { it.status != "returned" }
-                .sortedByDescending { it.createdAt }
-                .take(50)
-                .map { BillOption("${it.billNo} \u2022 Rs %.2f".format(it.total), it.billNo) }
+            val all = db.purchaseDao().purchasesBySupplier(partyId).filter { it.status != "returned" }.sortedByDescending { it.createdAt }
+            val picked = all.take(50).toMutableList()
+            if (!alsoInclude.isNullOrEmpty() && picked.none { it.billNo == alsoInclude }) {
+                all.firstOrNull { it.billNo == alsoInclude }?.let { picked.add(it) }
+            }
+            picked.map { BillOption("${it.billNo} \u2022 Rs %.2f".format(it.total), it.billNo) }
         }
     }
 
@@ -714,7 +720,10 @@ class PartyTransactionActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = PosDatabase.get(this@PartyTransactionActivity)
             val partyType = if (isCustomer) "customer" else "supplier"
-            val reference = "manual-$partyType-$partyId-${System.currentTimeMillis()}"
+            // FIX (ported from Flutter): the device tag makes the reference unique across devices, so two phones
+            // saving a payment for the same party in the same millisecond can no longer collide. It still starts
+            // with "manual-", which Day Book / PartyRepository rely on; older references keep working unchanged.
+            val reference = "manual-$partyType-$partyId-${com.grocerypos.v11.DeviceTag.current}-${System.currentTimeMillis()}"
             val reasonText = (if (isCustomer) "Payment received from $partyName" else "Payment made to $partyName") +
                 if (note.isNotEmpty()) " | $note" else ""
 

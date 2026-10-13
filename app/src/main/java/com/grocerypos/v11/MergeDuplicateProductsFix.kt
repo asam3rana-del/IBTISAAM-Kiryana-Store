@@ -85,6 +85,8 @@ object MergeDuplicateProductsFix {
         var groupsMerged = 0
         var productsRemoved = 0
         var groupsSkippedUnitMismatch = 0
+        val touchedInvoices = linkedSetOf<String>()
+        val touchedBills = linkedSetOf<String>()
 
         db.withTransaction {
             val raw = db.openHelper.writableDatabase
@@ -112,6 +114,18 @@ object MergeDuplicateProductsFix {
                     val combinedStock = sub.sumOf { it.stock }
                     val combinedOpeningStock = sub.sumOf { it.openingStock }
                     val now = System.currentTimeMillis()
+
+                    // FIX (ported from Flutter): sales / purchases whose lines point at a loser barcode are
+                    // changed below, so remember them and push them again afterwards — otherwise the other
+                    // devices keep the old (now deleted) barcode on those bills.
+                    for (loser in losers) {
+                        db.query("SELECT DISTINCT invoice FROM sale_items WHERE barcode=?", arrayOf(loser.barcode)).use { c ->
+                            while (c.moveToNext()) touchedInvoices.add(c.getString(0))
+                        }
+                        db.query("SELECT DISTINCT billNo FROM purchase_items WHERE barcode=?", arrayOf(loser.barcode)).use { c ->
+                            while (c.moveToNext()) touchedBills.add(c.getString(0))
+                        }
+                    }
 
                     // Repoint historical rows from every loser barcode onto the
                     // keeper BEFORE deleting the loser product rows.
@@ -149,6 +163,21 @@ object MergeDuplicateProductsFix {
                     groupsMerged++
                     productsRemoved += losers.size
                 }
+            }
+        }
+
+        // Push the bills whose lines were repointed (see touchedInvoices above), so other devices
+        // pull the new barcode instead of keeping the deleted one.
+        if (touchedInvoices.isNotEmpty() || touchedBills.isNotEmpty()) {
+            val stamp = System.currentTimeMillis()
+            val raw = db.openHelper.writableDatabase
+            for (inv in touchedInvoices) {
+                raw.execSQL("UPDATE sales SET dirty=1, updatedAt=? WHERE invoice=?", arrayOf<Any>(stamp, inv))
+                db.saleDao().findSale(inv)?.let { SyncQueueHelper.enqueueSale(db, it) }
+            }
+            for (bill in touchedBills) {
+                raw.execSQL("UPDATE purchases SET dirty=1, updatedAt=? WHERE billNo=?", arrayOf<Any>(stamp, bill))
+                db.purchaseDao().findPurchase(bill)?.let { SyncQueueHelper.enqueuePurchase(db, it) }
             }
         }
 

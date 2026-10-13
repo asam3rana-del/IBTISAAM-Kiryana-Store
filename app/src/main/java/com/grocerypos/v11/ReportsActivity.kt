@@ -120,6 +120,14 @@ class ReportsActivity : AppCompatActivity() {
             accentHex = purple
         ) { startActivity(android.content.Intent(this@ReportsActivity, PartyReportsActivity::class.java)) })
 
+        // NEW (ported from Flutter): one day's sales per customer as a single bill + previous /
+        // closing balance, with Daily Rent set-up and Share.
+        root.addView(khataRow(
+            title = Loc.t(this, "Daily Bills", "روزانہ بلز"),
+            subtitle = Loc.t(this, "Each customer's day as one bill + balance", "ہر کسٹمر کا دن کا ایک بل اور بیلنس"),
+            accentHex = teal
+        ) { startActivity(android.content.Intent(this@ReportsActivity, DailyBillsActivity::class.java)) })
+
         // NEW (Payments 10/10 — suggestion #3): all-parties Payments Received vs
         // Made, by Today/Week/Month/All Time — separate from Day Book (mixes
         // payments with sales/purchases/expenses) and Party Reports' Payment

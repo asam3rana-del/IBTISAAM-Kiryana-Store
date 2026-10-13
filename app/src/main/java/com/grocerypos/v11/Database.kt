@@ -233,8 +233,38 @@ data class Product(
     // display name anywhere, never required. See MIGRATION_38_39 and
     // Product.matchesQuery() below, which every product-name search screen should
     // go through instead of checking `name` alone.
-    val searchTag:String=""
+    val searchTag:String="",
+    // NEW (Shopkeeper rate — MIGRATION_48_49, ported from the Flutter app): a third,
+    // lowest-margin sale rate per PRIMARY unit (same convention as salePrice /
+    // wholesalePrice). 0.0 = "not set", in which case a Shopkeeper-type bill falls
+    // back to the wholesale rate — see Product.baseRateFor() below.
+    @ColumnInfo(defaultValue="0") val shopkeeperPrice:Double=0.0
 )
+
+// NEW (Shopkeeper rate): which rate tier a bill uses. Sale.saleType stores the lowercase
+// name ("retail" / "wholesale" / "shopkeeper"); the Sale screen's spinner shows
+// "Retail" / "Wholesale" / "Shopkeeper". An unset shopkeeper rate falls back to wholesale.
+object RateType {
+    const val RETAIL = "retail"
+    const val WHOLESALE = "wholesale"
+    const val SHOPKEEPER = "shopkeeper"
+    fun fromLabel(label: String?): String = when (label?.trim()?.lowercase()) {
+        WHOLESALE -> WHOLESALE
+        SHOPKEEPER -> SHOPKEEPER
+        else -> RETAIL
+    }
+    fun spinnerIndex(type: String?): Int = when (fromLabel(type)) {
+        WHOLESALE -> 1
+        SHOPKEEPER -> 2
+        else -> 0
+    }
+}
+
+fun Product.baseRateFor(rateType: String): Double = when (RateType.fromLabel(rateType)) {
+    RateType.WHOLESALE -> wholesalePrice
+    RateType.SHOPKEEPER -> if (shopkeeperPrice > 0) shopkeeperPrice else wholesalePrice
+    else -> salePrice
+}
 
 // Single source of truth for "does this product match what the user typed" —
 // checks the Urdu/native `name` AND the optional English `searchTag` alias, so
@@ -515,8 +545,31 @@ data class Customer(
     // the "daily/running" part). 0.0 for almost every customer — the UI only shows the
     // Daily / Stuck / Total split when this is non-zero. Kept LAST with a default so no
     // existing Customer(...) call needs to change. See Customer.dailyPayable()/totalPayable().
-    val stuckBalance:Double=0.0
+    val stuckBalance:Double=0.0,
+    // NEW (Customer rate type — MIGRATION_48_49, ported from Flutter): "" = follow whatever
+    // Sale Type is picked on the bill; otherwise "retail" / "wholesale" / "shopkeeper" and the
+    // Sale screen switches to that rate as soon as this customer is chosen.
+    @ColumnInfo(defaultValue="") val rateType:String=""
 )
+
+// NEW (Daily Rent — MIGRATION_48_49, ported from Flutter): a customer who is charged a fixed
+// rent every day (e.g. Rs 150). Setting only — the daily charge itself is an ordinary credit
+// Sale (invoice "RENT-yyyyMMdd-<customerId>", no items), so balance / ledger / sync just work.
+// Deliberately NOT synced (kept off the customers table so a customer pull can't erase it);
+// set rent on ONE device only — the generated bills sync to the others like any sale.
+@Entity(tableName="customer_rent")
+data class CustomerRent(
+    @PrimaryKey val customerId:Long,
+    val dailyRent:Double,
+    // Epoch millis of local midnight of the first rent day.
+    val startDay:Long
+)
+
+@Dao interface CustomerRentDao {
+    @Query("SELECT * FROM customer_rent") suspend fun all():List<CustomerRent>
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsert(r:CustomerRent)
+    @Query("DELETE FROM customer_rent WHERE customerId=:customerId") suspend fun delete(customerId:Long)
+}
 
 // NEW (Stuck Balance): single source of truth for the two headline figures, so no screen
 // re-derives them by hand (they used to write `openingBalance + balance` inline everywhere).
@@ -954,6 +1007,9 @@ interface ProductDao {
     // instead of only ever being editable from the Product screen.
     @Query("UPDATE products SET salePrice=:salePrice, wholesalePrice=:wholesalePrice WHERE barcode=:code")
     suspend fun updatePrices(code:String,salePrice:Double,wholesalePrice:Double)
+    // NEW (Shopkeeper rate / Shop Rate screen): sets just the shopkeeper rate (0 = clear).
+    @Query("UPDATE products SET shopkeeperPrice=:shopkeeperPrice, dirty=1, updatedAt=:ts WHERE barcode=:code")
+    suspend fun updateShopkeeperPrice(code:String,shopkeeperPrice:Double,ts:Long)
     @Query("UPDATE products SET unit=:unit WHERE barcode=:code")
     suspend fun updateUnit(code:String,unit:String)
     // NEW (Bulk Set Default Unit): products that have more than one unit tier
@@ -1159,6 +1215,14 @@ interface ProductDao {
     @Query("DELETE FROM sale_items WHERE invoice=:invoice") suspend fun deleteItems(invoice:String)
     @Query("DELETE FROM sales WHERE invoice=:invoice") suspend fun deleteSale(invoice:String)
     @Query("UPDATE sales SET status='returned' WHERE invoice=:invoice") suspend fun markReturned(invoice:String)
+    // NEW (Daily Bills / Daily Rent, ported from Flutter) — read helpers + a status flip that
+    // also marks the row dirty so it re-syncs. See DailyBillsRepository.kt / RentRepository.kt.
+    @Query("SELECT invoice FROM sales WHERE invoice LIKE :pattern") suspend fun invoicesLike(pattern:String):List<String>
+    @Query("UPDATE sales SET status=:status, updatedAt=:ts, dirty=1 WHERE invoice=:invoice") suspend fun setStatus(invoice:String,status:String,ts:Long)
+    @Query("SELECT DISTINCT customerId FROM sales WHERE customerId IS NOT NULL AND status!='returned' AND createdAt>=:start AND createdAt<:end")
+    suspend fun customerIdsWithSalesBetween(start:Long,end:Long):List<Long>
+    @Query("SELECT si.* FROM sale_items si JOIN sales s ON s.invoice=si.invoice WHERE s.createdAt>=:start AND s.createdAt<:end AND s.status!='returned' ORDER BY si.id ASC")
+    suspend fun itemsForSalesBetween(start:Long,end:Long):List<SaleItem>
     // FIX (Today's Profit / discount bug): previously
     //   SELECT SUM(si.amount - si.cost) FROM sale_items si JOIN sales s ...
     // si.amount is the PRE-DISCOUNT line total (qty * unitPrice) and is never reduced
@@ -1377,6 +1441,9 @@ interface ProductDao {
     // show a party's manually-recorded "Receive Payment"/"Make Payment" entries (not tied to
     // a specific bill) alongside their sale/purchase history.
     @Query("SELECT * FROM payments WHERE partyType=:partyType AND partyId=:partyId ORDER BY createdAt DESC") suspend fun listByParty(partyType:String,partyId:Long):List<Payment>
+    // NEW (Daily Bills): customers who received/made a payment on one local day.
+    @Query("SELECT DISTINCT partyId FROM payments WHERE partyType='customer' AND partyId IS NOT NULL AND createdAt>=:start AND createdAt<:end")
+    suspend fun customerIdsWithPaymentsBetween(start:Long,end:Long):List<Long>
     // ADDED (Parties tab — last transaction date): so a party whose most recent
     // activity is a standalone payment (not a sale/purchase) still shows the
     // correct date, e.g. a customer who only made a payment against an old balance.
@@ -2218,19 +2285,29 @@ val MIGRATION_47_48 = object : Migration(47, 48) {
     }
 }
 
+// NEW (Shopkeeper rate + Customer rate type + Daily Rent — ported from the Flutter app).
+// Plain ADD COLUMNs (existing rows get 0 / '') plus one new table; no data is rewritten.
+val MIGRATION_48_49 = object : Migration(48, 49) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE products ADD COLUMN shopkeeperPrice REAL NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE customers ADD COLUMN rateType TEXT NOT NULL DEFAULT ''")
+        database.execSQL("CREATE TABLE IF NOT EXISTS customer_rent (customerId INTEGER PRIMARY KEY NOT NULL, dailyRent REAL NOT NULL, startDay INTEGER NOT NULL)")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
-        ZakatYear::class,ZakatPayment::class,ZakatMonthPlan::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class],
+        ZakatYear::class,ZakatPayment::class,ZakatMonthPlan::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class,CustomerRent::class],
     // FIX (Improvement Pack P3 — migration testing): was exportSchema=false, so Room
     // never wrote a schema JSON for any version — MigrationTestHelper needs those to
     // validate a migration's resulting schema (not just that it runs without an
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=48, exportSchema=true
+    version=49, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -2253,11 +2330,12 @@ abstract class PosDatabase:RoomDatabase(){
     abstract fun stockMovementDao():StockMovementDao
     abstract fun zakatDao():ZakatDao
     abstract fun shellDao():ShellDao
+    abstract fun customerRentDao():CustomerRentDao
     companion object{
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

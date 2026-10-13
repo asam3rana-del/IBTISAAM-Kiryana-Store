@@ -36,6 +36,12 @@ import com.grocerypos.v11.ui.components.*
 
 class LoginActivity : ThemedActivity() {
 
+    // NEW (ported from the Flutter audit): after 5 wrong passwords in a row the Sign in button waits 30 s
+    // before it accepts another try. Kept in memory only (same as Flutter): it slows guessing without
+    // risking a permanent lock-out if the shopkeeper simply forgets the password.
+    private var failedLogins = 0
+    private var loginLockedUntil = 0L
+
     // ================= PREMIUM COLOR PALETTE =================
     // Splash gradient stays fixed brand colors (shown before login, same for everyone).
     // Card surface below it now follows ThemeManager so the login card isn't stuck in
@@ -518,6 +524,11 @@ class LoginActivity : ThemedActivity() {
         })
 
         btn.setOnClickListener {
+            val waitMs = loginLockedUntil - System.currentTimeMillis()
+            if (waitMs > 0) {
+                Toast.makeText(this@LoginActivity, "Bohat ghalat koshishen — ${(waitMs + 999) / 1000} second baad dobara try karein", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             lifecycleScope.launch {
                 val db = PosDatabase.get(this@LoginActivity)
                 val user = db.userDao().find(u.text.toString().trim())
@@ -534,6 +545,7 @@ class LoginActivity : ThemedActivity() {
                     user != null && user.passwordHash == typedPassword
                 }
                 if (user != null && passwordOk) {
+                    failedLogins = 0
                     if (!PasswordHasher.isHashed(user.passwordHash)) {
                         val migrated = user.copy(passwordHash = PasswordHasher.hash(typedPassword))
                         db.userDao().upsert(migrated)
@@ -549,6 +561,11 @@ class LoginActivity : ThemedActivity() {
                         completeLogin()
                     }
                 } else {
+                    failedLogins++
+                    if (failedLogins >= 5) {
+                        failedLogins = 0
+                        loginLockedUntil = System.currentTimeMillis() + 30_000L
+                    }
                     Toast.makeText(this@LoginActivity, "Invalid login", Toast.LENGTH_SHORT).show()
                 }
             }

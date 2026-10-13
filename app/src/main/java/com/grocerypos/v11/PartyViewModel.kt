@@ -159,9 +159,9 @@ class PartyViewModel(
         }
     }
 
-    fun editCustomer(existing: Customer, name: String, phone: String, creditLimit: Double, openingBalance: Double, stuckBalance: Double? = null) {
+    fun editCustomer(existing: Customer, name: String, phone: String, creditLimit: Double, openingBalance: Double, stuckBalance: Double? = null, rateType: String? = null) {
         viewModelScope.launch {
-            val result = updateCustomer(existing, name, phone, creditLimit, openingBalance, stuckBalance)
+            val result = updateCustomer(existing, name, phone, creditLimit, openingBalance, stuckBalance, rateType)
             _events.emit(if (result is SavePartyResult.Success) PartyEvent.Updated else PartyEvent.NameRequired)
         }
     }

@@ -142,8 +142,8 @@ internal fun SaleActivity.fromMainUnitPrice(mainPrice: Double, chosenUnit: Strin
 
 internal fun SaleActivity.refillAutoPrice() {
     val product = selectedProduct ?: return
-    val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
-    val basePrice = if (isWholesale) product.wholesalePrice else product.salePrice
+    // CHANGED (Shopkeeper rate): Retail / Wholesale / Shopkeeper — see Product.baseRateFor().
+    val basePrice = product.baseRateFor(saleTypeSpinner.selectedItem?.toString() ?: RateType.RETAIL)
     val chosenUnit = unitSpinner.selectedItem?.toString() ?: product.unit
     val base = if (lastMainPrice > 0) lastMainPrice else basePrice
     val price = fromMainUnitPrice(base, chosenUnit)
@@ -248,14 +248,14 @@ internal fun SaleActivity.updateMarginWarning() {
 // which sale type is selected.
 internal fun SaleActivity.repriceLinesForSaleType() {
     if (lines.isEmpty()) return
-    val isWholesale = saleTypeSpinner.selectedItem?.toString() == "Wholesale"
+    val rateType = saleTypeSpinner.selectedItem?.toString() ?: RateType.RETAIL
     var changed = false
     for (i in lines.indices) {
         val line = lines[i]
         val product = products.find { it.barcode == line.barcode }
             ?: products.find { it.name.equals(line.itemName, ignoreCase = true) }
             ?: continue
-        val basePrice = if (isWholesale) product.wholesalePrice else product.salePrice
+        val basePrice = product.baseRateFor(rateType)
         // Product has no rate configured for the target type — leave this
         // line's existing price alone instead of zeroing it out.
         if (basePrice <= 0.0) continue

@@ -21,6 +21,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.grocerypos.v11.Customer
+import com.grocerypos.v11.RateType
 import com.grocerypos.v11.totalPayable
 import com.grocerypos.v11.R
 import com.grocerypos.v11.Supplier
@@ -996,6 +997,23 @@ class PartyActivity : AppCompatActivity() {
             container.addView(f)
             container.addView(spacer(10))
         }
+        // NEW (Customer rate type, ported from Flutter): Admin/Manager only. When set, the Sale
+        // screen switches to this rate as soon as this customer is picked. "Follow Sale Type"
+        // (empty) leaves the choice to the bill, exactly as before.
+        val rateValues = listOf("", RateType.RETAIL, RateType.WHOLESALE, RateType.SHOPKEEPER)
+        val rateSpinner: Spinner? = if (canEditStuck) Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@PartyActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf(
+                    Loc.t(this@PartyActivity, "Rate type: follow Sale Type", "ریٹ کی قسم: سیل ٹائپ کے مطابق"),
+                    Loc.t(this@PartyActivity, "Rate type: Retail", "ریٹ کی قسم: پرچون"),
+                    Loc.t(this@PartyActivity, "Rate type: Wholesale", "ریٹ کی قسم: ہول سیل"),
+                    Loc.t(this@PartyActivity, "Rate type: Shopkeeper", "ریٹ کی قسم: دکاندار")
+                )
+            )
+            setSelection(rateValues.indexOf(c.rateType).coerceAtLeast(0))
+        } else null
+        rateSpinner?.let { container.addView(it); container.addView(spacer(10)) }
 
         AlertDialog.Builder(this)
             .setTitle(Loc.t(this, "Edit Customer", "کسٹمر میں ترمیم کریں"))
@@ -1015,7 +1033,9 @@ class PartyActivity : AppCompatActivity() {
                     // null (cashier: field not shown) keeps the stored stuck amount untouched.
                     stuckBalance = stuckEdit?.let {
                         it.parseMoneyOrWarn(this, "Stuck Balance", "پھنسا ہوا بیلنس") ?: return@setPositiveButton
-                    }
+                    },
+                    // null (cashier: spinner not shown) keeps the stored rate type untouched.
+                    rateType = rateSpinner?.let { rateValues[it.selectedItemPosition] }
                 )
                 d.dismiss()
             }

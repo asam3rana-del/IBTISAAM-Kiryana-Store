@@ -713,6 +713,8 @@ object SyncQueueHelper {
             // NEW (Stuck Balance): a plain snapshot field like openingBalance — it never
             // moves with sales/payments, so (unlike "balance") last-write-wins is correct.
             "stuckBalance" to c.stuckBalance,
+            // NEW (Customer rate type): plain snapshot field, last-write-wins is correct.
+            "rateType" to c.rateType,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
@@ -749,6 +751,8 @@ object SyncQueueHelper {
             "cost" to p.cost,
             "salePrice" to p.salePrice,
             "wholesalePrice" to p.wholesalePrice,
+            // NEW (Shopkeeper rate): third, lowest-margin rate per primary unit.
+            "shopkeeperPrice" to p.shopkeeperPrice,
             "reorderLevel" to p.reorderLevel,
             "expiry" to p.expiry,
             "unit" to p.unit,

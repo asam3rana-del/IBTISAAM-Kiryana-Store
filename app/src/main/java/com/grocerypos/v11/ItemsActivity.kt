@@ -286,6 +286,31 @@ class ItemsActivity : ThemedActivity() {
             }
         })
 
+        // ---- NEW "Shop Rate" pill (admin only, ported from Flutter) — opens ShopRateActivity
+        // to set each product's Shopkeeper (lowest-margin) rate. ----
+        val itemsRole = getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier"
+        if (itemsRole == "admin") {
+            actionsRow.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams((8 * resources.displayMetrics.density).toInt(), 1)
+            })
+            actionsRow.addView(TextView(this).apply {
+                text = "Shop Rate"
+                textSize = 11f
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, Typeface.BOLD)
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#33FFFFFF"))
+                    cornerRadius = 30f
+                }
+                setPadding(18, 12, 18, 12)
+                setCompoundDrawablesRelative(tintedDrawable(R.drawable.ic_store, "#FFFFFF", 13), null, null, null)
+                compoundDrawablePadding = (6 * resources.displayMetrics.density).toInt()
+                setOnClickListener {
+                    startActivity(Intent(this@ItemsActivity, ShopRateActivity::class.java))
+                }
+            })
+        }
+
         root.addView(actionsBar)
 
         // ================= TABS =================

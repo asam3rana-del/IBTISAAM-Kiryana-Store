@@ -397,7 +397,7 @@ class SaleActivity : AppCompatActivity() {
         val saleTypeBox = innerField()
         saleTypeBox.addView(labelRow(com.grocerypos.v11.util.Loc.t(this, "Sale Type", "سیل کی قسم")))
         saleTypeSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Retail", "Wholesale"))
+            adapter = ArrayAdapter(this@SaleActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Retail", "Wholesale", "Shopkeeper"))
             isFocusableInTouchMode = true
         }
         saleTypeBox.addView(saleTypeSpinner)
@@ -882,7 +882,9 @@ class SaleActivity : AppCompatActivity() {
             val name = customerName.adapter.getItem(position).toString()
             customerName.setText(name)
             customerName.setSelection(customerName.text.length)
-            goToSaleTypeFromCustomer()
+            // NEW (Customer rate type): a customer tagged Retail/Wholesale/Shopkeeper switches
+            // the bill to that rate by itself, so the Sale Type dropdown is not opened for them.
+            if (applyCustomerRateType(name)) itemName.requestFocus() else goToSaleTypeFromCustomer()
             // If an item row is already active (customer picked AFTER the
             // item), re-check for that customer's usual rate on this item too.
             suggestCustomerRate()
@@ -891,7 +893,7 @@ class SaleActivity : AppCompatActivity() {
             if (actionId == EditorInfo.IME_ACTION_NEXT ||
                 (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
             ) {
-                goToSaleTypeFromCustomer()
+                if (applyCustomerRateType(customerName.text.toString())) itemName.requestFocus() else goToSaleTypeFromCustomer()
                 true
             } else false
         }
@@ -991,6 +993,20 @@ class SaleActivity : AppCompatActivity() {
     // stayed false and the auto-scroll-to-top in saleTypeSpinner's onItemSelected
     // never ran. The tap here still represents a real user choice, so set the flag
     // directly instead of relying on the touch listener for this path.
+    // NEW (Customer rate type, ported from Flutter): if the typed/picked customer has a rate type
+    // set, move Sale Type to it (the spinner listener then reprices the cart lines). Returns true
+    // when the customer carries a rate type, false when the user should pick Sale Type by hand.
+    private fun applyCustomerRateType(name: String): Boolean {
+        val c = customers.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) } ?: return false
+        if (c.rateType.isBlank()) return false
+        val idx = RateType.spinnerIndex(c.rateType)
+        if (saleTypeSpinner.selectedItemPosition != idx) {
+            saleTypeUserInteracted = true
+            saleTypeSpinner.setSelection(idx)
+        }
+        return true
+    }
+
     private fun goToSaleTypeFromCustomer() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(customerName.windowToken, 0)
@@ -1090,7 +1106,7 @@ class SaleActivity : AppCompatActivity() {
             if (customer.isNotBlank()) customerName.setText(customer)
 
             val saleType = draft.optString("saleType", "Retail")
-            saleTypeSpinner.setSelection(if (saleType == "Wholesale") 1 else 0)
+            saleTypeSpinner.setSelection(RateType.spinnerIndex(saleType))
 
             val discount = draft.optString("discount", "")
             if (discount.isNotBlank()) discountInput.setText(discount)
@@ -1173,7 +1189,7 @@ class SaleActivity : AppCompatActivity() {
 
             customerName.setText(edit.customerName)
 
-            saleTypeSpinner.setSelection(if (edit.sale.saleType == "wholesale") 1 else 0)
+            saleTypeSpinner.setSelection(RateType.spinnerIndex(edit.sale.saleType))
             discountInput.setText(if (edit.sale.discount > 0) "%.2f".format(edit.sale.discount) else "")
             suppressPaidWatcher = true
             paidInput.setText(if (edit.sale.paid > 0) "%.2f".format(edit.sale.paid) else "0.00")

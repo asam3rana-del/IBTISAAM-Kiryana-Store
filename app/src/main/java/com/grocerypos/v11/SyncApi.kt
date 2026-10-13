@@ -340,7 +340,8 @@ object SyncApi {
                                     "phone" to it.phone,
                                     "creditLimit" to it.creditLimit,
                                     "openingBalance" to it.openingBalance,
-                                    "stuckBalance" to it.stuckBalance
+                                    "stuckBalance" to it.stuckBalance,
+                                    "rateType" to it.rateType
                                 )
                             } ?: emptyMap()
                         }
@@ -363,6 +364,7 @@ object SyncApi {
                                 "cost" to p.cost,
                                 "salePrice" to p.salePrice,
                                 "wholesalePrice" to p.wholesalePrice,
+                                "shopkeeperPrice" to p.shopkeeperPrice,
                                 "reorderLevel" to p.reorderLevel,
                                 "expiry" to p.expiry,
                                 "unit" to p.unit,
@@ -627,6 +629,9 @@ object SyncApi {
             // NEW (Stuck Balance): null when the row came from a device/build that predates
             // this field — in that case keep OUR stuck amount instead of zeroing it.
             val stuckBalanceRemote = (row["stuckBalance"] as? Number)?.toDouble()
+            // NEW (Customer rate type): null when the row came from a device/build that predates
+            // this field — keep OUR rate type instead of blanking it.
+            val rateTypeRemote = row["rateType"] as? String
             val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
             val localPendingBalance = pendingDelta("customer", serverId, "increment_balance")
             // FIX (2-device sync — same class of bug as the purchase/sale fix above):
@@ -661,6 +666,7 @@ object SyncApi {
                         name = name, phone = phone, balance = balance + localPendingBalance,
                         creditLimit = creditLimit, openingBalance = openingBalance,
                         stuckBalance = stuckBalanceRemote ?: existing.stuckBalance,
+                        rateType = rateTypeRemote ?: existing.rateType,
                         updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
@@ -670,6 +676,7 @@ object SyncApi {
                         name = name, phone = phone, balance = balance + localPendingBalance,
                         creditLimit = creditLimit, openingBalance = openingBalance,
                         stuckBalance = stuckBalanceRemote ?: 0.0,
+                        rateType = rateTypeRemote ?: "",
                         serverId = serverId, updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
@@ -738,6 +745,8 @@ object SyncApi {
             val cost = (row["cost"] as? Number)?.toDouble() ?: 0.0
             val salePrice = (row["salePrice"] as? Number)?.toDouble() ?: 0.0
             val wholesalePrice = (row["wholesalePrice"] as? Number)?.toDouble() ?: 0.0
+            // NEW (Shopkeeper rate): null when the row came from a device/build that predates it.
+            val shopkeeperPriceRemote = (row["shopkeeperPrice"] as? Number)?.toDouble()
             val reorderLevel = (row["reorderLevel"] as? Number)?.toDouble() ?: 0.0
             val expiry = row["expiry"] as? String ?: ""
             val unit = row["unit"] as? String ?: "pcs"
@@ -788,6 +797,7 @@ object SyncApi {
                     existing.copy(
                         name = name, category = category, cost = cost, salePrice = salePrice,
                         wholesalePrice = wholesalePrice, reorderLevel = reorderLevel, expiry = expiry,
+                        shopkeeperPrice = shopkeeperPriceRemote ?: existing.shopkeeperPrice,
                         unit = unit, unitSize = unitSize, unitNote = unitNote,
                         secondaryUnit = secondaryUnit, secondaryUnitQty = secondaryUnitQty,
                         tertiaryUnit = tertiaryUnit, tertiaryUnitQty = tertiaryUnitQty,
@@ -803,6 +813,7 @@ object SyncApi {
                     Product(
                         barcode = barcode, name = name, category = category, cost = cost,
                         salePrice = salePrice, wholesalePrice = wholesalePrice,
+                        shopkeeperPrice = shopkeeperPriceRemote ?: 0.0,
                         reorderLevel = reorderLevel, expiry = expiry, unit = unit,
                         unitSize = unitSize, unitNote = unitNote, secondaryUnit = secondaryUnit,
                         secondaryUnitQty = secondaryUnitQty, tertiaryUnit = tertiaryUnit,
