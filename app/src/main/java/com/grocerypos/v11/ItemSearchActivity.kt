@@ -328,6 +328,20 @@ class ItemSearchActivity : ThemedActivity() {
                 setTextColor(Color.parseColor(textMuted))
             }
         })
+        // NEW (ported from Flutter): Admin can change Retail / Wholesale / Shopkeeper right from the
+        // rate card (unit picker + below-cost check) — see RateEditDialog.
+        if ((getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier") == "admin") {
+            addView(TextView(this@ItemSearchActivity).apply {
+                text = "Edit rates"
+                textSize = 13f
+                setTextColor(Color.parseColor(teal))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 14, 0, 0)
+                setOnClickListener {
+                    RateEditDialog.show(this@ItemSearchActivity, product) { updated -> showItemHistory(updated) }
+                }
+            })
+        }
     }
 
     private fun showItemHistory(product: Product) {
