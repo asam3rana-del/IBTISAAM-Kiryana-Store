@@ -197,6 +197,8 @@ object ReminderNotifier {
     suspend fun checkAll(ctx: Context, now: Long = System.currentTimeMillis()) {
         val app = ctx.applicationContext
         val r = role(app) ?: return
+        // NEW: no reminders while the app license does not allow use.
+        if (!LicenseManager.state(app, now).canUse) return
         if (!canPost(app)) return
         try { ensureChannels(app) } catch (e: Exception) { return }
         val adminOrManager = r == "admin" || r == "manager"

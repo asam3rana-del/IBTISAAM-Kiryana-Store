@@ -113,6 +113,14 @@ class MainActivity : ThemedActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
+        // NEW: App license (Hanna Solutions). Not allowed => License screen (data untouched).
+        if (!LicenseManager.state(this).canUse) {
+            startActivity(Intent(this, com.grocerypos.v11.ui.LicenseActivity::class.java)
+                .putExtra(com.grocerypos.v11.ui.LicenseActivity.EXTRA_BLOCKED, true))
+            finish()
+            return
+        }
+
         val session = getSharedPreferences("session", MODE_PRIVATE)
         if (session.getString("username", null) == null) {
             startActivity(Intent(this@MainActivity, LoginActivity::class.java))
@@ -443,6 +451,32 @@ class MainActivity : ThemedActivity() {
         super.onResume()
         // NEW (batch 5): foreground check (the 15-min worker covers the app-closed case).
         lifecycleScope.launch { try { ReminderNotifier.checkAll(this@MainActivity) } catch (e: Exception) { } }
+        // NEW: license — refresh from Hanna's server now and then; warn in the last days; block if it ran out.
+        lifecycleScope.launch {
+            try { LicenseManager.refreshIfDue(this@MainActivity) } catch (e: Exception) { }
+            val ls = LicenseManager.state(this@MainActivity)
+            if (!ls.canUse) {
+                startActivity(Intent(this@MainActivity, com.grocerypos.v11.ui.LicenseActivity::class.java)
+                    .putExtra(com.grocerypos.v11.ui.LicenseActivity.EXTRA_BLOCKED, true))
+                finish()
+            } else if (LicenseLogic.shouldWarn(ls)) {
+                val p = getSharedPreferences("license_prefs", MODE_PRIVATE)
+                val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+                if (p.getString("warned_on", null) != today) {
+                    p.edit().putString("warned_on", today).apply()
+                    androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                        .setTitle(com.grocerypos.v11.util.Loc.t(this@MainActivity, "License ending soon", "لائسنس جلد ختم ہو رہا ہے"))
+                        .setMessage(com.grocerypos.v11.util.Loc.t(this@MainActivity,
+                            "${ls.daysLeft} day(s) left. Contact Hanna Solutions to renew (Settings → License).",
+                            "${ls.daysLeft} دن باقی۔ تجدید کے لیے ہانا سولوشنز سے رابطہ کریں (سیٹنگز ← لائسنس)۔"))
+                        .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@MainActivity, "Open", "کھولیں")) { _, _ ->
+                            startActivity(Intent(this@MainActivity, com.grocerypos.v11.ui.LicenseActivity::class.java))
+                        }
+                        .setNegativeButton(com.grocerypos.v11.util.Loc.t(this@MainActivity, "Later", "بعد میں"), null)
+                        .show()
+                }
+            }
+        }
         loadDashboard()
         loadShopName()
         loadPartySummary()

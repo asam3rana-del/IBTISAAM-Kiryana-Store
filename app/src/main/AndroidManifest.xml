@@ -73,6 +73,7 @@
         <activity android:name=".ui.ExpiryReportActivity" android:exported="false" />
         <activity android:name=".ui.CollectionTickerActivity" android:exported="false" />
         <activity android:name=".ui.PendingCostActivity" android:exported="false" />
+        <activity android:name=".ui.LicenseActivity" android:exported="false" />
         <activity android:name=".ui.BalanceSheetActivity" android:exported="false" />
         <activity android:name=".ui.ZakatActivity" android:exported="false" />
         <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />

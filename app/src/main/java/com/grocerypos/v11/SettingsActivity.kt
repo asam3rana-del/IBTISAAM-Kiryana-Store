@@ -214,6 +214,10 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(menuRow(R.drawable.ic_delete, "Recycle Bin", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, RecycleBinActivity::class.java))
         })
+        // NEW: App license (Hanna Solutions) — status, device code, key, renew.
+        list.addView(menuRow(R.drawable.ic_key, "License", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, LicenseActivity::class.java))
+        })
         // NEW (Flutter parity, batch 8): Pending Cost (admin).
         list.addView(menuRow(R.drawable.ic_wrench, "Pending Cost", showChevron = true) {
             startActivity(Intent(this@SettingsActivity, PendingCostActivity::class.java))
