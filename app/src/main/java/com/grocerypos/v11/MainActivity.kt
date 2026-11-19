@@ -121,6 +121,11 @@ class MainActivity : ThemedActivity() {
         }
         role = session.getString("role", "cashier") ?: "cashier"
 
+        // NEW (Flutter parity, batch 5): reminder notifications — ask permission once (Android 13+),
+        // and open the right screen when the app was started by tapping a reminder.
+        try { ReminderNotifier.askPermissionOnce(this) } catch (e: Exception) { }
+        openFromReminder(intent)
+
         // NEW: starts background sync (push queued changes + pull server changes every
         // 15 minutes). Safe to call on every app start — ExistingPeriodicWorkPolicy.KEEP
         // inside SyncWorker.schedulePeriodic() means it won't duplicate or restart an
@@ -371,6 +376,20 @@ class MainActivity : ThemedActivity() {
                 }
             )
         }
+        // NEW (Flutter parity, batch 1): Collection (Wasooli Autopilot + all dues + follow-ups)
+        // for everyone; Deposit / Loan (Amanat) only for admin / manager, same as Flutter.
+        quickActions.add(
+            QuickAction("Collection", "Remind today + all pending dues", R.drawable.ic_alarm, flatAmberBg, flatAmberFg) {
+                startActivity(Intent(this@MainActivity, com.grocerypos.v11.ui.CollectionActivity::class.java))
+            }
+        )
+        if (role == "admin" || role == "manager") {
+            quickActions.add(
+                QuickAction("Deposit / Loan", "Deposits held & loans given", R.drawable.ic_wallet, flatAmberBg, flatAmberFg) {
+                    startActivity(Intent(this@MainActivity, com.grocerypos.v11.ui.AmanatLoanActivity::class.java))
+                }
+            )
+        }
         quickActions.add(
             QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
                 startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
@@ -407,8 +426,23 @@ class MainActivity : ThemedActivity() {
         observeSyncPending()
     }
 
+    // NEW (batch 5): a reminder tapped while the app is already open.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openFromReminder(intent)
+    }
+
+    private fun openFromReminder(i: Intent?) {
+        val target = ReminderNotifier.targetFor(i?.getStringExtra(ReminderNotifier.EXTRA_OPEN)) ?: return
+        i?.removeExtra(ReminderNotifier.EXTRA_OPEN)
+        try { startActivity(Intent(this, target)) } catch (e: Exception) { }
+    }
+
     override fun onResume() {
         super.onResume()
+        // NEW (batch 5): foreground check (the 15-min worker covers the app-closed case).
+        lifecycleScope.launch { try { ReminderNotifier.checkAll(this@MainActivity) } catch (e: Exception) { } }
         loadDashboard()
         loadShopName()
         loadPartySummary()

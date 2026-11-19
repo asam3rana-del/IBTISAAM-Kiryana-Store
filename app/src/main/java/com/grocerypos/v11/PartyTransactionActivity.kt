@@ -19,6 +19,10 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
+import androidx.activity.result.contract.ActivityResultContracts
+import com.grocerypos.v11.PartyPhotoStore
+import com.grocerypos.v11.PartySlips
+import com.grocerypos.v11.SlipShare
 import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.Payment
 import com.grocerypos.v11.PosDatabase
@@ -110,6 +114,73 @@ class PartyTransactionActivity : AppCompatActivity() {
 
     private lateinit var listContainer: LinearLayout
     private lateinit var partyNameLabel: TextView
+    private lateinit var avatarView: ImageView
+    private val pickPhoto = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) lifecycleScope.launch {
+            val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { PartyPhotoStore.save(this@PartyTransactionActivity, isCustomer, partyId, uri) }
+            if (bmp == null) Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Could not read that photo", "یہ تصویر نہیں کھل سکی"), Toast.LENGTH_SHORT).show()
+            refreshAvatar()
+        }
+    }
+
+    // NEW (batch 9): photo from the camera (small preview image is enough for an avatar).
+    private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp ->
+        if (bmp != null) lifecycleScope.launch {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { PartyPhotoStore.saveBitmap(this@PartyTransactionActivity, isCustomer, partyId, bmp) }
+            refreshAvatar()
+        }
+    }
+    // The app declares CAMERA (barcode scanner), so the camera intent needs that permission granted first.
+    private val askCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) try { takePhoto.launch(null) } catch (e: Exception) { }
+        else Toast.makeText(this, Loc.t(this, "Camera permission is needed", "کیمرہ کی اجازت چاہیے"), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun openCamera() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try { takePhoto.launch(null) } catch (e: Exception) { Toast.makeText(this, Loc.t(this, "No camera app", "کیمرہ ایپ نہیں ملی"), Toast.LENGTH_SHORT).show() }
+        } else askCamera.launch(android.Manifest.permission.CAMERA)
+    }
+
+    private fun refreshAvatar() {
+        val bmp = PartyPhotoStore.load(this, isCustomer, partyId)
+        if (bmp != null) { avatarView.setImageBitmap(bmp); avatarView.setPadding(0, 0, 0, 0) }
+        else {
+            avatarView.setImageResource(R.drawable.ic_person)
+            val p = (10 * resources.displayMetrics.density).toInt(); avatarView.setPadding(p, p, p, p)
+        }
+    }
+
+    private fun onAvatarClick() {
+        val has = PartyPhotoStore.load(this, isCustomer, partyId) != null
+        val items = mutableListOf(Loc.t(this, "Photo from gallery", "گیلری سے تصویر"), Loc.t(this, "Take photo (camera)", "کیمرے سے تصویر"))
+        if (has) items.add(Loc.t(this, "Remove photo", "تصویر ہٹائیں"))
+        AlertDialog.Builder(this).setTitle(partyName).setItems(items.toTypedArray()) { _, which ->
+            when (which) {
+                0 -> pickPhoto.launch("image/*")
+                1 -> openCamera()
+                else -> { PartyPhotoStore.remove(this, isCustomer, partyId); refreshAvatar() }
+            }
+        }.show()
+    }
+
+    /** NEW (batch 4): ask PDF or text before sharing. */
+    private fun askPdfOrText(onPdf: () -> Unit, onText: () -> Unit) {
+        AlertDialog.Builder(this).setTitle(Loc.t(this, "Share as", "اس طرح شیئر کریں"))
+            .setItems(arrayOf(Loc.t(this, "PDF slip", "PDF سلپ"), Loc.t(this, "Text message", "ٹیکسٹ میسج"))) { _, w -> if (w == 0) onPdf() else onText() }
+            .show()
+    }
+
+    private fun sharePdf(title: String, build: suspend () -> java.io.File) {
+        lifecycleScope.launch {
+            try {
+                val f = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { build() }
+                SlipShare.sharePdf(this@PartyTransactionActivity, f, title)
+            } catch (e: Exception) {
+                Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "PDF failed: ", "PDF نہیں بنی: ") + (e.message ?: ""), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     private var partyId: Long = -1
     private var partyName: String = ""
     private var isCustomer: Boolean = true
@@ -205,6 +276,17 @@ class PartyTransactionActivity : AppCompatActivity() {
             setTextColor(Color.parseColor(textDark))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
+        // NEW (Flutter parity, batch 4): party photo (this device only). Tap = change / remove.
+        avatarView = ImageView(this).apply {
+            val sz = (44 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply { rightMargin = (10 * resources.displayMetrics.density).toInt() }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            clipToOutline = true
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#E3E6EF")) }
+            setOnClickListener { onAvatarClick() }
+        }
+        headerRow.addView(avatarView)
+        refreshAvatar()
         headerRow.addView(partyNameLabel)
 
         // ---- Edit party name button — opens a small dialog to rename this party. ----
@@ -754,6 +836,9 @@ class PartyTransactionActivity : AppCompatActivity() {
                 applyBillPaidDelta(db, billRef, amount)
             }
             SyncQueueHelper.trigger(this@PartyTransactionActivity)
+            // NEW (Flutter parity — due renewal): a customer paid something but still owes =>
+            // push their dated open bills' due date to today + their term (never backwards).
+            if (isCustomer) runCatching { com.grocerypos.v11.CollectionRepository.renewDueDates(this@PartyTransactionActivity, partyId) }
 
             Toast.makeText(this@PartyTransactionActivity, Loc.t(this@PartyTransactionActivity, "Payment saved", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0645\u062D\u0641\u0648\u0638 \u06C1\u0648 \u06AF\u0626\u06CC"), Toast.LENGTH_SHORT).show()
             loadTransactions()
@@ -871,7 +956,14 @@ class PartyTransactionActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun shareReceipt(amount: Double, method: String, note: String, dateMillis: Long, billRef: String) {
+    private fun shareReceipt(amount: Double, method: String, note: String, dateMillis: Long, billRef: String) =
+        askPdfOrText({
+            sharePdf(Loc.t(this, "Share receipt", "رسید شیئر کریں")) {
+                PartySlips.receipt(this, isCustomer, partyName, amount, method, note, dateMillis, billRef)
+            }
+        }, { shareReceiptText(amount, method, note, dateMillis, billRef) })
+
+    private fun shareReceiptText(amount: Double, method: String, note: String, dateMillis: Long, billRef: String) {
         val dateText = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(dateMillis))
         val verb = if (isCustomer) Loc.t(this, "Payment Received", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u0648\u0635\u0648\u0644 \u06C1\u0648\u0626\u06CC")
             else Loc.t(this, "Payment Made", "\u0627\u062F\u0627\u0626\u06CC\u06AF\u06CC \u06C1\u0648\u0626\u06CC")
@@ -1052,6 +1144,26 @@ class PartyTransactionActivity : AppCompatActivity() {
                     // corrected before, only deleted-and-redone by hand outside the app. ----
                     view = paymentRow(pay, dateText, label)
                 ))
+            }
+
+            // NEW (Flutter parity, batch 9): Amanat / Loan history rows (display only — the
+            // amounts already sit in the opening balance, so nothing is counted twice).
+            if (isCustomer) {
+                val cust = db.customerDao().find(partyId)
+                if (cust != null && (cust.kind == "amanat" || cust.kind == "loan")) {
+                    val rows = com.grocerypos.v11.ReturnLog.ledgerRows(cust.kind,
+                        com.grocerypos.v11.ReturnEntries.decode(cust.returnEntries), com.grocerypos.v11.ReturnLog.decode(cust.returnLog))
+                    for (r in rows) {
+                        val dateText = if (r.date > 0) fmt.format(Date(r.date)) else Loc.t(this@PartyTransactionActivity, "Earlier", "پہلے")
+                        val label = loanLabel(r) + (if (r.note.isNotBlank() && r.id != -1) "  \u2022  ${r.note}" else "")
+                        entries.add(TxEntry(
+                            createdAt = r.date,
+                            isPayment = false,
+                            searchText = "$dateText $label ${kotlin.math.abs(r.amount)}".lowercase(),
+                            view = row(kotlin.math.abs(r.amount), dateText, label, "", blue, R.drawable.ic_wallet) { }
+                        ))
+                    }
+                }
             }
 
             allEntries = entries.sortedByDescending { it.createdAt }
@@ -1238,7 +1350,12 @@ class PartyTransactionActivity : AppCompatActivity() {
     /** Builds a plain-text statement (header info + every bill/payment, oldest first)
      * and hands it to the system share sheet — same Intent.ACTION_SEND pattern already
      * used by shareReceipt()/shareSummary() elsewhere in the Party screens. */
-    private fun shareStatement() {
+    private fun shareStatement() =
+        askPdfOrText({
+            sharePdf(Loc.t(this, "Share statement", "اسٹیٹمنٹ شیئر کریں")) { PartySlips.statement(this, isCustomer, partyId, partyName) }
+        }, { shareStatementText() })
+
+    private fun shareStatementText() {
         val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
         val sb = StringBuilder()
         sb.append(partyName).append("\n")
@@ -1481,12 +1598,17 @@ class PartyTransactionActivity : AppCompatActivity() {
                     val perUnitCost = if (oldQty != 0.0) item.cost / oldQty else 0.0
                     val newAmount = newQty * newRate
                     val newCost = perUnitCost * newQty
+                    // NEW (Flutter parity, batch 8 — Pending Cost): cost scales with qty, so the
+                    // pending part (and what purchases filled) scales by the same ratio.
+                    val pendingScaled = com.grocerypos.v11.CostBackfillMath.scaled(item.pendingQty, item.pendingEst, item.backfillLog,
+                        if (oldQty != 0.0) newQty / oldQty else 1.0)
                     val updatedItem = item.copy(
                         qty = newQty, unitPrice = newRate, amount = newAmount, cost = newCost,
                         // Re-stamp with the CURRENT factor — this line now reflects "now", same
                         // reasoning as newSmallest above.
                         conversionFactor = if (qtyChanged) (product?.smallestPerUnitOf(item.unit) ?: item.conversionFactor)
-                            else item.conversionFactor
+                            else item.conversionFactor,
+                        pendingQty = pendingScaled.first, pendingEst = pendingScaled.second, backfillLog = pendingScaled.third
                     )
                     db.saleDao().updateItemRow(updatedItem)
 
@@ -1729,6 +1851,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                             else item.conversionFactor
                     )
                     db.purchaseDao().updateItemRow(updatedItem)
+                    // NEW (Flutter parity, batch 8 — Pending Cost): re-fill sale costs from this line.
+                    com.grocerypos.v11.CostBackfill.reallocateBill(db, purchase.billNo, item.barcode)
 
                     val deltaAmount = newAmount - item.amount
                     val newTotal = purchase.total + deltaAmount
@@ -1817,6 +1941,8 @@ class PartyTransactionActivity : AppCompatActivity() {
                     }
 
                     db.purchaseDao().deleteItemById(item.id)
+                    // NEW (Flutter parity, batch 8 — Pending Cost): re-fill sale costs from this line.
+                    com.grocerypos.v11.CostBackfill.reallocateBill(db, purchase.billNo, item.barcode)
 
                     val remaining = db.purchaseDao().itemCountForBill(purchase.billNo)
                     if (remaining == 0) {
@@ -2199,6 +2325,18 @@ class PartyTransactionActivity : AppCompatActivity() {
         }
     }
 
+
+    /** NEW (batch 9): Flutter's _loanLabel — kind (loan / amanat) x log type. */
+    private fun loanLabel(r: com.grocerypos.v11.ReturnLogRow): String {
+        val amanat = r.kind == "amanat"
+        val base = when (r.type) {
+            com.grocerypos.v11.LOG_GIVEN -> if (amanat) Loc.t(this, "Deposit Received", "امانت وصول ہوئی") else Loc.t(this, "Loan Given", "قرض دیا")
+            com.grocerypos.v11.LOG_RECOVERED -> if (amanat) Loc.t(this, "Deposit Returned", "امانت واپس کی") else Loc.t(this, "Loan Recovered", "قرض وصول ہوا")
+            com.grocerypos.v11.LOG_REMOVED -> if (amanat) Loc.t(this, "Deposit Entry Removed", "امانت کی انٹری ہٹائی") else Loc.t(this, "Loan Entry Removed", "قرض کی انٹری ہٹائی")
+            else -> if (amanat) Loc.t(this, "Deposit Adjusted", "امانت ایڈجسٹ") else Loc.t(this, "Loan Adjusted", "قرض ایڈجسٹ")
+        }
+        return if (r.id == -1) base + "  \u2022  " + Loc.t(this, "earlier records", "پرانا ریکارڈ") else base
+    }
 
     private fun placeholderCard(text: String) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL

@@ -102,7 +102,9 @@ class UpdateCustomerUseCase(private val repository: PartyRepository) {
         stuckBalance: Double? = null,
         // NEW (Customer rate type): null = caller doesn't touch it (cashier edit) — keeps the
         // stored one. "" = follow the bill's Sale Type; "retail"/"wholesale"/"shopkeeper" = fixed.
-        rateType: String? = null
+        rateType: String? = null,
+        // NEW (Flutter parity, batch 6): credit period in days (0 = shop default). null = keep.
+        dueDays: Int? = null
     ): SavePartyResult {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return SavePartyResult.NameRequired
@@ -113,7 +115,8 @@ class UpdateCustomerUseCase(private val repository: PartyRepository) {
                 creditLimit = creditLimit,
                 openingBalance = openingBalance,
                 stuckBalance = stuckBalance ?: existing.stuckBalance,
-                rateType = rateType ?: existing.rateType
+                rateType = rateType ?: existing.rateType,
+                dueDays = dueDays?.coerceIn(0, 365) ?: existing.dueDays
             )
         )
         return SavePartyResult.Success

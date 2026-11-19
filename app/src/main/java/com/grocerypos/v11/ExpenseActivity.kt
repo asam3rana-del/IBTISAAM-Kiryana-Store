@@ -477,6 +477,14 @@ class ExpenseActivity : AppCompatActivity() {
                     // behind (permanently understating Cash in Hand), or the reverse.
                     // Grouped into one db.withTransaction {} so they all happen or none do.
                     db.withTransaction {
+                        // NEW (Flutter parity, batch 3): snapshot to the Recycle Bin first (same
+                        // transaction), with the cash rows this delete is about to remove.
+                        val binRefs = mutableListOf(SyncQueueHelper.expenseEntityId(e))
+                        if (e.serverId == null || e.serverId.startsWith("expense:${com.grocerypos.v11.DeviceTag.current}-")) binRefs.add("expense:${e.id}")
+                        val binCash = binRefs.flatMap { db.cashTransactionDao().allByReference(it) }
+                        com.grocerypos.v11.RecycleBin.record(db, this@ExpenseActivity, com.grocerypos.v11.RecycleBin.EXPENSE, "${e.id}",
+                            e.category.ifBlank { "Expense" }, e.description, e.amount,
+                            com.grocerypos.v11.RecycleBinData(expenses = listOf(e), cash = binCash))
                         db.expenseDao().delete(e)
                         // A delete must also reach Firestore; otherwise another device
                         // would keep showing the removed expense after the next sync.

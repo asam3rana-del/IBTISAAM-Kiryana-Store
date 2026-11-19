@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- NEW (batch 5): reminder notifications (Android 13+ runtime permission) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -59,6 +61,18 @@
         <activity android:name=".ui.StockTakingActivity" android:exported="false" />
         <activity android:name=".ui.InventoryInsightsActivity" android:exported="false" />
         <activity android:name=".ui.DueRemindersActivity" android:exported="false" />
+        <activity android:name=".ui.AmanatLoanActivity" android:exported="false" />
+        <activity android:name=".ui.CollectionActivity" android:exported="false" />
+        <activity android:name=".ui.WorkersActivity" android:exported="false" />
+        <activity android:name=".ui.ShopRentActivity" android:exported="false" />
+        <activity android:name=".ui.UtilityBillsActivity" android:exported="false" />
+        <activity android:name=".ui.RepairToolsActivity" android:exported="false" />
+        <activity android:name=".ui.RecycleBinActivity" android:exported="false" />
+        <activity android:name=".ui.ReceivablesActivity" android:exported="false" />
+        <activity android:name=".ui.ReturnsReportActivity" android:exported="false" />
+        <activity android:name=".ui.ExpiryReportActivity" android:exported="false" />
+        <activity android:name=".ui.CollectionTickerActivity" android:exported="false" />
+        <activity android:name=".ui.PendingCostActivity" android:exported="false" />
         <activity android:name=".ui.BalanceSheetActivity" android:exported="false" />
         <activity android:name=".ui.ZakatActivity" android:exported="false" />
         <activity android:name=".ui.PurchaseActivity" android:windowSoftInputMode="adjustResize" />

@@ -569,6 +569,8 @@ class SaleHistoryActivity : ThemedActivity() {
             val items = db.saleDao().itemsForInvoice(invoice)
 
             db.withTransaction {
+                // NEW (Flutter parity, batch 7): Recycle Bin snapshot first (same transaction).
+                com.grocerypos.v11.BillRecycle.recordSale(db, this@SaleHistoryActivity, invoice)
                 items.forEach { si ->
                     val p = db.productDao().find(si.barcode)
                     val smallestQty = si.smallestQty(p)

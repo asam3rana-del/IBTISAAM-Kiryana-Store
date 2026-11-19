@@ -110,3 +110,11 @@
     <fields>;
 }
 -dontwarn kotlinx.coroutines.**
+
+# ---------- Recycle Bin snapshots (Flutter parity, batch 3) ----------
+# RecycleBin.kt stores deleted rows as Gson JSON of Room entity classes; keep their field names
+# so a snapshot written by one build can still be read (restored) by the next.
+-keepclassmembers @androidx.room.Entity class * { <fields>; }
+-keep class com.grocerypos.v11.RecycleBinData { *; }
+-keep class com.grocerypos.v11.BinStock { *; }
+-keep class com.grocerypos.v11.BackfillEntry { *; }

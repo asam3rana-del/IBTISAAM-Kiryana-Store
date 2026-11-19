@@ -339,7 +339,11 @@ class RoomPurchaseRepository(
         val purchase = original ?: db.purchaseDao().findPurchase(billNo) ?: return
         val items = originalItems.ifEmpty { db.purchaseDao().itemsForBill(billNo) }
         db.withTransaction {
+            // NEW (Flutter parity, batch 7): Recycle Bin snapshot first (same transaction).
+            com.grocerypos.v11.BillRecycle.recordPurchase(db, appContext, billNo)
             reverseStockAndCostForItems(items)
+            // NEW (batch 8 — Pending Cost): sale lines this bill filled go back to pending.
+            com.grocerypos.v11.CostBackfill.reverse(db, billNo)
             // FIX (overpaid-bill balance gap): see savePurchase()'s matching comment —
             // deleting an overpaid purchase must reverse its advance credit too, not
             // just an amount owed to the supplier.
@@ -533,6 +537,9 @@ class RoomPurchaseRepository(
                         SyncQueueHelper.updateProductPrices(db, barcode, newSalePrice, newWholesalePrice)
                     }
                 }
+                // NEW (Flutter parity, batch 8 — Pending Cost): stock is in — fill (or, on
+                // edit, re-fill) pending sale costs from this bill's lines.
+                com.grocerypos.v11.CostBackfill.reallocateBarcodes(db, billNo, db.purchaseDao().itemsForBill(billNo).map { it.barcode } + originalItems.map { it.barcode })
                 // FIX (overpaid-bill → party balance gap): was `outstanding > 0`, so an
                 // overpaid purchase (amountPaid > grandTotal) never touched the
                 // supplier's balance — the excess just vanished instead of showing up

@@ -1,6 +1,7 @@
 package com.grocerypos.v11.data
 
 import android.content.Context
+import com.grocerypos.v11.DueDays
 import androidx.room.withTransaction
 import com.grocerypos.v11.CashTransaction
 import com.grocerypos.v11.Customer
@@ -253,17 +254,42 @@ class RoomSaleRepository(
                         paid = paid,
                         paymentMethod = method.lowercase(),
                         saleType = saleType,
-                        createdAt = saleDateMillis
+                        createdAt = saleDateMillis,
+                        // NEW (Flutter parity, batch 6): udhaar bill gets a due date
+                        // (customer's credit period, else the shop default) — see DueDays.kt.
+                        dueDate = if (customer != null)
+                            DueDays.dueDateFor(saleDateMillis, total - paid, customer?.dueDays ?: 0, DueDays.shopDays(db))
+                        else 0L
                     )
                 )
             }
 
+            // NEW (Flutter parity, batch 8 — Pending Cost): stock per barcode BEFORE this bill's
+            // deduction (after an edit's reversal), shrinking line by line.
+            val runningStock = HashMap<String, Double>().apply { productsByBarcode.forEach { (k, v) -> put(k, v.stock) } }
             val saleItems = lines.mapIndexed { index, it ->
                 val lineProduct = productsByBarcode[it.barcode]
                 // An untouched line keeps the conversionFactor frozen when it was originally
                 // sold — re-stamping it with the CURRENT unit ladder would make a later
                 // delete/return reverse a different quantity than was actually deducted.
                 val unchangedOriginal = diff?.unchangedOriginalByIndex?.get(index)
+                var lineCost = it.cost
+                var pendingQty = 0.0
+                var pendingEst = 0.0
+                var backfillLog = ""
+                if (unchangedOriginal != null) {
+                    // Untouched line: pending state + already-filled cost stay as they were.
+                    pendingQty = unchangedOriginal.pendingQty
+                    pendingEst = unchangedOriginal.pendingEst
+                    backfillLog = unchangedOriginal.backfillLog
+                    if (pendingQty > com.grocerypos.v11.CostBackfillMath.EPS || backfillLog.isNotEmpty()) lineCost = unchangedOriginal.cost
+                } else if (lineProduct != null) {
+                    val needed = lineProduct.toSmallestUnits(it.qty, it.unit)
+                    val before = runningStock[it.barcode] ?: lineProduct.stock
+                    val pe = com.grocerypos.v11.CostBackfill.pendingForLine(lineProduct, needed, before, it.cost)
+                    pendingQty = pe.first; pendingEst = pe.second
+                    runningStock[it.barcode] = before - needed
+                }
                 SaleItem(
                     invoice = invoice,
                     barcode = it.barcode,
@@ -271,8 +297,11 @@ class RoomSaleRepository(
                     qty = it.qty,
                     unit = it.unit,
                     unitPrice = it.unitPrice,
-                    cost = it.cost,
+                    cost = lineCost,
                     amount = it.amount,
+                    pendingQty = pendingQty,
+                    pendingEst = pendingEst,
+                    backfillLog = backfillLog,
                     // FIX (historical unit conversion bug): freeze this line's
                     // smallest-units-per-`unit` factor at sale time — see
                     // Database.kt's SaleItem.smallestQty()/conversionFactor comment.
@@ -385,6 +414,8 @@ class RoomSaleRepository(
         val items = originalItems.ifEmpty { db.saleDao().itemsForInvoice(invoice) }
 
         db.withTransaction {
+            // NEW (Flutter parity, batch 7): Recycle Bin snapshot first (same transaction).
+            com.grocerypos.v11.BillRecycle.recordSale(db, appContext, invoice)
             items.forEach { si ->
                 val p = db.productDao().find(si.barcode)
                 val smallestQty = si.smallestQty(p)
@@ -498,7 +529,11 @@ class RoomSaleRepository(
                     paid = paid,
                     paymentMethod = method,
                     saleType = "retail",
-                    createdAt = now
+                    createdAt = now,
+                    // NEW (batch 6): same default due date as a normal sale.
+                    dueDate = if (customer != null)
+                        DueDays.dueDateFor(now, amount - paid, customer?.dueDays ?: 0, DueDays.shopDays(db))
+                    else 0L
                 )
             )
 
@@ -512,7 +547,10 @@ class RoomSaleRepository(
                 cost = lineCost,
                 amount = amount,
                 // FIX (historical unit conversion bug): see saveSale() above.
-                conversionFactor = current.smallestPerUnitOf(unit)
+                conversionFactor = current.smallestPerUnitOf(unit),
+                // NEW (batch 8 — Pending Cost): item cost 0 / short stock => cost not known yet.
+                pendingQty = com.grocerypos.v11.CostBackfill.pendingForLine(current, smallestQtyForCost, current.stock, lineCost).first,
+                pendingEst = com.grocerypos.v11.CostBackfill.pendingForLine(current, smallestQtyForCost, current.stock, lineCost).second
             )
             db.saleDao().items(listOf(saleItem))
 

@@ -35,8 +35,35 @@ object SyncQueueHelper {
     // without DeviceTag mixed in, one device's Firestore doc would silently overwrite
     // the other's. Sale/Purchase/Product/User don't need this: their keys (invoice,
     // billNo, barcode, username) are already naturally unique, not local-id-based.
-    fun customerEntityId(c: Customer) = "customer:${DeviceTag.current}-${c.id}"
-    fun supplierEntityId(s: Supplier) = "supplier:${DeviceTag.current}-${s.id}"
+    // FIX (Flutter parity / duplicate-doc bug): a customer/supplier PULLED from another device
+    // (e.g. the Flutter phone) already carries that device's serverId. Re-building the id from
+    // THIS device's tag on every edit (old behaviour) pushed the edit as a brand-new Firestore doc,
+    // so an Amanat/Loan entry, rename or limit change made here never reached the original doc —
+    // and the next pull brought the old one back as a duplicate. Same "serverId first" rule as
+    // paymentEntityId below and Flutter's SyncQueueHelper._own(). Rows created on this device
+    // keep exactly the id they always had.
+    fun customerEntityId(c: Customer) =
+        c.serverId?.takeIf { it.isNotBlank() } ?: "customer:${DeviceTag.current}-${c.id}"
+    fun supplierEntityId(s: Supplier) =
+        s.serverId?.takeIf { it.isNotBlank() } ?: "supplier:${DeviceTag.current}-${s.id}"
+    // NEW (Flutter parity, batch 2): ids identical to Flutter's SyncQueueHelper (serverId first, else
+    // "<prefix><DeviceTag>-<id>"). Attendance / rent charge / bill payment ids are built from their
+    // natural key so two devices doing the same thing land on ONE cloud doc.
+    fun workerEntityId(w: ShopWorker) = w.serverId?.takeIf { it.isNotBlank() } ?: "worker:${DeviceTag.current}-${w.id}"
+    fun workerAttendanceEntityId(workerSid: String, day: String) = "worker_attendance:$workerSid|$day"
+    fun workerAdvanceEntityId(a: WorkerAdvance) = a.serverId?.takeIf { it.isNotBlank() } ?: "worker_advance:${DeviceTag.current}-${a.id}"
+    fun workerSalaryPaymentEntityId(p: WorkerSalaryPayment) = p.serverId?.takeIf { it.isNotBlank() } ?: "worker_salary_payment:${DeviceTag.current}-${p.id}"
+    fun shopRentEntityId(s: RentedShop) = s.serverId?.takeIf { it.isNotBlank() } ?: "shop_rent:${DeviceTag.current}-${s.id}"
+    fun shopRentChargeEntityId(shopSid: String, ym: String) = "shop_rent_charge:$shopSid|$ym"
+    fun shopRentEntryEntityId(l: RentLedgerEntry, shopSid: String) =
+        if (l.kind == "charge") shopRentChargeEntityId(shopSid, l.ym)
+        else l.serverId?.takeIf { it.isNotBlank() } ?: "shop_rent_entry:${DeviceTag.current}-${l.id}"
+    fun utilityBillEntityId(b: UtilityBill) = b.serverId?.takeIf { it.isNotBlank() } ?: "utility_bill:${DeviceTag.current}-${b.id}"
+    fun utilityBillPaymentEntityId(billSid: String, month: String) = "utility_bill_payment:$billSid|$month"
+
+    // NEW (Flutter parity — follow-up log): same shape as Flutter's dueFollowupEntityId.
+    fun dueFollowupEntityId(f: DueFollowUp) =
+        f.serverId?.takeIf { it.isNotBlank() } ?: "due_followup:${DeviceTag.current}-${f.id}"
     fun productEntityId(p: Product) = p.barcode
     fun saleEntityId(sale: Sale) = "sale:${sale.invoice}"
     fun purchaseEntityId(purchase: Purchase) = "purchase:${purchase.billNo}"
@@ -715,10 +742,194 @@ object SyncQueueHelper {
             "stuckBalance" to c.stuckBalance,
             // NEW (Customer rate type): plain snapshot field, last-write-wins is correct.
             "rateType" to c.rateType,
+            // NEW (Flutter parity): same field names as Flutter's customerPayload(), so a
+            // Kotlin edit carries the Amanat/Loan entries, pay day and qist plan along instead
+            // of the doc only ever being changed from the Flutter side.
+            "dueDays" to c.dueDays,
+            "kind" to c.kind,
+            "returnDate" to c.returnDate,
+            "returnEntries" to c.returnEntries,
+            "returnLog" to c.returnLog,
+            "paySchedule" to c.paySchedule,
+            "qistPlan" to c.qistPlan,
             "updatedAt" to System.currentTimeMillis(),
             "branchId" to com.grocerypos.v11.BranchConfigStore.current
         )
         return gson.toJson(map)
+    }
+
+    // NEW (Flutter parity — follow-up log). Field names = Flutter's dueFollowupPayload().
+    // partyServerId (not the local partyId) is what lets the other device find the customer.
+    fun dueFollowupJson(f: DueFollowUp, partyServerId: String?): String {
+        val map = mapOf(
+            "serverId" to dueFollowupEntityId(f),
+            "partyServerId" to partyServerId,
+            "partyName" to f.partyName,
+            "method" to f.method,
+            "outcome" to f.outcome,
+            "amount" to f.amount,
+            "promiseDate" to f.promiseDate,
+            "nextFollowUp" to f.nextFollowUp,
+            "note" to f.note,
+            "staff" to f.staff,
+            "createdAt" to f.createdAt,
+            "_deleted" to false,
+            "updatedAt" to (if (f.updatedAt > 0L) f.updatedAt else System.currentTimeMillis()),
+            "branchId" to com.grocerypos.v11.BranchConfigStore.current
+        )
+        return gson.toJson(map)
+    }
+
+    // ------------------------------------------------------------------ batch 2 payloads
+    // Field names / types = Flutter's workerPayload(), shopRentPayload() ... Booleans go out as
+    // 1 / 0 (Flutter reads them as ints), every doc carries updatedAt + branchId.
+    private fun stamp(m: Map<String, Any?>): String =
+        gson.toJson(m + mapOf("updatedAt" to System.currentTimeMillis(), "branchId" to com.grocerypos.v11.BranchConfigStore.current))
+    private fun b01(v: Boolean) = if (v) 1 else 0
+
+    suspend fun enqueueWorker(db: PosDatabase, w0: ShopWorker, context: Context? = null): ShopWorker {
+        val id = workerEntityId(w0)
+        val w = if (w0.serverId != id) w0.copy(serverId = id).also { db.shopExtrasDao().updateWorker(it) } else w0
+        enqueue(db, "worker", id, "upsert", stamp(mapOf(
+            "serverId" to id, "name" to w.name, "phone" to w.phone, "payType" to w.payType, "rate" to w.rate,
+            "active" to b01(w.active), "createdAt" to w.createdAt, "_deleted" to false)))
+        context?.let { trigger(it) }
+        return w
+    }
+
+    /** Hazri ka ek din. Row na mile (nishan hata diya) to kuch nahi — delete ke liye enqueueWorkerAttendanceDelete. */
+    suspend fun enqueueWorkerAttendance(db: PosDatabase, workerId: Long, day: String) {
+        val w = db.shopExtrasDao().worker(workerId) ?: return
+        val a = db.shopExtrasDao().attendance(workerId, day) ?: return
+        val wsid = workerEntityId(w)
+        val eid = workerAttendanceEntityId(wsid, day)
+        enqueue(db, "worker_attendance", eid, "upsert", stamp(mapOf(
+            "serverId" to eid, "workerServerId" to wsid, "day" to day, "status" to a.status, "_deleted" to false)))
+    }
+
+    suspend fun enqueueWorkerAttendanceDelete(db: PosDatabase, workerId: Long, day: String) {
+        val w = db.shopExtrasDao().worker(workerId) ?: return
+        enqueueDelete(db, "worker_attendance", workerAttendanceEntityId(workerEntityId(w), day))
+    }
+
+    suspend fun enqueueWorkerAdvance(db: PosDatabase, a0: WorkerAdvance): WorkerAdvance {
+        val id = workerAdvanceEntityId(a0)
+        val a = if (a0.serverId != id) a0.copy(serverId = id).also { db.shopExtrasDao().updateAdvance(it) } else a0
+        val wsid = db.shopExtrasDao().worker(a.workerId)?.let { workerEntityId(it) }
+        enqueue(db, "worker_advance", id, "upsert", stamp(mapOf(
+            "serverId" to id, "workerServerId" to wsid, "amount" to a.amount, "method" to a.method,
+            "note" to a.note, "createdAt" to a.createdAt, "_deleted" to false)))
+        return a
+    }
+
+    suspend fun enqueueWorkerSalaryPayment(db: PosDatabase, p0: WorkerSalaryPayment): WorkerSalaryPayment {
+        val id = workerSalaryPaymentEntityId(p0)
+        val p = if (p0.serverId != id) p0.copy(serverId = id).also { db.shopExtrasDao().updateSalary(it) } else p0
+        val wsid = db.shopExtrasDao().worker(p.workerId)?.let { workerEntityId(it) }
+        enqueue(db, "worker_salary_payment", id, "upsert", stamp(mapOf(
+            "serverId" to id, "workerServerId" to wsid, "month" to p.month, "earned" to p.earned,
+            "advanceCut" to p.advanceCut, "net" to p.net, "method" to p.method,
+            "expenseServerId" to p.expenseServerId, "createdAt" to p.createdAt, "_deleted" to false)))
+        return p
+    }
+
+    /** Dukaan + uske terms ({fromYm: rent}) ek hi doc mein. Rent badle to bhi yahi dobara chalayen. */
+    suspend fun enqueueShopRent(db: PosDatabase, s0: RentedShop): RentedShop {
+        val id = shopRentEntityId(s0)
+        val s = if (s0.serverId != id) s0.copy(serverId = id).also { db.shopExtrasDao().updateShop(it) } else s0
+        val terms = db.shopExtrasDao().terms(s.id).associate { it.fromYm to it.monthlyRent }
+        enqueue(db, "shop_rent", id, "upsert", stamp(mapOf(
+            "serverId" to id, "shopName" to s.shopName, "landlord" to s.landlord, "phone" to s.phone,
+            "dueDay" to s.dueDay, "startYm" to s.startYm, "autoApply" to b01(s.autoApply), "active" to b01(s.active),
+            "note" to s.note, "createdAt" to s.createdAt, "terms" to terms, "_deleted" to false)))
+        return s
+    }
+
+    suspend fun enqueueShopRentEntry(db: PosDatabase, l0: RentLedgerEntry) {
+        val dao = db.shopExtrasDao()
+        val shop = dao.shop(l0.shopId) ?: return
+        val shopSid = shopRentEntityId(shop)
+        val id = shopRentEntryEntityId(l0, shopSid)
+        var l = l0
+        var expenseSid = l.expenseServerId
+        l.expenseId?.let { eid -> dao.expenseById(eid)?.let { expenseSid = expenseEntityId(it) } }
+        var cashSid = l.cashServerId
+        l.cashId?.let { cid -> dao.cashById(cid)?.let { cashSid = cashTransactionEntityId(it) } }
+        if (l.serverId != id || l.expenseServerId != expenseSid || l.cashServerId != cashSid) {
+            l = l.copy(serverId = id, expenseServerId = expenseSid, cashServerId = cashSid)
+            dao.updateEntry(l)
+        }
+        enqueue(db, "shop_rent_entry", id, "upsert", stamp(mapOf(
+            "serverId" to id, "shopServerId" to shopSid, "kind" to l.kind, "ym" to l.ym, "amount" to l.amount,
+            "method" to l.method, "note" to l.note, "expenseServerId" to expenseSid, "cashServerId" to cashSid,
+            "createdAt" to l.createdAt, "_deleted" to false)))
+    }
+
+    /** Ledger entry ki sahi entity id — row delete hone se PEHLE nikalen. */
+    suspend fun shopRentEntryEntityIdFor(db: PosDatabase, l: RentLedgerEntry): String? {
+        val shop = db.shopExtrasDao().shop(l.shopId) ?: return null
+        return shopRentEntryEntityId(l, shopRentEntityId(shop))
+    }
+
+    suspend fun enqueueUtilityBill(db: PosDatabase, b0: UtilityBill): UtilityBill {
+        val id = utilityBillEntityId(b0)
+        val b = if (b0.serverId != id) b0.copy(serverId = id).also { db.shopExtrasDao().updateBill(it) } else b0
+        enqueue(db, "utility_bill", id, "upsert", stamp(mapOf(
+            "serverId" to id, "name" to b.name, "kind" to b.kind, "dueDay" to b.dueDay, "avgAmount" to b.avgAmount,
+            "reminder" to b01(b.reminder), "active" to b01(b.active), "createdAt" to b.createdAt, "_deleted" to false)))
+        return b
+    }
+
+    suspend fun enqueueUtilityBillPayment(db: PosDatabase, p0: UtilityBillPayment) {
+        val dao = db.shopExtrasDao()
+        var bill = dao.bill(p0.billId) ?: return
+        if (bill.serverId.isNullOrBlank()) bill = enqueueUtilityBill(db, bill)
+        val billSid = utilityBillEntityId(bill)
+        val id = utilityBillPaymentEntityId(billSid, p0.month)
+        var expenseSid = p0.expenseServerId
+        p0.expenseId?.let { eid -> dao.expenseById(eid)?.let { expenseSid = expenseEntityId(it) } }
+        var p = p0
+        if (p.serverId != id || p.expenseServerId != expenseSid) {
+            p = p.copy(serverId = id, expenseServerId = expenseSid)
+            dao.updateBillPayment(p)
+        }
+        enqueue(db, "utility_bill_payment", id, "upsert", stamp(mapOf(
+            "serverId" to id, "billServerId" to billSid, "month" to p.month, "amount" to p.amount,
+            "method" to p.method, "note" to p.note, "expenseServerId" to expenseSid, "paidAt" to p.paidAt,
+            "_deleted" to false)))
+    }
+
+    suspend fun utilityBillPaymentEntityIdFor(db: PosDatabase, p: UtilityBillPayment): String? {
+        val bill = db.shopExtrasDao().bill(p.billId) ?: return null
+        return utilityBillPaymentEntityId(utilityBillEntityId(bill), p.month)
+    }
+
+    /**
+     * NEW (Flutter parity, batch 3 — Recycle Bin restore): a deleted record's cloud doc is a
+     * tombstone (_deleted = true) and most payloads here don't carry "_deleted", so a plain
+     * re-upsert would leave it deleted on every other device. Queue this right AFTER the normal
+     * enqueueX() of a restored row to bring the doc back to life (Flutter's `_restore` marker).
+     */
+    suspend fun enqueueUndelete(db: PosDatabase, entityType: String, entityId: String) {
+        enqueue(db, entityType, entityId, "upsert", gson.toJson(mapOf(
+            "serverId" to entityId, "_deleted" to false,
+            "updatedAt" to System.currentTimeMillis(), "branchId" to com.grocerypos.v11.BranchConfigStore.current)))
+    }
+
+    suspend fun enqueueDueFollowup(db: PosDatabase, f: DueFollowUp, context: Context? = null) {
+        val id = dueFollowupEntityId(f)
+        var row = f
+        if (row.serverId != id) {
+            row = row.copy(serverId = id)
+            db.dueFollowUpDao().update(row)
+        }
+        var partySid: String? = null
+        if (row.partyId > 0) db.customerDao().find(row.partyId)?.let { partySid = customerEntityId(it) }
+        if (partySid == null) partySid = row.partyServerId?.takeIf { it.isNotBlank() }
+        val ps = partySid
+        if (ps != null && row.partyServerId != ps) db.dueFollowUpDao().setPartyServerId(row.id, ps)
+        enqueue(db, "due_followup", id, "upsert", dueFollowupJson(row, ps))
+        context?.let { trigger(it) }
     }
 
     fun supplierJson(s: Supplier): String {
@@ -972,7 +1183,11 @@ object SyncQueueHelper {
                 // NEW (Improvement Pack P2): carry each line's permanent UID across
                 // devices too, so it stays the same everywhere instead of a fresh
                 // random one being generated on every device that pulls this sale.
-                "lineUid" to it.lineUid
+                "lineUid" to it.lineUid,
+                // NEW (Flutter parity, batch 8): Pending Cost state (same keys as Flutter).
+                "pendingQty" to it.pendingQty,
+                "pendingEst" to it.pendingEst,
+                "backfillLog" to it.backfillLog
             )
         }
         val customerServerId = sale.customerId?.let { db.customerDao().find(it)?.let { c -> customerEntityId(c) } }
@@ -1158,6 +1373,18 @@ object SyncQueueHelper {
         // NEW (Cash Register sync): push existing till history too, so a register
         // opened/closed before this feature existed also gets pushed once.
         for (r in db.cashRegisterDao().allOnce()) enqueueCashRegister(db, r)
+        // NEW (Flutter parity — follow-up log).
+        for (f in db.dueFollowUpDao().all()) enqueueDueFollowup(db, f)
+        // NEW (Flutter parity, batch 2): workers, shop rents, utility bills (parents before children).
+        val x = db.shopExtrasDao()
+        for (w in x.workers()) enqueueWorker(db, w)
+        for (a in x.allAttendance()) enqueueWorkerAttendance(db, a.workerId, a.day)
+        for (a in x.allAdvances()) enqueueWorkerAdvance(db, a)
+        for (p in x.allSalaries()) enqueueWorkerSalaryPayment(db, p)
+        for (sh in x.shops()) enqueueShopRent(db, sh)
+        for (l in x.allEntries()) enqueueShopRentEntry(db, l)
+        for (b in x.bills()) enqueueUtilityBill(db, b)
+        for (p in x.allBillPayments()) enqueueUtilityBillPayment(db, p)
         context?.let { trigger(it) }
     }
 

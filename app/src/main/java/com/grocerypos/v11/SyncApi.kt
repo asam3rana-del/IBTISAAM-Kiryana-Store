@@ -30,6 +30,16 @@ import com.grocerypos.v11.CashRegister
 import com.grocerypos.v11.ShellCustomer
 import com.grocerypos.v11.ShellTransaction
 import com.grocerypos.v11.ShopEmptyShellLog
+import com.grocerypos.v11.DueFollowUp
+import com.grocerypos.v11.ShopWorker
+import com.grocerypos.v11.WorkerAttendance
+import com.grocerypos.v11.WorkerAdvance
+import com.grocerypos.v11.WorkerSalaryPayment
+import com.grocerypos.v11.RentedShop
+import com.grocerypos.v11.RentedShopTerm
+import com.grocerypos.v11.RentLedgerEntry
+import com.grocerypos.v11.UtilityBill
+import com.grocerypos.v11.UtilityBillPayment
 import com.grocerypos.v11.util.Loc
 
 /**
@@ -196,6 +206,17 @@ object SyncApi {
                 "shell_customer" -> "shell_customers"
                 "shell_transaction" -> "shell_transactions"
                 "shop_empty_shell_log" -> "shop_empty_shell_log"
+                // NEW (Flutter parity — follow-up log; same collection as the Flutter app).
+                "due_followup" -> "due_followups"
+                // NEW (Flutter parity, batch 2) — same collections as the Flutter app.
+                "worker" -> "workers"
+                "worker_attendance" -> "worker_attendance"
+                "worker_advance" -> "worker_advances"
+                "worker_salary_payment" -> "worker_salary_payments"
+                "shop_rent" -> "shop_rents"
+                "shop_rent_entry" -> "shop_rent_ledger"
+                "utility_bill" -> "utility_bills"
+                "utility_bill_payment" -> "utility_bill_payments"
                 else -> return false
             }
 
@@ -505,6 +526,17 @@ object SyncApi {
         val shellCustomers: List<Map<String, Any?>> = emptyList(),
         val shellTransactions: List<Map<String, Any?>> = emptyList(),
         val shopEmptyShellLogs: List<Map<String, Any?>> = emptyList(),
+        // NEW (Flutter parity — follow-up log)
+        val dueFollowups: List<Map<String, Any?>> = emptyList(),
+        // NEW (Flutter parity, batch 2)
+        val workers: List<Map<String, Any?>> = emptyList(),
+        val workerAttendance: List<Map<String, Any?>> = emptyList(),
+        val workerAdvances: List<Map<String, Any?>> = emptyList(),
+        val workerSalaryPayments: List<Map<String, Any?>> = emptyList(),
+        val shopRents: List<Map<String, Any?>> = emptyList(),
+        val shopRentEntries: List<Map<String, Any?>> = emptyList(),
+        val utilityBills: List<Map<String, Any?>> = emptyList(),
+        val utilityBillPayments: List<Map<String, Any?>> = emptyList(),
         val serverTime: Long = System.currentTimeMillis()
     )
 
@@ -541,6 +573,21 @@ object SyncApi {
         val shellCustomersSnap = query("shell_customers").get(Source.SERVER).await()
         val shellTransactionsSnap = query("shell_transactions").get(Source.SERVER).await()
         val shopEmptyShellLogSnap = query("shop_empty_shell_log").get(Source.SERVER).await()
+        // NEW (Flutter parity): needs the branchId+updatedAt composite index (already
+        // deployed from the Flutter repo's firestore.indexes.json).
+        // Fail-soft: if rules/index for this newer collection are missing, the rest of the
+        // pull must still work (the follow-up log is extra, never worth blocking sales sync).
+        val dueFollowupsSnap = try { query("due_followups").get(Source.SERVER).await() } catch (e: Exception) { null }
+        // NEW (Flutter parity, batch 2) — same fail-soft rule.
+        suspend fun soft(c: String) = try { query(c).get(Source.SERVER).await() } catch (e: Exception) { null }
+        val workersSnap = soft("workers")
+        val workerAttendanceSnap = soft("worker_attendance")
+        val workerAdvancesSnap = soft("worker_advances")
+        val workerSalarySnap = soft("worker_salary_payments")
+        val shopRentsSnap = soft("shop_rents")
+        val shopRentLedgerSnap = soft("shop_rent_ledger")
+        val utilityBillsSnap = soft("utility_bills")
+        val utilityBillPaymentsSnap = soft("utility_bill_payments")
 
         val allSnaps = listOf(
             customersSnap, suppliersSnap, productsSnap, usersSnap,
@@ -548,7 +595,8 @@ object SyncApi {
             unitsSnap, categoriesSnap, zakatYearsSnap, zakatPaymentsSnap, returnsSnap,
             stockMovementsSnap, appSettingsSnap, cashRegisterSnap,
             shellCustomersSnap, shellTransactionsSnap, shopEmptyShellLogSnap
-        )
+        ) + listOfNotNull(dueFollowupsSnap, workersSnap, workerAttendanceSnap, workerAdvancesSnap, workerSalarySnap,
+            shopRentsSnap, shopRentLedgerSnap, utilityBillsSnap, utilityBillPaymentsSnap)
         var maxUpdatedAt = since
         for (snap in allSnaps) {
             for (doc in snap.documents) {
@@ -578,11 +626,235 @@ object SyncApi {
             shellCustomers = shellCustomersSnap.documents.map { it.data ?: emptyMap() },
             shellTransactions = shellTransactionsSnap.documents.map { it.data ?: emptyMap() },
             shopEmptyShellLogs = shopEmptyShellLogSnap.documents.map { it.data ?: emptyMap() },
+            dueFollowups = dueFollowupsSnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
+            workers = workersSnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
+            workerAttendance = workerAttendanceSnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
+            workerAdvances = workerAdvancesSnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
+            workerSalaryPayments = workerSalarySnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
+            shopRents = shopRentsSnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
+            shopRentEntries = shopRentLedgerSnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
+            utilityBills = utilityBillsSnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
+            utilityBillPayments = utilityBillPaymentsSnap?.documents?.map { it.data ?: emptyMap() } ?: emptyList(),
             serverTime = maxUpdatedAt
         )
     }
 
     // ---------- APPLY ----------
+
+    // ---------------------------------------------------------------- batch 2 apply
+    private fun aS(v: Any?): String? = v as? String
+    private fun aL(v: Any?): Long? = (v as? Number)?.toLong()
+    private fun aD(v: Any?): Double? = (v as? Number)?.toDouble()
+    /** Flutter pushes 1/0; tolerate a real boolean too. null = field missing. */
+    private fun aB(v: Any?): Boolean? = when (v) { is Boolean -> v; is Number -> v.toInt() != 0; else -> null }
+    private val YM = Regex("^\\d{4}-\\d{2}$")
+    private val YMD = Regex("^\\d{4}-\\d{2}-\\d{2}$")
+
+    private suspend fun applyBatch2(db: PosDatabase, changes: PullResult) {
+        val x = db.shopExtrasDao()
+        val q = db.syncQueueDao()
+        suspend fun pending(type: String, id: String): Boolean =
+            q.pendingForEntityAnyRetry(type, id, "upsert").isNotEmpty() || q.pendingForEntityAnyRetry(type, id, "delete").isNotEmpty()
+        val now = System.currentTimeMillis()
+
+        // ---- workers
+        for (row in changes.workers) {
+            val sid = aS(row["serverId"]) ?: continue
+            if (row["_deleted"] == true) {
+                val local = x.workerByServerId(sid) ?: continue
+                if (x.advanceCount(local.id) + x.salaryCount(local.id) > 0) {
+                    logAudit(db, "sync_conflict", reference = "worker:$sid",
+                        details = "Worker \"${local.name}\" was deleted on another device, but this device has advance/salary records for them — kept the worker here.")
+                    continue
+                }
+                x.deleteAttendanceOf(local.id); x.deleteWorker(local.id)
+                continue
+            }
+            val name = aS(row["name"]) ?: continue
+            if (pending("worker", sid)) continue
+            val createdAt = aL(row["createdAt"]) ?: now
+            val existing = x.workerByServerId(sid)
+            val w = ShopWorker(
+                id = existing?.id ?: 0L, name = name, phone = aS(row["phone"]) ?: "",
+                payType = if (aS(row["payType"]) == "daily") "daily" else "monthly",
+                rate = aD(row["rate"]) ?: 0.0, active = aB(row["active"]) ?: true,
+                createdAt = existing?.createdAt ?: createdAt, serverId = sid, updatedAt = aL(row["updatedAt"]) ?: createdAt
+            )
+            if (existing != null) x.updateWorker(w) else x.insertWorker(w)
+        }
+        // ---- attendance (last-write-wins on updatedAt)
+        for (row in changes.workerAttendance) {
+            val sid = aS(row["serverId"]) ?: continue
+            val wsid = aS(row["workerServerId"]) ?: continue
+            val day = aS(row["day"]) ?: continue
+            if (!YMD.matches(day)) continue
+            val worker = x.workerByServerId(wsid) ?: continue
+            if (pending("worker_attendance", sid)) continue
+            val incomingAt = aL(row["updatedAt"]) ?: 0L
+            val local = x.attendance(worker.id, day)
+            if (row["_deleted"] == true) {
+                if (local != null && local.updatedAt <= incomingAt) x.deleteAttendance(worker.id, day)
+                continue
+            }
+            val status = aS(row["status"]) ?: continue
+            if (status !in setOf("P", "A", "H", "L")) continue
+            if (local != null && local.updatedAt > incomingAt) continue
+            x.upsertAttendance(WorkerAttendance(worker.id, day, status, incomingAt))
+        }
+        // ---- advances (create / delete only)
+        for (row in changes.workerAdvances) {
+            val sid = aS(row["serverId"]) ?: continue
+            if (row["_deleted"] == true) { x.deleteAdvanceByServerId(sid); continue }
+            if (x.advanceByServerId(sid) != null) continue
+            val wsid = aS(row["workerServerId"]) ?: continue
+            val amount = aD(row["amount"]) ?: continue
+            val worker = x.workerByServerId(wsid) ?: continue
+            val createdAt = aL(row["createdAt"]) ?: now
+            x.insertAdvance(WorkerAdvance(workerId = worker.id, amount = amount, method = aS(row["method"]) ?: "cash",
+                note = aS(row["note"]) ?: "", createdAt = createdAt, serverId = sid, updatedAt = aL(row["updatedAt"]) ?: createdAt))
+        }
+        // ---- salary payments (one per worker per month)
+        for (row in changes.workerSalaryPayments) {
+            val sid = aS(row["serverId"]) ?: continue
+            if (row["_deleted"] == true) { x.deleteSalaryByServerId(sid); continue }
+            if (x.salaryByServerId(sid) != null) continue
+            val wsid = aS(row["workerServerId"]) ?: continue
+            val month = aS(row["month"]) ?: continue
+            val earned = aD(row["earned"]) ?: continue
+            val worker = x.workerByServerId(wsid) ?: continue
+            if (x.salaryFor(worker.id, month) != null) {
+                logAudit(db, "sync_conflict", reference = "worker_salary:$sid",
+                    details = "Salary for ${worker.name} ($month) was already recorded on this device; a second payment arrived from another device and was NOT applied. Check Expenses/Cash for a double payment.")
+                continue
+            }
+            val expSid = aS(row["expenseServerId"])
+            val expense = expSid?.let { db.expenseDao().findByServerId(it) }
+            val createdAt = aL(row["createdAt"]) ?: now
+            x.insertSalary(WorkerSalaryPayment(workerId = worker.id, month = month, earned = earned,
+                advanceCut = aD(row["advanceCut"]) ?: 0.0, net = aD(row["net"]) ?: earned, method = aS(row["method"]) ?: "cash",
+                expenseId = expense?.id, expenseServerId = expSid, createdAt = createdAt, serverId = sid,
+                updatedAt = aL(row["updatedAt"]) ?: createdAt))
+        }
+
+        // ---- shop rents (+ terms map)
+        for (row in changes.shopRents) {
+            val sid = aS(row["serverId"]) ?: continue
+            val local = x.shopByServerId(sid)
+            if (row["_deleted"] == true) {
+                if (local != null && !pending("shop_rent", sid)) {
+                    x.deleteEntriesOf(local.id); x.deleteTerms(local.id); x.deleteShop(local.id)
+                }
+                continue
+            }
+            val shopName = aS(row["shopName"]) ?: continue
+            val startYm = aS(row["startYm"]) ?: continue
+            if (!YM.matches(startYm)) continue
+            if (pending("shop_rent", sid)) continue
+            val createdAt = aL(row["createdAt"]) ?: now
+            val due = (aL(row["dueDay"]) ?: 1L).toInt().coerceIn(1, 31)
+            val shop = RentedShop(
+                id = local?.id ?: 0L, shopName = shopName, landlord = aS(row["landlord"]) ?: "", phone = aS(row["phone"]) ?: "",
+                dueDay = due, startYm = startYm, autoApply = aB(row["autoApply"]) ?: true, active = aB(row["active"]) ?: true,
+                note = aS(row["note"]) ?: "", createdAt = local?.createdAt ?: createdAt, serverId = sid,
+                updatedAt = aL(row["updatedAt"]) ?: createdAt
+            )
+            val shopId = if (local != null) { x.updateShop(shop); local.id } else x.insertShop(shop)
+            val terms = row["terms"] as? Map<*, *>
+            if (terms != null) {
+                x.deleteTerms(shopId)
+                for ((k, v) in terms) {
+                    val ym = k?.toString() ?: continue
+                    val rent = (v as? Number)?.toDouble() ?: continue
+                    if (!YM.matches(ym)) continue
+                    x.upsertTerm(RentedShopTerm(shopId, ym, rent))
+                }
+            }
+        }
+        // ---- rent ledger
+        val kinds = setOf("charge", "payment", "advance", "applied")
+        for (row in changes.shopRentEntries) {
+            val sid = aS(row["serverId"]) ?: continue
+            if (row["_deleted"] == true) {
+                if (!pending("shop_rent_entry", sid)) x.deleteEntryByServerId(sid)
+                continue
+            }
+            val shopSid = aS(row["shopServerId"]) ?: continue
+            val kind = aS(row["kind"]) ?: continue
+            val amount = aD(row["amount"]) ?: continue
+            if (kind !in kinds) continue
+            val ym = if (kind == "advance") "" else (aS(row["ym"]) ?: "")
+            if (kind != "advance" && !YM.matches(ym)) continue
+            val shop = x.shopByServerId(shopSid) ?: continue
+            if (pending("shop_rent_entry", sid)) continue
+            var local = x.entryByServerId(sid)
+            if (local == null && kind == "charge") local = x.entryFor(shop.id, "charge", ym)
+            if (local == null && kind == "applied" && x.entryFor(shop.id, "applied", ym) != null) {
+                logAudit(db, "sync_conflict", reference = "shop_rent_entry:$sid",
+                    details = "Rent for ${shop.shopName} ($ym) was already adjusted from advance on this device; a second adjustment arrived from another device and was NOT applied. Check Expenses/Cash for a double Rent expense.")
+                continue
+            }
+            val expSid = aS(row["expenseServerId"])
+            val cashSid = aS(row["cashServerId"])
+            val expense = expSid?.let { db.expenseDao().findByServerId(it) }
+            val cash = cashSid?.let { db.cashTransactionDao().findByServerId(it) }
+            val createdAt = aL(row["createdAt"]) ?: now
+            val e = RentLedgerEntry(
+                id = local?.id ?: 0L, shopId = shop.id, kind = kind, ym = ym, amount = amount,
+                method = aS(row["method"]) ?: "cash", note = aS(row["note"]) ?: "",
+                expenseId = expense?.id, cashId = cash?.id, createdAt = local?.createdAt ?: createdAt,
+                serverId = sid, expenseServerId = expSid, cashServerId = cashSid, updatedAt = aL(row["updatedAt"]) ?: createdAt
+            )
+            if (local != null) x.updateEntry(e) else x.insertEntry(e)
+        }
+        x.linkLedgerExpenses()
+        x.linkLedgerCash()
+
+        // ---- utility bills
+        val billKinds = setOf("electricity", "gas", "water", "internet", "phone", "other")
+        for (row in changes.utilityBills) {
+            val sid = aS(row["serverId"]) ?: continue
+            if (row["_deleted"] == true) {
+                val local = x.billByServerId(sid) ?: continue
+                x.deleteBillPaymentsOf(local.id); x.deleteBill(local.id)
+                continue
+            }
+            val name = aS(row["name"]) ?: continue
+            val dueDay = aL(row["dueDay"])?.toInt() ?: continue
+            if (pending("utility_bill", sid)) continue
+            val createdAt = aL(row["createdAt"]) ?: now
+            val existing = x.billByServerId(sid)
+            val b = UtilityBill(
+                id = existing?.id ?: 0L, name = name, kind = aS(row["kind"])?.takeIf { it in billKinds } ?: "other",
+                dueDay = dueDay.coerceIn(1, 31), avgAmount = aD(row["avgAmount"]) ?: 0.0,
+                reminder = aB(row["reminder"]) ?: true, active = aB(row["active"]) ?: true,
+                createdAt = existing?.createdAt ?: createdAt, updatedAt = aL(row["updatedAt"]) ?: createdAt, serverId = sid
+            )
+            if (existing != null) x.updateBill(b) else x.insertBill(b)
+        }
+        for (row in changes.utilityBillPayments) {
+            val sid = aS(row["serverId"]) ?: continue
+            if (pending("utility_bill_payment", sid)) continue
+            if (row["_deleted"] == true) { x.deleteBillPaymentByServerId(sid); continue }
+            if (x.billPaymentByServerId(sid) != null) continue
+            val billSid = aS(row["billServerId"]) ?: continue
+            val month = aS(row["month"]) ?: continue
+            val amount = aD(row["amount"]) ?: continue
+            if (!YM.matches(month)) continue
+            val bill = x.billByServerId(billSid) ?: continue
+            if (x.billPaymentFor(bill.id, month) != null) {
+                logAudit(db, "sync_conflict", reference = "utility_bill_payment:$sid",
+                    details = "${bill.name} ($month) was already marked paid on this device; a second payment arrived from another device and was NOT applied. Check Expenses/Cash for a double payment.")
+                continue
+            }
+            val expSid = aS(row["expenseServerId"])
+            val expense = expSid?.let { db.expenseDao().findByServerId(it) }
+            val paidAt = aL(row["paidAt"]) ?: now
+            x.insertBillPayment(UtilityBillPayment(billId = bill.id, month = month, amount = amount,
+                method = if (aS(row["method"]) == "bank") "bank" else "cash", note = aS(row["note"]) ?: "",
+                expenseId = expense?.id, expenseServerId = expSid, paidAt = paidAt, serverId = sid,
+                updatedAt = aL(row["updatedAt"]) ?: paidAt))
+        }
+    }
 
     suspend fun applyServerChanges(db: PosDatabase, changes: PullResult) {
         val custDao = db.customerDao()
@@ -632,6 +904,15 @@ object SyncApi {
             // NEW (Customer rate type): null when the row came from a device/build that predates
             // this field — keep OUR rate type instead of blanking it.
             val rateTypeRemote = row["rateType"] as? String
+            // NEW (Flutter parity): null = the doc came from a build that predates the field —
+            // keep OUR value instead of blanking it (same rule as stuckBalance / rateType).
+            val dueDaysRemote = (row["dueDays"] as? Number)?.toInt()
+            val kindRemote = row["kind"] as? String
+            val returnDateRemote = (row["returnDate"] as? Number)?.toLong()
+            val returnEntriesRemote = row["returnEntries"] as? String
+            val returnLogRemote = row["returnLog"] as? String
+            val payScheduleRemote = row["paySchedule"] as? String
+            val qistPlanRemote = row["qistPlan"] as? String
             val serverUpdatedAt = (row["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
             val localPendingBalance = pendingDelta("customer", serverId, "increment_balance")
             // FIX (2-device sync — same class of bug as the purchase/sale fix above):
@@ -667,6 +948,13 @@ object SyncApi {
                         creditLimit = creditLimit, openingBalance = openingBalance,
                         stuckBalance = stuckBalanceRemote ?: existing.stuckBalance,
                         rateType = rateTypeRemote ?: existing.rateType,
+                        dueDays = dueDaysRemote ?: existing.dueDays,
+                        kind = kindRemote ?: existing.kind,
+                        returnDate = returnDateRemote ?: existing.returnDate,
+                        returnEntries = returnEntriesRemote ?: existing.returnEntries,
+                        returnLog = returnLogRemote ?: existing.returnLog,
+                        paySchedule = payScheduleRemote ?: existing.paySchedule,
+                        qistPlan = qistPlanRemote ?: existing.qistPlan,
                         updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
@@ -677,6 +965,13 @@ object SyncApi {
                         creditLimit = creditLimit, openingBalance = openingBalance,
                         stuckBalance = stuckBalanceRemote ?: 0.0,
                         rateType = rateTypeRemote ?: "",
+                        dueDays = dueDaysRemote ?: 0,
+                        kind = kindRemote ?: "",
+                        returnDate = returnDateRemote ?: 0L,
+                        returnEntries = returnEntriesRemote ?: "",
+                        returnLog = returnLogRemote ?: "",
+                        paySchedule = payScheduleRemote ?: "",
+                        qistPlan = qistPlanRemote ?: "",
                         serverId = serverId, updatedAt = serverUpdatedAt, dirty = localPendingBalance != 0.0
                     )
                 )
@@ -960,7 +1255,11 @@ object SyncApi {
                         amount = (im["amount"] as? Number)?.toDouble() ?: 0.0,
                         conversionFactor = (im["conversionFactor"] as? Number)?.toDouble() ?: 0.0,
                         // NEW (Improvement Pack P2): see the Sale.saleUid pull above.
-                        lineUid = (im["lineUid"] as? String)?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
+                        lineUid = (im["lineUid"] as? String)?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString(),
+                        // NEW (Flutter parity, batch 8): Pending Cost state.
+                        pendingQty = (im["pendingQty"] as? Number)?.toDouble() ?: 0.0,
+                        pendingEst = (im["pendingEst"] as? Number)?.toDouble() ?: 0.0,
+                        backfillLog = im["backfillLog"] as? String ?: ""
                     )
                 }
                 if (items.isNotEmpty()) {
@@ -1455,6 +1754,54 @@ object SyncApi {
             )
         }
 
+        // NEW (Flutter parity — follow-up log). Mirrors Flutter's applyDueFollowups():
+        // skip while this device still has an unpushed edit/delete for the entry, resolve the
+        // party through partyServerId (customers loop above already ran), newer local copy wins.
+        val followDao = db.dueFollowUpDao()
+        val followMethods = setOf("whatsapp", "call", "visit", "sms", "note")
+        val followOutcomes = setOf("sent", "paid", "promised", "partial", "no_answer", "refused", "dispute", "note")
+        for (row in changes.dueFollowups) {
+            val serverId = row["serverId"] as? String ?: continue
+            if (db.syncQueueDao().pendingForEntityAnyRetry("due_followup", serverId, "upsert").isNotEmpty() ||
+                db.syncQueueDao().pendingForEntityAnyRetry("due_followup", serverId, "delete").isNotEmpty()) continue
+            if (row["_deleted"] == true) {
+                followDao.deleteByServerId(serverId)
+                continue
+            }
+            val createdAt = (row["createdAt"] as? Number)?.toLong() ?: continue
+            val updatedAt = (row["updatedAt"] as? Number)?.toLong() ?: createdAt
+            val partyServerId = (row["partyServerId"] as? String)?.takeIf { it.isNotBlank() }
+            val party = partyServerId?.let { custDao.findByServerId(it) }
+            val method = (row["method"] as? String)?.takeIf { it in followMethods } ?: "note"
+            val outcome = (row["outcome"] as? String)?.takeIf { it in followOutcomes } ?: "note"
+            val existing = followDao.findByServerId(serverId)
+            if (existing != null && existing.updatedAt > updatedAt) continue
+            val f = DueFollowUp(
+                id = existing?.id ?: 0L,
+                partyId = party?.id ?: 0L,
+                partyName = (row["partyName"] as? String) ?: party?.name ?: "",
+                method = method,
+                outcome = outcome,
+                amount = (row["amount"] as? Number)?.toDouble() ?: 0.0,
+                promiseDate = (row["promiseDate"] as? Number)?.toLong() ?: 0L,
+                nextFollowUp = (row["nextFollowUp"] as? Number)?.toLong() ?: 0L,
+                note = (row["note"] as? String) ?: "",
+                staff = (row["staff"] as? String) ?: "",
+                createdAt = existing?.createdAt ?: createdAt,
+                updatedAt = updatedAt,
+                serverId = serverId,
+                partyServerId = partyServerId
+            )
+            if (existing != null) followDao.update(f) else followDao.insert(f)
+        }
+
+        // =========================================================================
+        // NEW (Flutter parity, batch 2): Workers, Shop Rents, Utility Bills — port of
+        // Flutter's applyWorkers ... applyUtilityBillPayments (lib/sync/sync_apply_rest.dart).
+        // Runs after expenses / cash_transactions above, so their serverIds can be linked.
+        // =========================================================================
+        applyBatch2(db, changes)
+
         // NEW (App Settings sync): only whitelisted keys are ever pushed (see
         // SyncQueueHelper.SYNCED_APP_SETTING_KEYS), so nothing extra to filter here —
         // whatever arrives in this collection is safe to apply. Skips a key that has
@@ -1514,7 +1861,9 @@ object SyncApi {
     private val BRANCH_SCOPED_COLLECTIONS = listOf(
         "customers", "suppliers", "products", "sales", "purchases", "payments",
         "expenses", "cash_transactions", "units", "categories", "zakat_years",
-        "zakat_payments", "returns", "stock_movements", "app_settings", "cash_register"
+        "zakat_payments", "returns", "stock_movements", "app_settings", "cash_register",
+        "due_followups", "workers", "worker_attendance", "worker_advances", "worker_salary_payments",
+        "shop_rents", "shop_rent_ledger", "utility_bills", "utility_bill_payments"
     )
 
     suspend fun countDocsByBranchId(context: Context, badBranchId: String): Map<String, Int> {

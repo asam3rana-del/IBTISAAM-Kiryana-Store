@@ -487,7 +487,7 @@ class PartyActivity : AppCompatActivity() {
             }
             for (c in filtered) {
                 listContainer.addView(
-                    partyRow(c.name, c.phone, c.openingBalance, state.customerBalances[c.id] ?: 0.0, blue, R.drawable.ic_person, isCustomer = true, stuck = c.stuckBalance,
+                    partyRow(c.name, c.phone, c.openingBalance, state.customerBalances[c.id] ?: 0.0, blue, R.drawable.ic_person, isCustomer = true, stuck = c.stuckBalance, partyId = c.id,
                         onClick = { openCustomerHistory(c) },
                         onEdit = { editCustomerDialog(c) },
                         onDelete = { confirmDeleteCustomer(c) },
@@ -506,7 +506,7 @@ class PartyActivity : AppCompatActivity() {
             }
             for (s in filtered) {
                 listContainer.addView(
-                    partyRow(s.name, s.phone, s.openingBalance, state.supplierBalances[s.id] ?: 0.0, orange, R.drawable.ic_shopping_bag, isCustomer = false,
+                    partyRow(s.name, s.phone, s.openingBalance, state.supplierBalances[s.id] ?: 0.0, orange, R.drawable.ic_shopping_bag, isCustomer = false, partyId = s.id,
                         onClick = { openSupplierHistory(s) },
                         onEdit = { editSupplierDialog(s) },
                         onDelete = { confirmDeleteSupplier(s) },
@@ -865,7 +865,9 @@ class PartyActivity : AppCompatActivity() {
         // NEW (Stuck Balance): 0.0 for suppliers and for almost every customer — then this
         // row looks exactly as before. Non-zero => the big figure becomes TOTAL payable and
         // the small line shows the Daily / Stuck split.
-        stuck: Double = 0.0
+        stuck: Double = 0.0,
+        // NEW (Flutter parity, batch 9): party photo (this device only) instead of the icon.
+        partyId: Long = 0L
     ): LinearLayout {
         val closing = opening + running + stuck
         val isGive = if (isCustomer) closing < 0 else closing > 0
@@ -880,7 +882,17 @@ class PartyActivity : AppCompatActivity() {
             setOnClickListener { onClick() }
         }
 
-        topRow.addView(iconBadge(iconRes, accentHex, sizeDp = 42, iconSizeDp = 19))
+        val photo = if (partyId > 0) com.grocerypos.v11.PartyPhotoStore.thumb(this, isCustomer, partyId) else null
+        if (photo != null) {
+            val sz = (42 * resources.displayMetrics.density).toInt()
+            topRow.addView(ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(sz, sz)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#E3E6EF")) }
+                clipToOutline = true
+                setImageBitmap(photo)
+            })
+        } else topRow.addView(iconBadge(iconRes, accentHex, sizeDp = 42, iconSizeDp = 19))
 
         val infoCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -993,7 +1005,13 @@ class PartyActivity : AppCompatActivity() {
             hint = Loc.t(this@PartyActivity, "Stuck Balance (optional)", "اسٹک بیلنس (اختیاری)")
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         } else null
-        for (f in listOfNotNull(nameEdit, phoneEdit, limitEdit, openingEdit, stuckEdit)) {
+        // NEW (Flutter parity, batch 6): credit period (days) — Admin/Manager only. Empty / 0 = shop default.
+        val dueDaysEdit: EditText? = if (canEditStuck) EditText(this).apply {
+            setText(if (c.dueDays > 0) c.dueDays.toString() else "")
+            hint = Loc.t(this@PartyActivity, "Credit period, days (empty = shop default)", "ادھار مدت، دن (خالی = دکان کی ڈیفالٹ)")
+            inputType = InputType.TYPE_CLASS_NUMBER
+        } else null
+        for (f in listOfNotNull(nameEdit, phoneEdit, limitEdit, openingEdit, stuckEdit, dueDaysEdit)) {
             container.addView(f)
             container.addView(spacer(10))
         }
@@ -1035,7 +1053,9 @@ class PartyActivity : AppCompatActivity() {
                         it.parseMoneyOrWarn(this, "Stuck Balance", "پھنسا ہوا بیلنس") ?: return@setPositiveButton
                     },
                     // null (cashier: spinner not shown) keeps the stored rate type untouched.
-                    rateType = rateSpinner?.let { rateValues[it.selectedItemPosition] }
+                    rateType = rateSpinner?.let { rateValues[it.selectedItemPosition] },
+                    // null (cashier: field not shown) keeps the stored period.
+                    dueDays = dueDaysEdit?.let { (it.text.toString().trim().toIntOrNull() ?: 0).coerceIn(0, 365) }
                 )
                 d.dismiss()
             }
