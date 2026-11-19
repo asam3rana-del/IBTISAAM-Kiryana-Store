@@ -347,6 +347,8 @@ class HistoryActivity : AppCompatActivity() {
             val db = PosDatabase.get(this@HistoryActivity); val sale = db.saleDao().findSale(invoice) ?: return@launch
             val items = db.saleDao().itemsForInvoice(invoice)
             db.withTransaction {
+                // NEW (Flutter parity, batch 7): Recycle Bin snapshot first (same transaction).
+                com.grocerypos.v11.BillRecycle.recordSale(db, this@HistoryActivity, invoice)
                 for (it in items) {
                     val p = db.productDao().find(it.barcode)
                     val smallestQty = it.smallestQty(p)
@@ -588,6 +590,7 @@ class HistoryActivity : AppCompatActivity() {
                     if (purchase.status == "returned") return@withTransaction
 
                     var totalReturnedAmount = 0.0
+                    val touchedBarcodes = mutableListOf<String>()
 
                     for ((itemId, returnQty) in requested) {
                         if (returnQty <= 0.0) continue
@@ -623,8 +626,12 @@ class HistoryActivity : AppCompatActivity() {
                         }
 
                         totalReturnedAmount += returnedAmount
+                        touchedBarcodes.add(item.barcode)
                     }
 
+                    // NEW (Flutter parity, batch 8 — Pending Cost): re-fill sale costs from what is left
+                    // of this bill (a fully returned line is gone => its fill goes back to pending).
+                    com.grocerypos.v11.CostBackfill.reallocateBarcodes(db, billNo, touchedBarcodes)
                     if (totalReturnedAmount <= 0.0) return@withTransaction
 
                     val remainingItemCount = db.purchaseDao().itemCountForBill(billNo)

@@ -692,6 +692,7 @@ class PurchaseHistoryActivity : ThemedActivity() {
                 if (purchase.status == "returned") return@withTransaction
 
                 var totalReturnedAmount = 0.0
+                val touchedBarcodes = mutableListOf<String>()
 
                 for ((itemId, returnQty) in requested) {
                     if (returnQty <= 0.0) continue
@@ -727,8 +728,12 @@ class PurchaseHistoryActivity : ThemedActivity() {
                     }
 
                     totalReturnedAmount += returnedAmount
+                    touchedBarcodes.add(item.barcode)
                 }
 
+                // NEW (Flutter parity, batch 8 — Pending Cost): re-fill sale costs from what is left
+                // of this bill (a fully returned line is gone => its fill goes back to pending).
+                com.grocerypos.v11.CostBackfill.reallocateBarcodes(db, billNo, touchedBarcodes)
                 if (totalReturnedAmount <= 0.0) return@withTransaction
 
                 val remainingItemCount = db.purchaseDao().itemCountForBill(billNo)

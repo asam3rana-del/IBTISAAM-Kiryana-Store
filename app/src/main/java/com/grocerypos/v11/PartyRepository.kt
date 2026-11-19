@@ -59,6 +59,12 @@ class PartyRepository(
     }
 
     suspend fun deleteCustomer(customer: Customer) {
+        // NEW (Flutter parity, batch 3): Recycle Bin snapshot (full stored row) before the delete.
+        db.customerDao().find(customer.id)?.let { full ->
+            com.grocerypos.v11.RecycleBin.record(db, appContext, com.grocerypos.v11.RecycleBin.CUSTOMER, "${full.id}",
+                full.name, full.phone, full.openingBalance + full.balance + full.stuckBalance,
+                com.grocerypos.v11.RecycleBinData(customers = listOf(full)))
+        }
         db.customerDao().delete(customer)
         // Prefer the id already stamped on this row (matches whatever was actually
         // pushed, even pre-DeviceTag data) — only compute fresh if this customer
@@ -72,6 +78,12 @@ class PartyRepository(
     }
 
     suspend fun deleteSupplier(supplier: Supplier) {
+        // NEW (Flutter parity, batch 3): Recycle Bin snapshot before the delete.
+        db.supplierDao().find(supplier.id)?.let { full ->
+            com.grocerypos.v11.RecycleBin.record(db, appContext, com.grocerypos.v11.RecycleBin.SUPPLIER, "${full.id}",
+                full.name, full.phone, full.openingBalance + full.balance,
+                com.grocerypos.v11.RecycleBinData(suppliers = listOf(full)))
+        }
         db.supplierDao().delete(supplier)
         SyncQueueHelper.enqueue(
             db, "supplier",

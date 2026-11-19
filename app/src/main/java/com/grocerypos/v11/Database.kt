@@ -549,8 +549,332 @@ data class Customer(
     // NEW (Customer rate type — MIGRATION_48_49, ported from Flutter): "" = follow whatever
     // Sale Type is picked on the bill; otherwise "retail" / "wholesale" / "shopkeeper" and the
     // Sale screen switches to that rate as soon as this customer is chosen.
-    @ColumnInfo(defaultValue="") val rateType:String=""
+    @ColumnInfo(defaultValue="") val rateType:String="",
+    // NEW (Flutter parity — MIGRATION_49_50): same columns + same Firestore field names as the
+    // Flutter app (lib/models/party.dart), so both apps read/write ONE customer doc.
+    // dueDays: default payment term in days (0 = not set).
+    @ColumnInfo(defaultValue="0") val dueDays:Int=0,
+    // kind: "" normal | "amanat" (customer left money with the shop) | "loan" (shop lent cash).
+    @ColumnInfo(defaultValue="") val kind:String="",
+    // returnDate: return / repayment date (local midnight millis), 0 = not set.
+    @ColumnInfo(defaultValue="0") val returnDate:Long=0L,
+    // returnEntries / returnLog: JSON lists (see CollectionLogic.kt ReturnEntry / ReturnLogRow).
+    @ColumnInfo(defaultValue="") val returnEntries:String="",
+    @ColumnInfo(defaultValue="") val returnLog:String="",
+    // paySchedule: "" | "w:1..7" (weekly, 1=Mon) | "m:1..31" (monthly) — customer's pay day.
+    @ColumnInfo(defaultValue="") val paySchedule:String="",
+    // qistPlan: installment plan JSON (QistPlan), "" = none.
+    @ColumnInfo(defaultValue="") val qistPlan:String=""
 )
+
+// =====================================================================================
+// NEW (Flutter parity, batch 2 — MIGRATION_50_51): Workers, Shop Rents, Utility Bills.
+// Same tables / columns as the Flutter app (lib/db/app_database.dart) and same Firestore
+// collections, so both apps share one payroll / rent / bills record. Class names are
+// prefixed (ShopWorker, RentedShop ...) so they never clash with androidx.work.Worker.
+// =====================================================================================
+@Entity(tableName="workers")
+data class ShopWorker(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val name:String,
+    val phone:String="",
+    val payType:String="monthly",   // monthly | daily
+    val rate:Double=0.0,            // monthly salary or daily wage
+    val active:Boolean=true,
+    val createdAt:Long=0L,
+    val serverId:String?=null,
+    val updatedAt:Long=0L
+)
+
+/** day = "yyyy-MM-dd", status = P (present) | A (absent) | H (half day) | L (paid leave). */
+@Entity(tableName="worker_attendance", primaryKeys=["workerId","day"])
+data class WorkerAttendance(val workerId:Long, val day:String, val status:String, val updatedAt:Long=0L)
+
+@Entity(tableName="worker_advances")
+data class WorkerAdvance(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val workerId:Long,
+    val amount:Double,
+    val method:String="cash",
+    val note:String="",
+    val createdAt:Long,
+    val serverId:String?=null,
+    val updatedAt:Long=0L
+)
+
+@Entity(tableName="worker_salary_payments",
+    indices=[Index(value=["workerId","month"], unique=true, name="index_worker_salary_payments_workerId_month")])
+data class WorkerSalaryPayment(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val workerId:Long,
+    val month:String,               // yyyy-MM
+    val earned:Double,
+    val advanceCut:Double,
+    val net:Double,
+    val method:String="cash",
+    val expenseId:Long?=null,
+    val expenseServerId:String?=null,
+    val createdAt:Long,
+    val serverId:String?=null,
+    val updatedAt:Long=0L
+)
+
+@Entity(tableName="shop_rents")
+data class RentedShop(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val shopName:String,
+    val landlord:String="",
+    val phone:String="",
+    val dueDay:Int=1,
+    val startYm:String,             // yyyy-MM
+    val autoApply:Boolean=true,     // new rent auto-deducted from advance
+    val active:Boolean=true,
+    val note:String="",
+    val createdAt:Long,
+    val serverId:String?=null,
+    val updatedAt:Long=0L
+)
+
+@Entity(tableName="shop_rent_terms", primaryKeys=["shopId","fromYm"])
+data class RentedShopTerm(val shopId:Long, val fromYm:String, val monthlyRent:Double)
+
+/** kind = charge | payment | advance | applied. */
+@Entity(tableName="shop_rent_ledger",
+    indices=[Index(value=["shopId","kind","ym"], name="index_shop_rent_ledger_shop")])
+data class RentLedgerEntry(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val shopId:Long,
+    val kind:String,
+    val ym:String="",
+    val amount:Double,
+    val method:String="cash",
+    val note:String="",
+    val expenseId:Long?=null,
+    val cashId:Long?=null,
+    val createdAt:Long,
+    val serverId:String?=null,
+    val expenseServerId:String?=null,
+    val cashServerId:String?=null,
+    val updatedAt:Long=0L
+)
+
+@Entity(tableName="utility_bills")
+data class UtilityBill(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val name:String,
+    val kind:String="other",        // electricity | gas | water | internet | phone | other
+    val dueDay:Int,
+    val avgAmount:Double=0.0,
+    val reminder:Boolean=true,
+    val active:Boolean=true,
+    val createdAt:Long=0L,
+    val updatedAt:Long=0L,
+    val serverId:String?=null
+)
+
+@Entity(tableName="utility_bill_payments",
+    indices=[Index(value=["billId","month"], unique=true, name="index_utility_bill_payments_billId_month")])
+data class UtilityBillPayment(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val billId:Long,
+    val month:String,               // yyyy-MM
+    val amount:Double,
+    val method:String="cash",
+    val note:String="",
+    val expenseId:Long?=null,
+    val expenseServerId:String?=null,
+    val paidAt:Long,
+    val serverId:String?=null,
+    val updatedAt:Long=0L
+)
+
+@Dao interface ShopExtrasDao {
+    // ---- shared lookups (expenses / cash by local id)
+    @Query("SELECT * FROM expenses WHERE id=:id LIMIT 1") suspend fun expenseById(id:Long):Expense?
+    @Query("SELECT * FROM cash_transactions WHERE id=:id LIMIT 1") suspend fun cashById(id:Long):CashTransaction?
+    @Query("DELETE FROM cash_transactions WHERE id=:id") suspend fun deleteCashById(id:Long)
+
+    // ---- workers
+    @Insert suspend fun insertWorker(w:ShopWorker):Long
+    @Update suspend fun updateWorker(w:ShopWorker)
+    @Query("SELECT * FROM workers ORDER BY active DESC, name COLLATE NOCASE ASC") suspend fun workers():List<ShopWorker>
+    @Query("SELECT * FROM workers WHERE id=:id LIMIT 1") suspend fun worker(id:Long):ShopWorker?
+    @Query("SELECT * FROM workers WHERE serverId=:sid LIMIT 1") suspend fun workerByServerId(sid:String):ShopWorker?
+    @Query("DELETE FROM workers WHERE id=:id") suspend fun deleteWorker(id:Long)
+
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsertAttendance(a:WorkerAttendance)
+    @Query("SELECT * FROM worker_attendance WHERE workerId=:workerId AND day=:day LIMIT 1") suspend fun attendance(workerId:Long, day:String):WorkerAttendance?
+    @Query("SELECT * FROM worker_attendance WHERE workerId=:workerId AND day>=:from AND day<=:to") suspend fun attendanceBetween(workerId:Long, from:String, to:String):List<WorkerAttendance>
+    @Query("SELECT * FROM worker_attendance WHERE workerId=:workerId") suspend fun attendanceOf(workerId:Long):List<WorkerAttendance>
+    @Query("SELECT * FROM worker_attendance") suspend fun allAttendance():List<WorkerAttendance>
+    @Query("DELETE FROM worker_attendance WHERE workerId=:workerId AND day=:day") suspend fun deleteAttendance(workerId:Long, day:String)
+    @Query("DELETE FROM worker_attendance WHERE workerId=:workerId") suspend fun deleteAttendanceOf(workerId:Long)
+
+    @Insert suspend fun insertAdvance(a:WorkerAdvance):Long
+    @Update suspend fun updateAdvance(a:WorkerAdvance)
+    @Query("SELECT * FROM worker_advances WHERE workerId=:workerId ORDER BY createdAt DESC, id DESC") suspend fun advances(workerId:Long):List<WorkerAdvance>
+    @Query("SELECT * FROM worker_advances") suspend fun allAdvances():List<WorkerAdvance>
+    @Query("SELECT * FROM worker_advances WHERE serverId=:sid LIMIT 1") suspend fun advanceByServerId(sid:String):WorkerAdvance?
+    @Query("DELETE FROM worker_advances WHERE id=:id") suspend fun deleteAdvance(id:Long)
+    @Query("DELETE FROM worker_advances WHERE serverId=:sid") suspend fun deleteAdvanceByServerId(sid:String)
+    @Query("SELECT COUNT(*) FROM worker_advances WHERE workerId=:workerId") suspend fun advanceCount(workerId:Long):Int
+
+    @Insert suspend fun insertSalary(p:WorkerSalaryPayment):Long
+    @Update suspend fun updateSalary(p:WorkerSalaryPayment)
+    @Query("SELECT * FROM worker_salary_payments WHERE workerId=:workerId ORDER BY month DESC") suspend fun salaries(workerId:Long):List<WorkerSalaryPayment>
+    @Query("SELECT * FROM worker_salary_payments") suspend fun allSalaries():List<WorkerSalaryPayment>
+    @Query("SELECT * FROM worker_salary_payments WHERE workerId=:workerId AND month=:month LIMIT 1") suspend fun salaryFor(workerId:Long, month:String):WorkerSalaryPayment?
+    @Query("SELECT * FROM worker_salary_payments WHERE serverId=:sid LIMIT 1") suspend fun salaryByServerId(sid:String):WorkerSalaryPayment?
+    @Query("DELETE FROM worker_salary_payments WHERE id=:id") suspend fun deleteSalary(id:Long)
+    @Query("DELETE FROM worker_salary_payments WHERE serverId=:sid") suspend fun deleteSalaryByServerId(sid:String)
+    @Query("SELECT COUNT(*) FROM worker_salary_payments WHERE workerId=:workerId") suspend fun salaryCount(workerId:Long):Int
+
+    // ---- shop rents
+    @Insert suspend fun insertShop(s:RentedShop):Long
+    @Update suspend fun updateShop(s:RentedShop)
+    @Query("SELECT * FROM shop_rents ORDER BY active DESC, shopName COLLATE NOCASE ASC") suspend fun shops():List<RentedShop>
+    @Query("SELECT * FROM shop_rents WHERE id=:id LIMIT 1") suspend fun shop(id:Long):RentedShop?
+    @Query("SELECT * FROM shop_rents WHERE serverId=:sid LIMIT 1") suspend fun shopByServerId(sid:String):RentedShop?
+    @Query("DELETE FROM shop_rents WHERE id=:id") suspend fun deleteShop(id:Long)
+
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun upsertTerm(t:RentedShopTerm)
+    @Query("SELECT * FROM shop_rent_terms WHERE shopId=:shopId") suspend fun terms(shopId:Long):List<RentedShopTerm>
+    @Query("DELETE FROM shop_rent_terms WHERE shopId=:shopId") suspend fun deleteTerms(shopId:Long)
+
+    @Insert suspend fun insertEntry(e:RentLedgerEntry):Long
+    @Update suspend fun updateEntry(e:RentLedgerEntry)
+    @Query("SELECT * FROM shop_rent_ledger WHERE id=:id LIMIT 1") suspend fun entry(id:Long):RentLedgerEntry?
+    @Query("SELECT * FROM shop_rent_ledger WHERE serverId=:sid LIMIT 1") suspend fun entryByServerId(sid:String):RentLedgerEntry?
+    @Query("SELECT * FROM shop_rent_ledger WHERE shopId=:shopId") suspend fun entriesOf(shopId:Long):List<RentLedgerEntry>
+    @Query("SELECT * FROM shop_rent_ledger") suspend fun allEntries():List<RentLedgerEntry>
+    @Query("SELECT * FROM shop_rent_ledger WHERE shopId=:shopId AND kind=:kind AND ym=:ym LIMIT 1") suspend fun entryFor(shopId:Long, kind:String, ym:String):RentLedgerEntry?
+    @Query("DELETE FROM shop_rent_ledger WHERE id=:id") suspend fun deleteEntry(id:Long)
+    @Query("DELETE FROM shop_rent_ledger WHERE serverId=:sid") suspend fun deleteEntryByServerId(sid:String)
+    @Query("DELETE FROM shop_rent_ledger WHERE shopId=:shopId") suspend fun deleteEntriesOf(shopId:Long)
+    @Query("SELECT COUNT(*) FROM shop_rent_ledger WHERE shopId=:shopId AND kind!='charge'") suspend fun moneyEntryCount(shopId:Long):Int
+    @Query("SELECT COUNT(*) FROM shop_rent_ledger WHERE shopId=:shopId AND ym=:ym AND kind IN ('payment','applied')") suspend fun paidEntryCount(shopId:Long, ym:String):Int
+    /** Entries whose Expense / Cash row still exists (an expense deleted elsewhere no longer counts). Oldest first. */
+    @Query("""SELECT l.* FROM shop_rent_ledger l
+        LEFT JOIN expenses e ON e.id = l.expenseId
+        LEFT JOIN cash_transactions c ON c.id = l.cashId
+        WHERE l.shopId = :shopId AND (
+            l.kind = 'charge'
+            OR (l.kind IN ('payment','applied') AND e.id IS NOT NULL)
+            OR (l.kind = 'advance' AND (l.cashId IS NULL OR c.id IS NOT NULL)))
+        ORDER BY l.createdAt ASC, l.id ASC""")
+    suspend fun validLedger(shopId:Long):List<RentLedgerEntry>
+    /** Payment / applied / advance entries whose Expense / Cash row was removed from another screen. */
+    @Query("""SELECT l.* FROM shop_rent_ledger l
+        LEFT JOIN expenses e ON e.id = l.expenseId
+        LEFT JOIN cash_transactions c ON c.id = l.cashId
+        WHERE (l.kind IN ('payment','applied') AND e.id IS NULL AND (l.expenseId IS NOT NULL OR l.expenseServerId IS NULL))
+           OR (l.kind = 'advance' AND l.cashId IS NOT NULL AND c.id IS NULL)""")
+    suspend fun orphanEntries():List<RentLedgerEntry>
+    @Query("UPDATE shop_rent_ledger SET expenseId = (SELECT e.id FROM expenses e WHERE e.serverId = shop_rent_ledger.expenseServerId) WHERE expenseId IS NULL AND expenseServerId IS NOT NULL")
+    suspend fun linkLedgerExpenses()
+    @Query("UPDATE shop_rent_ledger SET cashId = (SELECT c.id FROM cash_transactions c WHERE c.serverId = shop_rent_ledger.cashServerId) WHERE cashId IS NULL AND cashServerId IS NOT NULL")
+    suspend fun linkLedgerCash()
+
+    // ---- utility bills
+    @Insert suspend fun insertBill(b:UtilityBill):Long
+    @Update suspend fun updateBill(b:UtilityBill)
+    @Query("SELECT * FROM utility_bills ORDER BY active DESC, dueDay ASC, name COLLATE NOCASE ASC") suspend fun bills():List<UtilityBill>
+    @Query("SELECT * FROM utility_bills WHERE id=:id LIMIT 1") suspend fun bill(id:Long):UtilityBill?
+    @Query("SELECT * FROM utility_bills WHERE serverId=:sid LIMIT 1") suspend fun billByServerId(sid:String):UtilityBill?
+    @Query("DELETE FROM utility_bills WHERE id=:id") suspend fun deleteBill(id:Long)
+
+    @Insert suspend fun insertBillPayment(p:UtilityBillPayment):Long
+    @Update suspend fun updateBillPayment(p:UtilityBillPayment)
+    @Query("SELECT * FROM utility_bill_payments WHERE id=:id LIMIT 1") suspend fun billPayment(id:Long):UtilityBillPayment?
+    @Query("SELECT * FROM utility_bill_payments WHERE billId=:billId ORDER BY month DESC") suspend fun billPayments(billId:Long):List<UtilityBillPayment>
+    @Query("SELECT * FROM utility_bill_payments") suspend fun allBillPayments():List<UtilityBillPayment>
+    @Query("SELECT * FROM utility_bill_payments WHERE billId=:billId AND month=:month LIMIT 1") suspend fun billPaymentFor(billId:Long, month:String):UtilityBillPayment?
+    @Query("SELECT * FROM utility_bill_payments WHERE serverId=:sid LIMIT 1") suspend fun billPaymentByServerId(sid:String):UtilityBillPayment?
+    @Query("DELETE FROM utility_bill_payments WHERE id=:id") suspend fun deleteBillPayment(id:Long)
+    @Query("DELETE FROM utility_bill_payments WHERE serverId=:sid") suspend fun deleteBillPaymentByServerId(sid:String)
+    @Query("DELETE FROM utility_bill_payments WHERE billId=:billId") suspend fun deleteBillPaymentsOf(billId:Long)
+}
+
+// NEW (Flutter parity, batch 3 — MIGRATION_51_52): Recycle Bin. A deleted record (plus the
+// rows deleted with it) is snapshotted here as JSON inside the SAME delete transaction, so an
+// admin can restore it. Local to this device only (same as Flutter — the bin is not synced).
+@Entity(tableName="recycle_bin")
+data class RecycleBinEntry(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val kind:String,            // expense | customer | supplier | worker | shop_rent
+    val refKey:String="",
+    val title:String="",
+    val subtitle:String="",
+    val amount:Double=0.0,
+    val deletedBy:String="",
+    val deletedAt:Long=0L,
+    val dataJson:String="{}"
+)
+
+@Dao interface RecycleBinDao {
+    @Insert suspend fun insert(e:RecycleBinEntry):Long
+    @Query("SELECT * FROM recycle_bin ORDER BY deletedAt DESC, id DESC") suspend fun all():List<RecycleBinEntry>
+    @Query("SELECT * FROM recycle_bin WHERE id=:id LIMIT 1") suspend fun find(id:Long):RecycleBinEntry?
+    @Query("SELECT COUNT(*) FROM recycle_bin") suspend fun count():Int
+    @Query("DELETE FROM recycle_bin WHERE id=:id") suspend fun delete(id:Long)
+    @Query("DELETE FROM recycle_bin") suspend fun deleteAll()
+    // Restore inserts with the ORIGINAL ids (so old bills / links point at the record again).
+    @Insert suspend fun insertExpense(e:Expense):Long
+    @Insert suspend fun insertCash(c:CashTransaction):Long
+    @Insert suspend fun insertCustomer(c:Customer):Long
+    @Insert suspend fun insertSupplier(s:Supplier):Long
+    @Query("SELECT COUNT(*) FROM expenses WHERE id=:id") suspend fun expenseExists(id:Long):Int
+    @Query("SELECT COUNT(*) FROM cash_transactions WHERE id=:id") suspend fun cashExists(id:Long):Int
+    @Query("SELECT COUNT(*) FROM customers WHERE id=:id") suspend fun customerExists(id:Long):Int
+    @Query("SELECT COUNT(*) FROM suppliers WHERE id=:id") suspend fun supplierExists(id:Long):Int
+    @Query("SELECT COUNT(*) FROM workers WHERE id=:id") suspend fun workerExists(id:Long):Int
+    @Query("SELECT COUNT(*) FROM shop_rents WHERE id=:id") suspend fun shopExists(id:Long):Int
+    // NEW (Flutter parity, batch 7): sale / purchase bills in the Recycle Bin.
+    @Insert suspend fun insertSale(s:Sale)
+    @Insert suspend fun insertSaleItems(items:List<SaleItem>)
+    @Insert suspend fun insertPurchase(p:Purchase)
+    @Insert suspend fun insertPurchaseItems(items:List<PurchaseItem>)
+    @Insert suspend fun insertPayment(p:Payment):Long
+    @Query("SELECT COUNT(*) FROM sales WHERE invoice=:invoice") suspend fun saleExists(invoice:String):Int
+    @Query("SELECT COUNT(*) FROM purchases WHERE billNo=:billNo") suspend fun purchaseExists(billNo:String):Int
+    @Query("SELECT COUNT(*) FROM payments WHERE id=:id") suspend fun paymentExists(id:Long):Int
+}
+
+// NEW (Flutter parity — Due Reminders follow-up log, MIGRATION_49_50). Same table/fields as
+// Flutter's due_followups (lib/models/due_followup.dart) and same Firestore collection
+// "due_followups", so a WhatsApp/call/promise logged on either app shows on both.
+@Entity(
+    tableName="due_followups",
+    indices=[Index(value=["partyId","createdAt"], name="index_due_followups_party")]
+)
+data class DueFollowUp(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val partyId:Long,
+    val partyName:String="",
+    val method:String="note",
+    val outcome:String="note",
+    val amount:Double=0.0,
+    val promiseDate:Long=0L,
+    val nextFollowUp:Long=0L,
+    val note:String="",
+    val staff:String="",
+    val createdAt:Long=System.currentTimeMillis(),
+    val updatedAt:Long=0L,
+    val serverId:String?=null,
+    val partyServerId:String?=null
+)
+
+@Dao interface DueFollowUpDao {
+    @Insert suspend fun insert(f:DueFollowUp):Long
+    @Update suspend fun update(f:DueFollowUp)
+    @Query("DELETE FROM due_followups WHERE id=:id") suspend fun deleteById(id:Long)
+    @Query("SELECT * FROM due_followups WHERE id=:id LIMIT 1") suspend fun find(id:Long):DueFollowUp?
+    @Query("SELECT * FROM due_followups WHERE serverId=:serverId LIMIT 1") suspend fun findByServerId(serverId:String):DueFollowUp?
+    @Query("DELETE FROM due_followups WHERE serverId=:serverId") suspend fun deleteByServerId(serverId:String)
+    @Query("SELECT * FROM due_followups WHERE partyId=:partyId ORDER BY createdAt DESC, id DESC") suspend fun forParty(partyId:Long):List<DueFollowUp>
+    @Query("SELECT * FROM due_followups ORDER BY createdAt DESC, id DESC") suspend fun all():List<DueFollowUp>
+    @Query("UPDATE due_followups SET partyServerId=:partyServerId WHERE id=:id") suspend fun setPartyServerId(id:Long, partyServerId:String)
+}
 
 // NEW (Daily Rent — MIGRATION_48_49, ported from Flutter): a customer who is charged a fixed
 // rent every day (e.g. Rs 150). Setting only — the daily charge itself is an ordinary credit
@@ -653,7 +977,17 @@ data class SaleItem(
     // this individual line — a permanent id independent of the local
     // autoGenerate `id` (which is only unique on this device) and independent
     // of `invoice`. See MIGRATION_31_32.
-    @ColumnInfo(defaultValue="") val lineUid:String=UUID.randomUUID().toString()
+    @ColumnInfo(defaultValue="") val lineUid:String=UUID.randomUUID().toString(),
+    // NEW (Flutter parity, batch 8 — MIGRATION_52_53, "Pending Cost"): a line sold on minus
+    // stock (or while the item's cost was 0) does not know its real cost yet.
+    //   pendingQty  = smallest units of this line whose real cost is still unknown
+    //   pendingEst  = the estimated cost of that part that `cost` currently contains
+    //   backfillLog = JSON [{"b":billNo,"q":qty,"r":rate,"e":est}] — which purchase filled how much
+    // A later purchase of the item fills it (CostBackfill.kt); deleting that purchase un-fills it.
+    // Same columns / JSON as Flutter's sale_items, so both apps sync the same values.
+    @ColumnInfo(defaultValue="0") val pendingQty:Double=0.0,
+    @ColumnInfo(defaultValue="0") val pendingEst:Double=0.0,
+    @ColumnInfo(defaultValue="") val backfillLog:String=""
 )
 
 @Entity(tableName="payments")
@@ -1144,6 +1478,9 @@ interface ProductDao {
     suspend fun receivablesTotal():Double
     @Query("SELECT COALESCE(SUM(-balance),0) FROM customers WHERE balance<0")
     suspend fun advancesReceivedTotal():Double
+    // NEW (Amanat / Loan — Flutter parity)
+    @Query("SELECT * FROM customers WHERE kind IN ('amanat','loan') ORDER BY name COLLATE NOCASE")
+    suspend fun returnParties():List<Customer>
 }
 
 @Dao interface SupplierDao {
@@ -1405,6 +1742,13 @@ interface ProductDao {
 }
 
 @Dao interface PaymentDao {
+    // NEW (Wasooli / Qist — Flutter parity): customer collections in a time window.
+    @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE partyType='customer' AND amount>0 AND createdAt>=:start AND createdAt<:end")
+    suspend fun customerCollectedBetween(start:Long, end:Long):Double
+    @Query("SELECT COUNT(*) FROM payments WHERE partyType='customer' AND amount>0 AND createdAt>=:start AND createdAt<:end")
+    suspend fun customerPaymentCountBetween(start:Long, end:Long):Int
+    @Query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE partyType='customer' AND partyId=:customerId AND amount>0 AND createdAt>=:since")
+    suspend fun customerPaidSince(customerId:Long, since:Long):Double
     @Insert suspend fun insert(p:Payment): Long
     @Query("SELECT COALESCE(SUM(amount),0) FROM payments") suspend fun total():Double
     // ADDED (audit): total of the standalone payments linked to one bill via billReference
@@ -2295,19 +2639,72 @@ val MIGRATION_48_49 = object : Migration(48, 49) {
     }
 }
 
+// NEW (Flutter parity — Amanat/Loan, pay day, qist plan, follow-up log). Plain ADD COLUMNs
+// (existing rows get 0 / '') plus one new table; no data is rewritten.
+val MIGRATION_49_50 = object : Migration(49, 50) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE customers ADD COLUMN dueDays INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE customers ADD COLUMN kind TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE customers ADD COLUMN returnDate INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE customers ADD COLUMN returnEntries TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE customers ADD COLUMN returnLog TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE customers ADD COLUMN paySchedule TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE customers ADD COLUMN qistPlan TEXT NOT NULL DEFAULT ''")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `due_followups` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `partyId` INTEGER NOT NULL, `partyName` TEXT NOT NULL, `method` TEXT NOT NULL, `outcome` TEXT NOT NULL, `amount` REAL NOT NULL, `promiseDate` INTEGER NOT NULL, `nextFollowUp` INTEGER NOT NULL, `note` TEXT NOT NULL, `staff` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `serverId` TEXT, `partyServerId` TEXT)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS `index_due_followups_party` ON `due_followups` (`partyId`, `createdAt`)")
+    }
+}
+
+// NEW (Flutter parity, batch 2): Workers + Shop Rents + Utility Bills tables. New tables only,
+// nothing existing is touched. SQL mirrors exactly what Room expects for the entities above.
+val MIGRATION_50_51 = object : Migration(50, 51) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("CREATE TABLE IF NOT EXISTS `workers` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `phone` TEXT NOT NULL, `payType` TEXT NOT NULL, `rate` REAL NOT NULL, `active` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `serverId` TEXT, `updatedAt` INTEGER NOT NULL)")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `worker_attendance` (`workerId` INTEGER NOT NULL, `day` TEXT NOT NULL, `status` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`workerId`, `day`))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `worker_advances` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `workerId` INTEGER NOT NULL, `amount` REAL NOT NULL, `method` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `serverId` TEXT, `updatedAt` INTEGER NOT NULL)")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `worker_salary_payments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `workerId` INTEGER NOT NULL, `month` TEXT NOT NULL, `earned` REAL NOT NULL, `advanceCut` REAL NOT NULL, `net` REAL NOT NULL, `method` TEXT NOT NULL, `expenseId` INTEGER, `expenseServerId` TEXT, `createdAt` INTEGER NOT NULL, `serverId` TEXT, `updatedAt` INTEGER NOT NULL)")
+        database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_worker_salary_payments_workerId_month` ON `worker_salary_payments` (`workerId`, `month`)")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `shop_rents` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `shopName` TEXT NOT NULL, `landlord` TEXT NOT NULL, `phone` TEXT NOT NULL, `dueDay` INTEGER NOT NULL, `startYm` TEXT NOT NULL, `autoApply` INTEGER NOT NULL, `active` INTEGER NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `serverId` TEXT, `updatedAt` INTEGER NOT NULL)")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `shop_rent_terms` (`shopId` INTEGER NOT NULL, `fromYm` TEXT NOT NULL, `monthlyRent` REAL NOT NULL, PRIMARY KEY(`shopId`, `fromYm`))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `shop_rent_ledger` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `shopId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `ym` TEXT NOT NULL, `amount` REAL NOT NULL, `method` TEXT NOT NULL, `note` TEXT NOT NULL, `expenseId` INTEGER, `cashId` INTEGER, `createdAt` INTEGER NOT NULL, `serverId` TEXT, `expenseServerId` TEXT, `cashServerId` TEXT, `updatedAt` INTEGER NOT NULL)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS `index_shop_rent_ledger_shop` ON `shop_rent_ledger` (`shopId`, `kind`, `ym`)")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `utility_bills` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `kind` TEXT NOT NULL, `dueDay` INTEGER NOT NULL, `avgAmount` REAL NOT NULL, `reminder` INTEGER NOT NULL, `active` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `serverId` TEXT)")
+        database.execSQL("CREATE TABLE IF NOT EXISTS `utility_bill_payments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `billId` INTEGER NOT NULL, `month` TEXT NOT NULL, `amount` REAL NOT NULL, `method` TEXT NOT NULL, `note` TEXT NOT NULL, `expenseId` INTEGER, `expenseServerId` TEXT, `paidAt` INTEGER NOT NULL, `serverId` TEXT, `updatedAt` INTEGER NOT NULL)")
+        database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_utility_bill_payments_billId_month` ON `utility_bill_payments` (`billId`, `month`)")
+    }
+}
+
+// NEW (Flutter parity, batch 3): Recycle Bin table (new table only).
+val MIGRATION_51_52 = object : Migration(51, 52) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("CREATE TABLE IF NOT EXISTS `recycle_bin` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `kind` TEXT NOT NULL, `refKey` TEXT NOT NULL, `title` TEXT NOT NULL, `subtitle` TEXT NOT NULL, `amount` REAL NOT NULL, `deletedBy` TEXT NOT NULL, `deletedAt` INTEGER NOT NULL, `dataJson` TEXT NOT NULL)")
+    }
+}
+
+// NEW (Flutter parity, batch 8): Pending Cost columns on sale_items (see SaleItem).
+val MIGRATION_52_53 = object : Migration(52, 53) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE `sale_items` ADD COLUMN `pendingQty` REAL NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE `sale_items` ADD COLUMN `pendingEst` REAL NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE `sale_items` ADD COLUMN `backfillLog` TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities=[Product::class,Customer::class,Supplier::class,Sale::class,SaleItem::class,
         Payment::class,Purchase::class,PurchaseItem::class,ReturnLine::class,User::class,Audit::class,
         Expense::class,HeldBill::class,UnitType::class,Category::class,CashTransaction::class,
         CashRegister::class,AppSetting::class,SyncQueueEntry::class,StockMovement::class,
-        ZakatYear::class,ZakatPayment::class,ZakatMonthPlan::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class,CustomerRent::class],
+        ZakatYear::class,ZakatPayment::class,ZakatMonthPlan::class,ShellCustomer::class,ShellTransaction::class,ShopEmptyShellLog::class,CustomerRent::class,DueFollowUp::class,
+        ShopWorker::class,WorkerAttendance::class,WorkerAdvance::class,WorkerSalaryPayment::class,
+        RentedShop::class,RentedShopTerm::class,RentLedgerEntry::class,UtilityBill::class,UtilityBillPayment::class,RecycleBinEntry::class],
     // FIX (Improvement Pack P3 — migration testing): was exportSchema=false, so Room
     // never wrote a schema JSON for any version — MigrationTestHelper needs those to
     // validate a migration's resulting schema (not just that it runs without an
     // exception). See app/build.gradle.kts's matching room.schemaLocation arg and
     // MigrationTest.kt's top comment for what this does and doesn't retroactively fix
     // for versions 13-32 (which predate this change).
-    version=49, exportSchema=true
+    version=53, exportSchema=true
 )
 abstract class PosDatabase:RoomDatabase(){
     abstract fun productDao():ProductDao
@@ -2331,11 +2728,17 @@ abstract class PosDatabase:RoomDatabase(){
     abstract fun zakatDao():ZakatDao
     abstract fun shellDao():ShellDao
     abstract fun customerRentDao():CustomerRentDao
+    abstract fun dueFollowUpDao():DueFollowUpDao
+    abstract fun shopExtrasDao():ShopExtrasDao
+    abstract fun recycleBinDao():RecycleBinDao
+    abstract fun repairToolsDao():RepairToolsDao
+    abstract fun reportsExtraDao():ReportsExtraDao
+    abstract fun costBackfillDao():CostBackfillDao
     companion object{
         @Volatile private var INSTANCE:PosDatabase?=null
         fun get(c:Context)=INSTANCE?: synchronized(this){
             INSTANCE?:Room.databaseBuilder(c.applicationContext,PosDatabase::class.java,"grocery_pos_v11.db")
-                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49)
+                .addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53)
                 // FIX (crash on very old installs): versions 1-12 predate any explicit
                 // Migration object (those builds only ever used a blanket
                 // fallbackToDestructiveMigration()), so there is no real upgrade path

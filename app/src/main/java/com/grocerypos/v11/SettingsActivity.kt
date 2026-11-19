@@ -185,6 +185,54 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@SettingsActivity, ShellLedgerActivity::class.java))
         })
 
+        // NEW (Flutter parity, batch 6): default udhaar period for new credit bills.
+        list.addView(menuRow(R.drawable.ic_calendar, "Default Credit Period", showChevron = true) {
+            openDueDaysDialog()
+        })
+
+        // NEW (Flutter parity, batch 5): reminder notifications on/off.
+        list.addView(menuRow(R.drawable.ic_notifications, "Reminders",
+            trailingText = if (com.grocerypos.v11.ReminderNotifier.isEnabled(this@SettingsActivity)) "On" else "Off") {
+            openRemindersDialog()
+        })
+
+        // NEW (Flutter parity, batch 2): same three rows as Flutter's Settings (each screen
+        // itself allows only admin / manager).
+        list.addView(menuRow(R.drawable.ic_store, "Shop Rents", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, ShopRentActivity::class.java))
+        })
+        list.addView(menuRow(R.drawable.ic_people, "Workers", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, WorkersActivity::class.java))
+        })
+        list.addView(menuRow(R.drawable.ic_receipt, "Utility Bills", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, UtilityBillsActivity::class.java))
+        })
+        // NEW (Flutter parity, batch 3): admin tools + Recycle Bin (screens check the role).
+        list.addView(menuRow(R.drawable.ic_wrench, "Repair Tools", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, RepairToolsActivity::class.java))
+        })
+        list.addView(menuRow(R.drawable.ic_delete, "Recycle Bin", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, RecycleBinActivity::class.java))
+        })
+        // NEW: App license (Hanna Solutions) — status, device code, key, renew.
+        list.addView(menuRow(R.drawable.ic_key, "License", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, LicenseActivity::class.java))
+        })
+        // NEW (Flutter parity, batch 8): Pending Cost (admin).
+        list.addView(menuRow(R.drawable.ic_wrench, "Pending Cost", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, PendingCostActivity::class.java))
+        })
+        // NEW (Flutter parity, batch 4): extra reports.
+        list.addView(menuRow(R.drawable.ic_chart, "Receivables (Aging)", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, ReceivablesActivity::class.java))
+        })
+        list.addView(menuRow(R.drawable.ic_undo, "Returns Report", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, ReturnsReportActivity::class.java))
+        })
+        list.addView(menuRow(R.drawable.ic_warning, "Expiry Report", showChevron = true) {
+            startActivity(Intent(this@SettingsActivity, ExpiryReportActivity::class.java))
+        })
+
         // ---- Sync Now (now shows live Connected/Offline status) ----
         list.addView(buildSyncRow())
 
@@ -360,6 +408,66 @@ class SettingsActivity : AppCompatActivity() {
     // ================= MENU ROW HELPERS (premium card rows) =================
 
     /** A simple, non-expanding premium card row: icon-in-circle + label (+ optional chevron / trailing text). */
+    // NEW (batch 6): Settings → Default Credit Period (admin / manager). Stored in app_settings
+    // "default_due_days" (same key as Flutter). 0 = off.
+    private fun openDueDaysDialog() {
+        val L = com.grocerypos.v11.util.Loc
+        val role = getSharedPreferences("session", MODE_PRIVATE).getString("role", "cashier") ?: "cashier"
+        if (role != "admin" && role != "manager") {
+            Toast.makeText(this, L.t(this, "Only admin / manager can change this", "یہ صرف ایڈمن / مینیجر بدل سکتے ہیں"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            val db = PosDatabase.get(this@SettingsActivity)
+            val cur = com.grocerypos.v11.DueDays.shopDays(db)
+            val input = EditText(this@SettingsActivity).apply {
+                setText(cur.toString()); inputType = InputType.TYPE_CLASS_NUMBER
+                hint = L.t(this@SettingsActivity, "Days (0 = off)", "دن (0 = بند)")
+            }
+            val box = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(48, 16, 48, 0); addView(input) }
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle(L.t(this@SettingsActivity, "Default credit period", "ڈیفالٹ ادھار مدت"))
+                .setMessage(L.t(this@SettingsActivity,
+                    "A new credit (udhaar) bill gets a due date = bill date + these days, unless the customer has their own period. 0 = no automatic date.",
+                    "نئے ادھار بل کی تاریخ = بل کی تاریخ + یہ دن، جب تک کسٹمر کی اپنی مدت نہ ہو۔ 0 = خودکار تاریخ نہیں۔"))
+                .setView(box)
+                .setPositiveButton(L.t(this@SettingsActivity, "Save", "محفوظ کریں")) { _, _ ->
+                    val d = com.grocerypos.v11.DueDays.parseShop(input.text.toString())
+                    lifecycleScope.launch {
+                        com.grocerypos.v11.DueDays.setShopDays(db, d)
+                        Toast.makeText(this@SettingsActivity, L.t(this@SettingsActivity, "Saved: $d days", "محفوظ: $d دن"), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton(L.t(this@SettingsActivity, "Cancel", "منسوخ"), null)
+                .show()
+        }
+    }
+
+    // NEW (batch 5): Wasooli + Amanat/Loan reminders toggle; bill reminders are per bill
+    // (Utility Bills screen). Also a shortcut to Android's notification settings.
+    private fun openRemindersDialog() {
+        val rn = com.grocerypos.v11.ReminderNotifier
+        val on = rn.isEnabled(this)
+        AlertDialog.Builder(this)
+            .setTitle(com.grocerypos.v11.util.Loc.t(this, "Reminders", "یاد دہانی"))
+            .setMessage(com.grocerypos.v11.util.Loc.t(this,
+                "Daily notifications:\n• Today's collection (10 AM, again 6 PM if still pending)\n• Deposit / Loan return dates (10 AM, admin/manager)\n• Utility bills (9 AM; turn off per bill in Utility Bills)\n\nCollection + Deposit/Loan reminders are now " + (if (on) "ON" else "OFF") + ".",
+                "روزانہ نوٹیفکیشن:\n• آج کی وصولی (صبح 10 بجے، باقی ہو تو شام 6 بجے)\n• امانت / قرض واپسی کی تاریخ (صبح 10 بجے، ایڈمن/مینیجر)\n• یوٹیلیٹی بل (صبح 9 بجے؛ ہر بل کی الگ سیٹنگ)\n\nوصولی + امانت/قرض یاد دہانی ابھی " + (if (on) "آن" else "آف") + " ہے۔"))
+            .setPositiveButton(if (on) com.grocerypos.v11.util.Loc.t(this, "Turn off", "بند کریں") else com.grocerypos.v11.util.Loc.t(this, "Turn on", "چالو کریں")) { _, _ ->
+                rn.setEnabled(this, !on)
+                if (!on) rn.askPermissionOnce(this)
+                recreate()
+            }
+            .setNeutralButton(com.grocerypos.v11.util.Loc.t(this, "Phone settings", "فون سیٹنگ")) { _, _ ->
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
+                } catch (e: Exception) { }
+            }
+            .setNegativeButton(com.grocerypos.v11.util.Loc.t(this, "Close", "بند"), null)
+            .show()
+    }
+
     private fun menuRow(
         iconRes: Int,
         label: String,

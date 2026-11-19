@@ -113,6 +113,14 @@ class MainActivity : ThemedActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
 
+        // NEW: App license (Hanna Solutions). Not allowed => License screen (data untouched).
+        if (!LicenseManager.state(this).canUse) {
+            startActivity(Intent(this, com.grocerypos.v11.ui.LicenseActivity::class.java)
+                .putExtra(com.grocerypos.v11.ui.LicenseActivity.EXTRA_BLOCKED, true))
+            finish()
+            return
+        }
+
         val session = getSharedPreferences("session", MODE_PRIVATE)
         if (session.getString("username", null) == null) {
             startActivity(Intent(this@MainActivity, LoginActivity::class.java))
@@ -120,6 +128,11 @@ class MainActivity : ThemedActivity() {
             return
         }
         role = session.getString("role", "cashier") ?: "cashier"
+
+        // NEW (Flutter parity, batch 5): reminder notifications — ask permission once (Android 13+),
+        // and open the right screen when the app was started by tapping a reminder.
+        try { ReminderNotifier.askPermissionOnce(this) } catch (e: Exception) { }
+        openFromReminder(intent)
 
         // NEW: starts background sync (push queued changes + pull server changes every
         // 15 minutes). Safe to call on every app start — ExistingPeriodicWorkPolicy.KEEP
@@ -371,6 +384,20 @@ class MainActivity : ThemedActivity() {
                 }
             )
         }
+        // NEW (Flutter parity, batch 1): Collection (Wasooli Autopilot + all dues + follow-ups)
+        // for everyone; Deposit / Loan (Amanat) only for admin / manager, same as Flutter.
+        quickActions.add(
+            QuickAction("Collection", "Remind today + all pending dues", R.drawable.ic_alarm, flatAmberBg, flatAmberFg) {
+                startActivity(Intent(this@MainActivity, com.grocerypos.v11.ui.CollectionActivity::class.java))
+            }
+        )
+        if (role == "admin" || role == "manager") {
+            quickActions.add(
+                QuickAction("Deposit / Loan", "Deposits held & loans given", R.drawable.ic_wallet, flatAmberBg, flatAmberFg) {
+                    startActivity(Intent(this@MainActivity, com.grocerypos.v11.ui.AmanatLoanActivity::class.java))
+                }
+            )
+        }
         quickActions.add(
             QuickAction("Day book", "View daily ledger", R.drawable.ic_book, flatTealBg, flatTealFg) {
                 startActivity(Intent(this@MainActivity, DayBookActivity::class.java))
@@ -407,8 +434,49 @@ class MainActivity : ThemedActivity() {
         observeSyncPending()
     }
 
+    // NEW (batch 5): a reminder tapped while the app is already open.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openFromReminder(intent)
+    }
+
+    private fun openFromReminder(i: Intent?) {
+        val target = ReminderNotifier.targetFor(i?.getStringExtra(ReminderNotifier.EXTRA_OPEN)) ?: return
+        i?.removeExtra(ReminderNotifier.EXTRA_OPEN)
+        try { startActivity(Intent(this, target)) } catch (e: Exception) { }
+    }
+
     override fun onResume() {
         super.onResume()
+        // NEW (batch 5): foreground check (the 15-min worker covers the app-closed case).
+        lifecycleScope.launch { try { ReminderNotifier.checkAll(this@MainActivity) } catch (e: Exception) { } }
+        // NEW: license — refresh from Hanna's server now and then; warn in the last days; block if it ran out.
+        lifecycleScope.launch {
+            try { LicenseManager.refreshIfDue(this@MainActivity) } catch (e: Exception) { }
+            val ls = LicenseManager.state(this@MainActivity)
+            if (!ls.canUse) {
+                startActivity(Intent(this@MainActivity, com.grocerypos.v11.ui.LicenseActivity::class.java)
+                    .putExtra(com.grocerypos.v11.ui.LicenseActivity.EXTRA_BLOCKED, true))
+                finish()
+            } else if (LicenseLogic.shouldWarn(ls)) {
+                val p = getSharedPreferences("license_prefs", MODE_PRIVATE)
+                val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+                if (p.getString("warned_on", null) != today) {
+                    p.edit().putString("warned_on", today).apply()
+                    androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                        .setTitle(com.grocerypos.v11.util.Loc.t(this@MainActivity, "License ending soon", "لائسنس جلد ختم ہو رہا ہے"))
+                        .setMessage(com.grocerypos.v11.util.Loc.t(this@MainActivity,
+                            "${ls.daysLeft} day(s) left. Contact Hanna Solutions to renew (Settings → License).",
+                            "${ls.daysLeft} دن باقی۔ تجدید کے لیے ہانا سولوشنز سے رابطہ کریں (سیٹنگز ← لائسنس)۔"))
+                        .setPositiveButton(com.grocerypos.v11.util.Loc.t(this@MainActivity, "Open", "کھولیں")) { _, _ ->
+                            startActivity(Intent(this@MainActivity, com.grocerypos.v11.ui.LicenseActivity::class.java))
+                        }
+                        .setNegativeButton(com.grocerypos.v11.util.Loc.t(this@MainActivity, "Later", "بعد میں"), null)
+                        .show()
+                }
+            }
+        }
         loadDashboard()
         loadShopName()
         loadPartySummary()

@@ -17,6 +17,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # NEW: App license — offline-key secret + support WhatsApp number (Settings → Secrets → Actions).
+    env:
+      LICENSE_KEY_SECRET: ${{ secrets.LICENSE_KEY_SECRET }}
+      LICENSE_SUPPORT_WHATSAPP: ${{ secrets.LICENSE_SUPPORT_WHATSAPP }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

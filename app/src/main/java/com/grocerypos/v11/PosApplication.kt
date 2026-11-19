@@ -48,6 +48,12 @@ class PosApplication : Application() {
         } catch (e: Exception) {
             android.util.Log.e("PosApplication", "SyncWorker.schedulePeriodic failed", e)
         }
+        // NEW (Flutter parity, batch 5): wasooli / amanat / utility-bill reminder notifications.
+        try {
+            ReminderNotifier.schedule(this)
+        } catch (e: Exception) {
+            android.util.Log.e("PosApplication", "ReminderNotifier.schedule failed", e)
+        }
         try {
             NetworkMonitor.register(this)
         } catch (e: Exception) {

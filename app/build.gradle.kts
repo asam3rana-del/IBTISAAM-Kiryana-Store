@@ -9,6 +9,12 @@ plugins {
 }
 
 android {
+    // Lint: also print every issue into the CI log (the HTML report is only an artifact).
+    lint {
+        textReport = true
+        textOutput = file("stdout")
+    }
+
     namespace = "com.grocerypos.v11"
     compileSdk = 35
 
@@ -21,6 +27,15 @@ android {
         // Needed to run app/src/androidTest (incl. MigrationTest) with
         // ./gradlew connectedAndroidTest / from Android Studio's test runner.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // NEW: App license (Hanna Solutions). The offline-key secret comes ONLY from the CI
+        // secret LICENSE_KEY_SECRET (this repo is public — never write it here). Empty =>
+        // offline keys are simply turned off; online (Firebase) licensing still works.
+        buildConfigField("String", "LICENSE_KEY_SECRET",
+            "\"" + (System.getenv("LICENSE_KEY_SECRET") ?: "").replace("\\", "").replace("\"", "") + "\"")
+        // WhatsApp number shown on the License screen, e.g. 923001234567 (CI secret / env
+        // LICENSE_SUPPORT_WHATSAPP). Empty => the WhatsApp button is hidden.
+        buildConfigField("String", "LICENSE_SUPPORT_WHATSAPP",
+            "\"" + (System.getenv("LICENSE_SUPPORT_WHATSAPP") ?: "").filter { it.isDigit() } + "\"")
         // Branch identity is configured securely at runtime from Settings > Cloud Sync
         // Setup. Do not bake a branch into the APK; the same APK can now be installed
         // on every device/branch. Server-side Firestore rules remain the authority.
