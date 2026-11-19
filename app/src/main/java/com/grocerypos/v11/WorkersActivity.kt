@@ -1,5 +1,6 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.RadioIds
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
@@ -125,10 +126,10 @@ class WorkersActivity : AppCompatActivity() {
         val phone = cuField(t("Phone (optional)", "فون (اختیاری)"), c, initial = w?.phone ?: "").apply { inputType = android.text.InputType.TYPE_CLASS_PHONE }
         body.addView(name); body.addView(phone)
         val type = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-        val rM = RadioButton(this).apply { text = t("Monthly salary", "ماہانہ تنخواہ"); id = 7001 }
-        val rD = RadioButton(this).apply { text = t("Daily wage", "روزانہ اجرت"); id = 7002 }
+        val rM = RadioButton(this).apply { text = t("Monthly salary", "ماہانہ تنخواہ"); id = RadioIds.of(7001) }
+        val rD = RadioButton(this).apply { text = t("Daily wage", "روزانہ اجرت"); id = RadioIds.of(7002) }
         type.addView(rM); type.addView(rD)
-        type.check(if (w?.payType == Payroll.DAILY) 7002 else 7001)
+        type.check(RadioIds.of(if (w?.payType == Payroll.DAILY) 7002 else 7001))
         body.addView(type)
         val rate = cuField(t("Salary per month / daily wage", "ماہانہ تنخواہ / روزانہ اجرت"), c, numeric = true,
             initial = w?.rate?.takeIf { it > 0 }?.let { if (it == Math.floor(it)) it.toLong().toString() else it.toString() } ?: "")
@@ -144,7 +145,7 @@ class WorkersActivity : AppCompatActivity() {
                 val base = w ?: ShopWorker(name = "")
                 doAction {
                     WorkerRepository.save(this, base.copy(name = name.text.toString(), phone = phone.text.toString(),
-                        payType = if (type.checkedRadioButtonId == 7002) Payroll.DAILY else Payroll.MONTHLY, rate = r,
+                        payType = if (type.checkedRadioButtonId == RadioIds.of(7002)) Payroll.DAILY else Payroll.MONTHLY, rate = r,
                         active = if (w == null) true else active.isChecked))
                     cuToast(t("Saved", "محفوظ ہو گیا")); load()
                 }
@@ -293,9 +294,9 @@ class WorkersActivity : AppCompatActivity() {
 
     private fun methodGroup(): RadioGroup = RadioGroup(this).apply {
         orientation = RadioGroup.HORIZONTAL
-        addView(RadioButton(this@WorkersActivity).apply { text = t("Cash", "کیش"); id = 7101 })
-        addView(RadioButton(this@WorkersActivity).apply { text = t("Bank", "بینک"); id = 7102 })
-        check(7101)
+        addView(RadioButton(this@WorkersActivity).apply { text = t("Cash", "کیش"); id = RadioIds.of(7101) })
+        addView(RadioButton(this@WorkersActivity).apply { text = t("Bank", "بینک"); id = RadioIds.of(7102) })
+        check(RadioIds.of(7101))
     }
 
     private fun giveAdvance(w: ShopWorker) {
@@ -310,7 +311,7 @@ class WorkersActivity : AppCompatActivity() {
             .setPositiveButton(t("Give", "دیں")) { _, _ ->
                 val a = cuParseAmount(amount.text.toString())
                 if (a == null) { cuToast(t("Enter a valid amount", "صحیح رقم لکھیں")); return@setPositiveButton }
-                doAction { WorkerRepository.addAdvance(this, w, a, if (m.checkedRadioButtonId == 7102) "bank" else "cash", note.text.toString()); load() }
+                doAction { WorkerRepository.addAdvance(this, w, a, if (m.checkedRadioButtonId == RadioIds.of(7102)) "bank" else "cash", note.text.toString()); load() }
             }.show()
     }
 
@@ -363,7 +364,7 @@ class WorkersActivity : AppCompatActivity() {
                     .setNegativeButton(t("Cancel", "منسوخ"), null)
                     .setPositiveButton(t("Pay", "ادا کریں")) { _, _ ->
                         doAction {
-                            WorkerRepository.paySalary(this, w, year, month, cv, if (m.checkedRadioButtonId == 7102) "bank" else "cash")
+                            WorkerRepository.paySalary(this, w, year, month, cv, if (m.checkedRadioButtonId == RadioIds.of(7102)) "bank" else "cash")
                             cuToast(t("Salary paid", "تنخواہ ادا ہو گئی")); load()
                         }
                     }.show()

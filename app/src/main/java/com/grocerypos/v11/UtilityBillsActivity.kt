@@ -1,5 +1,6 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.RadioIds
 import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
@@ -154,9 +155,9 @@ class UtilityBillsActivity : AppCompatActivity() {
         val amount = cuField(t("Amount", "رقم"), c, numeric = true, initial = if (v.suggestedAmount > 0) Math.round(v.suggestedAmount).toString() else "")
         val m = RadioGroup(this).apply {
             orientation = RadioGroup.HORIZONTAL
-            addView(RadioButton(this@UtilityBillsActivity).apply { text = t("Cash", "کیش"); id = 9101 })
-            addView(RadioButton(this@UtilityBillsActivity).apply { text = t("Bank", "بینک"); id = 9102 })
-            check(9101)
+            addView(RadioButton(this@UtilityBillsActivity).apply { text = t("Cash", "کیش"); id = RadioIds.of(9101) })
+            addView(RadioButton(this@UtilityBillsActivity).apply { text = t("Bank", "بینک"); id = RadioIds.of(9102) })
+            check(RadioIds.of(9101))
         }
         val note = cuField(t("Note (optional)", "نوٹ (اختیاری)"), c)
         val rec = CheckBox(this).apply { text = t("Also record as Expense (Cash/Bank out)", "خرچ میں بھی لکھیں (کیش/بینک سے باہر)"); isChecked = true }
@@ -167,7 +168,7 @@ class UtilityBillsActivity : AppCompatActivity() {
                 val a = cuParseAmount(amount.text.toString())
                 if (a == null) { cuToast(t("Enter a valid amount", "صحیح رقم لکھیں")); return@setPositiveButton }
                 doAction {
-                    UtilityBillRepository.pay(this, b, month, a, if (m.checkedRadioButtonId == 9102) "bank" else "cash", note.text.toString(), rec.isChecked)
+                    UtilityBillRepository.pay(this, b, month, a, if (m.checkedRadioButtonId == RadioIds.of(9102)) "bank" else "cash", note.text.toString(), rec.isChecked)
                     cuToast(t("Paid", "ادا ہو گیا")); load()
                 }
             }.show()

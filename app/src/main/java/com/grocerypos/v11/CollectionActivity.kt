@@ -1,5 +1,6 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.RadioIds
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -477,8 +478,8 @@ class CollectionActivity : AppCompatActivity() {
         val group = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
         val ids = HashMap<Int, String>()
         FollowUpOutcome.CHOICES.forEachIndexed { i, o ->
-            val rb = RadioButton(this).apply { text = FollowUps.outcomeLabel(this@CollectionActivity, o); this.id = 5000 + i }
-            ids[5000 + i] = o
+            val rb = RadioButton(this).apply { text = FollowUps.outcomeLabel(this@CollectionActivity, o); this.id = RadioIds.of(5000 + i) }
+            ids[RadioIds.of(5000 + i)] = o
             group.addView(rb)
         }
         body.addView(cuText(t("Result", "نتیجہ"), 12f, c.muted, true))

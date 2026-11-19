@@ -1,5 +1,6 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.RadioIds
 import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
@@ -162,9 +163,9 @@ class ShopRentActivity : AppCompatActivity() {
 
     private fun methodGroup(): RadioGroup = RadioGroup(this).apply {
         orientation = RadioGroup.HORIZONTAL
-        addView(RadioButton(this@ShopRentActivity).apply { text = t("Cash", "کیش"); id = 8101 })
-        addView(RadioButton(this@ShopRentActivity).apply { text = t("Bank", "بینک"); id = 8102 })
-        check(8101)
+        addView(RadioButton(this@ShopRentActivity).apply { text = t("Cash", "کیش"); id = RadioIds.of(8101) })
+        addView(RadioButton(this@ShopRentActivity).apply { text = t("Bank", "بینک"); id = RadioIds.of(8102) })
+        check(RadioIds.of(8101))
     }
 
     private fun payDialog(s: ShopRentSummary) {
@@ -184,7 +185,7 @@ class ShopRentActivity : AppCompatActivity() {
                 // Same day as today => keep the real time; a past date => noon of that day.
                 val at = if (date.value == DayUtil.today()) System.currentTimeMillis() else date.value + 12 * 3600_000L
                 doAction {
-                    val (toRent, toAdv) = ShopRentRepository.pay(this, s.shop.id, a, if (m.checkedRadioButtonId == 8102) "bank" else "cash", note.text.toString(), at)
+                    val (toRent, toAdv) = ShopRentRepository.pay(this, s.shop.id, a, if (m.checkedRadioButtonId == RadioIds.of(8102)) "bank" else "cash", note.text.toString(), at)
                     cuToast(t("Rent paid", "کرایہ ادا") + " " + money0(toRent) + (if (toAdv > 0) " • " + t("advance", "ایڈوانس") + " " + money0(toAdv) else ""))
                     load()
                 }
@@ -205,7 +206,7 @@ class ShopRentActivity : AppCompatActivity() {
                 val a = cuParseAmount(amount.text.toString())
                 if (a == null) { cuToast(t("Enter a valid amount", "صحیح رقم لکھیں")); return@setPositiveButton }
                 doAction {
-                    ShopRentRepository.giveAdvance(this, s.shop.id, a, if (m.checkedRadioButtonId == 8102) "bank" else "cash", note.text.toString())
+                    ShopRentRepository.giveAdvance(this, s.shop.id, a, if (m.checkedRadioButtonId == RadioIds.of(8102)) "bank" else "cash", note.text.toString())
                     cuToast(t("Advance saved", "ایڈوانس محفوظ")); load()
                 }
             }.show()
@@ -223,9 +224,9 @@ class ShopRentActivity : AppCompatActivity() {
         })
         body.addView(rent)
         val when_ = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
-        when_.addView(RadioButton(this).apply { text = t("From this month", "اس مہینے سے"); id = 8201 })
-        when_.addView(RadioButton(this).apply { text = t("From next month", "اگلے مہینے سے"); id = 8202 })
-        when_.check(8201)
+        when_.addView(RadioButton(this).apply { text = t("From this month", "اس مہینے سے"); id = RadioIds.of(8201) })
+        when_.addView(RadioButton(this).apply { text = t("From next month", "اگلے مہینے سے"); id = RadioIds.of(8202) })
+        when_.check(RadioIds.of(8201))
         body.addView(when_)
         body.addView(cuText(t("Past months stay as they were.", "پچھلے مہینے ویسے ہی رہیں گے۔"), 11f, c.muted))
         AlertDialog.Builder(this).setTitle(t("Change Rent", "کرایہ بدلیں") + " • " + s.shop.shopName).setView(scroll)
@@ -234,7 +235,7 @@ class ShopRentActivity : AppCompatActivity() {
                 val r = cuParseAmount(rent.text.toString())
                 if (r == null) { cuToast(t("Enter a valid amount", "صحیح رقم لکھیں")); return@setPositiveButton }
                 val nowYm = Ym.of(System.currentTimeMillis())
-                val from = if (when_.checkedRadioButtonId == 8202) Ym.add(nowYm, 1) else nowYm
+                val from = if (when_.checkedRadioButtonId == RadioIds.of(8202)) Ym.add(nowYm, 1) else nowYm
                 doAction { ShopRentRepository.changeRent(this, s.shop.id, from, r); cuToast(t("Saved", "محفوظ ہو گیا")); load() }
             }.show()
     }

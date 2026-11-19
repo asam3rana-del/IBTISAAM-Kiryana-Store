@@ -9,6 +9,12 @@ plugins {
 }
 
 android {
+    // Lint: also print every issue into the CI log (the HTML report is only an artifact).
+    lint {
+        textReport = true
+        textOutput = file("stdout")
+    }
+
     namespace = "com.grocerypos.v11"
     compileSdk = 35
 

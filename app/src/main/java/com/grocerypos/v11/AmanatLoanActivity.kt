@@ -1,5 +1,6 @@
 package com.grocerypos.v11.ui
 
+import com.grocerypos.v11.RadioIds
 import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
@@ -204,8 +205,8 @@ class AmanatLoanActivity : AppCompatActivity() {
         val amount = cuField(t("Amount", "رقم"), c, numeric = true, initial = r.entriesTotal.roundToLong().toString())
         body.addView(amount)
         val methods = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-        val cash = RadioButton(this).apply { text = t("Cash", "کیش"); id = 1001; isChecked = true }
-        val bank = RadioButton(this).apply { text = t("Bank", "بینک"); id = 1002 }
+        val cash = RadioButton(this).apply { text = t("Cash", "کیش"); id = RadioIds.of(1001); isChecked = true }
+        val bank = RadioButton(this).apply { text = t("Bank", "بینک"); id = RadioIds.of(1002) }
         methods.addView(cash); methods.addView(bank)
         body.addView(methods)
         val note = cuField(t("Note (optional)", "نوٹ (اختیاری)"), c)
@@ -219,7 +220,7 @@ class AmanatLoanActivity : AppCompatActivity() {
             .setPositiveButton(if (r.isAmanat) t("Return", "واپس") else t("Collect", "وصول")) { _, _ ->
                 val amt = cuParseAmount(amount.text.toString())
                 if (amt == null) { resultToast(ReturnEntryResult.INVALID_AMOUNT); return@setPositiveButton }
-                val m = if (methods.checkedRadioButtonId == 1002) "bank" else "cash"
+                val m = if (methods.checkedRadioButtonId == RadioIds.of(1002)) "bank" else "cash"
                 lifecycleScope.launch {
                     resultToast(CollectionRepository.settleReturn(this@AmanatLoanActivity, r.partyId, amt, m, note.text.toString()))
                     load()
@@ -326,8 +327,8 @@ class AmanatLoanActivity : AppCompatActivity() {
         var picked: Customer? = null
         var mode = 0 // 0 new party, 1 existing customer
         val kindGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-        val rAmanat = RadioButton(this).apply { text = t("Deposit (Amanat)", "امانت"); id = 2001 }
-        val rLoan = RadioButton(this).apply { text = t("Loan (Qarz)", "قرض"); id = 2002 }
+        val rAmanat = RadioButton(this).apply { text = t("Deposit (Amanat)", "امانت"); id = RadioIds.of(2001) }
+        val rLoan = RadioButton(this).apply { text = t("Loan (Qarz)", "قرض"); id = RadioIds.of(2002) }
         kindGroup.addView(rAmanat); kindGroup.addView(rLoan)
         val name = cuField(t("Name *", "نام *"), c)
         val phone = cuField(t("Phone", "فون"), c).apply { inputType = android.text.InputType.TYPE_CLASS_PHONE }
@@ -337,15 +338,15 @@ class AmanatLoanActivity : AppCompatActivity() {
             rAmanat.isChecked = true
             body.addView(kindGroup)
             val modeGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-            val mNew = RadioButton(this).apply { text = t("New party", "نئی پارٹی"); id = 3001; isChecked = true }
-            val mOld = RadioButton(this).apply { text = t("Existing customer", "موجودہ کسٹمر"); id = 3002 }
+            val mNew = RadioButton(this).apply { text = t("New party", "نئی پارٹی"); id = RadioIds.of(3001); isChecked = true }
+            val mOld = RadioButton(this).apply { text = t("Existing customer", "موجودہ کسٹمر"); id = RadioIds.of(3002) }
             modeGroup.addView(mNew); modeGroup.addView(mOld)
             body.addView(modeGroup)
             body.addView(newBox)
             pickBtn.visibility = android.view.View.GONE
             body.addView(pickBtn)
             modeGroup.setOnCheckedChangeListener { _, id ->
-                mode = if (id == 3002) 1 else 0
+                mode = if (id == RadioIds.of(3002)) 1 else 0
                 newBox.visibility = if (mode == 0) android.view.View.VISIBLE else android.view.View.GONE
                 pickBtn.visibility = if (mode == 1) android.view.View.VISIBLE else android.view.View.GONE
             }
@@ -381,7 +382,7 @@ class AmanatLoanActivity : AppCompatActivity() {
             .setNegativeButton(t("Cancel", "منسوخ"), null)
             .setPositiveButton(t("Save", "محفوظ کریں")) { _, _ ->
                 val amt = cuParseAmount(amount.text.toString())
-                val kind = forParty?.kind ?: (if (kindGroup.checkedRadioButtonId == 2002) "loan" else "amanat")
+                val kind = forParty?.kind ?: (if (kindGroup.checkedRadioButtonId == RadioIds.of(2002)) "loan" else "amanat")
                 lifecycleScope.launch {
                     val ctx = this@AmanatLoanActivity
                     when {
@@ -420,8 +421,8 @@ class AmanatLoanActivity : AppCompatActivity() {
         val phone = cuField(t("Phone", "فون"), c, initial = r.partyPhone).apply { inputType = android.text.InputType.TYPE_CLASS_PHONE }
         body.addView(name); body.addView(phone)
         val kindGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-        val rAmanat = RadioButton(this).apply { text = t("Deposit (Amanat)", "امانت"); id = 4001; isChecked = r.isAmanat }
-        val rLoan = RadioButton(this).apply { text = t("Loan (Qarz)", "قرض"); id = 4002; isChecked = !r.isAmanat }
+        val rAmanat = RadioButton(this).apply { text = t("Deposit (Amanat)", "امانت"); id = RadioIds.of(4001); isChecked = r.isAmanat }
+        val rLoan = RadioButton(this).apply { text = t("Loan (Qarz)", "قرض"); id = RadioIds.of(4002); isChecked = !r.isAmanat }
         kindGroup.addView(rAmanat); kindGroup.addView(rLoan)
         val ret = CuDateField(this, c, t("Return date", "واپسی کی تاریخ"), r.returnDate)
         if (r.entries.isEmpty()) {
@@ -434,7 +435,7 @@ class AmanatLoanActivity : AppCompatActivity() {
         AlertDialog.Builder(this).setTitle(t("Edit party", "پارٹی ایڈٹ")).setView(scroll)
             .setNegativeButton(t("Cancel", "منسوخ"), null)
             .setPositiveButton(t("Save", "محفوظ کریں")) { _, _ ->
-                val kind = if (kindGroup.checkedRadioButtonId == 4002) "loan" else "amanat"
+                val kind = if (kindGroup.checkedRadioButtonId == RadioIds.of(4002)) "loan" else "amanat"
                 val baseTxt = base.text.toString().trim()
                 val baseAmt: Double? = if (baseTxt.isEmpty()) 0.0 else baseTxt.replace(",", "").toDoubleOrNull()
                 lifecycleScope.launch {
